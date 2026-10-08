@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,8 +186,12 @@ def main():
         try:
             results.append(repo_events(project["github_repo"], start, end, token))
         except Exception as exc:
-            # Never put response bodies or token strings in reports.
-            errors.append(f"{project['id']}: error de lectura ({type(exc).__name__}); revisar permisos/API")
+            # Log HTTP status, never response body, paths or credentials.
+            status = f" HTTP {exc.code}" if isinstance(exc, HTTPError) else ""
+            errors.append(
+                f"{project['id']}: error de lectura ({type(exc).__name__}{status}); "
+                "revisar permisos/API"
+            )
     report_dir = ROOT / "reports" / day[:7]
     report_dir.mkdir(parents=True, exist_ok=True)
     payload = {
