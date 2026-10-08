@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   validate:
@@ -29,6 +31,7 @@ jobs:
           REPORT_PROJECT_IDS: POS
         run: python src/collect_activity.py
       - name: Preserve smoke report for review
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: project-os-api-smoke-${{ github.run_id }}
