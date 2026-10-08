@@ -1,4 +1,5 @@
 name: PROJECT-OS — Manual GitHub evidence report
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,26 +7,32 @@ on:
         description: "YYYY-MM-DD; empty = current day in America/Merida"
         required: false
         type: string
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
   report:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
-      - name: Generate evidence report
+      - name: Collect read-only evidence
         env:
           GH_READ_TOKEN: ${{ secrets.PROJECT_OS_GH_READ_TOKEN }}
           REPORT_DATE: ${{ inputs.report_date }}
         run: python src/collect_activity.py
-      - name: Commit generated reports
-        run: |
-          git config user.name 'project-os-bot'
-          git config user.email 'project-os-bot@users.noreply.github.com'
-          git add reports/
-          git diff --cached --quiet || (git commit -m 'docs: add PROJECT-OS GitHub evidence report' && git push)
+      - name: Upload report as build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-evidence-${{ github.run_id }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
