@@ -173,7 +173,13 @@ def main():
         raise SystemExit("Missing GH_READ_TOKEN; use a read-only, least-privilege token")
     config = json.loads((ROOT / "config" / "projects.json").read_text(encoding="utf-8"))
     results, errors = [], []
+    allowed_ids = {
+        item.strip() for item in os.getenv("REPORT_PROJECT_IDS", "").split(",")
+        if item.strip()
+    }
     for project in config["projects"]:
+        if allowed_ids and project["id"] not in allowed_ids:
+            continue
         if not project.get("enabled") or not project.get("github_repo"):
             continue
         try:
