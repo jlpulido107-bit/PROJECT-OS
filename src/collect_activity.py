@@ -38,50 +38,95 @@ def get_json(path, token):
 
 
 def repo_events(repo, start, end, token):
+    """Collect events from each branch, deduplicating SHAs.
+
+    This is deliberately read-only. Per-repo branch and pagination limits are
+    stated in the resulting report rather than silently implying full coverage.
+    """
     safe_repo = "/".join(quote(p, safe="") for p in repo.split("/"))
-    endpoints = {
-        "commits": f"/repos/{safe_repo}/commits?since={quote(start)}&until={quote(end)}",
+    limitations = []
+
+    def in_window(stamp):
+        return bool(stamp) and start <= stamp < end
+
+    branches = []
+    for page in range(1, MAX_PAGES + 1):
+        batch = get_json(f"/repos/{safe_repo}/branches?per_page=100&page={page}", token)
+        if not isinstance(batch, list):
+            raise ValueError("Unexpected GitHub branches response")
+        branches.extend(item["name"] for item in batch)
+        if len(batch) < 100:
+            break
+    else:
+        limitations.append(f"branch enumeration capped at {MAX_PAGES * 100} branches")
+
+    max_branches = 40
+    if len(branches) > max_branches:
+        limitations.append(f"commit scan capped at {max_branches} of {len(branches)} branches")
+        branches = branches[:max_branches]
+    if not branches:
+        limitations.append("No GitHub branches found; no commit history scanned")
+
+    # A commit reachable from multiple branches counts as only one event.
+    unique = {}
+    for branch in branches:
+        ref = quote(branch, safe="")
+        params = f"sha={ref}&since={quote(start, safe='')}&until={quote(end, safe='')}"
+        for page in range(1, MAX_PAGES + 1):
+            batch = get_json(
+                f"/repos/{safe_repo}/commits?{params}&per_page=100&page={page}", token
+            )
+            if not isinstance(batch, list):
+                raise ValueError("Unexpected GitHub commits response")
+            for item in batch:
+                date = item.get("commit", {}).get("committer", {}).get("date") or ""
+                if not in_window(date):
+                    continue
+                sha = item["sha"]
+                if sha not in unique:
+                    unique[sha] = {
+                        "id": sha,
+                        "message": item["commit"]["message"].splitlines()[0],
+                        "url": item["html_url"],
+                        "date": date,
+                        "branches": [],
+                    }
+                unique[sha]["branches"].append(branch)
+            if len(batch) < 100:
+                break
+        else:
+            limitations.append(f"commits on {branch}: capped at {MAX_PAGES * 100}")
+
+    found = {}
+    for kind, endpoint in {
         "pull_requests": f"/repos/{safe_repo}/pulls?state=all&sort=updated&direction=desc",
         "issues": f"/repos/{safe_repo}/issues?state=all&sort=updated&direction=desc",
-    }
-    found, limitations = {}, []
-    for kind, endpoint in endpoints.items():
+    }.items():
         collected = []
         for page in range(1, MAX_PAGES + 1):
-            sep = "&" if "?" in endpoint else "?"
-            batch = get_json(f"{endpoint}{sep}per_page=100&page={page}", token)
+            batch = get_json(f"{endpoint}&per_page=100&page={page}", token)
             if not isinstance(batch, list):
-                raise ValueError("Unexpected GitHub API result type")
+                raise ValueError(f"Unexpected GitHub {kind} response")
             collected.extend(batch)
             if len(batch) < 100:
                 break
         else:
-            limitations.append(f"{kind}: paginación limitada a {MAX_PAGES * 100} eventos")
+            limitations.append(f"{kind}: capped at {MAX_PAGES * 100} events")
         found[kind] = collected
 
-    def in_window(stamp):
-        return start <= stamp < end
-
-    commits = []
-    for item in found["commits"]:
-        date = item.get("commit", {}).get("committer", {}).get("date") or ""
-        if in_window(date):
-            commits.append({
-                "id": item["sha"], "message": item["commit"]["message"].splitlines()[0],
-                "url": item["html_url"],
-            })
-    prs = [{
+    pulls = [{
         "id": str(x["number"]), "title": x["title"], "state": x["state"],
-        "url": x["html_url"],
-    } for x in found["pull_requests"] if in_window(x.get("updated_at") or "")]
+        "url": x["html_url"], "updated_at": x["updated_at"],
+    } for x in found["pull_requests"] if in_window(x.get("updated_at"))]
     issues = [{
         "id": str(x["number"]), "title": x["title"], "state": x["state"],
-        "url": x["html_url"],
+        "url": x["html_url"], "updated_at": x["updated_at"],
     } for x in found["issues"]
-        if "pull_request" not in x and in_window(x.get("updated_at") or "")]
+        if "pull_request" not in x and in_window(x.get("updated_at"))]
+    commits = sorted(unique.values(), key=lambda item: (item["date"], item["id"]))
     return {
-        "repo": repo, "commits": commits, "pull_requests": prs,
-        "issues": issues, "limitations": limitations,
+        "repo": repo, "branches": branches, "commits": commits,
+        "pull_requests": pulls, "issues": issues, "limitations": limitations,
     }
 
 
@@ -96,6 +141,7 @@ def render(day, results, errors):
         lines += ["No hay repositorios con resultados verificados para esta fecha.", ""]
     for item in results:
         lines += [f"## {safe_markdown(item['repo'])}", "",
+                  f"- Ramas examinadas: {len(item.get('branches', []))}",
                   f"- Commits detectados: {len(item['commits'])}",
                   f"- PRs modificados: {len(item['pull_requests'])}",
                   f"- Issues modificados: {len(item['issues'])}", ""]
