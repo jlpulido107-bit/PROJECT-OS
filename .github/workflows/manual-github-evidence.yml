@@ -7,6 +7,16 @@ on:
         description: "YYYY-MM-DD; empty = current day in America/Merida"
         required: false
         type: string
+      sync_to_sheets:
+        description: "Opt-in: append verified evidence to Google Sheets"
+        required: true
+        type: boolean
+        default: false
+
+# Serialize report/sync jobs from this workflow to reduce duplicate writers.
+concurrency:
+  group: project-os-evidence-sync
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -30,6 +40,24 @@ jobs:
           GH_READ_TOKEN: ${{ secrets.PROJECT_OS_GH_READ_TOKEN }}
           REPORT_DATE: ${{ inputs.report_date }}
         run: python src/collect_activity.py
+      - name: Install Sheets auth dependency
+        if: ${{ inputs.sync_to_sheets }}
+        run: pip install -r requirements-sync.txt
+      - name: Sync verified evidence to Google Sheets (explicit opt-in)
+        if: ${{ inputs.sync_to_sheets }}
+        env:
+          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}
+          REPORT_DATE: ${{ inputs.report_date }}
+        shell: bash
+        run: |
+          if [ -z "$PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Missing Google service-account secret; no sync attempted"
+            exit 1
+          fi
+          if [ -z "$REPORT_DATE" ]; then
+            REPORT_DATE=$(TZ=America/Merida date +%F)
+          fi
+          python src/sync_sheets.py --report "reports/${REPORT_DATE:0:7}/${REPORT_DATE}.json"
       - name: Upload report as build artifact
         if: always()
         uses: actions/upload-artifact@v4
