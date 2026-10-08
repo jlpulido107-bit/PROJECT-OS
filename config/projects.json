@@ -2,9 +2,29 @@
   "timezone": "America/Merida",
   "spreadsheet_id": "16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic",
   "projects": [
-    {"id": "SIG", "name": "SIGSAH", "github_repo": "jlpulido107-bit/SIGSAH", "enabled": true},
-    {"id": "ECO", "name": "E-commerce", "github_repo": null, "enabled": true},
-    {"id": "DEV", "name": "Desarrolladora IA", "github_repo": null, "enabled": true},
-    {"id": "POS", "name": "PROJECT-OS", "github_repo": null, "enabled": true}
+    {
+      "id": "SIG",
+      "name": "SIGSAH",
+      "github_repo": "jlpulido107-bit/SIGSAH",
+      "enabled": true
+    },
+    {
+      "id": "ECO",
+      "name": "E-commerce",
+      "github_repo": null,
+      "enabled": true
+    },
+    {
+      "id": "DEV",
+      "name": "Desarrolladora IA",
+      "github_repo": null,
+      "enabled": true
+    },
+    {
+      "id": "POS",
+      "name": "PROJECT-OS",
+      "github_repo": "jlpulido107-bit/PROJECT-OS",
+      "enabled": true
+    }
   ]
 }
