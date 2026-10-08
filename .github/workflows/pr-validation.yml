@@ -23,3 +23,15 @@ jobs:
         run: python -m json.tool config/projects.json > /dev/null
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+      - name: Smoke test GitHub API against PROJECT-OS (read-only)
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          REPORT_PROJECT_IDS: POS
+        run: python src/collect_activity.py
+      - name: Preserve smoke report for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-os-api-smoke-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+          if-no-files-found: error
