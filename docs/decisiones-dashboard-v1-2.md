@@ -53,8 +53,9 @@ No modifica `src/collect_activity.py`, `src/sync_sheets.py`, workflows ni el con
    [`validacion-dashboard-v1-2.md`](validacion-dashboard-v1-2.md) (OAuth real, Sheets real, sin escrituras).
 4. Decidir hosting antes de cualquier despliegue (requiere aprobación): por ejemplo un servicio con gestor de
    secretos e identidad de carga de trabajo para evitar claves JSON de larga duración.
-5. Opcional: workflow de CI para `web/` (lint, typecheck, test, build, e2e). No se añadió porque esta misión no
-   autoriza cambios en workflows.
+5. CI de `web/`: workflow aislado `.github/workflows/web-validation.yml` (autorizado por el usuario en la revisión
+   del PR #4). Ejecuta `npm ci`, lint, typecheck, Vitest, build, E2E HTTP de autorización y escaneo de secretos de
+   cliente, con permisos `contents: read`, sin secretos y sin despliegue. Los workflows de V1.1 no cambian.
 
 ## Riesgos y límites conocidos
 

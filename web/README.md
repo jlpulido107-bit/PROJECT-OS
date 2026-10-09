@@ -89,6 +89,8 @@ Autenticación real con **NextAuth v4 + Google OAuth** (no hay formularios de co
 | `npm run test:e2e` | Requiere `npm run build`. Levanta `next start` con datos sintéticos y secretos aleatorios y comprueba, por HTTP real, que sin sesión válida ninguna página/API devuelve datos. |
 | `npm run check:client-secrets` | Requiere `npm run build`. Busca claves, tokens, correos y los valores de las variables secretas del entorno en `.next/static`. |
 
+En CI, `.github/workflows/web-validation.yml` ejecuta esta misma secuencia en cada PR que toca `web/`.
+
 Validación completa antes de pedir revisión:
 
 ```bash
