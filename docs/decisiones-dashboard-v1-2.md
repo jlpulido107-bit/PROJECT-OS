@@ -49,8 +49,8 @@ No modifica `src/collect_activity.py`, `src/sync_sheets.py`, workflows ni el con
 
 1. Cliente OAuth de Google (Aplicación web) y `AUTH_ALLOWED_EMAILS` con el correo autorizado.
 2. Compartir la hoja como **Lector** con la cuenta de servicio del dashboard y guardar la clave fuera del repo.
-3. Ejecutar localmente con `DASHBOARD_DATA_SOURCE=sheets` y confirmar en *Diagnóstico de datos* que las
-   12 pestañas son válidas y que los totales coinciden con la hoja.
+3. Ejecutar localmente con `DASHBOARD_DATA_SOURCE=sheets` siguiendo
+   [`validacion-dashboard-v1-2.md`](validacion-dashboard-v1-2.md) (OAuth real, Sheets real, sin escrituras).
 4. Decidir hosting antes de cualquier despliegue (requiere aprobación): por ejemplo un servicio con gestor de
    secretos e identidad de carga de trabajo para evitar claves JSON de larga duración.
 5. Opcional: workflow de CI para `web/` (lint, typecheck, test, build, e2e). No se añadió porque esta misión no
