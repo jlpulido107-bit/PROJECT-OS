@@ -15,11 +15,13 @@ function files(dir: string): string[] {
 
 const sources = files(SRC).map((file) => ({ file: path.relative(SRC, file), text: readFileSync(file, 'utf8') }))
 
-const SERVER_ONLY_MODULES = ['lib/config', 'lib/data', 'lib/sheets-client', 'lib/auth', 'lib/page-data', 'lib/operations/runtime', 'lib/operations/http']
+const SERVER_ONLY_MODULES = ['lib/config', 'lib/data', 'lib/sheets-client', 'lib/auth', 'lib/page-data']
 
 describe('garantías de seguridad del código', () => {
   // V1.4: el único archivo con endpoints de escritura es el adaptador PREPARADO, que nadie importa.
   const WRITE_ADAPTER = path.join('lib', 'operations', 'sheets-table-store.ts')
+  // Módulos de V1.4 que solo pueden ejecutarse en el servidor (estado simulado y manejo de escrituras).
+  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http')
 
   it('ningún código llama endpoints de escritura de Sheets ni usa el alcance de escritura', () => {
     for (const { file, text } of sources) {
