@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * Prueba E2E de autorización contra el build de producción (`next start`).
+ * Prueba E2E de autorización contra el build de producción.
+ * - Por defecto levanta `next start` (requiere `npm run build`).
+ * - Con E2E_BASE_URL apunta a un servidor ya iniciado, p. ej. el contenedor Docker
+ *   (scripts/docker-smoke.sh); entonces E2E_NEXTAUTH_SECRET debe ser el secreto de ese servidor.
+ *   Solo se permiten destinos locales: esta prueba emite sesiones y nunca debe apuntar a producción.
  * - Usa datos SINTÉTICOS (DASHBOARD_DATA_SOURCE=fixtures) y secretos aleatorios de un solo uso.
  * - No contacta a Google: las sesiones se emiten con el mismo cifrado JWE de NextAuth.
- * Requisito: `npm run build` antes de ejecutar.
  */
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -11,12 +14,25 @@ import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { encode } from 'next-auth/jwt'
 
+const EXTERNAL = process.env.E2E_BASE_URL?.trim()
 const PORT = process.env.E2E_PORT ?? '3107'
-const BASE = `http://127.0.0.1:${PORT}`
-const SECRET = randomBytes(32).toString('base64')
-const ALLOWED = 'revisor@example.com'
+const BASE = EXTERNAL || `http://127.0.0.1:${PORT}`
+const SECRET = EXTERNAL ? process.env.E2E_NEXTAUTH_SECRET : randomBytes(32).toString('base64')
+const ALLOWED = process.env.E2E_ALLOWED_EMAIL ?? 'revisor@example.com'
 const COOKIE = 'next-auth.session-token'
 const webDir = path.resolve(import.meta.dirname, '..')
+
+if (EXTERNAL) {
+  const host = new URL(EXTERNAL).hostname
+  if (!['127.0.0.1', 'localhost'].includes(host)) {
+    console.error('E2E_BASE_URL solo admite servidores locales (127.0.0.1 o localhost).')
+    process.exit(2)
+  }
+  if (!SECRET) {
+    console.error('Con E2E_BASE_URL define E2E_NEXTAUTH_SECRET (el secreto del servidor local de prueba).')
+    process.exit(2)
+  }
+}
 
 const env = {
   ...process.env,
@@ -31,15 +47,18 @@ const env = {
 }
 delete env.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON
 delete env.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_FILE
+delete env.K_SERVICE
 
-const server = spawn(path.join(webDir, 'node_modules', '.bin', 'next'), ['start', '-p', PORT, '-H', '127.0.0.1'], {
-  cwd: webDir,
-  env,
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
+const server = EXTERNAL
+  ? null
+  : spawn(path.join(webDir, 'node_modules', '.bin', 'next'), ['start', '-p', PORT, '-H', '127.0.0.1'], {
+      cwd: webDir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
 let serverLog = ''
-server.stdout.on('data', (d) => (serverLog += d))
-server.stderr.on('data', (d) => (serverLog += d))
+server?.stdout.on('data', (d) => (serverLog += d))
+server?.stderr.on('data', (d) => (serverLog += d))
 
 const results = []
 function check(name, ok, detail = '') {
@@ -146,17 +165,26 @@ try {
     check('proyecto inexistente → página "No encontrado"', missingBody.includes('No encontrado') && !missingBody.includes('Hitos ('), `${missing.status}`)
   }
 
-  // 8) Cabeceras de seguridad.
+  // 8) Sonda de salud pública: sin sesión, sin datos, sin detalles de configuración.
+  {
+    const res = await get('/api/health')
+    const body = await res.text()
+    check('/api/health sin sesión → 200 {"status":"ok"}', res.status === 200 && JSON.parse(body).status === 'ok', `${res.status}`)
+    check('/api/health sin datos', !DATA_MARKERS.some((m) => body.includes(m)) && Object.keys(JSON.parse(body)).length === 1)
+  }
+
+  // 9) Cabeceras de seguridad.
   {
     const res = await get('/login')
     check('X-Frame-Options DENY', res.headers.get('x-frame-options') === 'DENY')
     check('X-Robots-Tag noindex', (res.headers.get('x-robots-tag') ?? '').includes('noindex'))
     check('Sin cabecera X-Powered-By', res.headers.get('x-powered-by') === null)
+    check('Strict-Transport-Security presente', (res.headers.get('strict-transport-security') ?? '').includes('max-age='))
   }
 } catch (error) {
   check('ejecución', false, error instanceof Error ? error.message : String(error))
 } finally {
-  server.kill('SIGTERM')
+  server?.kill('SIGTERM')
 }
 
 const failed = results.filter((r) => !r.ok)

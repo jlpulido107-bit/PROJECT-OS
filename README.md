@@ -1,6 +1,6 @@
 # PROJECT-OS — Centro de Dirección
 
-**Estado:** V1 en revisión. No se han activado sincronizaciones ni informes programados.
+**Estado:** V1.2 (dashboard web de solo lectura) fusionada en `main`. V1.3 (acceso remoto privado en Cloud Run) en preparación, **sin desplegar**. No hay sincronizaciones ni informes programados.
 
 ## Objetivo
 Dirigir proyectos técnicos y no técnicos mediante metas, hitos, capacidad semanal flexible, evidencia y decisiones verificables.
@@ -24,8 +24,9 @@ Dirigir proyectos técnicos y no técnicos mediante metas, hitos, capacidad sema
 - Pruebas unitarias, documentación y misión de desarrollo para Claude Code.
 
 ## Aún pendiente
-- Integración segura para escribir evidencias en Google Sheets.
-- Dashboard web autenticado: **V1.2 de solo lectura en revisión** en [`web/`](web/README.md) (modo local/privado, sin despliegue).
+- Sincronización GitHub → Sheets (`EVIDENCIAS`, `SYNC_RUNS`): manual y opcional, sin calendario (ver [`docs/sheets-sync-setup.md`](docs/sheets-sync-setup.md)).
+- Dashboard web: V1.2 de solo lectura en [`web/`](web/README.md), validada localmente con Google OAuth y Sheets reales.
+  Acceso remoto privado (V1.3) preparado para Cloud Run en [`docs/despliegue-privado-v1-3.md`](docs/despliegue-privado-v1-3.md); el despliegue requiere autorización.
 - Captura de avances no técnicos mediante dashboard.
 - Conciliación de commits/PRs con IDs de tareas.
 - Planificación inteligente con revisión y aprobación humana.

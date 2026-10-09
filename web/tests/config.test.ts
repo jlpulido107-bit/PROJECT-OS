@@ -15,6 +15,11 @@ describe('configuración del servidor', () => {
     expect(() => dataSource(env({ DASHBOARD_DATA_SOURCE: 'csv' }))).toThrow(ConfigError)
   })
 
+  it('los datos sintéticos se prohíben en Cloud Run (K_SERVICE)', () => {
+    expect(() => dataSource(env({ DASHBOARD_DATA_SOURCE: 'fixtures', K_SERVICE: 'project-os-dashboard' }))).toThrow(/Cloud Run/)
+    expect(dataSource(env({ K_SERVICE: 'project-os-dashboard' }))).toBe('sheets')
+  })
+
   it('caché acotada a 0–300 s', () => {
     expect(cacheSeconds(env({}))).toBe(60)
     expect(cacheSeconds(env({ DASHBOARD_CACHE_SECONDS: '0' }))).toBe(0)

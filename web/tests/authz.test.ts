@@ -86,6 +86,25 @@ describe('autorización de rutas (proxy)', () => {
     }
   })
 
+  it('con NEXTAUTH_URL HTTPS (Cloud Run) solo vale la cookie __Secure-', async () => {
+    const prev = process.env.NEXTAUTH_URL
+    process.env.NEXTAUTH_URL = 'https://project-os-dashboard-000000000000.us-central1.run.app'
+    try {
+      const ok = await sessionCookie('revisor@example.com')
+      const secureReq = new NextRequest(new URL('/', process.env.NEXTAUTH_URL), {
+        headers: new Headers({ cookie: `__Secure-next-auth.session-token=${ok}` }),
+      })
+      expect((await decide(secureReq, { secret: SECRET, allowed: ALLOWED })).action).toBe('allow')
+      const insecureReq = new NextRequest(new URL('/', process.env.NEXTAUTH_URL), {
+        headers: new Headers({ cookie: `next-auth.session-token=${ok}` }),
+      })
+      expect((await decide(insecureReq, { secret: SECRET, allowed: ALLOWED })).action).toBe('unauthenticated')
+    } finally {
+      if (prev === undefined) delete process.env.NEXTAUTH_URL
+      else process.env.NEXTAUTH_URL = prev
+    }
+  })
+
   it('sin NEXTAUTH_SECRET configurado, todo lo privado queda cerrado', async () => {
     const ok = await sessionCookie('revisor@example.com')
     const req = request('/', ok)
@@ -105,10 +124,10 @@ describe('autorización de rutas (proxy)', () => {
   })
 
   it('solo /login, /api/auth/* y recursos estáticos son públicos', async () => {
-    for (const path of ['/login', '/api/auth/session', '/api/auth/callback/google', '/_next/static/x.js', '/robots.txt']) {
+    for (const path of ['/login', '/api/health', '/api/auth/session', '/api/auth/callback/google', '/_next/static/x.js', '/robots.txt']) {
       expect(isPublicPath(path)).toBe(true)
     }
-    for (const path of ['/', '/api/resumen', '/api/authx', '/loginx', '/login/../tareas', '/proyectos']) {
+    for (const path of ['/', '/api/resumen', '/api/authx', '/api/healthz', '/api/health/x', '/loginx', '/login/../tareas', '/proyectos']) {
       expect(isPublicPath(new URL(path, 'http://x').pathname)).toBe(false)
     }
   })

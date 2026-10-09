@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { ConfigError } from './config'
 import { MAX_DATA_ROWS, type TabName } from './schema'
 import type { RawTabs } from './types'
 
@@ -68,7 +69,9 @@ export function createSheetsReader(options: SheetsReaderOptions) {
     let token: string
     try {
       token = await options.getAccessToken()
-    } catch {
+    } catch (error) {
+      // Un error de configuración (p. ej. identidad ADC inesperada) se propaga con su mensaje seguro.
+      if (error instanceof ConfigError) throw error
       throw new SheetsReadError('auth')
     }
     for (let attempt = 0; ; attempt++) {

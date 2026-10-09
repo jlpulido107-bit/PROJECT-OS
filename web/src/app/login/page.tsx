@@ -34,8 +34,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       ) : (
         <div className="alert alert-warn" role="alert">
           <p>
-            La autenticación no está configurada en este servidor. Define <code>GOOGLE_CLIENT_ID</code>,{' '}
-            <code>GOOGLE_CLIENT_SECRET</code>, <code>NEXTAUTH_SECRET</code> y <code>AUTH_ALLOWED_EMAILS</code> (ver{' '}
+            La autenticación no está configurada de forma segura en este servidor. Revisa{' '}
+            <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, <code>NEXTAUTH_SECRET</code> (32+ caracteres),{' '}
+            <code>NEXTAUTH_URL</code> (HTTPS fuera de localhost) y <code>AUTH_ALLOWED_EMAILS</code> (ver{' '}
             <code>web/README.md</code>).
           </p>
         </div>
