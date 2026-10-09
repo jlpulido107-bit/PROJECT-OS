@@ -11,6 +11,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // En desarrollo Next registra cada petición con su query string; las de /api/auth/* incluyen el
+  // código OAuth de un solo uso (?code=…). No se registran para no dejar credenciales en logs.
+  logging: { incomingRequests: { ignore: [/\/api\/auth\//] } },
   reactStrictMode: true,
   // Las credenciales de Google solo existen en el servidor; nunca se exponen con NEXT_PUBLIC_.
   serverExternalPackages: ['google-auth-library'],
