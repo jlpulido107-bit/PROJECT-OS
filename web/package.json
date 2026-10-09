@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node scripts/e2e-auth.mjs",
-    "check:client-secrets": "node scripts/check-client-secrets.mjs"
+    "check:client-secrets": "node scripts/check-client-secrets.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:critical": "npm audit --audit-level=critical"
   },
   "dependencies": {
     "google-auth-library": "11.1.0",
@@ -32,6 +34,6 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.8",
     "typescript": "5.9.3",
-    "vitest": "3.2.7"
+    "vitest": "4.1.11"
   }
 }

@@ -32,7 +32,7 @@ No modifica `src/collect_activity.py`, `src/sync_sheets.py`, workflows ni el con
 | Volumen | Hasta 5 000 filas/pestaña (igual que V1.1) con aviso de truncamiento; paginación 25/30 en UI | Volumen actual muy inferior; evita lecturas sin límite. |
 | Evidencias | Clasificación: evento observado / vinculada sin validar / tarea validada / vínculo roto | Un commit no equivale a tarea completada. |
 | Estilos | CSS propio (sin Tailwind ni librerías de UI) | Menos dependencias; modo oscuro y móvil cubiertos. |
-| Pruebas | Vitest 3.2 (rama mantenida V3) | Vitest 4/5 falla al instalar con npm 10 (error de árbol de peers). |
+| Pruebas | Vitest 4.1.11 | Corrige GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr (tinypool) y GHSA-82fw-gwwq-j7x9 (@vitest/mocker) presentes en 3.2.7. El lockfile se generó con npm 11 porque npm 10 falla al resolver sus peers opcionales; `npm ci` con npm 10 lo instala sin problema. |
 
 ## Seguridad
 
@@ -57,11 +57,34 @@ No modifica `src/collect_activity.py`, `src/sync_sheets.py`, workflows ni el con
    del PR #4). Ejecuta `npm ci`, lint, typecheck, Vitest, build, E2E HTTP de autorización y escaneo de secretos de
    cliente, con permisos `contents: read`, sin secretos y sin despliegue. Los workflows de V1.1 no cambian.
 
+## Auditoría de dependencias (2026-10-09)
+
+`npm audit --omit=dev`: **0 vulnerabilidades** en dependencias de producción (`next`, `react`, `react-dom`,
+`next-auth`, `google-auth-library`, `server-only` y sus transitivas).
+
+| Paquete | Versión | Severidad | ¿Producción? | Introducido por | Advisory | Resolución |
+| --- | --- | --- | --- | --- | --- | --- |
+| tinypool | 1.1.1 | crítica | No (pruebas) | vitest@3.2.7 | GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr | **Corregida**: vitest 4.1.11 ya no usa tinypool. |
+| @vitest/mocker | 3.2.7 | moderada | No (pruebas) | vitest@3.2.7 | GHSA-82fw-gwwq-j7x9 | **Corregida**: @vitest/mocker 4.1.11. |
+| braces (+ micromatch, fast-glob, @next/eslint-plugin-next, eslint-config-next: 5 entradas "high") | 3.0.3 | alta | No (lint) | eslint-config-next@16.3.8 → @next/eslint-plugin-next → fast-glob@3.3.1 | GHSA-vfj7-8cjw-p6xm | **Aceptada con mitigación** (abajo). |
+
+Sobre `braces` (GHSA-vfj7-8cjw-p6xm, denegación de servicio por patrones glob muy anidados):
+- No hay versión corregida (`braces` 3.0.3 es la última) y todas las versiones de Next 16 fijan `fast-glob@3.3.1`.
+  `npm audit fix --force` "propone" bajar a `eslint-config-next@14`, incompatible con Next 16.
+- Exposición: solo se ejecuta al correr ESLint en equipos de desarrollo y CI, con patrones definidos en el propio
+  repositorio. No forma parte del servidor ni del cliente (`npm ls --omit=dev braces` vacío; no aparece en `.next/`).
+  Un atacante necesitaría controlar la configuración de lint del repo, lo que ya implica acceso de escritura.
+- Controles: el CI falla con cualquier vulnerabilidad high/critical **de producción** (`npm run audit:prod`) y con
+  cualquier **critical**, incluidas las de desarrollo (`npm run audit:critical`).
+- Plan: actualizar `eslint-config-next` cuando `@next/eslint-plugin-next` deje `fast-glob@3.3.1` o exista un parche
+  de `braces`. Alternativa si se quiere `npm audit` totalmente limpio ya: quitar `eslint-config-next` y configurar
+  `typescript-eslint`, `eslint-plugin-react-hooks` y `eslint-plugin-jsx-a11y` directamente (se pierden las reglas
+  específicas de Next.js).
+
 ## Riesgos y límites conocidos
 
 - Sin CSP estricta con nonces (Next requiere scripts inline); mitigado por render en servidor y escape de React.
 - La caché vive en la memoria de un proceso; en un hosting con varias instancias cada una lee por separado.
-- El aviso `npm audit` (braces/micromatch vía `eslint-config-next`) afecta solo a herramientas de desarrollo.
 - Con `loading.tsx` las respuestas se transmiten en streaming: un proyecto inexistente renderiza "No encontrado"
   con HTTP 200 (comportamiento de Next.js).
 - `COMPLETADO` se muestra tal como está registrado; el panel no valida criterios de aceptación.

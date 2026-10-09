@@ -4,7 +4,8 @@ Panel privado, usable en móvil y escritorio, que **lee** la Google Sheet operat
 No escribe en Sheets, no cierra tareas y no está publicado en internet: se ejecuta en **modo local/privado**
 hasta que el usuario apruebe un hosting.
 
-- **Stack:** Next.js 16 (App Router) + TypeScript, NextAuth v4 (Google OAuth), `google-auth-library`.
+- **Stack:** Next.js 16 (App Router) + TypeScript, NextAuth v4 (Google OAuth), `google-auth-library`; pruebas con Vitest 4.
+- **Nota npm:** `npm ci` funciona con npm 10. Para *cambiar* dependencias usa npm 11 (`npx npm@11 install …`): npm 10 falla al resolver los peers opcionales de Vitest 4.
 - **Datos:** Google Sheets API v4, cuenta de servicio, alcance `spreadsheets.readonly`, solo en el servidor.
 - **Pantallas:** Inicio ejecutivo · Proyectos (lista y detalle) · Tareas (filtros) · Actividad · Capacidad y plan diario.
 
@@ -87,6 +88,7 @@ Autenticación real con **NextAuth v4 + Google OAuth** (no hay formularios de co
 | `npm run typecheck` | `tsc --noEmit` en modo estricto. |
 | `npm test` | Pruebas unitarias (Vitest): parsing, fechas Mérida, conteos, vacíos, cliente Sheets, autorización de rutas, revisiones de seguridad. |
 | `npm run test:e2e` | Requiere `npm run build`. Levanta `next start` con datos sintéticos y secretos aleatorios y comprueba, por HTTP real, que sin sesión válida ninguna página/API devuelve datos. |
+| `npm run audit:prod` / `npm run audit:critical` | Fallan ante vulnerabilidades high/critical de producción o critical en cualquier dependencia. Detalle en `docs/decisiones-dashboard-v1-2.md`. |
 | `npm run check:client-secrets` | Requiere `npm run build`. Busca claves, tokens, correos y los valores de las variables secretas del entorno en `.next/static`. |
 
 En CI, `.github/workflows/web-validation.yml` ejecuta esta misma secuencia en cada PR que toca `web/`.
@@ -94,7 +96,7 @@ En CI, `.github/workflows/web-validation.yml` ejecuta esta misma secuencia en ca
 Validación completa antes de pedir revisión:
 
 ```bash
-npm ci && npm run lint && npm run typecheck && npm test && npm run build \
+npm ci && npm run audit:prod && npm run audit:critical && npm run lint && npm run typecheck && npm test && npm run build \
   && npm run test:e2e && npm run check:client-secrets
 ```
 

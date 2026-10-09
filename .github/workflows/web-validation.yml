@@ -44,6 +44,10 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install (lockfile)
         run: npm ci
+      - name: Auditoría de dependencias de producción (falla con high/critical)
+        run: npm run audit:prod
+      - name: Auditoría completa (falla con cualquier critical, incluidas las de desarrollo)
+        run: npm run audit:critical
       - name: Lint
         run: npm run lint
       - name: Typecheck
