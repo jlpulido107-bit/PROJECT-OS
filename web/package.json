@@ -4,7 +4,7 @@
   "private": true,
   "description": "PROJECT-OS V1.2 — dashboard privado de solo lectura sobre Google Sheets",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "next dev",

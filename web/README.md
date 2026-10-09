@@ -13,7 +13,8 @@ Decisiones técnicas, riesgos y límites: [`docs/decisiones-dashboard-v1-2.md`](
 
 ## Requisitos
 
-- Node.js ≥ 20.9 (probado con Node 22) y npm.
+- **Node.js 22 LTS o superior** y npm (`.nvmrc` = 22). `google-auth-library` 11 exige Node ≥ 22; con Node 20
+  (sin soporte desde abril de 2026) `npm ci` muestra avisos `EBADENGINE` y la lectura real de Sheets no está garantizada.
 - Para datos reales: una cuenta de servicio con acceso de **Lector** a la hoja.
 - Para iniciar sesión: un cliente OAuth de Google (tipo *Aplicación web*).
 
