@@ -16,7 +16,7 @@
 - [ ] Conciliación de eventos GitHub y tareas.
 
 ## V1.2 — Dashboard web
-- [ ] UI responsiva y autenticación.
+- [ ] UI responsiva y autenticación (solo lectura en revisión: `web/`; falta prueba con Sheets real).
 - [ ] Lectura y escritura autorizada a Sheets mediante backend seguro.
 - [ ] Planificación semanal flexible y cronograma diario.
 - [ ] Historial de decisiones y evidencias verificables.
