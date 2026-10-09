@@ -28,7 +28,7 @@
 .error { color: var(--danger-fg); font-size: 0.85rem; grid-column: 1 / -1; margin: 0; }
 
 .dayList { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.dayTitle { text-transform: capitalize; }
+.dayTitle { margin: 0; }
 .items { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 8px; }
 .item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .item[data-decision='aceptado'] { border-color: var(--ok-fg); }
@@ -37,13 +37,13 @@
 .item p { margin: 2px 0 6px; }
 .itemHead { display: flex; justify-content: space-between; gap: 8px; overflow-wrap: anywhere; }
 .review { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.review .button { min-height: 36px; padding: 4px 10px; }
-.review .button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.review :global(.button) { min-height: 36px; padding: 4px 10px; }
+.review :global(.button)[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 .adjust { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
 .adjust input { width: 5.5rem; min-height: 36px; }
 
 .filterRow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.75rem; }
-.filterRow .button { min-height: 36px; padding: 4px 10px; }
+.filterRow :global(.button) { min-height: 36px; padding: 4px 10px; }
 .taskList { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .taskSummary { cursor: pointer; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; overflow-wrap: anywhere; }
 .rank { display: inline-block; min-width: 2.2rem; color: var(--muted); font-variant-numeric: tabular-nums; }

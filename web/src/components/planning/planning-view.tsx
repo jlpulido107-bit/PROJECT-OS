@@ -31,7 +31,8 @@ const DAY_FORMAT = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'num
 
 function dayLabel(civil: string): string {
   const [y, m, d] = civil.split('-').map(Number) as [number, number, number]
-  return DAY_FORMAT.format(new Date(Date.UTC(y, m - 1, d)))
+  const text = DAY_FORMAT.format(new Date(Date.UTC(y, m - 1, d)))
+  return text.charAt(0).toLocaleUpperCase('es') + text.slice(1)
 }
 
 function fmtMin(min: number | null): string {
@@ -300,7 +301,7 @@ function CapacityStats({ plan }: { plan: PlanResult }) {
       <div className="stat"><span className="stat-label">Capacidad neta</span><span className="stat-value">{c.netaMin === null ? 'No calculable' : fmtMin(c.netaMin)}</span><span className="stat-hint">horas × (1 − reserva)</span></div>
       <div className="stat"><span className="stat-label">Ya usado o planificado</span><span className="stat-value">{fmtMin(c.usadoMin)}</span><span className="stat-hint">tiempo real y planes registrados</span></div>
       <div className="stat"><span className="stat-label">Libre</span><span className="stat-value">{fmtMin(c.libreMin)}</span></div>
-      <div className="stat"><span className="stat-label">Propuesto</span><span className={`stat-value${c.propuestoMin > 0 ? ' stat-ok' : ''}`}>{fmtMin(c.propuestoMin)}</span><span className="stat-hint">{plan.resumen.propuestas + plan.resumen.parciales} tareas</span></div>
+      <div className="stat"><span className="stat-label">Propuesto</span><span className={`stat-value${c.propuestoMin > 0 ? ' stat-ok' : ''}`}>{fmtMin(c.propuestoMin)}</span><span className="stat-hint">{plan.resumen.propuestas + plan.resumen.parciales === 1 ? '1 tarea' : `${plan.resumen.propuestas + plan.resumen.parciales} tareas`}</span></div>
     </div>
   )
 }

@@ -148,3 +148,9 @@ npm test                    # unitarias, de propiedades y de seguridad (incluye 
 npm run build
 npm run test:e2e:planning   # E2E HTTP: acceso, solo lectura, validación, determinismo, minimización
 ```
+
+## 9. Capturas (datos sintéticos)
+
+| Diagnóstico sin capacidad (móvil) | Propuesta revisada (móvil) | Escenario activo (escritorio) |
+| --- | --- | --- |
+| ![Diagnóstico](../web/docs/capturas/movil-planificacion-diagnostico.png) | ![Propuesta](../web/docs/capturas/movil-planificacion-propuesta.png) | ![Escritorio](../web/docs/capturas/escritorio-planificacion.png) |
