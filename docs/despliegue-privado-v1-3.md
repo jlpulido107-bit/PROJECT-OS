@@ -53,6 +53,9 @@ Google OAuth ◀──── /api/auth/callback/google (redirect URI HTTPS regis
   `{"status":"ok"}` (200) o `{"status":"unavailable"}` (503). Una revisión con configuración insegura (URL
   sin HTTPS, clave JSON, datos sintéticos, falta de la cuenta esperada o de secretos) **no supera la sonda de
   arranque y no recibe tráfico**.
+  - **Límite:** la sonda solo valida la **configuración** (variables y política de credenciales). **No**
+    comprueba que la identidad ADC tenga acceso real a la hoja, que OAuth funcione ni que Secret Manager
+    responda. Eso se acepta después de desplegar (§5.8). Un 200 en `/api/health` no equivale a "funciona".
 
 ### "Invocable desde Internet" no significa "datos públicos"
 
@@ -150,6 +153,14 @@ Antes de desplegar hay que verificarlo en la calculadora de precios.
 > repo y en la versión fusionada en `main`. Ningún comando imprime secretos. Revisa cada bloque antes de
 > ejecutarlo.
 
+> **Comandos verificados de forma estática** con Google Cloud SDK 570.0.0, sin llamadas a GCP:
+> - cada comando y flag de esta sección existe en la ayuda local (`gcloud … --help`);
+> - `--no-dry-run` existe porque `--dry-run` es un booleano de tres estados en la definición del SDK;
+> - la política de `artifact-cleanup-policy.json` se procesa con el parser del propio SDK.
+>
+> **No se ejecutaron contra un proyecto real.** Usa esa versión o una posterior (`gcloud version`) y revisa
+> cada error antes de continuar.
+
 ### 5.0 Variables (no secretas)
 
 ```bash
@@ -214,8 +225,18 @@ export IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard:$(git
 **Opción A — Cloud Build** (usa minutos de build; `cloudbuild.yaml` fuerza BuildKit y `linux/amd64`):
 
 ```bash
+# Prueba en seco, local y sin GCP: lista exactamente lo que se subiría al bucket de Cloud Build.
+# Esperado: .dockerignore, Dockerfile, package.json, package-lock.json, next.config.ts, tsconfig.json y src/.
+gcloud meta list-files-for-upload web
 gcloud builds submit web --config web/deploy/cloudbuild.yaml --substitutions=_IMAGE_TAG="$IMAGE_TAG"
 ```
+
+- `--config` se lee **localmente** y se envía con la petición de build, por lo que no necesita estar
+  dentro del código subido.
+- `web/.gcloudignore` es una lista de permitidos. Sin ella, gcloud subiría todo lo que no excluya
+  `.gitignore`: un `.env` o una clave JSON dejados por error en `web/` terminarían en el bucket. Se
+  comprobó con la prueba en seco anterior.
+- Docker aplica después su propio `.dockerignore` dentro del build.
 
 **Opción B — Docker local:**
 
@@ -275,11 +296,21 @@ cd web
 node deploy/cloudrun/render.mjs > /tmp/project-os-service.yaml   # valida formatos; falla si falta algo
 less /tmp/project-os-service.yaml                                # revisión humana
 gcloud run services replace /tmp/project-os-service.yaml --region "$REGION"
+# Confirma la URL real ANTES del primer login. Entre las URLs del servicio debe figurar $SERVICE_URL:
+gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='yaml(status.url,metadata.annotations)'
 # Navegador → OAuth requiere invocación pública (los datos siguen tras login + allowlist):
 gcloud run services add-iam-policy-binding "$SERVICE_NAME" --region "$REGION" \
   --member=allUsers --role=roles/run.invoker
 rm /tmp/project-os-service.yaml
 ```
+
+- Cloud Run asigna dos URLs: la determinista `https://SERVICIO-NUMERO_PROYECTO.REGION.run.app` y otra
+  con hash (`status.url`). Las dos se ven en la anotación `run.googleapis.com/urls`.
+- **Si `$SERVICE_URL` no aparece, detente antes de probar el login:**
+  1. pon la URL real en `SERVICE_URL`;
+  2. corrige los orígenes y la redirección del cliente OAuth (5.6);
+  3. vuelve a generar la plantilla y ejecuta `replace`. `NEXTAUTH_URL` sale de `SERVICE_URL`.
+- Hasta entonces no se expone ningún dato: la sonda solo valida la configuración y las páginas exigen sesión.
 
 Para los cambios posteriores, repite 5.5 → 5.7 con la nueva imagen. Cada `replace` crea una revisión nueva y
 la anterior queda disponible para el rollback.

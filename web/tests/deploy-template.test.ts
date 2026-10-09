@@ -86,6 +86,16 @@ describe('Dockerfile y contexto de build', () => {
     expect(lines[0]).toBe('**')
     expect(lines.slice(1).sort()).toEqual(['!next.config.ts', '!package-lock.json', '!package.json', '!src/**', '!tsconfig.json'])
   })
+
+  it('gcloud builds submit sube solo lo que necesita el Dockerfile (lista de permitidos)', () => {
+    // Sin .gcloudignore, gcloud sube todo lo que no excluya .gitignore (p. ej. un `.env` o una clave JSON).
+    const gcloudignore = readFileSync(path.join(root, '.gcloudignore'), 'utf8')
+    const lines = gcloudignore.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
+    expect(lines[0]).toBe('/*')
+    expect(lines.slice(1).sort()).toEqual([
+      '!/.dockerignore', '!/Dockerfile', '!/next.config.ts', '!/package-lock.json', '!/package.json', '!/src/', '!/tsconfig.json',
+    ])
+  })
 })
 
 describe('limpieza de Artifact Registry', () => {

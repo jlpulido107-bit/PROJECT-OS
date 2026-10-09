@@ -1,0 +1,11 @@
+# Lista de permitidos para `gcloud builds submit web` (ver docs/despliegue-privado-v1-3.md §5.5).
+# Sin este archivo, gcloud subiría todo lo que no excluya .gitignore: una clave JSON o un `.env` dejados por
+# error en web/ terminarían en el bucket de Cloud Build. Solo se sube lo que necesita el Dockerfile.
+/*
+!/.dockerignore
+!/Dockerfile
+!/package.json
+!/package-lock.json
+!/next.config.ts
+!/tsconfig.json
+!/src/
