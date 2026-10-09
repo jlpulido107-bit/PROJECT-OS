@@ -11,11 +11,12 @@ const LINKS = [
   { href: '/capacidad', label: 'Capacidad y plan' },
 ]
 
-export function NavLinks() {
+export function NavLinks({ showOperations = false }: { showOperations?: boolean }) {
   const pathname = usePathname()
+  const links = showOperations ? [...LINKS, { href: '/operaciones', label: 'Operaciones' }] : LINKS
   return (
     <ul className="nav-links">
-      {LINKS.map(({ href, label }) => {
+      {links.map(({ href, label }) => {
         const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
         return (
           <li key={href}>

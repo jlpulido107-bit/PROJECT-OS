@@ -1,0 +1,51 @@
+import { TAB_HEADERS } from '../schema'
+
+/**
+ * Contrato de escritura V1.4 (docs/v1-4-write-contract.md). Encabezados exactos; no se crean columnas.
+ * AUDITORIA no la lee el dashboard V1.2, por eso su encabezado vive aquí y no en `schema.ts`.
+ */
+export const WRITE_HEADERS = {
+  TAREAS: TAB_HEADERS.TAREAS,
+  TIEMPOS: TAB_HEADERS.TIEMPOS,
+  DECISIONES: TAB_HEADERS.DECISIONES,
+  PROYECTOS: TAB_HEADERS.PROYECTOS,
+  HITOS: TAB_HEADERS.HITOS,
+  AUDITORIA: [
+    'AUDIT_ID', 'FECHA_HORA', 'ACTOR', 'ENTIDAD', 'REGISTRO_ID', 'CAMPO', 'VALOR_ANTES', 'VALOR_DESPUES', 'ORIGEN',
+  ],
+} as const
+
+export type WriteTab = keyof typeof WRITE_HEADERS
+export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES'
+
+/** Estados de tarea que el dashboard puede asignar. COMPLETADO/CANCELADO requieren aprobación humana (bloqueados). */
+export const WRITABLE_TASK_STATES = ['PENDIENTE', 'EN_PROGRESO', 'BLOQUEADO'] as const
+export const CLOSING_TASK_STATES = ['COMPLETADO', 'CANCELADO'] as const
+export const INITIAL_TASK_STATE = 'PENDIENTE'
+export const TASK_PRIORITIES = ['ALTA', 'MEDIA', 'BAJA'] as const
+export const INITIAL_DECISION_STATE = 'PENDIENTE'
+
+/** Sugerencias de TIPO observadas en la hoja real (la validación acepta cualquier código con el patrón). */
+export const KNOWN_TASK_TYPES = ['TECNICO', 'SEGURIDAD', 'REVISION', 'DESARROLLO', 'AUTOMATIZACION', 'INTEGRACION']
+export const KNOWN_WORK_TYPES = ['DESARROLLO', 'REVISION', 'INVESTIGACION', 'DOCUMENTACION', 'REUNION', 'OPERACION']
+
+export const LIMITS = {
+  bodyBytes: 16 * 1024,
+  titulo: 160,
+  descripcion: 2000,
+  criterio: 1000,
+  bloqueo: 500,
+  responsable: 80,
+  notas: 1000,
+  asunto: 200,
+  decision: 2000,
+  justificacion: 2000,
+  url: 500,
+  horasMax: 1000,
+  minutosMax: 960,
+  diasAtras: 365,
+} as const
+
+export const ORIGIN_PREFIX = 'dashboard-v1.4'
+
+export type OperationName = 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'

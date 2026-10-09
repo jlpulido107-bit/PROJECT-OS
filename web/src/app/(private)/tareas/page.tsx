@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
+import { writeAccess } from '@/components/operations/write-access'
 import { TaskCard } from '@/components/task-card'
 import { Empty, humanize, Pagination } from '@/components/ui'
 import {
@@ -16,9 +17,10 @@ type Search = Record<string, string | string[] | undefined>
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams
-  const { result } = await privateData('/tareas')
+  const { user, result } = await privateData('/tareas')
   if (!result.ok) return <><h1>Tareas</h1><LoadError result={result} /></>
   const data = result.data
+  const canEdit = writeAccess(user.email).allowed
   const filters = parseTaskFilters(params)
   const filtered = sortTasks(filterTasks(data.tareas, filters))
   const page = paginate(filtered, params.pagina, PAGE_SIZE)
@@ -27,6 +29,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <h1>Tareas</h1>
+      {canEdit ? <div className="actions-row"><Link className="button button-primary" href="/tareas/nueva">Nueva tarea</Link></div> : null}
       <Freshness data={data} />
       <TabWarnings data={data} tabs={['TAREAS', 'DEPENDENCIAS']} />
       <Filters data={data} filters={filters} />
@@ -39,7 +42,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       ) : page.total === 0 ? (
         <Empty>Ninguna tarea coincide con los filtros. Las fechas filtran por FECHA_LIMITE (o FECHA_PLAN si no hay límite); tareas sin fecha se excluyen al filtrar por fecha.</Empty>
       ) : (
-        <div className="stack">{page.items.map((t) => <TaskCard key={t.id} task={t} data={data} />)}</div>
+        <div className="stack">{page.items.map((t) => <TaskCard key={t.id} task={t} data={data} canEdit={canEdit} />)}</div>
       )}
       <Pagination page={page} basePath="/tareas" params={{ ...filters }} />
     </>

@@ -4,6 +4,7 @@ import { JWT } from 'google-auth-library'
 import { cacheSeconds, ConfigError, dataSource, serviceAccount, spreadsheetId } from './config'
 import { todayInMerida } from './dates'
 import { buildFixtureTabs } from './fixtures'
+import { mockWriteTabs, writeGeneration } from './operations/runtime'
 import { TABS_READ } from './schema'
 import { createSheetsReader, SHEETS_READONLY_SCOPE, SheetsReadError, type SheetsErrorCode } from './sheets-client'
 import { buildDataset } from './table'
@@ -17,7 +18,7 @@ export type LoadResult =
  * Caché corta en memoria del proceso del servidor. No hay segunda base de datos:
  * Sheets sigue siendo la autoridad y cada lectura caduca en DASHBOARD_CACHE_SECONDS.
  */
-let cached: { result: LoadResult; expiresAt: number } | null = null
+let cached: { result: LoadResult; expiresAt: number; generation: number } | null = null
 let inFlight: Promise<LoadResult> | null = null
 let lastForced = 0
 
@@ -43,7 +44,8 @@ async function load(): Promise<LoadResult> {
   const fetchedAt = Date.now()
   try {
     if (dataSource() === 'fixtures') {
-      const raw = buildFixtureTabs(todayInMerida(new Date(fetchedAt)))
+      // En modo de escritura simulada (V1.4) el dashboard muestra el repositorio simulado.
+      const raw = mockWriteTabs() ?? buildFixtureTabs(todayInMerida(new Date(fetchedAt)))
       return { ok: true, data: buildDataset(raw, { source: 'fixtures', fetchedAt }) }
     }
     const reader = createSheetsReader({ spreadsheetId: spreadsheetId(), getAccessToken: accessToken })
@@ -65,12 +67,14 @@ async function load(): Promise<LoadResult> {
 /** Devuelve los datos desde caché o leyendo Sheets. Las llamadas concurrentes comparten la lectura. */
 export async function getDataset(): Promise<LoadResult> {
   const now = Date.now()
-  if (cached && cached.expiresAt > now) return cached.result
+  // V1.4: una escritura simulada (otra generación) invalida la caché.
+  if (cached && cached.expiresAt > now && cached.generation === writeGeneration()) return cached.result
   if (inFlight) return inFlight
+  const generation = writeGeneration()
   inFlight = load()
     .then((result) => {
       const ttl = result.ok ? safeCacheMs() : ERROR_CACHE_MS
-      cached = { result, expiresAt: Date.now() + ttl }
+      cached = { result, expiresAt: Date.now() + ttl, generation }
       return result
     })
     .finally(() => {
