@@ -1,0 +1,62 @@
+name: PROJECT-OS — Web dashboard validation
+
+# Valida solo el dashboard en web/. No usa secretos, no lee Google Sheets
+# (datos sintéticos) y no despliega nada.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'web/**'
+      - 'config/projects.json'
+      - '.github/workflows/web-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      # Valores FALSOS: el escaneo comprueba que no terminen en los assets de cliente.
+      NEXTAUTH_SECRET: ci-fake-nextauth-secret-not-real-0123456789
+      GOOGLE_CLIENT_SECRET: ci-fake-google-client-secret
+      AUTH_ALLOWED_EMAILS: ci-reviewer@example.com
+      SHEETS_SPREADSHEET_ID: 16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install (lockfile)
+        run: npm ci
+      - name: Auditoría de dependencias de producción (falla con high/critical)
+        run: npm run audit:prod
+      - name: Auditoría completa (falla con cualquier critical, incluidas las de desarrollo)
+        run: npm run audit:critical
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests (Vitest)
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: HTTP E2E de autorización (datos sintéticos)
+        run: npm run test:e2e
+      - name: Revisión de secretos en assets de cliente
+        run: npm run check:client-secrets

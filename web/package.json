@@ -1,0 +1,39 @@
+{
+  "name": "project-os-web",
+  "version": "1.2.0",
+  "private": true,
+  "description": "PROJECT-OS V1.2 — dashboard privado de solo lectura sobre Google Sheets",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "node scripts/e2e-auth.mjs",
+    "check:client-secrets": "node scripts/check-client-secrets.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:critical": "npm audit --audit-level=critical"
+  },
+  "dependencies": {
+    "google-auth-library": "11.1.0",
+    "next": "16.3.8",
+    "next-auth": "4.24.15",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.8",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

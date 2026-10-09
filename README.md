@@ -25,7 +25,7 @@ Dirigir proyectos técnicos y no técnicos mediante metas, hitos, capacidad sema
 
 ## Aún pendiente
 - Integración segura para escribir evidencias en Google Sheets.
-- Dashboard web autenticado y sincronizado.
+- Dashboard web autenticado: **V1.2 de solo lectura en revisión** en [`web/`](web/README.md) (modo local/privado, sin despliegue).
 - Captura de avances no técnicos mediante dashboard.
 - Conciliación de commits/PRs con IDs de tareas.
 - Planificación inteligente con revisión y aprobación humana.
