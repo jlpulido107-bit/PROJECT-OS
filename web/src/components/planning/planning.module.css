@@ -1,0 +1,54 @@
+/* Estilos de la vista de planificación (V1.5). Módulo CSS propio: no toca globals.css. */
+.root { display: block; }
+
+.simBanner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  background: var(--warn-bg); color: var(--warn-fg); border: 1px dashed currentColor; border-radius: var(--radius);
+  padding: 10px 14px; margin: 0 0 1rem;
+}
+.simBanner p { margin: 0; flex: 1 1 320px; }
+
+.quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0.5rem 0 0; }
+
+.scenario {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 14px; margin: 0 0 1rem;
+}
+.scenario > summary { cursor: pointer; padding: 8px 0; font-weight: 600; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; padding: 4px 0 12px; }
+.form > p { grid-column: 1 / -1; margin: 0; }
+.form input, .form select { min-height: 40px; }
+.fieldset { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 0; min-width: 0; }
+.fieldset legend { font-size: 0.85rem; color: var(--muted); padding: 0 4px; }
+.days { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+.check { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; grid-column: 1 / -1; font-size: 0.9rem; }
+.days .check { grid-column: auto; }
+.check input { width: 18px; height: 18px; }
+.error { color: var(--danger-fg); font-size: 0.85rem; grid-column: 1 / -1; margin: 0; }
+
+.dayList { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.dayTitle { text-transform: capitalize; }
+.items { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 8px; }
+.item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.item[data-decision='aceptado'] { border-color: var(--ok-fg); }
+.item[data-decision='rechazado'] { opacity: 0.65; border-style: dashed; }
+.item[data-decision='ajustado'] { border-color: var(--info-fg); }
+.item p { margin: 2px 0 6px; }
+.itemHead { display: flex; justify-content: space-between; gap: 8px; overflow-wrap: anywhere; }
+.review { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.review .button { min-height: 36px; padding: 4px 10px; }
+.review .button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.adjust { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+.adjust input { width: 5.5rem; min-height: 36px; }
+
+.filterRow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0.75rem; }
+.filterRow .button { min-height: 36px; padding: 4px 10px; }
+.taskList { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.taskSummary { cursor: pointer; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; overflow-wrap: anywhere; }
+.rank { display: inline-block; min-width: 2.2rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 720px) {
+  .dayList { grid-template-columns: minmax(0, 1fr); }
+  .form { grid-template-columns: minmax(0, 1fr); }
+}

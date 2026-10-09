@@ -9,6 +9,7 @@ const LINKS = [
   { href: '/tareas', label: 'Tareas' },
   { href: '/actividad', label: 'Actividad' },
   { href: '/capacidad', label: 'Capacidad y plan' },
+  { href: '/planificacion', label: 'Planificación' },
 ]
 
 export function NavLinks() {
