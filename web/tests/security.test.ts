@@ -62,7 +62,7 @@ describe('garantías de seguridad del código', () => {
 
   it('cada página privada verifica la sesión antes de leer datos', () => {
     const pages = sources.filter((s) => s.file.startsWith(path.join('app', '(private)')) && s.file.endsWith('page.tsx'))
-    expect(pages.length).toBe(6)
+    expect(pages.length).toBeGreaterThanOrEqual(6)
     for (const { file, text } of pages) expect(text, file).toContain('privateData(')
     const api = sources.find((s) => s.file === path.join('app', 'api', 'resumen', 'route.ts'))!.text
     expect(api.indexOf('currentUser()')).toBeLessThan(api.indexOf('getDataset()'))

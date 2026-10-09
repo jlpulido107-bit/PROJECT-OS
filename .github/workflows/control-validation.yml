@@ -1,0 +1,45 @@
+name: PROJECT-OS — Centro de control (V1.6) E2E
+
+# E2E HTTP del centro de control con datos sintéticos. No usa secretos, no lee Google Sheets y no despliega.
+# Las pruebas unitarias de la V1.6 ya corren en web-validation.yml (Vitest). Este flujo es aparte para no
+# chocar con los PR abiertos que también editan web-validation.yml; al integrar, el paso puede moverse allí.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'web/**'
+      - '.github/workflows/control-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  control-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install (lockfile)
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: HTTP E2E del centro de control (datos sintéticos, solo lectura)
+        run: npm run test:e2e:control
