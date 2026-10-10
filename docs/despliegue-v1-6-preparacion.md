@@ -72,7 +72,7 @@ desplegar.
 | Cuenta por defecto de Compute | No se usa: la plantilla fija `serviceAccountName` | ✅ |
 | Persona que despliega | Propietario en el alta. Después: `run.admin`, `iam.serviceAccountUser` **sobre la cuenta runtime**, `artifactregistry.writer`, `secretmanager.secretVersionAdder` y, solo con Cloud Build, `cloudbuild.builds.editor` | ✅ runbook §3.2 |
 | GitHub Actions | Sin credenciales de Google Cloud | ✅ |
-| `project-os-build@PROJECT_ID.iam.gserviceaccount.com` (compilación, D10-b) | `logging.logWriter` (proyecto), `artifactregistry.writer` (solo el repositorio) y `storage.objectViewer` (solo el bucket de origen). Sin Editor ni Propietario. El build aborta si corre con otra identidad (runbook §3.4) | ✅ diseño y pruebas · ⏳ checklist A8 |
+| `project-os-build@PROJECT_ID.iam.gserviceaccount.com` (compilación, D10-b) | `logging.logWriter` (proyecto), `artifactregistry.writer` (solo el repositorio) y `storage.objectViewer` (solo el bucket de origen). Sin Editor ni Propietario. `serviceAccount` declarado en la configuración generada y en `--service-account`, con `--project` explícito. El build aborta si corre con otra identidad; esta comprobación contra el metadata server solo está simulada (runbook §3.4) | ✅ diseño y pruebas · ⏳ prueba real autorizada, checklist A8 |
 
 ### 3.4 Secret Manager
 
@@ -176,6 +176,7 @@ Los precios están en USD, para servicios con **facturación por solicitud** (la
 | --- | --- | --- |
 | Tarifa de Cloud Run | Tier 1 [A] | Tier 1 [A] |
 | Cloud Run, Artifact Registry y Secret Manager | Disponibles [M] | Disponibles: Artifact Registry desde 2024-11-20 y Secret Manager regional desde 2024-11-17 [M] |
+| Cloud Build y Cloud Storage | En la documentación oficial (precios de Cloud Build [A]; ubicaciones de Cloud Storage [M]) | En la documentación oficial (precios de Cloud Build [A]; ubicaciones de Cloud Storage [M], región única de Querétaro) |
 | Mapeo de dominio propio de Cloud Run | Disponible, pero en **Preview** y "no recomendado para producción" [M] | **No disponible** [M]. Un dominio propio exigiría un balanceador de aplicaciones global (con costo fijo) o Firebase Hosting |
 | Latencia desde Mérida | Mayor (centro de EE. UU.) | Menor (centro de México). Es una estimación geográfica, no una medición |
 | Cumplimiento del formato de `render.mjs` | ✅ | ✅ |
@@ -261,7 +262,7 @@ la puerta 3, el propietario debe revisar la calculadora oficial con la región e
 | URL determinista | `https://SERVICIO-NUMERO_PROYECTO.REGION.run.app`, si el segmento DNS tiene ≤ 63 caracteres; siempre hay además una URL con hash [M] ([guía](https://cloud.google.com/run/docs/triggering/https-request)) | `project-os-dashboard-` + 12 dígitos ≈ 33 caracteres ✅ |
 | Token con alcances propios | El metadata server acepta `?scopes=` en Cloud Run [M] ([identidad del servicio](https://cloud.google.com/run/docs/securing/service-identity)) | Lo usa `spreadsheets.readonly` ✅ (⏳ checklist C1) |
 | Container Registry | Cerrado en 2025: solo Artifact Registry (`*-docker.pkg.dev`) [M] | El runbook y `render.mjs` ya exigen Artifact Registry ✅ |
-| Cuenta de servicio de Cloud Build | En proyectos nuevos usa por defecto la cuenta de Compute, y Google recomienda indicar una propia [M] ([cambios](https://cloud.google.com/build/docs/cloud-build-service-account-updates)). Sin cuenta explícita se usa la predeterminada. Con una cuenta propia, los logs deben ir a Cloud Logging (`roles/logging.logWriter`) o a un bucket propio. En builds lanzados por *triggers*, el campo `serviceAccount` del YAML se ignora [M] ([cuentas de usuario](https://cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)) | ✅ Cuenta dedicada con `--service-account`, logs `CLOUD_LOGGING_ONLY`, sin *triggers* y paso de verificación que aborta con otra identidad (runbook §3.4) |
+| Cuenta de servicio de Cloud Build | En proyectos nuevos usa por defecto la cuenta de Compute, y Google recomienda indicar una propia [M] ([cambios](https://cloud.google.com/build/docs/cloud-build-service-account-updates)). Sin cuenta explícita se usa la predeterminada. Con una cuenta propia, los logs deben ir a Cloud Logging (`roles/logging.logWriter`) o a un bucket propio. En builds lanzados por *triggers*, el campo `serviceAccount` del YAML se ignora [M] ([cuentas de usuario](https://cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)) | ✅ Cuenta dedicada declarada en la configuración literal generada y en `--service-account`, `--project` explícito, logs `CLOUD_LOGGING_ONLY`, sin *triggers* y paso de verificación que aborta con otra identidad (runbook §3.4) |
 | `gcloud` | Última versión 588.0.0 (2026-10-06) [M]. Los comandos del runbook se comprobaron con `--help` en 570.0.0 | Actualizar y repetir la comprobación del runbook §5.-1 |
 
 ## 5. Riesgos de seguridad y costos
@@ -280,7 +281,7 @@ la puerta 3, el propietario debe revisar la calculadora oficial con la región e
 | R10 | Datos [M] desactualizados o mal indexados | Media | Bajo–medio | Fecha de verificación, fuentes enlazadas y revisión del propietario antes de la puerta 3 | — |
 | R11 | Recursos olvidados tras la prueba | Media | Bajo | Ventana fija (D11), proyecto dedicado (D1), runbook §7 | — |
 | R12 | Alertas ruidosas del control V1.6 con datos reales | Media | Bajo | Son sugerencias, no acciones; revisión en el checklist C6 | Ajustar umbrales en una misión aparte |
-| R13 | Build ejecutado con la cuenta predeterminada (posible Editor) | Baja | Alto | Comando generado con `--service-account`, paso `verificar-identidad` que aborta antes de construir y pruebas (`cloudbuild.test.ts`) | La verificación depende del metadata server del build: si falla, el build falla cerrado. ⏳ checklist A8 |
+| R13 | Build ejecutado con la cuenta predeterminada (posible Editor) o en otro proyecto | Baja | Alto | `serviceAccount` en la configuración literal generada, `--service-account` y `--project` en el comando, paso `verificar-identidad` que aborta antes de construir, pruebas (`cloudbuild.test.ts`) | La comprobación contra el metadata server solo está simulada: necesita una prueba real posterior con autorización (checklist A8). Si no responde, el build falla cerrado |
 
 **Conclusión:** no hay defectos críticos que obliguen a cambiar la lógica funcional antes de la prueba. Las mejoras
 (CSP, IAP) quedan propuestas para PRs separados.

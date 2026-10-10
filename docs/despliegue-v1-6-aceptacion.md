@@ -21,7 +21,7 @@ Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVI
 | A5 | Identidad del servicio sin roles de proyecto | `…describe … --format='value(spec.template.spec.serviceAccountName)'` y la consulta de §5.4 del runbook | Es `$RUNTIME_SA`; la consulta de roles de proyecto sale **vacía** |
 | A6 | Secret Manager con versión fijada y acceso mínimo | `gcloud secrets get-iam-policy SECRETO` para los 3 secretos (nunca `versions access`) | Solo `$RUNTIME_SA` con `roles/secretmanager.secretAccessor`; la plantilla usa versiones numéricas, no `latest` |
 | A7 | Límites de costo aplicados | `…describe … --format='yaml(spec.template.metadata.annotations)'` | `minScale: '0'`, `maxScale: '1'`, `cpu-throttling: 'true'` |
-| A8 | Identidad de compilación (solo D10-b) | Log del build en *Cloud Build → Historial* y `gcloud builds describe BUILD_ID --region "$BUILD_REGION" --format='value(serviceAccount)'` | El paso `verificar-identidad` dice *"Identidad de compilación verificada"*. La cuenta es `project-os-build`. `gcloud projects get-iam-policy` (runbook §5.5, A.1) muestra solo `roles/logging.logWriter` para ella. N/A con Docker local |
+| A8 | Identidad de compilación (solo D10-b) | Log del build en *Cloud Build → Historial* y `gcloud builds describe BUILD_ID --project="$PROJECT_ID" --region "$BUILD_REGION" --format='value(serviceAccount)'` | Es la **primera prueba real**: hasta ahora el metadata server solo está simulado en las pruebas. El paso `verificar-identidad` dice *"Identidad de compilación verificada"*. La cuenta es `project-os-build`. `gcloud projects get-iam-policy` (runbook §5.5, A.1) muestra solo `roles/logging.logWriter` para ella. N/A con Docker local |
 
 ## B. Smoke HTTP sin sesión
 

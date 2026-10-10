@@ -153,20 +153,29 @@ No hay fallback silencioso: si la variable falta y no hay clave, la app no lee d
 | `roles/storage.objectViewer` | Solo el bucket de origen `PROJECT_ID-project-os-build-src` | Leer el código subido |
 
 - **Nunca** Editor, Propietario ni roles sobre Cloud Run, Secret Manager o la hoja. No actúa como la cuenta runtime.
-- La identidad se exige en **tres capas**:
-  1. `web/deploy/build-command.mjs` solo genera comandos con `--service-account` de esta cuenta y rechaza las
-     cuentas predeterminadas (Compute, la heredada de Cloud Build, App Engine) y la runtime;
-  2. el primer paso de `web/deploy/cloudbuild.yaml` (`verificar-identidad`) consulta al metadata server con
-     qué cuenta corre el build y lo **aborta antes de construir o subir** si no es esta;
-  3. aunque se lanzara con otra cuenta, el paso 2 lo detiene.
-- `web/tests/cloudbuild.test.ts` comprueba las tres capas. Ejecuta el paso 2 contra un metadata server simulado
-  con la cuenta dedicada, las predeterminadas, la runtime, la de otro proyecto, una respuesta vacía y sin
-  respuesta.
-- **Por qué no `serviceAccount:` en el YAML:**
-  - no está verificado que Cloud Build sustituya `$PROJECT_ID` en ese campo;
-  - en los builds lanzados por *triggers* ese campo se ignora (no se crean *triggers*).
-- **No probado contra GCP:** la primera evidencia real es el log del primer build, que debe decir *"Identidad de
-  compilación verificada"* (checklist A8).
+- La identidad se exige en **cuatro capas**:
+  1. **Configuración:** `web/deploy/build-command.mjs` convierte `web/deploy/cloudbuild.template.yaml` en un YAML
+     **literal** del proyecto. Ese YAML declara `serviceAccount: projects/PROJECT_ID/serviceAccounts/project-os-build@…`
+     y no conserva ninguna interpolación de Cloud Build: solo el escape documentado `$$` del script.
+  2. **Comando:** el mismo generador imprime `gcloud builds submit` con `--project=PROJECT_ID` explícito, para no
+     depender del proyecto activo de gcloud, y `--service-account` con **la misma** cuenta.
+     - Rechaza las cuentas predeterminadas (Compute, la heredada de Cloud Build, App Engine) y la runtime.
+     - En el SDK local, `--service-account` solo sobrescribe `serviceAccount` de la configuración
+       (`submit_util._SetServiceAccount`); con el mismo valor no hay conflicto.
+  3. **Paso `verificar-identidad`:** es el primer paso del build. Consulta al metadata server con qué cuenta corre el
+     build y lo **aborta antes de construir o subir** si no es la dedicada. Es una defensa adicional por si se enviara
+     otra configuración o se omitiera la cuenta.
+  4. **IAM:** aunque algo fallara, la cuenta dedicada solo tiene los tres permisos acotados de la tabla.
+- **La plantilla no se envía tal cual.** Sus marcadores `__PROJECT_ID__`, `__BUILD_SERVICE_ACCOUNT__` e
+  `__IMAGE_TAG__` no forman una cuenta ni una imagen válidas: si alguien la enviara sin generar, el build no tendría
+  identidad válida y el paso 3 abortaría.
+- No se crean *triggers*: en los builds lanzados por *triggers*, el campo `serviceAccount` de la configuración se
+  ignora.
+- **La comprobación contra el metadata server solo está simulada.** `web/tests/cloudbuild.test.ts` ejecuta el
+  script real del paso 3 con un `curl` falso, con la cuenta dedicada, las predeterminadas, la runtime, la de otro
+  proyecto, una respuesta vacía y sin respuesta. **Necesita una prueba real posterior, con autorización** (puerta 3):
+  el primer build debe registrar *"Identidad de compilación verificada"* (checklist A8). Hasta entonces no se sabe si
+  el metadata server responde dentro del build; si no responde, el build falla cerrado.
 
 ## 4. Costos
 
@@ -190,7 +199,7 @@ La estimación se hace **por escenario** y no es una promesa ni un techo
 - **Nivel gratuito:** 2 500 minutos de build al mes por cuenta de facturación (e2-standard-2). Después, unos USD
   0,006 por minuto ([preparación §4.1](despliegue-v1-6-preparacion.md#41-precios-y-niveles-gratuitos)).
 - **Contar los builds y su duración:**
-  `gcloud builds list --region "$BUILD_REGION" --format='table(id,createTime,finishTime,status)'`.
+  `gcloud builds list --project="$PROJECT_ID" --region "$BUILD_REGION" --format='table(id,createTime,finishTime,status)'`.
 - **Facturación:** en *Facturación → Informes*, filtra por el proyecto y por los servicios *Cloud Build*, *Cloud
   Storage* y *Artifact Registry*.
 - **Almacenamiento:** el bucket de origen se vacía solo a los 7 días y sin borrado diferido, y la política de
@@ -301,32 +310,33 @@ gcloud artifacts repositories set-cleanup-policies "$REPO" --location="$REGION" 
 export IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard:$(git rev-parse --short HEAD)"
 ```
 
-**Opción A — Cloud Build con cuenta dedicada (D10-b).** Usa minutos de build. `cloudbuild.yaml` verifica la
-identidad y fuerza BuildKit y `linux/amd64`.
+**Opción A — Cloud Build con cuenta dedicada (D10-b).** Usa minutos de build. La configuración generada declara la
+cuenta, verifica la identidad y fuerza BuildKit y `linux/amd64`. Todos los comandos fijan `--project`, para no
+depender del proyecto activo de gcloud.
 
 A.1 Una sola vez: identidad, permisos mínimos y bucket de origen (§3.4).
 
 ```bash
-gcloud services enable cloudbuild.googleapis.com
-export BUILD_REGION="$REGION"   # ver la nota de región más abajo
+gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID"
+export BUILD_REGION="$REGION"   # Cloud Build y Cloud Storage admiten las dos regiones candidatas (nota más abajo)
 export BUILD_SA="project-os-build@${PROJECT_ID}.iam.gserviceaccount.com"
 export BUILD_BUCKET="${PROJECT_ID}-project-os-build-src"
-gcloud iam service-accounts create project-os-build \
+gcloud iam service-accounts create project-os-build --project="$PROJECT_ID" \
   --display-name="PROJECT-OS compilación (sin despliegue)"
 # Único rol de proyecto: logs del build en Cloud Logging (obligatorio con una cuenta propia).
 gcloud projects add-iam-policy-binding "$PROJECT_ID" --condition=None \
   --member="serviceAccount:${BUILD_SA}" --role=roles/logging.logWriter
 # Subir imágenes solo a este repositorio.
-gcloud artifacts repositories add-iam-policy-binding "$REPO" --location="$REGION" \
+gcloud artifacts repositories add-iam-policy-binding "$REPO" --project="$PROJECT_ID" --location="$REGION" \
   --member="serviceAccount:${BUILD_SA}" --role=roles/artifactregistry.writer
 # Origen: bucket regional y privado, sin borrado diferido, que elimina lo subido a los 7 días.
-gcloud storage buckets create "gs://${BUILD_BUCKET}" --location="$BUILD_REGION" \
+gcloud storage buckets create "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" --location="$BUILD_REGION" \
   --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0 \
   --lifecycle-file=web/deploy/cloudbuild-source-lifecycle.json
-gcloud storage buckets add-iam-policy-binding "gs://${BUILD_BUCKET}" \
+gcloud storage buckets add-iam-policy-binding "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" \
   --member="serviceAccount:${BUILD_SA}" --role=roles/storage.objectViewer
 # Quien lanza el build puede actuar como la cuenta de compilación, y solo como ella.
-gcloud iam service-accounts add-iam-policy-binding "$BUILD_SA" \
+gcloud iam service-accounts add-iam-policy-binding "$BUILD_SA" --project="$PROJECT_ID" \
   --member="user:$(gcloud config get-value account)" --role=roles/iam.serviceAccountUser
 # Verificación. Esperado: solo roles/logging.logWriter (nunca roles/editor ni roles/owner).
 gcloud projects get-iam-policy "$PROJECT_ID" --flatten='bindings[].members' \
@@ -339,29 +349,37 @@ A.2 En cada compilación:
 # Prueba en seco, local y sin GCP: lista exactamente lo que se subiría al bucket de origen.
 # Esperado: .dockerignore, Dockerfile, package.json, package-lock.json, next.config.ts, tsconfig.json y src/.
 gcloud meta list-files-for-upload web
-# Genera y valida el comando (sin GCP). Falla si falta algo o si se pide otra identidad.
-node web/deploy/build-command.mjs
+# Genera la configuración literal y el comando (sin GCP). Falla si falta algo o si se pide otra identidad.
+node web/deploy/build-command.mjs --config-out=/tmp/project-os-cloudbuild.yaml
+less /tmp/project-os-cloudbuild.yaml   # revisión humana: serviceAccount, cuenta esperada e imagen del proyecto
 # Revisa la salida y ejecútala. Debe coincidir con esto:
 gcloud builds submit web \
-  --config=web/deploy/cloudbuild.yaml \
+  --project="$PROJECT_ID" \
+  --config=/tmp/project-os-cloudbuild.yaml \
   --region="$BUILD_REGION" \
   --service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
-  --gcs-source-staging-dir="gs://${BUILD_BUCKET}/source" \
-  --substitutions=_IMAGE_TAG="$IMAGE_TAG"
+  --gcs-source-staging-dir="gs://${BUILD_BUCKET}/source"
+rm /tmp/project-os-cloudbuild.yaml
 ```
 
-- **Nunca** se lanza `gcloud builds submit` sin `--service-account`, porque usaría la cuenta predeterminada. Si
-  ocurre, el paso `verificar-identidad` aborta el build antes de construir o subir.
+- **Nunca** se envía un build sin la configuración generada y sin `--service-account`: Cloud Build usaría la
+  cuenta predeterminada. Si ocurre, el paso `verificar-identidad` aborta el build antes de construir o subir.
 - **Logs:** solo en Cloud Logging (*Cloud Build → Historial* o *Logs Explorer*). Si la terminal no los muestra,
   se consultan en la consola. El log del primer build debe decir *"Identidad de compilación verificada"*.
 - **Origen:** `--gcs-source-staging-dir` evita el bucket predeterminado `PROJECT_ID_cloudbuild`, que es
   multirregional y no se limpia solo. El bucket propio borra lo subido a los 7 días y no conserva copias
   borradas (`--soft-delete-duration=0`).
-- **Región:** `--region` usa un pool regional de Cloud Build.
-  - Antes de la puerta 3, verifica que Cloud Build admite `BUILD_REGION`.
-  - Si no la admite, usa `BUILD_REGION=us-central1`: el bucket se crea en la misma región del build y la imagen
-    sigue en el repositorio de `REGION`.
-  - Esto puede generar un cargo menor por transferencia entre regiones.
+- **Región:** `--region` usa un pool regional de Cloud Build, y `BUILD_REGION=REGION`.
+  - La documentación oficial incluye `northamerica-south1` (México) tanto para Cloud Build como para Cloud Storage
+    (verificado el 2026-10-10):
+    - la [página de precios de Cloud Build](https://cloud.google.com/build/pricing) la lista entre sus regiones
+      (leída directamente) [A];
+    - las [ubicaciones de buckets de Cloud Storage](https://cloud.google.com/storage/docs/locations) la incluyen
+      como región única de Querétaro [M].
+  - `us-central1` también figura en ambas.
+  - La región sigue siendo la decisión **D3** del propietario: este cambio no elige región ni crea recursos.
+  - `BUILD_REGION` puede ser distinta de `REGION`. La imagen sigue en el repositorio de `REGION`, y el cambio
+    puede generar un cargo menor por transferencia entre regiones.
 - `--config` se lee **localmente** y se envía con la petición de build, por lo que no necesita estar
   dentro del código subido.
 - `web/.gcloudignore` es una lista de permitidos. Sin ella, gcloud subiría todo lo que no excluya
@@ -497,7 +515,7 @@ gcloud run services update-traffic "$SERVICE_NAME" --region "$REGION" --to-revis
   `gcloud run services update "$SERVICE_NAME" --region "$REGION" --invoker-iam-check`.
 - **Compilación (D10-b):** un build nunca despliega, así que una imagen defectuosa no llega a producción si no se
   pasa a §5.7.
-  - Cancelar un build en curso: `gcloud builds cancel BUILD_ID --region "$BUILD_REGION"`.
+  - Cancelar un build en curso: `gcloud builds cancel BUILD_ID --project="$PROJECT_ID" --region "$BUILD_REGION"`.
   - Borrar una imagen defectuosa: `gcloud artifacts docker images delete "IMAGEN@sha256:…" --delete-tags`.
   - Suspender la cuenta de compilación sin borrar nada: `gcloud iam service-accounts disable "$BUILD_SA"`.
     Se reactiva con `enable`.
