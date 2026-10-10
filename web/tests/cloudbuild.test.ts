@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildCommand, dedicatedBuildAccount, defaultSourceBucket, renderBuildConfig } from '../deploy/build-command.mjs'
+import { buildCommand, dedicatedBuildAccount, defaultSourceBucket, renderBuildConfig, validateConfigPath } from '../deploy/build-command.mjs'
 
 /**
  * Compilación en Cloud Build con identidad dedicada (Misión 011). Todo es estático o local: nada contacta a
@@ -201,14 +201,106 @@ describe('build-command.mjs', () => {
     expect(() => buildCommand({ ...ENV, ...override })).toThrow(message)
   })
 
-  it('exige una ruta absoluta y sin espacios para la configuración', () => {
-    expect(() => buildCommand(ENV, 'relativa.yaml')).toThrow('absoluta')
-    expect(() => buildCommand(ENV, '/tmp/con espacio.yaml')).toThrow('absoluta')
+  it.each(['/tmp/project-os-cloudbuild.yaml', '/home/user/build/cb.v2.yml', '/tmp/a_b-c/x.yaml', '/tmp/-config.yaml'])(
+    'acepta la ruta de configuración %s',
+    (configPath) => {
+      expect(validateConfigPath(configPath)).toBe(configPath)
+      expect(buildCommand(ENV, configPath)).toContain(`--config=${configPath} \\\n`)
+    },
+  )
+
+  it.each([
+    ['/tmp/a;touch x.yaml', 'punto y coma'],
+    ['/tmp/$(id).yaml', 'sustitución $( )'],
+    ['/tmp/$HOME.yaml', 'variable $'],
+    ['/tmp/`id`.yaml', 'backticks'],
+    ["/tmp/a'b.yaml", 'comilla simple'],
+    ['/tmp/a"b.yaml', 'comilla doble'],
+    ['/tmp/a|b.yaml', 'tubería'],
+    ['/tmp/a&b.yaml', 'ampersand'],
+    ['/tmp/a>b.yaml', 'redirección >'],
+    ['/tmp/a<b.yaml', 'redirección <'],
+    ['/tmp/(a).yaml', 'paréntesis'],
+    ['/tmp/*.yaml', 'comodín *'],
+    ['/tmp/a?.yaml', 'comodín ?'],
+    ['/tmp/a b.yaml', 'espacio'],
+    ['/tmp/a\tb.yaml', 'tabulador'],
+    ['/tmp/a\nb.yaml', 'salto de línea'],
+    ['/tmp/a.yaml\n', 'salto de línea final'],
+    ['/tmp/a\\b.yaml', 'barra invertida'],
+    ['/tmp/a#b.yaml', 'almohadilla'],
+    ['/tmp/a!b.yaml', 'exclamación'],
+    ['/tmp/a{b,c}.yaml', 'llaves'],
+    ['/tmp/ñ.yaml', 'carácter no ASCII'],
+    ['~/cb.yaml', 'tilde'],
+    ['relativa.yaml', 'ruta relativa'],
+    ['/tmp/../etc/cb.yaml', 'segmento ..'],
+    ['/tmp/./cb.yaml', 'segmento .'],
+    ['//cb.yaml', 'segmento vacío'],
+    ['/tmp/cb.json', 'extensión no YAML'],
+    ['', 'vacía'],
+  ])('rechaza la ruta de configuración con %s (%s)', (configPath) => {
+    expect(() => validateConfigPath(configPath)).toThrow('ruta de la configuración')
+    expect(() => buildCommand(ENV, configPath)).toThrow('ruta de la configuración')
+  })
+
+  it('el comando generado se interpreta en bash como argumentos literales, sin expansiones', () => {
+    const cmd = buildCommand(ENV, '/tmp/project-os-cloudbuild.yaml')
+    const result = spawnSync('bash', ['-c', `set -euo pipefail; gcloud() { printf '%s\\n' "$@"; }; ${cmd}`], {
+      env: { PATH: '/usr/bin:/bin' } as unknown as NodeJS.ProcessEnv,
+      encoding: 'utf8',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout.trimEnd().split('\n')).toEqual([
+      'builds', 'submit', 'web',
+      `--project=${PROJECT}`,
+      '--config=/tmp/project-os-cloudbuild.yaml',
+      '--region=northamerica-south1',
+      `--service-account=projects/${PROJECT}/serviceAccounts/${ACCOUNT}`,
+      `--gcs-source-staging-dir=gs://${defaultSourceBucket(PROJECT)}/source`,
+    ])
   })
 
   it('los errores nombran variables, nunca imprimen valores', () => {
     expect(() => buildCommand({ ...ENV, BUILD_SA: '123456789012-compute@developer.gserviceaccount.com' })).toThrow(/^(?!.*123456789012)/)
   })
+})
+
+describe('build-command.mjs como CLI (sin GCP)', () => {
+  const script = path.join(WEB, 'deploy', 'build-command.mjs')
+  const cli = (args: string[], cwd: string) =>
+    spawnSync(process.execPath, [script, ...args], { cwd, env: { ...process.env, ...ENV, BUILD_SA: '' }, encoding: 'utf8' })
+
+  it('con una ruta válida escribe la configuración (0600) e imprime el comando que la usa', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'cb-cli-'))
+    try {
+      const out = path.join(dir, 'cb.yaml')
+      const result = cli([`--config-out=${out}`], dir)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain(`--config=${out} \\\n`)
+      expect(statSync(out).mode & 0o777).toBe(0o600)
+      expect(readFileSync(out, 'utf8')).toContain(`serviceAccount: 'projects/${PROJECT}/serviceAccounts/${ACCOUNT}'`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // Sin espacios: con la validación anterior (solo ruta absoluta y sin espacios) estos nombres se aceptaban.
+  it.each(['$(id).yaml', 'a;id.yaml', '`id`.yaml', "a'b.yaml"])(
+    'con --config-out malicioso (%s) falla sin escribir nada ni ejecutar el contenido',
+    (name) => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'cb-cli-'))
+      try {
+        const result = cli([`--config-out=${dir}/${name}`], dir)
+        expect(result.status).toBe(1)
+        expect(result.stdout).toBe('')
+        expect(result.stderr).toContain('ruta de la configuración')
+        expect(readdirSync(dir)).toEqual([])
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe('documentación de la compilación', () => {

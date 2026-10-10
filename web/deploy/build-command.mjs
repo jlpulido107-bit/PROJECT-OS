@@ -31,6 +31,22 @@ const DEFAULT_ACCOUNTS = [
   { pattern: /@appspot\.gserviceaccount\.com$/, name: 'la cuenta predeterminada de App Engine' },
 ]
 const PLACEHOLDERS = ['__PROJECT_ID__', '__BUILD_SERVICE_ACCOUNT__', '__IMAGE_TAG__']
+// Ruta de la configuración generada: absoluta, solo caracteres sin significado para el shell (sin espacios, comillas,
+// `$`, `;`, `|`, `&`, `<`, `>`, `(`, `)`, `*`, `?`, `~`, barras invertidas ni backticks) y extensión YAML. Así el
+// comando impreso se puede copiar en una terminal sin comillas ni escapado.
+const CONFIG_PATH = /^\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*\.ya?ml$/
+// Defensa final sobre el comando completo: sin las continuaciones de línea (` \` + salto), solo caracteres literales
+// para el shell.
+const CONTINUATION = ' \\\n  '
+const SAFE_COMMAND = /^[A-Za-z0-9 _./:=@-]+$/
+
+/** Valida la ruta de la configuración generada (lanza si no es segura). */
+export function validateConfigPath(configPath) {
+  if (typeof configPath !== 'string' || !CONFIG_PATH.test(configPath) || configPath.split('/').some((s) => s === '.' || s === '..')) {
+    throw new Error('la ruta de la configuración debe ser absoluta, terminar en .yaml o .yml y usar solo letras, dígitos, ".", "_", "-" y "/"')
+  }
+  return configPath
+}
 
 export const dedicatedBuildAccount = (projectId) => `${BUILD_SA_NAME}@${projectId}.iam.gserviceaccount.com`
 export const defaultSourceBucket = (projectId) => `${projectId}-project-os-build-src`
@@ -97,15 +113,17 @@ export function renderBuildConfig(template, env) {
 /** Comando `gcloud builds submit` para la configuración generada en `configPath`. */
 export function buildCommand(env, configPath = DEFAULT_CONFIG_OUT) {
   const { projectId, buildRegion, account, bucket } = resolve(env)
-  if (!path.isAbsolute(configPath) || /\s/.test(configPath)) throw new Error('la ruta de la configuración debe ser absoluta y sin espacios')
-  return [
+  validateConfigPath(configPath)
+  const command = [
     'gcloud builds submit web',
     `--project=${projectId}`,
     `--config=${configPath}`,
     `--region=${buildRegion}`,
     `--service-account=projects/${projectId}/serviceAccounts/${account}`,
     `--gcs-source-staging-dir=gs://${bucket}/source`,
-  ].join(' \\\n  ')
+  ].join(CONTINUATION)
+  if (!SAFE_COMMAND.test(command.replaceAll(CONTINUATION, ' '))) throw new Error('el comando generado contiene caracteres con significado para el shell')
+  return command
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

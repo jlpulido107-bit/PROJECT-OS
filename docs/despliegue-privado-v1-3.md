@@ -362,6 +362,9 @@ gcloud builds submit web \
 rm /tmp/project-os-cloudbuild.yaml
 ```
 
+- `--config-out` solo acepta rutas absolutas terminadas en `.yaml` o `.yml` con letras, dígitos, `.`, `_`, `-` y
+  `/`, sin segmentos `.` ni `..`. El comando impreso no contiene caracteres con significado para el shell (comillas,
+  `$`, `;`, backticks…) y se puede pegar tal cual.
 - **Nunca** se envía un build sin la configuración generada y sin `--service-account`: Cloud Build usaría la
   cuenta predeterminada. Si ocurre, el paso `verificar-identidad` aborta el build antes de construir o subir.
 - **Logs:** solo en Cloud Logging (*Cloud Build → Historial* o *Logs Explorer*). Si la terminal no los muestra,
