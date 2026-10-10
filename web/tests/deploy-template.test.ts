@@ -108,8 +108,9 @@ describe('Dockerfile y contexto de build', () => {
 })
 
 describe('limpieza de Artifact Registry', () => {
-  it('conserva las 3 versiones más recientes y borra las mayores de 30 días', () => {
+  it('conserva la imagen de producción y las 3 versiones más recientes, y borra las mayores de 30 días', () => {
     expect(cleanup).toEqual([
+      expect.objectContaining({ name: 'conservar-produccion', action: { type: 'Keep' }, condition: { tagState: 'TAGGED', tagPrefixes: ['produccion'] } }),
       expect.objectContaining({ action: { type: 'Keep' }, mostRecentVersions: { keepCount: 3 } }),
       expect.objectContaining({ action: { type: 'Delete' }, condition: { tagState: 'ANY', olderThan: '2592000s' } }),
     ])

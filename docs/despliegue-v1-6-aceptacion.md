@@ -15,13 +15,14 @@ Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVI
 | # | Verificación | Cómo | Esperado |
 | --- | --- | --- | --- |
 | A1 | La imagen es la revisada, por digest | `gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(spec.template.spec.containers[0].image)'` | `…@sha256:` igual al `IMAGE` del runbook §5.5, construido desde el SHA de `main` aprobado |
-| A2 | URL real = `NEXTAUTH_URL` = redirección OAuth | `…describe … --format='yaml(status.url,metadata.annotations)'` y la consola de OAuth | `$SERVICE_URL` aparece en `run.googleapis.com/urls`; el cliente OAuth tiene exactamente `$SERVICE_URL/api/auth/callback/google` |
+| A2 | URL real = `NEXTAUTH_URL` = redirección OAuth | `…describe … --format='yaml(status.url,metadata.annotations)'` (C4v de la [Puerta C](puerta-c-v1-6.md)) y la consola de OAuth | `$SERVICE_URL` aparece en `run.googleapis.com/urls` **antes** de registrar el callback (C4b) y de abrir `allUsers`. El cliente OAuth tiene exactamente `$SERVICE_URL/api/auth/callback/google`, copiada de la URL verificada y no de un cálculo |
 | A3 | Sonda de arranque | `curl -s -o /dev/null -w '%{http_code}' "$SERVICE_URL/api/health"` | `200`. **No prueba OAuth ni el acceso real a Sheets**: solo que la configuración es coherente |
 | A4 | Sin modo de escritura | `…describe … --format='value(spec.template.spec.containers[0].env[].name)'` (solo nombres, nunca valores) | No aparecen `PROJECT_OS_WRITE_MODE` ni `AUTH_WRITER_EMAILS` |
 | A5 | Identidad del servicio sin roles de proyecto | `…describe … --format='value(spec.template.spec.serviceAccountName)'` y la consulta de §5.4 del runbook | Es `$RUNTIME_SA`; la consulta de roles de proyecto sale **vacía** |
 | A6 | Secret Manager con versión fijada y acceso mínimo | `gcloud secrets get-iam-policy SECRETO` para los 3 secretos (nunca `versions access`) | Solo `$RUNTIME_SA` con `roles/secretmanager.secretAccessor`; la plantilla usa versiones numéricas, no `latest` |
 | A7 | Límites de costo aplicados | `…describe … --format='yaml(spec.template.metadata.annotations)'` | `minScale: '0'`, `maxScale: '1'`, `cpu-throttling: 'true'` |
 | A8 | Identidad de compilación (solo D10-b) | Log del build en *Cloud Build → Historial* y `gcloud builds describe BUILD_ID --project="$PROJECT_ID" --region "$BUILD_REGION" --format='value(serviceAccount)'` | Es la **primera prueba real**: hasta ahora el metadata server solo está simulado en las pruebas. El paso `verificar-identidad` dice *"Identidad de compilación verificada"*. La cuenta es `project-os-build`. `gcloud projects get-iam-policy` (runbook §5.5, A.1) muestra solo `roles/logging.logWriter` para ella. N/A con Docker local |
+| A9 | Imagen desplegada protegida | `gcloud artifacts docker images describe "${IMAGE_BASE}:produccion" --project="$PROJECT_ID" --format='value(image_summary.digest)'` | El digest coincide con el de A1. Si había una imagen anterior en producción, `produccion-anterior` apunta a ella (runbook §5.7, C9) |
 
 ## B. Smoke HTTP sin sesión
 
@@ -62,7 +63,7 @@ Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVI
 | --- | --- | --- | --- |
 | F1 | Presupuesto y alertas existen | *Facturación → Presupuestos y alertas* | Presupuesto del proyecto con los umbrales acordados. Recordatorio: **avisa, no corta el gasto** |
 | F2 | Costo real tras 24–48 h | *Facturación → Informes*, filtrado por el proyecto | Coherente con la estimación de [preparación §4](despliegue-v1-6-preparacion.md#4-costos-y-regiones-verificados); cualquier cargo inesperado se investiga antes de la puerta 4 |
-| F3 | Almacenamiento de imágenes | *Artifact Registry → repositorio* | Política de limpieza activa; tamaño dentro de lo previsto |
+| F3 | Almacenamiento de imágenes | *Artifact Registry → repositorio* y `bash web/deploy/infra/limpieza-artifact-v1-6.sh --check`. Repetir cuando haya al menos 5 imágenes y alguna tenga más de 30 días: `gcloud artifacts docker images list "$IMAGE_BASE" --include-tags --project="$PROJECT_ID"` | `--check` dice `PERMITIDO`. Con el tiempo, quedan `produccion`, `produccion-anterior` y las 3 más recientes, y ninguna otra de más de 30 días: es la validación real de la semántica de limpieza |
 
 ## G. Rollback y apagado (ensayo)
 

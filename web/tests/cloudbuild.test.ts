@@ -333,7 +333,8 @@ describe('documentación de la compilación', () => {
     for (const role of ['roles/logging.logWriter', 'roles/artifactregistry.writer', 'roles/storage.objectViewer', 'roles/iam.serviceAccountUser']) {
       expect(runbook, role).toContain(role)
     }
-    expect(runbook).toContain('--lifecycle-file=web/deploy/cloudbuild-source-lifecycle.json')
+    // El bucket ya existe (Puerta B): el runbook remite al archivo del ciclo de vida que usó el script de infraestructura.
+    expect(runbook).toContain('web/deploy/cloudbuild-source-lifecycle.json')
   })
 
   it('declara que la verificación contra el metadata server solo está simulada', () => {

@@ -1,5 +1,10 @@
 [
   {
+    "name": "conservar-produccion",
+    "action": { "type": "Keep" },
+    "condition": { "tagState": "TAGGED", "tagPrefixes": ["produccion"] }
+  },
+  {
     "name": "conservar-3-recientes",
     "action": { "type": "Keep" },
     "mostRecentVersions": { "keepCount": 3 }
