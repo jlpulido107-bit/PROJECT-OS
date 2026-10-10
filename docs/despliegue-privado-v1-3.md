@@ -56,7 +56,9 @@ Detalle de cada operación (comando, precondiciones, impacto, verificación y fa
 | Política de limpieza del repositorio | Pendiente · Requiere autorización | Puerta C, C1 y C1v (**bloquea el primer build**) |
 | APIs `run`, `secretmanager`, `sheets` | Pendiente · Requiere autorización | Puerta C, C2 |
 | Presupuesto y alertas | Pendiente · Requiere autorización | Puerta C, C3 |
-| Cliente OAuth de producción | Pendiente · Requiere autorización | Puerta C, C4 |
+| Cliente OAuth de producción (sin URIs) | Pendiente · Requiere autorización | Puerta C, C4a |
+| Origen y callback OAuth con la URL real verificada | Pendiente · Requiere autorización | Puerta 3: §5.7 (C4v y C4b) |
+| Etiqueta `produccion` de la imagen desplegada | Pendiente · Requiere autorización | Puerta 3: §5.7 (C9) |
 | 3 secretos y acceso de la cuenta runtime | Pendiente · Requiere autorización | Puerta C, C5 y C6 |
 | Lector del Sheets maestro para la cuenta runtime | Pendiente · Requiere autorización | Puerta C, C7 |
 | Imagen, servicio de Cloud Run e invocación pública | Pendiente · Requiere autorización | Puerta 3: §5.5–§5.7, después de C8 |
@@ -246,7 +248,8 @@ La estimación se hace **por escenario** y no es una promesa ni un techo
   Preview: solo se evaluarán como decisión aparte
   ([preparación §4.4](despliegue-v1-6-preparacion.md#44-presupuestos-y-alertas)).
 - Al rotar secretos, **destruir** las versiones antiguas: las deshabilitadas siguen contando como activas.
-- Política de limpieza de Artifact Registry (`web/deploy/cloudrun/artifact-cleanup-policy.json`).
+- Política de limpieza de Artifact Registry (`web/deploy/cloudrun/artifact-cleanup-policy.json`): conserva las imágenes
+  `produccion` y `produccion-anterior` y las 3 más recientes, y borra el resto a los 30 días.
 - Revisión manual mensual en *Facturación → Informes*.
 - Para detener el gasto por completo, ver la sección 7.
 
@@ -301,6 +304,9 @@ proyectos*.
 
 ### 5.2 Presupuesto y alertas
 
+> **Estado:** pendiente: operación C3 de la [Puerta C](puerta-c-v1-6.md). Se recomienda la consola; el comando de
+> abajo exige además habilitar `billingbudgets.googleapis.com`.
+
 ```bash
 export BILLING_ACCOUNT="XXXXXX-XXXXXX-XXXXXX"   # Facturación → Cuentas
 gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" \
@@ -315,39 +321,36 @@ gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" \
 > pendientes (`run`, `secretmanager`, `sheets`) son la operación C2 de la [Puerta C](puerta-c-v1-6.md).
 
 ```bash
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
-  secretmanager.googleapis.com sheets.googleapis.com
-# Solo si se construye en Cloud Build:
-# gcloud services enable cloudbuild.googleapis.com
+# Solo las pendientes (C2, requiere autorización):
+gcloud services enable run.googleapis.com secretmanager.googleapis.com sheets.googleapis.com --project="$PROJECT_ID"
 ```
 
 ### 5.4 Cuenta de servicio runtime y acceso de solo lectura a la hoja
 
-> **Estado:** la cuenta ya existe (Puerta B): **no** se vuelve a crear. Solo se ejecuta la verificación. Compartir la
-> hoja es la operación C7 de la [Puerta C](puerta-c-v1-6.md).
+> **Estado:** la cuenta runtime **ya existe** (Puerta B), sin roles ni claves. Este runbook ya no incluye el comando
+> para crearla. Solo queda la verificación de solo lectura. Compartir la hoja es la operación C7 de la
+> [Puerta C](puerta-c-v1-6.md).
 
 ```bash
-gcloud iam service-accounts create project-os-dashboard-run \
-  --display-name="PROJECT-OS dashboard (solo lectura)"
-# Verificar que NO tenga roles de proyecto (la salida debe estar vacía):
+# Solo lectura. La cuenta existe y no está deshabilitada (esperado: False):
+gcloud iam service-accounts describe "$RUNTIME_SA" --project="$PROJECT_ID" --format='value(disabled)'
+# No tiene roles de proyecto (la salida debe estar vacía):
 gcloud projects get-iam-policy "$PROJECT_ID" --flatten='bindings[].members' \
   --filter="bindings.members:serviceAccount:${RUNTIME_SA}" --format='value(bindings.role)'
 ```
 
-En Google Sheets, abre el maestro y pulsa **Compartir**. Pega el correo de `RUNTIME_SA` con rol
-**Lector**, desmarca *Notificar* y deja **Acceso general: Restringido**.
+Compartir la hoja (C7): en Google Sheets, abre el maestro y pulsa **Compartir**. Pega el correo de `RUNTIME_SA` con
+rol **Lector**, desmarca *Notificar* y deja **Acceso general: Restringido**.
 
 ### 5.5 Artifact Registry y la imagen
 
-> **Estado:** el repositorio ya existe (Puerta B), **sin** política de limpieza: **no** se vuelve a crear. La política
-> se aplica y se verifica con el script de la Puerta C (C1 y C1v), que reemplaza al `set-cleanup-policies` de abajo.
+> **Estado:** el repositorio Docker `project-os` **ya existe** (Puerta B), **sin** política de limpieza. Este runbook
+> ya no incluye el comando para crearlo. La política se aplica y se verifica **solo** con el script de la Puerta C (C1
+> y C1v).
 
 ```bash
-gcloud artifacts repositories create "$REPO" --repository-format=docker --location="$REGION" \
-  --description="PROJECT-OS dashboard"
-gcloud artifacts repositories set-cleanup-policies "$REPO" --location="$REGION" \
-  --policy=web/deploy/cloudrun/artifact-cleanup-policy.json --no-dry-run
-export IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard:$(git rev-parse --short HEAD)"
+export IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard"
+export IMAGE_TAG="${IMAGE_BASE}:$(git rev-parse --short HEAD)"
 ```
 
 **Bloqueo antes del primer build o push.** El repositorio se creó con el script de infraestructura mínima, que no
@@ -359,49 +362,37 @@ bash web/deploy/infra/limpieza-artifact-v1-6.sh --check   # solo lectura; debe t
 # autorización: bash web/deploy/infra/limpieza-artifact-v1-6.sh --apply
 # Consulta manual equivalente (solo lectura), si hiciera falta:
 gcloud artifacts repositories list-cleanup-policies "$REPO" --project="$PROJECT_ID" --location="$REGION"
-# Esperado: conservar-3-recientes y borrar-mayores-30-dias, con "Dry run is disabled."
+# Esperado: conservar-produccion, conservar-3-recientes y borrar-mayores-30-dias, con "Dry run is disabled."
 ```
 
 **Opción A — Cloud Build con cuenta dedicada (D10-b).** Usa minutos de build. La configuración generada declara la
 cuenta, verifica la identidad y fuerza BuildKit y `linux/amd64`. Todos los comandos fijan `--project`, para no
 depender del proyecto activo de gcloud.
 
-A.1 Una sola vez: identidad, permisos mínimos y bucket de origen (§3.4).
+A.1 Identidad, permisos mínimos y bucket de origen (§3.4): **ya existen** (Puerta B).
 
-> **Estado:** hecho en la Puerta B con el [script de infraestructura mínima](infra-minima-v1-6-revision.md): el bucket,
-> los tres permisos de `project-os-build` y la cuenta runtime existen. **No** se repite este bloque; queda como
-> referencia y para la verificación final. La API `cloudbuild` ya estaba habilitada y la cuenta de compilación ya
-> existía.
+> **Estado:** los creó el propietario con el [script de infraestructura mínima](infra-minima-v1-6-revision.md):
 >
-> La línea de `iam.serviceAccountUser` (`actAs`) **no** se ejecutó y **no** hace falta si compila la cuenta
-> propietaria, que ya puede actuar como la cuenta de compilación. Solo se concede si compila otra persona
-> (decisión D-C3 de la [Puerta C](puerta-c-v1-6.md)).
+> - la cuenta `project-os-build` con sus tres permisos acotados;
+> - el bucket de origen, privado, sin borrado diferido y con el ciclo de vida de
+>   `web/deploy/cloudbuild-source-lifecycle.json`;
+> - la API `cloudbuild`.
+>
+> Este runbook ya **no** incluye los comandos para crearlos; para conciliar diferencias, ver la revisión de ese script.
+> No se concede `actAs` (`roles/iam.serviceAccountUser`) a ninguna persona: la cuenta propietaria ya puede actuar
+> como la cuenta de compilación. Solo haría falta si compilara otra persona (decisión D-C3 de la
+> [Puerta C](puerta-c-v1-6.md)), y entonces sobre esa cuenta concreta, nunca sobre el proyecto.
 
 ```bash
-gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID"
+# Solo lectura.
 export BUILD_REGION="$REGION"   # Cloud Build y Cloud Storage admiten las dos regiones candidatas (nota más abajo)
 export BUILD_SA="project-os-build@${PROJECT_ID}.iam.gserviceaccount.com"
 export BUILD_BUCKET="${PROJECT_ID}-project-os-build-src"
-gcloud iam service-accounts create project-os-build --project="$PROJECT_ID" \
-  --display-name="PROJECT-OS compilación (sin despliegue)"
-# Único rol de proyecto: logs del build en Cloud Logging (obligatorio con una cuenta propia).
-gcloud projects add-iam-policy-binding "$PROJECT_ID" --condition=None \
-  --member="serviceAccount:${BUILD_SA}" --role=roles/logging.logWriter
-# Subir imágenes solo a este repositorio.
-gcloud artifacts repositories add-iam-policy-binding "$REPO" --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:${BUILD_SA}" --role=roles/artifactregistry.writer
-# Origen: bucket regional y privado, sin borrado diferido, que elimina lo subido a los 7 días.
-gcloud storage buckets create "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" --location="$BUILD_REGION" \
-  --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0 \
-  --lifecycle-file=web/deploy/cloudbuild-source-lifecycle.json
-gcloud storage buckets add-iam-policy-binding "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" \
-  --member="serviceAccount:${BUILD_SA}" --role=roles/storage.objectViewer
-# Quien lanza el build puede actuar como la cuenta de compilación, y solo como ella.
-gcloud iam service-accounts add-iam-policy-binding "$BUILD_SA" --project="$PROJECT_ID" \
-  --member="user:$(gcloud config get-value account)" --role=roles/iam.serviceAccountUser
-# Verificación. Esperado: solo roles/logging.logWriter (nunca roles/editor ni roles/owner).
+# Esperado: solo roles/logging.logWriter (nunca roles/editor ni roles/owner).
 gcloud projects get-iam-policy "$PROJECT_ID" --flatten='bindings[].members' \
   --filter="bindings.members:serviceAccount:${BUILD_SA}" --format='value(bindings.role)'
+# Esperado: el bucket existe en $BUILD_REGION (no se imprime su política).
+gcloud storage buckets describe "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" --format='value(location)'
 ```
 
 A.2 En cada compilación:
@@ -469,7 +460,7 @@ Antes de subir la imagen, valida localmente: `cd web && npm ci && npm run docker
 
 ### 5.6 Cliente OAuth de producción y secretos
 
-> **Estado:** pendiente. Son las operaciones C4 (OAuth), C5 (secretos) y C6 (acceso) de la
+> **Estado:** pendiente. Son las operaciones C4a (OAuth), C5 (secretos) y C6 (acceso) de la
 > [Puerta C](puerta-c-v1-6.md), que añaden `--project`, la verificación previa al build y el procedimiento ante fallos.
 
 > **Estado:** ningún inicio de sesión real contra Cloud Run se ha probado todavía. La primera evidencia es el
@@ -488,10 +479,12 @@ Antes de subir la imagen, valida localmente: `cd web && npm ci && npm run docker
        ([preparación §3.6](despliegue-v1-6-preparacion.md#36-invocación-pública-frente-a-login-privado)).
    - **Caso externo.** Aplica si no hay organización, por ejemplo con una cuenta personal; el tipo *Interno* no
      está disponible. Tipo de usuario: **Externo**, en estado *Prueba*, con los usuarios de prueba = D5.
-2. En *Clientes*, crea un **ID de cliente OAuth nuevo** (Aplicación web), distinto del de localhost:
-   - Orígenes autorizados: el valor de `$SERVICE_URL`.
-   - URI de redirección: `$SERVICE_URL/api/auth/callback/google`, exacto.
-   - Los cambios pueden tardar de minutos a horas en aplicarse: crea el cliente antes de la ventana de despliegue.
+2. En *Clientes*, crea un **ID de cliente OAuth nuevo** (Aplicación web), distinto del de localhost, **sin
+   orígenes ni URI de redirección todavía** (operación C4a de la [Puerta C](puerta-c-v1-6.md)):
+   - `$SERVICE_URL` es una URL **calculada**. No se registra hasta confirmar en §5.7 que Cloud Run la publica de
+     verdad.
+   - El origen y la redirección se añaden en §5.7 (C4b), **antes** de abrir la invocación pública.
+   - Los cambios pueden tardar de minutos a horas en aplicarse: deja margen entre C4b y el primer login.
 3. Copia el ID de cliente (no es secreto) a `OAUTH_CLIENT_ID`. El secreto del cliente se introduce de forma
    oculta:
 
@@ -527,9 +520,15 @@ cd web
 node deploy/cloudrun/render.mjs > /tmp/project-os-service.yaml   # valida formatos; falla si falta algo
 less /tmp/project-os-service.yaml                                # revisión humana
 gcloud run services replace /tmp/project-os-service.yaml --region "$REGION"
-# Confirma la URL real ANTES del primer login. Entre las URLs del servicio debe figurar $SERVICE_URL:
+# El servicio todavía NO es invocable desde Internet: sin allUsers, IAM rechaza a los navegadores.
+# 1) Verificación de la URL REAL (solo lectura). Debe listar exactamente $SERVICE_URL:
 gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='yaml(status.url,metadata.annotations)'
-# Navegador → OAuth requiere invocación pública (los datos siguen tras login + allowlist):
+gcloud run services describe "$SERVICE_NAME" --region "$REGION" \
+  --format='value(metadata.annotations."run.googleapis.com/urls")' | tr ',' '\n' | grep -Fx -- "$SERVICE_URL" \
+  || echo "DETENTE: Cloud Run no publica $SERVICE_URL (ver la nota de abajo)"
+# 2) Solo si la verificación anterior encontró la URL, registra en el cliente OAuth (consola, C4b):
+#    origen = $SERVICE_URL; redirección = $SERVICE_URL/api/auth/callback/google. Espera a que se propague.
+# 3) Después, invocación pública para el navegador (los datos siguen tras login + allowlist):
 gcloud run services add-iam-policy-binding "$SERVICE_NAME" --region "$REGION" \
   --member=allUsers --role=roles/run.invoker
 # Caso interno: si una política de la organización rechaza allUsers, usa EN SU LUGAR (decisión D8-c):
@@ -539,14 +538,37 @@ rm /tmp/project-os-service.yaml
 
 - Cloud Run asigna dos URLs: la determinista `https://SERVICIO-NUMERO_PROYECTO.REGION.run.app` y otra
   con hash (`status.url`). Las dos se ven en la anotación `run.googleapis.com/urls`.
-- **Si `$SERVICE_URL` no aparece, detente antes de probar el login:**
-  1. pon la URL real en `SERVICE_URL`;
-  2. corrige los orígenes y la redirección del cliente OAuth (5.6);
-  3. vuelve a generar la plantilla y ejecuta `replace`. `NEXTAUTH_URL` sale de `SERVICE_URL`.
+- **Si `$SERVICE_URL` no aparece, detente: no registres el callback ni abras la invocación.**
+  1. Pon en `SERVICE_URL` la URL real de la anotación, la determinista. Nunca la URL con hash: NextAuth solo
+     funciona desde la URL de `NEXTAUTH_URL`.
+  2. Vuelve a generar la plantilla y ejecuta `replace`. `NEXTAUTH_URL` sale de `SERVICE_URL`.
+  3. Repite la verificación de la URL; solo entonces haz los pasos 2 y 3 del bloque.
 - Hasta entonces no se expone ningún dato: la sonda solo valida la configuración y las páginas exigen sesión.
 
+**Proteger la imagen desplegada (después de cada despliegue correcto).** La regla `conservar-produccion` de la
+política de limpieza conserva siempre las versiones con etiqueta `produccion…`. Primero se mueve `produccion-anterior`
+a la imagen que estaba en producción, para tener un rollback garantizado; después se mueve `produccion` a la nueva:
+
+```bash
+# Imagen que estaba en producción (vacío en el primer despliegue):
+PREV="$(gcloud artifacts docker images describe "${IMAGE_BASE}:produccion" --project="$PROJECT_ID" \
+  --format='value(image_summary.digest)' 2>/dev/null || true)"
+[ -z "$PREV" ] || gcloud artifacts docker tags add "${IMAGE_BASE}@${PREV}" "${IMAGE_BASE}:produccion-anterior" \
+  --project="$PROJECT_ID"
+gcloud artifacts docker tags add "$IMAGE" "${IMAGE_BASE}:produccion" --project="$PROJECT_ID"
+# Verificación (solo lectura): "produccion" apunta al digest desplegado (el de $IMAGE).
+gcloud artifacts docker images describe "${IMAGE_BASE}:produccion" --project="$PROJECT_ID" \
+  --format='value(image_summary.digest)'
+```
+
+- `tags add` **mueve** la etiqueta si ya existía: según el SDK, borra la etiqueta y la vuelve a crear sobre la nueva
+  versión.
+- Si se olvida este paso, la imagen desplegada solo queda protegida mientras esté entre las 3 más recientes o tenga
+  30 días o menos (checklist A9).
+
 Para los cambios posteriores, repite 5.5 → 5.7 con la nueva imagen. Cada `replace` crea una revisión nueva y
-la anterior queda disponible para el rollback.
+la anterior queda disponible para el rollback. El rollback a `produccion-anterior` está garantizado; a revisiones
+más antiguas, solo si su imagen sigue en el repositorio.
 
 ### 5.8 Verificación (requiere autorización del usuario)
 

@@ -38,7 +38,8 @@ const gcloudCalls = code.flatMap(({ n, line }) => [...line.matchAll(/gcloud (?:a
 // Respuestas de `gcloud artifacts repositories describe --format=json`.
 // API: acciones en mayúsculas y duración en segundos enteros. SDK: lo que el propio gcloud envía tras procesar el
 // archivo (comprobado con el SDK 570.0.0 local, sin red): `Delete`/`Keep` y `2592000.0s`.
-const policies = (keep = 3, older = '2592000s', del = 'DELETE', kp = 'KEEP') => ({
+const policies = (keep = 3, older = '2592000s', del = 'DELETE', kp = 'KEEP', prefixes: string[] = ['produccion']) => ({
+  'conservar-produccion': { id: 'conservar-produccion', action: kp, condition: { tagState: 'TAGGED', tagPrefixes: prefixes } },
   'conservar-3-recientes': { id: 'conservar-3-recientes', action: kp, mostRecentVersions: { keepCount: keep } },
   'borrar-mayores-30-dias': { id: 'borrar-mayores-30-dias', action: del, condition: { tagState: 'ANY', olderThan: older } },
 })
@@ -107,6 +108,7 @@ describe('limpieza de Artifact Registry: controles estáticos del script', () =>
   })
 
   it('la política esperada está fijada en el script y coincide con el archivo revisado', () => {
+    expect(text).toContain("'conservar-produccion': {'action': 'KEEP', 'condition': {'tagState': 'TAGGED', 'tagPrefixes': ['produccion']}")
     expect(text).toContain("'conservar-3-recientes': {'action': 'KEEP', 'condition': None, 'mostRecentVersions': {'keepCount': 3")
     expect(text).toContain("'borrar-mayores-30-dias': {'action': 'DELETE', 'condition': {'tagState': 'ANY', 'olderThan': 2592000.0}")
     const helper = spawnSync('bash', ['-c', `source "${SCRIPT}"; py file < "${POLICY}"`], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } as unknown as NodeJS.ProcessEnv })
@@ -117,6 +119,7 @@ describe('limpieza de Artifact Registry: controles estáticos del script', () =>
     ['keepCount distinto', '[{"name":"conservar-3-recientes","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":1}},{"name":"borrar-mayores-30-dias","action":{"type":"Delete"},"condition":{"tagState":"ANY","olderThan":"2592000s"}}]'],
     ['edad distinta', '[{"name":"conservar-3-recientes","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}},{"name":"borrar-mayores-30-dias","action":{"type":"Delete"},"condition":{"tagState":"ANY","olderThan":"1d"}}]'],
     ['sin la regla Keep', '[{"name":"borrar-mayores-30-dias","action":{"type":"Delete"},"condition":{"tagState":"ANY","olderThan":"2592000s"}}]'],
+    ['sin la regla de producción', '[{"name":"conservar-3-recientes","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}},{"name":"borrar-mayores-30-dias","action":{"type":"Delete"},"condition":{"tagState":"ANY","olderThan":"2592000s"}}]'],
     ['nombre repetido', '[{"name":"x","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}},{"name":"x","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}}]'],
   ])('un archivo de política alterado se rechaza (%s)', (_name, json) => {
     const r = spawnSync('bash', ['-c', `source "${SCRIPT}"; py file`], { input: json, encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } as unknown as NodeJS.ProcessEnv })
@@ -125,7 +128,7 @@ describe('limpieza de Artifact Registry: controles estáticos del script', () =>
   })
 
   it('acepta duraciones equivalentes del archivo (30d = 2592000s)', () => {
-    const json = '[{"name":"conservar-3-recientes","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}},{"name":"borrar-mayores-30-dias","action":{"type":"Delete"},"condition":{"tagState":"any","olderThan":"30d"}}]'
+    const json = '[{"name":"conservar-produccion","action":{"type":"Keep"},"condition":{"tagState":"tagged","tagPrefixes":["produccion"]}},{"name":"conservar-3-recientes","action":{"type":"Keep"},"mostRecentVersions":{"keepCount":3}},{"name":"borrar-mayores-30-dias","action":{"type":"Delete"},"condition":{"tagState":"any","olderThan":"30d"}}]'
     const r = spawnSync('bash', ['-c', `source "${SCRIPT}"; py file`], { input: json, encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } as unknown as NodeJS.ProcessEnv })
     expect(r.status).toBe(0)
   })
@@ -162,6 +165,8 @@ describe('limpieza de Artifact Registry: --plan y --check con gcloud falso', () 
     ['dry run activo', repo({ cleanupPolicies: policies(), cleanupPolicyDryRun: true }), 'FALLA  ejecución en seco'],
     ['keepCount distinto', repo({ cleanupPolicies: policies(10) }), 'no coincide'],
     ['edad distinta', repo({ cleanupPolicies: policies(3, '604800s') }), 'no coincide'],
+    ['sin la regla de producción', repo({ cleanupPolicies: Object.fromEntries(Object.entries(policies()).filter(([k]) => k !== 'conservar-produccion')) }), 'falta la política conservar-produccion'],
+    ['prefijo de producción distinto', repo({ cleanupPolicies: policies(3, '2592000s', 'DELETE', 'KEEP', ['prod']) }), 'la política conservar-produccion no coincide'],
     ['política adicional', repo({ cleanupPolicies: { ...policies(), extra: { id: 'extra', action: 'DELETE', condition: { tagState: 'UNTAGGED' } } } }), 'política no prevista: extra'],
     ['formato no Docker', repo({ format: 'MAVEN', cleanupPolicies: policies() }), 'FALLA  formato DOCKER'],
     ['JSON no válido', 'no es json', 'FALLA  formato no reconocido'],
@@ -282,7 +287,7 @@ describe('documentación de la Puerta C', () => {
     const mutations = ops.filter((o) => o.body.includes('**Tipo:** Mutación'))
     const reads = ops.filter((o) => o.body.includes('**Tipo:** Solo lectura'))
     expect(mutations.length).toBeGreaterThanOrEqual(5)
-    expect(reads.length).toBeGreaterThanOrEqual(2)
+    expect(reads.length).toBeGreaterThanOrEqual(4)
     for (const op of mutations) expect(op.body, op.id).toMatch(/Estado:\*\* Pendiente de autorización/)
     // Las lecturas no contienen comandos que cambien nada.
     for (const op of reads) {
@@ -306,6 +311,43 @@ describe('documentación de la Puerta C', () => {
     expect(doc).toContain('--member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor')
     expect(doc).not.toMatch(/gcloud secrets versions access [^|\n]*$/m)
     expect(doc).not.toMatch(/--data-file=(?!-)/)
+  })
+
+  it('el runbook no conserva bloques que creen recursos ya existentes de la Puerta B', () => {
+    for (const forbidden of [
+      /gcloud storage buckets create/, /gcloud artifacts repositories create/, /gcloud iam service-accounts create/,
+      /gcloud projects add-iam-policy-binding/, /gcloud artifacts repositories add-iam-policy-binding/,
+      /gcloud storage buckets add-iam-policy-binding/, /gcloud iam service-accounts add-iam-policy-binding/,
+      /gcloud services enable[^\n]*(artifactregistry|cloudbuild)/,
+    ]) expect(runbook, String(forbidden)).not.toMatch(forbidden)
+    // La política de limpieza solo se aplica con el script (C1), nunca con un set-cleanup-policies suelto.
+    expect(runbook).not.toMatch(/^\s*gcloud artifacts repositories set-cleanup-policies/m)
+  })
+
+  it('el callback OAuth se registra solo después de verificar la URL real y antes de abrir allUsers', () => {
+    const replace = runbook.indexOf('gcloud run services replace')
+    const verify = runbook.indexOf('run.googleapis.com/urls")\' | tr')
+    const register = runbook.indexOf('registra en el cliente OAuth (consola, C4b)')
+    const open = runbook.indexOf('--member=allUsers --role=roles/run.invoker')
+    expect(replace).toBeGreaterThan(0)
+    expect(verify).toBeGreaterThan(replace)
+    expect(register).toBeGreaterThan(verify)
+    expect(open).toBeGreaterThan(register)
+    // C4a crea el cliente sin URIs; la URL calculada no se registra en la Puerta C.
+    expect(runbook).toMatch(/sin\s+orígenes ni URI de redirección todavía/)
+    const c4a = ops.find((o) => o.id === 'C4a')?.body ?? ''
+    expect(c4a).toContain('**sin orígenes ni URI de redirección**')
+    const c4b = ops.find((o) => o.id === 'C4b')?.body ?? ''
+    expect(c4b).toContain('C4v correcto')
+    expect(doc.indexOf('#### C4v')).toBeLessThan(doc.indexOf('#### C4b'))
+  })
+
+  it('la imagen desplegada se protege con la etiqueta produccion después de cada despliegue', () => {
+    const tag = runbook.indexOf('gcloud artifacts docker tags add "$IMAGE" "${IMAGE_BASE}:produccion"')
+    expect(tag).toBeGreaterThan(runbook.indexOf('gcloud run services replace'))
+    expect(runbook.indexOf('"${IMAGE_BASE}:produccion-anterior"')).toBeLessThan(tag)
+    expect(ops.find((o) => o.id === 'C9')?.body).toContain('**Tipo:** Mutación')
+    expect(readFileSync(path.join(ROOT, 'docs', 'despliegue-v1-6-aceptacion.md'), 'utf8')).toMatch(/\| A9 \| Imagen desplegada protegida/)
   })
 
   it('el runbook distingue recursos existentes, pendientes y acciones que requieren autorización', () => {

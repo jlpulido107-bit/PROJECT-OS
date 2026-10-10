@@ -25,6 +25,7 @@ PY_HELPER="$(cat <<'PY'
 import json, re, sys
 
 EXPECTED = {
+    'conservar-produccion': {'action': 'KEEP', 'condition': {'tagState': 'TAGGED', 'tagPrefixes': ['produccion']}, 'mostRecentVersions': None},
     'conservar-3-recientes': {'action': 'KEEP', 'condition': None, 'mostRecentVersions': {'keepCount': 3, 'packageNamePrefixes': []}},
     'borrar-mayores-30-dias': {'action': 'DELETE', 'condition': {'tagState': 'ANY', 'olderThan': 2592000.0}, 'mostRecentVersions': None},
 }
@@ -43,6 +44,8 @@ def normalize(policy):
     condition = policy.get('condition')
     if condition is not None:
         condition = dict(condition)
+        if 'tagPrefixes' in condition:
+            condition['tagPrefixes'] = sorted(condition['tagPrefixes'] or [])
         for key in ('olderThan', 'newerThan', 'versionAge'):
             if key in condition:
                 condition[key] = seconds(condition[key])
@@ -123,11 +126,13 @@ plan() {
 PROJECT-OS / Puerta C — política de limpieza de Artifact Registry — PLAN ESTÁTICO, SIN CAMBIOS
 Proyecto: ${PROJECT_ID}   Región: ${REGION}   Repositorio: ${REPO}
 Archivo: web/deploy/cloudrun/artifact-cleanup-policy.json
+  - conservar-produccion (Keep): conserva las versiones con etiqueta que empieza por "produccion"
+    (la desplegada, "produccion", y la anterior, "produccion-anterior"; runbook §5.7).
   - conservar-3-recientes (Keep): conserva las 3 versiones más recientes de cada imagen.
   - borrar-mayores-30-dias (Delete): borra versiones con o sin etiqueta de más de 30 días.
-  - Si una versión cumple las dos, se CONSERVA: Keep tiene prioridad sobre Delete.
+  - Si una versión cumple una regla Keep y la Delete, se CONSERVA: Keep tiene prioridad sobre Delete.
 
---check (solo lectura): un describe del repositorio. Exige formato DOCKER, exactamente esas dos políticas y la
+--check (solo lectura): un describe del repositorio. Exige formato DOCKER, exactamente esas tres políticas y la
 ejecución en seco desactivada. Si falla, NO se compila ni se sube ninguna imagen.
 --apply, solo tras escribir exactamente: ${ACK_TEXT}
   1. Se detiene sin cambios si el repositorio no existe, no es DOCKER o ya tiene OTRAS políticas
@@ -193,7 +198,7 @@ main() {
   esac
   py docker <<< "$repo_json" || die 'el repositorio no es de formato DOCKER; detenido sin cambios.'
 
-  echo 'Cambio previsto: aplicar la política de limpieza (Keep 3 recientes + Delete > 30 días), sin dry run.'
+  echo 'Cambio previsto: aplicar la política de limpieza (Keep producción + Keep 3 recientes + Delete > 30 días), sin dry run.'
   local ack=''
   read -r -p "Para continuar escribe exactamente: ${ACK_TEXT}: " ack || die 'sin confirmación; cancelado sin cambios.'
   [[ "$ack" == "$ACK_TEXT" ]] || { echo 'Cancelado sin cambios.'; exit 1; }
