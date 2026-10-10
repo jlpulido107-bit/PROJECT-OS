@@ -20,27 +20,32 @@ mkdir -p "$WORK/bin" "$WORK/gcloud-config" "$WORK/home"
 # ---- gcloud falso: registra cada llamada y responde según el escenario (variables FAKE_*). ----
 cat > "$WORK/bin/gcloud" <<'FAKE'
 #!/usr/bin/env bash
+# Tokenización EXPLÍCITA: el falso es otro proceso bash (no hereda el IFS del arnés), pero fija su IFS y usa arrays
+# para no depender de ello. Las listas FAKE_* se separan por espacios.
+IFS=$' \t\n'
 printf '%s\n' "$*" >> "$FAKE_LOG"
 args="$*"
 SA_BUILD='project-os-build@project-os-511102.iam.gserviceaccount.com'
 SA_RUN='project-os-dashboard-run@project-os-511102.iam.gserviceaccount.com'
 case "$args" in
   *--help)
-    flags='--location --uniform-bucket-level-access --[no-]public-access-prevention --soft-delete-duration --lifecycle-file --repository-format --description --display-name --member --role --condition'
-    for f in $flags; do [[ "$f" == *"${FAKE_DROP_FLAG:-@@}"* ]] || printf '  %s=VALUE\n' "$f"; done ;;
+    flags=(--location --uniform-bucket-level-access '--[no-]public-access-prevention' --soft-delete-duration --lifecycle-file
+      --repository-format --description --display-name --member --role --condition)
+    for f in "${flags[@]}"; do [[ "$f" == *"${FAKE_DROP_FLAG:-@@}"* ]] || printf '  %s=VALUE\n' "$f"; done ;;
   "auth list"*) echo 'persona.operadora@example.com' ;;
   "projects describe"*) echo 123456789012 ;;
   "services list"*)
     if [[ -n "${FAKE_SERVICES_ERROR:-}" ]]; then echo 'ERROR: PERMISSION_DENIED para persona.operadora@example.com' >&2; exit 1; fi
-    printf '%s\n' ${FAKE_APIS:-cloudbuild.googleapis.com artifactregistry.googleapis.com iam.googleapis.com storage.googleapis.com} ;;
+    read -r -a apis <<< "${FAKE_APIS:-cloudbuild.googleapis.com artifactregistry.googleapis.com iam.googleapis.com storage.googleapis.com}"
+    printf '%s\n' "${apis[@]}" ;;
   "iam service-accounts list"*)
     [[ -n "${FAKE_NO_BUILD_SA:-}" ]] || echo "$SA_BUILD"
     [[ -z "${FAKE_RUNTIME_EXISTS:-}" ]] || echo "$SA_RUN" ;;
   "projects get-iam-policy"*)
-    roles="${FAKE_BUILD_ROLES:-}"
-    grep -q '^projects add-iam-policy-binding' "$FAKE_LOG" && roles="$roles roles/logging.logWriter"
+    read -r -a roles <<< "${FAKE_BUILD_ROLES:-}"
+    if grep -q '^projects add-iam-policy-binding' "$FAKE_LOG"; then roles+=(roles/logging.logWriter); fi
     printf '{"bindings":['; sep=''
-    for r in $roles; do printf '%s{"role":"%s","members":["serviceAccount:%s"]}' "$sep" "$r" "$SA_BUILD"; sep=','; done
+    for r in "${roles[@]}"; do printf '%s{"role":"%s","members":["serviceAccount:%s"]}' "$sep" "$r" "$SA_BUILD"; sep=','; done
     printf '%s{"role":"roles/owner","members":["user:persona.operadora@example.com"]}]}\n' "$sep" ;;
   "artifacts repositories list"*) [[ -z "${FAKE_REPO_NAME:-}" ]] || echo "$FAKE_REPO_NAME" ;;
   "storage buckets list"*) [[ -z "${FAKE_BUCKET_EXISTS:-}" ]] || echo 'project-os-511102-project-os-build-src' ;;

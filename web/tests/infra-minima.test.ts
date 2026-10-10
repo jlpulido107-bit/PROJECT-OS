@@ -405,3 +405,56 @@ describe('búsquedas robustas ante textos largos (SIGPIPE con pipefail)', () => 
     }
   })
 })
+
+describe('gcloud falso del arnés: tokenización explícita (se ejecuta solo el falso, nunca el script)', () => {
+  const HARNESS = path.resolve(__dirname, '..', 'deploy', 'infra', 'simular-infra-minima.sh')
+  const harness = readFileSync(HARNESS, 'utf8')
+  const fakeSrc = /cat > "\$WORK\/bin\/gcloud" <<'FAKE'\n([\s\S]*?)\nFAKE\n/.exec(harness)?.[1] ?? ''
+  const dir = mkdtempSync(path.join(tmpdir(), 'infra-fake-harness-'))
+  const fakePath = path.join(dir, 'gcloud')
+  writeFileSync(fakePath, fakeSrc)
+  chmodSync(fakePath, 0o755)
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+  const log = path.join(dir, 'log')
+  // IFS hostil en el entorno: bash no lo hereda, y además el falso fija el suyo.
+  const fake = (args: string[], env: Record<string, string> = {}, logContent = '') => {
+    writeFileSync(log, logContent)
+    return spawnSync(fakePath, args, { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', FAKE_LOG: log, IFS: '\n\t', ...env } as unknown as NodeJS.ProcessEnv })
+  }
+
+  it('fija IFS y usa arrays para las listas', () => {
+    expect(fakeSrc).toContain("IFS=$' \\t\\n'")
+    expect(fakeSrc).toMatch(/read -r -a apis <<< /)
+    expect(fakeSrc).toMatch(/read -r -a roles <<< /)
+    expect(fakeSrc).not.toMatch(/for \w+ in \$\w+;/)
+  })
+
+  it('--help: una flag por línea (11), y FAKE_DROP_FLAG quita solo esa', () => {
+    const all = fake(['storage', 'buckets', 'create', '--help']).stdout.trim().split('\n')
+    expect(all).toHaveLength(11)
+    expect(all).toContain('  --[no-]public-access-prevention=VALUE')
+    const dropped = fake(['storage', 'buckets', 'create', '--help'], { FAKE_DROP_FLAG: 'soft-delete-duration' }).stdout.trim().split('\n')
+    expect(dropped).toHaveLength(10)
+    expect(dropped.join('\n')).not.toContain('soft-delete-duration')
+  })
+
+  it('services list: una API por línea (predeterminadas y FAKE_APIS)', () => {
+    expect(fake(['services', 'list']).stdout.trim().split('\n')).toEqual([
+      'cloudbuild.googleapis.com', 'artifactregistry.googleapis.com', 'iam.googleapis.com', 'storage.googleapis.com',
+    ])
+    expect(fake(['services', 'list'], { FAKE_APIS: 'iam.googleapis.com  run.googleapis.com' }).stdout.trim().split('\n')).toEqual([
+      'iam.googleapis.com', 'run.googleapis.com',
+    ])
+  })
+
+  it.each([
+    ['sin roles', {}, '', ['roles/owner']],
+    ['varios roles', { FAKE_BUILD_ROLES: 'roles/run.admin roles/editor' }, '', ['roles/run.admin', 'roles/editor', 'roles/owner']],
+    ['tras el binding de logWriter', { FAKE_BUILD_ROLES: 'roles/run.admin' }, 'projects add-iam-policy-binding project-os-511102\n',
+      ['roles/run.admin', 'roles/logging.logWriter', 'roles/owner']],
+  ])('projects get-iam-policy: JSON válido con bindings múltiples — %s', (_l, env, logContent, roles) => {
+    const r = fake(['projects', 'get-iam-policy', 'project-os-511102', '--format=json'], env as Record<string, string>, logContent)
+    const policy = JSON.parse(r.stdout) as { bindings: Array<{ role: string }> }
+    expect(policy.bindings.map((b) => b.role)).toEqual(roles)
+  })
+})
