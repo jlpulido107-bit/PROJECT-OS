@@ -87,7 +87,11 @@ También recibe dos listas:
      sobre un plan existente, no se resta dos veces.
    - Los planes en estado `CANCELADO` o `DESCARTADO` no reservan capacidad. Los demás se respetan íntegros y
      **nunca se alteran**.
-4. **Capacidad libre semanal:** `libre = máx(0, neta − uso total de la semana)`.
+4. **Saldo semanal y hueco colocable:**
+   - `libre = máx(0, neta − uso total de la semana)` es el **saldo teórico**: incluye cuotas de días pasados que
+     ya no se pueden usar.
+   - `colocable = mín(libre, Σ libre(día) desde la referencia)` es lo que **realmente cabe**. Siempre se cumple
+     propuesto ≤ colocable ≤ libre.
 5. **Capacidad por día:**
    - la neta se reparte por igual entre los días laborables (el resto, minuto a minuto, a los primeros días);
    - un `PLAN_DIARIO` registrado con `HORAS_OBJETIVO` fija la capacidad de su día;
@@ -178,7 +182,9 @@ manda, y el total nunca supera la capacidad libre semanal.
 
 - **No antes de su `FECHA_PLAN`.** Una tarea no se coloca antes de esa fecha.
 - **Pasada 1:** máximo **180 min** por tarea y día, para dar variedad y que una tarea no acapare la jornada.
-- **Pasada 2:** si sobra hueco y no hay alternativas, se amplían los bloques en el mismo orden.
+- **Pasada 2:** el hueco restante se reparte **por turnos de 30 min** entre las tareas con trabajo pendiente, en el
+  orden global. Una tarea solo supera los 180 min por delante de otra cuando esa otra ya no puede recibir más (sin
+  objetivo pendiente o sin hueco). Así no acapara el día mientras haya alternativas.
 - **Sin fragmentos menores de 30 min** en un día que ya tiene algo, salvo que sea el resto de la tarea. Un día cuya
   capacidad total es menor que un bloque sí se usa.
 - **Si el presupuesto no se coloca** (por `FECHA_PLAN` o por días llenos), queda como "sin hueco diario" con
@@ -207,7 +213,8 @@ Reglas comunes:
 
 - `estado`: `propuesta` o `datos-insuficientes`.
 - `referencia`: fecha, zona, semana ISO, lunes, domingo y día desde el que se planifica.
-- `capacidad`: origen (`dato`, `supuesto`, `faltante` o `ambigua`), horas, reserva, neta, usado, libre y propuesto.
+- `capacidad`: origen (`dato`, `supuesto`, `faltante` o `ambigua`), horas, reserva, neta, usado, libre (saldo semanal
+  teórico), colocable y propuesto.
 - `proyectos[]`: prioridad (y si es simulada), peso, asignación, uso, demanda, presupuesto y propuesto.
 - `tareas[]`: categoría (`propuesta`, `parcial`, `sin-capacidad` o `excluida`), motivos, estimación (y si es
   supuesta), registrado, ya planificado, necesidad, propuesto, rango, cuántas tareas desbloquea y
@@ -221,7 +228,7 @@ Reglas comunes:
 ## 7. Invariantes (verificadas con 400 casos aleatorios reproducibles)
 
 - **Capacidad respetada:**
-  - Σ propuesto ≤ capacidad libre ≤ capacidad neta;
+  - Σ propuesto ≤ colocable ≤ saldo libre ≤ capacidad neta;
   - en cada día, propuesto ≤ libre;
   - con datos insuficientes, propuesto = 0.
 - **Asignaciones respetadas:** por proyecto con asignación, propuesto ≤ asignación − uso.

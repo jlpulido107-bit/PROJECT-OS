@@ -300,7 +300,8 @@ function CapacityStats({ plan }: { plan: PlanResult }) {
       <div className="stat"><span className="stat-label">Reserva</span><span className="stat-value">{c.reservaPct === null ? 'Sin datos' : `${c.reservaPct} %`}</span></div>
       <div className="stat"><span className="stat-label">Capacidad neta</span><span className="stat-value">{c.netaMin === null ? 'No calculable' : fmtMin(c.netaMin)}</span><span className="stat-hint">horas × (1 − reserva)</span></div>
       <div className="stat"><span className="stat-label">Ya usado o planificado</span><span className="stat-value">{fmtMin(c.usadoMin)}</span><span className="stat-hint">tiempo real y planes registrados</span></div>
-      <div className="stat"><span className="stat-label">Libre</span><span className="stat-value">{fmtMin(c.libreMin)}</span></div>
+      <div className="stat"><span className="stat-label">Saldo semanal</span><span className="stat-value">{fmtMin(c.libreMin)}</span><span className="stat-hint">teórico: incluye cuotas de días pasados</span></div>
+      <div className="stat"><span className="stat-label">Colocable</span><span className="stat-value">{fmtMin(c.colocableMin)}</span><span className="stat-hint">hueco real en los días restantes</span></div>
       <div className="stat"><span className="stat-label">Propuesto</span><span className={`stat-value${c.propuestoMin > 0 ? ' stat-ok' : ''}`}>{fmtMin(c.propuestoMin)}</span><span className="stat-hint">{plan.resumen.propuestas + plan.resumen.parciales === 1 ? '1 tarea' : `${plan.resumen.propuestas + plan.resumen.parciales} tareas`}</span></div>
     </div>
   )

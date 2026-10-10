@@ -84,7 +84,8 @@ function checkInvariants(result: PlanResult, input: PlanningInput, scenario: Sce
   walk(result, 'resultado')
 
   const cap = result.capacidad
-  expect(cap.propuestoMin).toBeLessThanOrEqual(cap.libreMin)
+  expect(cap.propuestoMin).toBeLessThanOrEqual(cap.colocableMin)
+  expect(cap.colocableMin).toBeLessThanOrEqual(cap.libreMin)
   if (cap.netaMin !== null) expect(cap.libreMin).toBeLessThanOrEqual(cap.netaMin)
   if (result.estado === 'datos-insuficientes') expect(cap.propuestoMin).toBe(0)
 

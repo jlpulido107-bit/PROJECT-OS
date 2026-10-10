@@ -560,8 +560,14 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
     }
     // Pasada 1: como máximo MAX_BLOCK_MIN por tarea y día (variedad, evita acaparar la jornada).
     for (const p of eligible) if (c > 0 && startable(p)) place(p, MAX_BLOCK_MIN, shortMotive(p))
-    // Pasada 2: si sobra hueco y no hay alternativas, se amplían los bloques en el mismo orden.
-    for (const p of eligible) if (c > 0 && startable(p)) place(p, Infinity, shortMotive(p))
+    // Pasada 2: el hueco restante se reparte POR TURNOS de MIN_BLOCK_MIN entre las tareas con trabajo pendiente,
+    // en el orden global. Una tarea solo supera MAX_BLOCK_MIN por delante de otra cuando esa otra ya no puede
+    // recibir más (sin objetivo pendiente o sin hueco), nunca acaparando el día mientras haya alternativas.
+    for (let guard = 0; c > 0 && guard < 10_000; guard++) {
+      const before = c
+      for (const p of eligible) if (c > 0 && startable(p)) place(p, MIN_BLOCK_MIN, shortMotive(p))
+      if (c === before) break
+    }
   }
 
   /* --------------------------- Resultado por tarea --------------------------- */
@@ -645,6 +651,8 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
     }
   })
   const propuestoMin = dias.reduce((acc, d) => acc + d.propuestoMin, 0)
+  // Hueco realmente colocable: suma de huecos diarios restantes, acotada por el saldo semanal.
+  const colocableMin = insufficient ? 0 : Math.min(weeklyFree, days.filter((d) => d >= desde).reduce((acc, d) => acc + (freeByDay.get(d) ?? 0), 0))
 
   const tareas = [...plans].sort((a, b) => (a.rango ?? Infinity) - (b.rango ?? Infinity) || compareIds(a.id, b.id))
   const result: Omit<PlanResult, 'huella'> = {
@@ -660,6 +668,7 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
       netaMin,
       usadoMin,
       libreMin: insufficient ? 0 : weeklyFree,
+      colocableMin,
       propuestoMin,
     },
     proyectos,

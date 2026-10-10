@@ -170,7 +170,10 @@ export interface PlanResult {
     reservaPct: number | null
     netaMin: number | null
     usadoMin: number
+    /** Saldo semanal teórico: neta − uso de la semana (incluye cuotas de días pasados que ya no se pueden usar). */
     libreMin: number
+    /** Hueco realmente colocable en los días restantes (Σ huecos diarios, acotado por el saldo semanal). */
+    colocableMin: number
     propuestoMin: number
   }
   proyectos: ProjectPlan[]

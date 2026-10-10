@@ -513,3 +513,29 @@ describe('entrada vacía', () => {
     expect(JSON.stringify(r)).not.toMatch(/NaN|Infinity/)
   })
 })
+
+describe('revisión de integración (PR #10)', () => {
+  it('la segunda pasada no amplía una tarea por encima de 180 min mientras otra tenga trabajo pendiente', () => {
+    // Lunes con 10 h registradas en PLAN_DIARIO; dos tareas de 6 h del mismo proyecto (objetivo semanal 6 h cada una).
+    const r = plan(baseInput({
+      tareas: [task('POS-1', 'POS', 6), task('POS-2', 'POS', 6)],
+      planes: [{ id: 'P1', fecha: MON, semanaId: 'S41', estado: 'PLANIFICADO', horasObjetivo: 10 }],
+    }))
+    const monday = r.dias[0]!.items.map((i) => [i.tareaId, i.minutos])
+    // Antes: [['POS-1', 360], ['POS-2', 240]] (la primera acaparaba el hueco). Ahora se reparte por turnos.
+    expect(monday).toEqual([['POS-1', 300], ['POS-2', 300]])
+    expect(r.dias[0]!.propuestoMin).toBe(600)
+    // Sin alternativas, la única tarea sí puede superar 180 min.
+    const alone = plan(baseInput({ tareas: [task('POS-1', 'POS', 6)], planes: [{ id: 'P1', fecha: MON, semanaId: 'S41', estado: 'PLANIFICADO', horasObjetivo: 10 }] }))
+    expect(alone.dias[0]!.items).toEqual([expect.objectContaining({ tareaId: 'POS-1', minutos: 360 })])
+  })
+
+  it('distingue saldo semanal teórico de hueco colocable (las cuotas de días pasados caducan)', () => {
+    // Viernes sin actividad previa: saldo semanal 20 h, pero solo cabe la cuota del viernes (4 h).
+    const r = plan(baseInput({ tareas: [task('POS-1', 'POS', 40)] }), {}, '2026-10-09')
+    expect(r.capacidad.libreMin).toBe(1200)
+    expect(r.capacidad.colocableMin).toBe(240)
+    expect(r.capacidad.propuestoMin).toBe(240)
+    expect(r.capacidad.propuestoMin).toBeLessThanOrEqual(r.capacidad.colocableMin)
+  })
+})
