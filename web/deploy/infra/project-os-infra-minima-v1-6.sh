@@ -88,12 +88,14 @@ mask_emails() {
 gcloud() { command gcloud "$@" 2> >(mask_emails >&2); }
 # Muestra solo el dominio de una cuenta: el informe no expone correos personales.
 mask_account() { printf '***@%s' "${1#*@}"; }
+# Búsquedas con here-string, nunca `printf … | grep -q`: con `pipefail`, si `grep -q` termina antes de que el
+# productor acabe de escribir un texto largo, el SIGPIPE convierte una coincidencia en un falso negativo.
 # Líneas exactas de una lista (salida `value(...)` de gcloud).
-in_list() { printf '%s\n' "$1" | grep -Fxq -- "$2"; }
+in_list() { grep -Fxq -- "$2" <<< "$1"; }
 # El repositorio aparece con nombre corto (project-os) o completo (projects/…/repositories/project-os).
-repo_in_list() { printf '%s\n' "$1" | grep -Eq "(^|/)${REPO}\$"; }
+repo_in_list() { grep -Eq "(^|/)${REPO}\$" <<< "$1"; }
 # El bucket aparece como nombre o como URL gs://.
-bucket_in_list() { printf '%s\n' "$1" | grep -Eq "^(gs://)?${BUCKET}/?\$"; }
+bucket_in_list() { grep -Eq "^(gs://)?${BUCKET}/?\$" <<< "$1"; }
 # APIs requeridas que no están en la lista de habilitadas (una por línea).
 missing_apis() {
   local api
@@ -147,7 +149,7 @@ verify_flags() {
     # shellcheck disable=SC2086  # el nombre del comando se divide en palabras a propósito
     help="$(IFS=' '; command gcloud $cmd --help 2>/dev/null)" || { missing+="${cmd} (sin ayuda), "; continue; }
     for flag in ${flags// /$'\n'}; do
-      printf '%s' "$help" | grep -Eq -- "--(\[no-\])?${flag}([= ]|\]|\$)" || missing+="${cmd} --${flag}, "
+      grep -Eq -- "--(\[no-\])?${flag}([= ]|\]|\$)" <<< "$help" || missing+="${cmd} --${flag}, "
     done
   done
   [[ -z "$missing" ]] || die "el gcloud instalado no acepta: ${missing%, }. Actualiza gcloud; detenido sin cambios."

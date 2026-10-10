@@ -372,3 +372,36 @@ describe('criterio de bloqueo de la limpieza de imágenes antes del primer build
     expect(check).toBeLessThan(runbook.indexOf('docker push'))
   })
 })
+
+describe('búsquedas robustas ante textos largos (SIGPIPE con pipefail)', () => {
+  const HARNESS = path.resolve(__dirname, '..', 'deploy', 'infra', 'simular-infra-minima.sh')
+
+  it.each([['script', text], ['arnés', readFileSync(HARNESS, 'utf8')]])('%s: ninguna búsqueda `… | grep -q` (falso negativo con pipefail)', (_n, src) => {
+    const lines = src.split('\n').filter((l) => !l.trimStart().startsWith('#'))
+    expect(lines.filter((l) => /\|\s*grep\s+-[A-Za-z]*q/.test(l))).toEqual([])
+  })
+
+  // Texto de ~200 KB: mayor que la capacidad de una tubería, como podría ser una ayuda o una lista larga de gcloud.
+  const big = Array.from({ length: 3000 }, (_, i) => `  línea de relleno número ${i} de un texto largo de gcloud`).join('\n')
+  const dir = mkdtempSync(path.join(tmpdir(), 'infra-big-'))
+  writeFileSync(path.join(dir, 'gcloud'), [
+    '#!/bin/sh',
+    'for f in --location --uniform-bucket-level-access "--[no-]public-access-prevention" --soft-delete-duration --lifecycle-file --repository-format --description --display-name --member --role --condition; do printf "  %s=VALOR\\n" "$f"; done',
+    `cat <<'RELLENO'\n${big}\nRELLENO`,
+  ].join('\n'))
+  chmodSync(path.join(dir, 'gcloud'), 0o755)
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+  const run = (script: string, input = '') =>
+    spawnSync('bash', ['-c', `source "${SCRIPT}"; ${script}`], { input, encoding: 'utf8', env: { PATH: `${dir}:/usr/bin:/bin` } as unknown as NodeJS.ProcessEnv })
+
+  it('verify_flags acepta una ayuda larga con las flags al principio (10 repeticiones)', () => {
+    for (let i = 0; i < 10; i++) expect(run('verify_flags').status).toBe(0)
+  })
+
+  it('in_list y repo_in_list encuentran la coincidencia al principio de una lista larga (10 repeticiones)', () => {
+    for (let i = 0; i < 10; i++) {
+      expect(run('in_list "$(cat)" iam.googleapis.com', `iam.googleapis.com\n${big}`).status).toBe(0)
+      expect(run('repo_in_list "$(cat)"', `project-os\n${big}`).status).toBe(0)
+    }
+  })
+})

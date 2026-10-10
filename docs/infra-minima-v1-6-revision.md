@@ -70,6 +70,16 @@ el proyecto real.
 | 5 | Limpieza de imágenes sin criterio de bloqueo | Bloqueo verificable **antes del primer build o push** (§6), en el plan y en el runbook | El runbook comprueba la política antes de `gcloud builds submit` y de `docker push` |
 | 6 | Fallos parciales sin procedimiento | Matriz de conciliación (§5) | — (documental) |
 
+### 4.3 Simulación local autorizada (gcloud falso, sin GCP)
+
+El propietario autorizó ejecutar el arnés en esta sesión. Resultados y correcciones:
+
+| Hallazgo | Causa | Corrección | Prueba |
+| --- | --- | --- | --- |
+| 1.ª ejecución: 16/19; `apply-correcto`, `auditoria-no-verificada` y `auditoria-falla` con "orden de cambios inesperado" | **Error del arnés**, no del script. Comparaba las tres primeras palabras de cada comando, y `projects add-iam-policy-binding` tiene dos. El orden real del script era el esperado | Normalización del nombre del comando (dos palabras para `projects add-iam-policy-binding`) | Los 3 escenarios pasan |
+| **Error latente del script:** `printf … \| grep -q` con `set -o pipefail` | Con textos mayores que una tubería (~64 KB), `grep -q` termina antes de que `printf` acabe y el SIGPIPE da un falso negativo. En una prueba aislada con 200 KB falló 200/200 veces. Con las ayudas reales del SDK 570.0.0 (≤ 10,5 KB) no falló (0/500), pero una ayuda o una lista más larga haría que `verify_flags` o `in_list` detuvieran el script sin motivo | Here-strings (`grep … <<< "$texto"`) en `in_list`, `repo_in_list`, `bucket_in_list`, `verify_flags` y en la comprobación de correos del arnés | Prueba estática (ningún `\| grep -q`) y funcional con ~200 KB, que falla con el patrón anterior |
+| Un fallo intermitente de `check-con-api-faltante` (falta el texto esperado) en 1 de 22 ejecuciones | **No identificada.** No se reprodujo en las ejecuciones siguientes | El arnés imprime ahora las últimas líneas de la salida, sin correos, cuando un escenario falla | — |
+
 ## 5. Fallo a mitad de `--apply`: conciliación manual
 
 No hay rollback automático. **No se borra nada automáticamente ni se reejecuta a ciegas.** Si se reejecuta, el preflight
@@ -107,11 +117,11 @@ runbook §5.5).
 | --- | --- | --- |
 | **Estática** | `bash -n` del script y del arnés | OK |
 | **Estática** | ShellCheck 0.11.0 `-S style`, script y arnés | Sin avisos |
-| **Estática** | Pruebas del texto del script (orden, alcance, flags, privacidad, `--check`, auditoría) y del arnés | Incluidas en las 58 pruebas de `infra-minima.test.ts` |
-| **Funciones aisladas** | Funciones cargadas con `source` (no ejecuta `main`): listas, roles, bucket, `check_json`, máscara, `verify_flags` con un gcloud **falso** | Incluidas en las 58 pruebas |
+| **Estática** | Pruebas del texto del script (orden, alcance, flags, privacidad, `--check`, auditoría) y del arnés | Incluidas en las 62 pruebas de `infra-minima.test.ts` |
+| **Funciones aisladas** | Funciones cargadas con `source` (no ejecuta `main`): listas, roles, bucket, `check_json`, máscara, `verify_flags` con un gcloud **falso**, también con textos de ~200 KB | Incluidas en las 62 pruebas |
 | **Ejecución local limitada** | `--plan`, sin argumentos y con argumentos inválidos, con un gcloud falso que deja una marca si se invoca | Código 0 o 2; gcloud nunca invocado |
 | **Mutaciones** | Variantes deliberadamente incorrectas del script y del runbook | Cada una hace fallar al menos una prueba |
-| **Simulación de `--apply` o `--check`** | Arnés con gcloud falso | **NO ejecutada en esta sesión.** El entorno bloquea ejecutar el script completo y no se intentó esquivarlo. Pendiente en un entorno autorizado (§8) |
+| **Simulación de `--plan`, `--check` y `--apply` con gcloud falso** | Arnés `simular-infra-minima.sh`, ejecutado en esta sesión con **autorización expresa del propietario**. El primer intento, sin esa autorización, fue bloqueado por el entorno y no se eludió | Versión final: **19/19 en 21 ejecuciones consecutivas**. Ninguna llamada salió del gcloud falso (el arnés aborta si `gcloud` no resuelve al falso). Historial en §4.3 |
 | **Contra GCP real** | Cualquier modo salvo `--plan` | **No ejecutado** |
 
 Los resultados de CI de cada SHA se publican en el PR.
@@ -150,7 +160,7 @@ Los resultados de CI de cada SHA se publican en el PR.
 | # | Riesgo | Mitigación / estado |
 | --- | --- | --- |
 | P1 | Nunca ejecutado contra GCP: permisos efectivos, políticas de organización y comportamiento real sin probar | `--check` (solo lectura) y luego `--apply` con autorización. `verify_flags` cubre la versión del SDK |
-| P2 | El arnés de simulación no se ha ejecutado | Ejecutarlo en un entorno autorizado (§8) antes de pedir `--apply`. Ejecutarlo en CI sería otra opción, pero cambia los workflows y requiere aprobación |
+| P2 | La simulación usa un gcloud falso: valida el flujo, el orden, los abortos y la privacidad, no el comportamiento real de GCP. Hubo un fallo intermitente sin causa identificada (§4.3) | `--check` real (solo lectura) con autorización separada. Ejecutar el arnés en CI sería otra opción, pero cambia los workflows y requiere aprobación |
 | P3 | Sin rollback automático | Orden con el paso más frágil primero; matriz de conciliación (§5) |
 | P4 | Nombre de bucket global | Fallaría el primer cambio sin dejar nada más creado |
 | P5 | Ventana entre el preflight y la creación | La creación fallaría y no modificaría recursos ajenos |

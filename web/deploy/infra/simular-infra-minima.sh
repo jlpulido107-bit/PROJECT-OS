@@ -75,7 +75,7 @@ passed=0; failed=0
 # ENTRADA '__EOF__' = sin entrada estándar (fin de archivo inmediato).
 scenario() {
   local name="$1" mode="$2" input="$3" want_code="$4" want_muts="$5" want_text="$6"; shift 6
-  local log="$WORK/$name.log" out code muts problems=''
+  local log="$WORK/$name.log" out code muts emails problems=''
   : > "$log"
   set +e
   if [[ "$input" == '__EOF__' ]]; then
@@ -91,16 +91,23 @@ scenario() {
   [[ "$code" == "$want_code" ]] || problems+=" código=$code (esperado $want_code);"
   [[ "$muts" == "$want_muts" ]] || problems+=" mutaciones=$muts (esperadas $want_muts);"
   [[ -z "$want_text" || "$out" == *"$want_text"* ]] || problems+=" falta el texto «$want_text»;"
-  if printf '%s' "$out" | grep -Eo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | grep -qv 'gserviceaccount\.com$'; then
+  # Sin `| grep -q` (falsos negativos por SIGPIPE con pipefail): se extraen los correos y se revisan aparte.
+  emails="$(grep -Eo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' <<< "$out" || true)"
+  if [[ -n "$emails" ]] && grep -qv 'gserviceaccount\.com$' <<< "$emails"; then
     problems+=' la salida contiene un correo de persona;'
   fi
   if [[ "$mode" == '--plan' && -s "$log" ]]; then problems+=' --plan invocó gcloud;'; fi
   if [[ "$want_muts" == 6 ]]; then
-    [[ "$(grep -v -- '--help$' "$log" | grep -E "$MUTATING" | awk '{print $1" "$2" "$3}')" == "$EXPECTED_ORDER" ]] \
+    # Nombre del comando: `projects add-iam-policy-binding` tiene dos palabras; el resto, tres.
+    [[ "$(grep -v -- '--help$' "$log" | grep -E "$MUTATING" \
+      | sed -E 's/^(projects add-iam-policy-binding) .*/\1/; s/^([^ ]+ [^ ]+ [^ ]+) .*/\1/')" == "$EXPECTED_ORDER" ]] \
       || problems+=' orden de cambios inesperado;'
   fi
   if [[ -z "$problems" ]]; then echo "PASA   $name"; passed=$((passed + 1))
-  else echo "FALLA  $name:$problems"; failed=$((failed + 1))
+  else
+    echo "FALLA  $name:$problems"; failed=$((failed + 1))
+    # Diagnóstico reproducible: últimas líneas de la salida (ya sin correos de personas).
+    printf '%s\n' "$out" | tail -n 6 | sed 's/^/         | /'
   fi
 }
 
