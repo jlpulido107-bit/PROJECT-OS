@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { dependenciesFor, isBlocked } from '@/lib/aggregate'
+import { CLOSED_TASK_STATES } from '@/lib/schema'
 import type { Dataset, Tarea } from '@/lib/types'
 import { Badge, DateText, humanize, StateBadge, Text } from './ui'
 
-export function TaskCard({ task, data }: { task: Tarea; data: Dataset }) {
+export function TaskCard({ task, data, canEdit = false }: { task: Tarea; data: Dataset; canEdit?: boolean }) {
   const deps = dependenciesFor(task.id, data)
   const blocked = isBlocked(task)
   return (
@@ -54,6 +55,14 @@ export function TaskCard({ task, data }: { task: Tarea; data: Dataset }) {
               ))}
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {canEdit ? (
+        <div className="card-actions">
+          {task.estado === null || !CLOSED_TASK_STATES.has(task.estado) ? (
+            <Link className="button" href={`/tareas/${encodeURIComponent(task.id)}/editar`}>Editar</Link>
+          ) : null}
+          <Link className="button" href={`/tiempos/nuevo?tarea=${encodeURIComponent(task.id)}`}>Registrar tiempo</Link>
         </div>
       ) : null}
     </article>

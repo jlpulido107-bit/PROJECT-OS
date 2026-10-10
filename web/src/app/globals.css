@@ -235,3 +235,30 @@ tbody th { font-weight: 500; }
 
 .login { padding-top: 3rem; }
 .login .button { margin: 1rem 0; }
+
+/* ------------------------------ Operaciones (V1.4) ------------------------------ */
+.actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 1rem; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.6rem; }
+.section-links { display: inline-flex; flex-wrap: wrap; gap: 12px; }
+.op-form {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 1.25rem; box-shadow: var(--shadow);
+}
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 14px; }
+.op-form .field { color: var(--text); }
+.op-form .field label { font-size: 0.875rem; font-weight: 600; }
+.op-form textarea {
+  font: inherit; font-size: 1rem; color: var(--text); background: var(--bg); width: 100%;
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical;
+}
+.op-form [aria-invalid="true"] { border-color: var(--danger-fg); outline-color: var(--danger-fg); }
+.field-hint { font-size: 0.8rem; color: var(--muted); }
+.field-error { font-size: 0.85rem; color: var(--danger-fg); font-weight: 600; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0.75rem 0; }
+.alert-ok { background: var(--ok-bg); color: var(--ok-fg); }
+.link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.mock-banner { border: 1px dashed var(--warn-fg); }
+@media (max-width: 480px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .form-actions .button, .actions-row .button { flex: 1 1 auto; }
+}
