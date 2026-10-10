@@ -1,35 +1,53 @@
-# PROJECT-OS V1.3 — Despliegue privado en Google Cloud Run (manual)
+# PROJECT-OS V1.6 — Despliegue privado de pruebas en Google Cloud Run (manual)
 
-**Estado:** preparado en código y documentación (Misión 005, issue #5). **No desplegado.** Este documento
-**no autoriza** crear recursos facturables, habilitar billing, publicar la app ni activar automatizaciones.
-Cada bloque de comandos es para **revisión y ejecución humana**; no hay ningún script de aprovisionamiento ni
-despliegue desde CI.
+> El nombre del archivo se conserva desde V1.3 para no romper enlaces. El contenido corresponde a **V1.6**.
 
-Base técnica: `docs/analisis-hosting-v1-3.md` (decisión de hosting) y `web/README.md` (uso local).
+**Estado (Misión 010, issue #16):**
+
+- **Código:** listo en `main`, en `372224f` (V1.3–V1.6 y CI unificada).
+- **Despliegue:** **no desplegado y sin recursos creados.**
+- **Autorización:** este documento **no autoriza** crear recursos facturables, habilitar facturación, publicar la
+  app ni activar automatizaciones.
+- **Ejecución:** cada bloque de comandos es para **revisión y ejecución humana**. No hay ningún script de
+  aprovisionamiento ni de despliegue desde CI.
+
+Documentos relacionados:
+
+- [Preparación V1.6](despliegue-v1-6-preparacion.md): matriz de decisiones del propietario, auditoría estática,
+  costos y regiones verificados con fuentes oficiales, y riesgos.
+- [Checklist de aceptación](despliegue-v1-6-aceptacion.md): lo que se comprueba después de desplegar.
+- [`analisis-hosting-v1-3.md`](analisis-hosting-v1-3.md): decisión de hosting.
+- [`web/README.md`](../web/README.md): uso local.
 
 ## 1. Puertas de autorización
 
 | # | Puerta | Quién decide | Estado |
 | --- | --- | --- | --- |
-| 1 | PR de código (este) revisado y aprobado, sin merge automático | Usuario (revisión ChatGPT) | Pendiente |
-| 2 | Proyecto GCP, cuenta de facturación, región, dominio y gasto máximo | Usuario | Pendiente |
-| 3 | Crear recursos facturables (secciones 5.1–5.8) y desplegar | Usuario, autorización separada | Pendiente |
-| 4 | Habilitar acceso regular, mantenimiento y revisión de costos | Usuario | Pendiente |
+| 1 | Código revisado y fusionado en `main`, sin merge automático | Usuario (revisión ChatGPT) | Completada: #6 (`82a7fa7`), #8, #10, #12 y #15 → `main` `372224f`, con CI de `push` en verde ([run 38010650421](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38010650421)) |
+| 2 | Decisiones del propietario: proyecto, facturación, región, URL, correos, presupuesto y alertas ([matriz](despliegue-v1-6-preparacion.md#2-matriz-de-decisiones-del-propietario)) | Usuario | Pendiente |
+| 3 | Crear recursos facturables (secciones 5.1–5.7) y desplegar | Usuario, autorización separada | Pendiente |
+| 4 | Acceso regular tras el [checklist de aceptación](despliegue-v1-6-aceptacion.md), mantenimiento y revisión de costos | Usuario | Pendiente |
 
-### Valores por defecto propuestos (no acordados)
+Completar una puerta **no** autoriza la siguiente. La Misión 010 solo prepara la puerta 2.
 
-| Decisión | Propuesta | Alternativa / nota |
-| --- | --- | --- |
-| Proyecto | Proyecto **dedicado** `project-os-…` con su propio presupuesto | Reusar el proyecto actual de OAuth/V1.1 solo si se acepta compartir cuotas y permisos |
-| Región | `us-central1` (tarifas Tier 1 y nivel gratuito documentado) | `northamerica-south1` (México) por latencia: **verificar** disponibilidad y tarifa antes de elegir |
-| Dominio | URL `*.run.app` que asigna Cloud Run | Dominio propio en una iteración posterior |
-| Gasto | Presupuesto de **USD 5/mes** con alertas al 50 %, 90 % y 100 % | Las alertas **no** detienen el gasto |
-| Acceso | Solo el propietario en `AUTH_ALLOWED_EMAILS` | Otras personas requieren decisión explícita |
+### Responsables
+
+| Rol | Quién | Hace | No hace |
+| --- | --- | --- | --- |
+| Propietario | Usuario | Decide la matriz; crea el proyecto, la facturación y el cliente OAuth; ejecuta los comandos; acepta o revierte | — |
+| Revisión | ChatGPT | Revisa el runbook, los riesgos y la evidencia | Ejecutar comandos |
+| Preparación | Claude Code | Documenta, prepara el preflight y las pruebas estáticas | Usar `gcloud` contra un proyecto, crear recursos, desplegar o fusionar |
+
+Los valores propuestos (proyecto dedicado, región, URL `run.app`, presupuesto) están ahora en la
+[matriz de decisiones](despliegue-v1-6-preparacion.md#2-matriz-de-decisiones-del-propietario), **sin respuestas
+asumidas**.
 
 ## 2. Arquitectura
 
 ```
 Navegador ──HTTPS──▶ Cloud Run "project-os-dashboard" (min 0 / max 1, CPU por solicitud)
+                      │  Páginas: Inicio, Control (V1.6), Proyectos, Tareas, Actividad, Capacidad y plan,
+                      │  Planificación (V1.5). Operaciones (V1.4) sin escritura: bloqueada en Cloud Run
                       │  proxy.ts + cada página/API: sesión NextAuth (cookie __Secure-, JWE)
                       │  + AUTH_ALLOWED_EMAILS  → sin sesión válida: 307 a /login o 401/403
                       │
@@ -42,6 +60,14 @@ Navegador ──HTTPS──▶ Cloud Run "project-os-dashboard" (min 0 / max 1, 
 Google OAuth ◀──── /api/auth/callback/google (redirect URI HTTPS registrado explícitamente)
 ```
 
+- **V1.4–V1.6 en producción:**
+  - planificación y control son **solo lectura**: sus APIs solo exponen `GET` y sus propuestas no se aplican;
+  - el modo `mock` de V1.4 está **prohibido en Cloud Run** (`K_SERVICE`);
+  - `sheets` está bloqueado en código;
+  - si la revisión define `PROJECT_OS_WRITE_MODE` (distinto de `disabled`) o `AUTH_WRITER_EMAILS`, la sonda
+    responde 503 y la revisión **no recibe tráfico**.
+- **Fechas:** planificación y control calculan "hoy" en `America/Merida`, sin depender de la zona horaria del
+  contenedor (UTC en Cloud Run).
 - **Fuente de datos:** Google Sheets sigue siendo la única fuente operativa. No hay base de datos adicional;
   solo una caché en memoria de 60 s por instancia.
 - **Solo lectura, en tres capas:** cliente HTTP que solo emite `GET`, token con alcance
@@ -54,9 +80,10 @@ Google OAuth ◀──── /api/auth/callback/google (redirect URI HTTPS regis
   sin HTTPS, clave JSON, datos sintéticos, falta de la cuenta esperada o de secretos, o un modo de
   escritura de V1.4 activo) **no supera la sonda de
   arranque y no recibe tráfico**.
-  - **Límite:** la sonda solo valida la **configuración** (variables y política de credenciales). **No**
-    comprueba que la identidad ADC tenga acceso real a la hoja, que OAuth funcione ni que Secret Manager
-    responda. Eso se acepta después de desplegar (§5.8). Un 200 en `/api/health` no equivale a "funciona".
+  - **Límite:** la sonda solo valida la **configuración** (variables y política de credenciales). `/api/health`
+    **no prueba OAuth ni el acceso real a Google Sheets**, y tampoco que Secret Manager responda. Eso se acepta
+    después de desplegar ([checklist](despliegue-v1-6-aceptacion.md)). Un 200 en `/api/health` no equivale a
+    "funciona".
 
 ### "Invocable desde Internet" no significa "datos públicos"
 
@@ -66,10 +93,13 @@ superficie HTTP. Todas las páginas privadas y `/api/resumen` exigen una sesión
 permitido, verificada en `proxy.ts` y otra vez en cada página y API. Sin sesión no se lee Sheets.
 
 - Las únicas rutas públicas son `/login`, `/api/auth/*`, `/api/health`, `/robots.txt` y los archivos
-  estáticos de Next.
+  estáticos de Next. Las 13 páginas privadas y las 7 APIs privadas (incluidas `/api/planificacion`,
+  `/api/control` y `/api/operaciones/*`) responden 307 a `/login` o 401 sin sesión. `npm run smoke:remote` lo
+  comprueba.
 - `roles/run.invoker` para `allUsers` **no** reemplaza la autenticación de usuarios.
 - Si se quiere ocultar también la pantalla de login de Internet, la opción es **IAP** u otra capa (por
-  ejemplo una VPN). Queda fuera de V1.3.
+  ejemplo una VPN). Las alternativas, con su estado verificado, están en
+  [preparación §3.6](despliegue-v1-6-preparacion.md#36-invocación-pública-frente-a-login-privado).
 
 ## 3. Identidades y permisos mínimos
 
@@ -109,46 +139,51 @@ No hay fallback silencioso: si la variable falta y no hay clave, la app no lee d
 
 ## 4. Costos
 
-### Hechos documentados por Google (consultar antes de crear recursos)
+Los precios, niveles gratuitos, regiones y su fecha de verificación (2026-10-10) están en
+[preparación §4](despliegue-v1-6-preparacion.md#4-costos-y-regiones-verificados), con fuentes oficiales y nivel de
+confianza.
 
-Fuentes en `docs/analisis-hosting-v1-3.md`.
+La estimación se hace **por escenario** y no es una promesa ni un techo
+([§4.3](despliegue-v1-6-preparacion.md#43-estimación-de-costo-por-escenario-no-es-una-promesa-ni-un-techo)):
 
-- **Cloud Run** con facturación por solicitud (`cpu-throttling: true`) y `minScale 0`: sin cobro por
-  instancias inactivas. El nivel gratuito por cuenta de facturación incluye 2 M de solicitudes, 180 000
-  vCPU-s y 360 000 GiB-s al mes (tarifa Tier 1).
-- **Secret Manager:** 6 versiones activas y 10 000 accesos al mes gratuitos. Este diseño usa 3 secretos;
-  Cloud Run los lee al arrancar cada instancia.
-- **Artifact Registry:** 0,5 GiB-mes gratuitos. Con la política de limpieza (3 versiones, 30 días), unos
-  3 × 104 MB ≈ 0,3 GB, aunque las capas compartidas reducen el total real.
-- **Cloud Build:** nivel gratuito de 2 500 build-minutos al mes en la máquina elegible. Construir localmente
-  y hacer push también es válido.
-- **Cloud Logging:** cuota gratuita mensual de ingesta. La app no registra peticiones; solo advertencias sin
-  datos.
-
-### Estimación (no promesa)
-
-Con 1–2 personas y unas pocas visitas al día, el cómputo de Cloud Run probablemente queda dentro del nivel
-gratuito. La factura **puede no ser cero** por:
-
-- almacenamiento de imágenes o builds fuera de cuota;
-- egreso de red;
-- cuotas gratuitas ya consumidas por otros servicios de la misma cuenta de facturación;
-- la región elegida.
-
-Antes de desplegar hay que verificarlo en la calculadora de precios.
+- Con la carga esperada de 1–2 personas, la cifra depende de si quedan niveles gratuitos en la cuenta de
+  facturación, porque se cuentan **por cuenta**, no por proyecto:
+  - si quedan, ≈ USD 0;
+  - si otros proyectos ya los consumen, ≈ USD 0,45, más salida a Internet y builds.
+- Con tráfico anómalo o bots, o con la instancia ocupada de forma continua, el gasto **puede superar USD 1 o USD
+  5**. El techo teórico de cómputo con `maxScale: 1` es ≈ USD 65 al mes, más solicitudes y salida a Internet.
+- Las dos regiones candidatas son Tier 1 en Cloud Run.
 
 ### Controles
 
 - `maxScale: 1`, `minScale: 0`, `cpu-throttling: true`, 1 vCPU y 512 MiB (subir a 1 GiB solo si una prueba
   real lo exige).
-- Presupuesto de USD 5/mes con alertas al 50/90/100 % (sección 5.2). **Las alertas avisan; no son un límite
-  duro.** Solo si Google ofrece un *spend cap* para estos servicios en la cuenta, se evaluará como decisión
-  aparte.
+- Presupuesto con alertas (importe y umbrales: decisiones D6 y D7; la sección 5.2 usa USD 5 y 50/90/100 % como
+  ejemplo). **Las alertas avisan; no son un límite duro.** Los presupuestos con tope para Cloud Run están en
+  Preview: solo se evaluarán como decisión aparte
+  ([preparación §4.4](despliegue-v1-6-preparacion.md#44-presupuestos-y-alertas)).
+- Al rotar secretos, **destruir** las versiones antiguas: las deshabilitadas siguen contando como activas.
 - Política de limpieza de Artifact Registry (`web/deploy/cloudrun/artifact-cleanup-policy.json`).
 - Revisión manual mensual en *Facturación → Informes*.
 - Para detener el gasto por completo, ver la sección 7.
 
-## 5. Despliegue manual paso a paso (requiere la puerta 3)
+## 5. Despliegue manual paso a paso (requiere las puertas 2 y 3)
+
+### 5.-1 Preflight local (sin Google Cloud; repetir el mismo día del despliegue)
+
+1. `git fetch origin main && git checkout <SHA aprobado>`. El SHA debe ser el de `main` con CI de `push` en verde
+   (jobs `web` y `docker`).
+2. Desde `web/`:
+   - `npm ci && npm run lint && npm run typecheck && npm test && npm run build`;
+   - las cinco suites E2E (`test:e2e`, `:ops`, `:planning`, `:control`, `:integration`);
+   - `npm run docker:smoke`.
+3. `npx vitest run tests/deploy-template.test.ts tests/deploy-docs.test.ts`. Comprueba plantilla sin escritura,
+   documentación sin datos sensibles, puertas y cobertura del smoke remoto.
+4. `gcloud version` ≥ 570.0.0. Vuelve a revisar precios y regiones con las
+   [referencias oficiales](despliegue-v1-6-preparacion.md#4-costos-y-regiones-verificados) si pasaron más de 30
+   días desde su fecha de verificación.
+5. Ten a mano la [matriz de decisiones](despliegue-v1-6-preparacion.md#2-matriz-de-decisiones-del-propietario)
+   completada **fuera del repositorio**: correos e ID de facturación no se escriben aquí.
 
 > Ejecutar en una terminal **bash** con `gcloud` autenticado como la persona que despliega, desde la raíz del
 > repo y en la versión fusionada en `main`. Ningún comando imprime secretos. Revisa cada bloque antes de
@@ -165,8 +200,8 @@ Antes de desplegar hay que verificarlo en la calculadora de precios.
 ### 5.0 Variables (no secretas)
 
 ```bash
-export PROJECT_ID="project-os-XXXXXX"          # decisión del usuario
-export REGION="us-central1"                    # decisión del usuario
+export PROJECT_ID="project-os-XXXXXX"          # decisión D1 del propietario
+export REGION="us-central1"                    # decisión D3: us-central1 o northamerica-south1
 export SERVICE_NAME="project-os-dashboard"
 export REPO="project-os"
 export RUNTIME_SA="project-os-dashboard-run@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -318,9 +353,11 @@ la anterior queda disponible para el rollback.
 
 ### 5.8 Verificación (requiere autorización del usuario)
 
-1. **Sin sesión:** desde `web/`, ejecuta `npm run smoke:remote -- --url "$SERVICE_URL"`. Solo imprime
-   códigos HTTP. Esperado: `/api/health` 200, páginas privadas con 307 a `/login`, `/api/resumen` 401 y
-   cabeceras HSTS, `no-store` y `DENY`.
+La lista completa y verificable está en el [checklist de aceptación](despliegue-v1-6-aceptacion.md). Resumen:
+
+1. **Sin sesión:** desde `web/`, ejecuta `npm run smoke:remote -- --url "$SERVICE_URL"`. Solo usa `GET` e
+   imprime códigos HTTP. Esperado (26/26): `/api/health` 200, las 13 páginas privadas con 307 a `/login`, las 7
+   APIs privadas con 401 y cabeceras HSTS, `no-store` y `DENY`.
 2. **Navegador:** inicia sesión con el correo permitido y verifica el origen "Leído de Google Sheets",
    12/12 pestañas válidas y que los totales coinciden con la hoja.
 3. **Acceso denegado:** con otra cuenta de Google en ventana privada, el acceso debe ser rechazado.
@@ -343,6 +380,12 @@ gcloud run services update-traffic "$SERVICE_NAME" --region "$REGION" --to-revis
   actualiza `SECRET_VERSION_*` y redespliega (5.7). Después deshabilita la versión anterior.
 - **Cerrar el acceso de inmediato** sin borrar nada:
   `gcloud run services remove-iam-policy-binding "$SERVICE_NAME" --region "$REGION" --member=allUsers --role=roles/run.invoker`.
+  Esto solo cierra el acceso si el servicio usa el binding `allUsers`, que es el método de §5.7. Si en su lugar se
+  desactivó la comprobación IAM del invocador (`--no-invoker-iam-check`), hay que reactivarla con
+  `gcloud run services update "$SERVICE_NAME" --region "$REGION" --invoker-iam-check`.
+- **Revocar sesiones:** rotar `project-os-nextauth-secret` (nueva versión, redespliegue) invalida todas las
+  cookies. Quitar un correo de la lista (nueva versión de `project-os-allowed-emails`, redespliegue) lo bloquea en
+  la siguiente petición, porque cada página y API vuelve a comprobar la lista.
 
 ## 7. Desmantelar (detener todo gasto)
 
@@ -358,6 +401,7 @@ gcloud iam service-accounts delete "$RUNTIME_SA"
 Después:
 
 - quita a la cuenta de servicio del **Compartir** del Sheets;
+- si se usó Cloud Build, revisa en *Cloud Storage* los buckets que haya creado para el código subido y bórralos;
 - elimina el cliente OAuth de producción;
 - si el proyecto es dedicado, puedes cerrarlo (`gcloud projects delete`), lo que detiene toda la facturación
   del proyecto.
@@ -384,5 +428,11 @@ Después:
   de costo).
 - **Dependencias de lint.** El aviso alto de `braces` (GHSA-vfj7-8cjw-p6xm) es solo de desarrollo y no
   entra en la imagen (`npm ls --omit=dev braces` vacío).
+- **Sin Content-Security-Policy.** La app envía `X-Frame-Options`, HSTS, `nosniff`, `Referrer-Policy` y
+  `Permissions-Policy`, pero no una CSP. React escapa el contenido de la hoja y no se usa HTML sin escapar. Una
+  CSP estricta con Next exige *nonces* por petición: queda como mejora separada (ver
+  [preparación §5](despliegue-v1-6-preparacion.md#5-riesgos-de-seguridad-y-costos)).
+- **Heurísticas del control V1.6.** Pueden generar alertas ruidosas con datos reales: la aceptación debe
+  revisarlas sin tomarlas como decisiones.
 - **Responsabilidades fuera de la app.** Facturación, cuotas compartidas y spend caps dependen de la cuenta
   de Google Cloud del usuario.

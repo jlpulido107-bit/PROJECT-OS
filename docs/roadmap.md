@@ -22,11 +22,12 @@
 - [ ] Historial de decisiones y evidencias verificables.
 
 ## V1.3 — Acceso remoto privado (Misión 005)
-- [ ] Imagen Docker segura (Node 22, no root, sin secretos) y prueba en CI sin Google Cloud.
-- [ ] Credenciales sin clave en producción: identidad de Cloud Run (ADC) con alcance de solo lectura.
-- [ ] Secretos en Secret Manager; OAuth con redirect HTTPS explícito; allowlist verificada por petición.
-- [ ] Costos controlados: min 0 / max 1 instancia, presupuesto con alertas, limpieza de imágenes.
-- [ ] Despliegue manual y rollback documentados (`docs/despliegue-privado-v1-3.md`).
+- [x] Imagen Docker segura (Node 22, no root, sin secretos) y prueba en CI sin Google Cloud (PR #6).
+- [x] Credenciales sin clave en producción: identidad de Cloud Run (ADC) con alcance de solo lectura (código, PR #6).
+- [x] Secretos en Secret Manager; OAuth con redirect HTTPS explícito; allowlist verificada por petición (diseño y código, PR #6).
+- [x] Costos controlados en la plantilla: min 0 / max 1 instancia y limpieza de imágenes. El presupuesto con alertas lo crea el propietario.
+- [x] Despliegue manual y rollback documentados (`docs/despliegue-privado-v1-3.md`, actualizado a V1.6 en la Misión 010).
+- [x] Preparación V1.6: matriz de decisiones, auditoría estática, costos verificados y checklist de aceptación (Misión 010).
 - [ ] Autorización del usuario para crear recursos facturables y desplegar.
 - [ ] Prueba real en Cloud Run: acceso permitido/denegado, datos reales, sin escrituras.
 
