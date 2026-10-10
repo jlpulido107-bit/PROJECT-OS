@@ -53,4 +53,13 @@ describe('comprobaciones de despliegue', () => {
     ])
     expect(deploymentProblems(env({ ...CLOUD_RUN, SHEETS_SPREADSHEET_ID: '' }))).toEqual(['data-config'])
   })
+
+  it('en Cloud Run la escritura debe quedar deshabilitada (V1.4): si no, la sonda falla', () => {
+    expect(deploymentProblems(env({ ...CLOUD_RUN, PROJECT_OS_WRITE_MODE: 'disabled' }))).toEqual([])
+    expect(deploymentProblems(env({ ...CLOUD_RUN, PROJECT_OS_WRITE_MODE: 'mock' }))).toEqual(['write-mode'])
+    expect(deploymentProblems(env({ ...CLOUD_RUN, PROJECT_OS_WRITE_MODE: 'sheets' }))).toEqual(['write-mode'])
+    expect(deploymentProblems(env({ ...CLOUD_RUN, AUTH_WRITER_EMAILS: 'escritor@example.com' }))).toEqual(['write-mode'])
+    // Fuera de Cloud Run no aplica (desarrollo local con escritura simulada).
+    expect(deploymentProblems(env({ ...AUTH, NODE_ENV: 'production', NEXTAUTH_URL: 'http://127.0.0.1:3000', DASHBOARD_DATA_SOURCE: 'fixtures', PROJECT_OS_WRITE_MODE: 'mock' }))).toEqual([])
+  })
 })

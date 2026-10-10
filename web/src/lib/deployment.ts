@@ -17,6 +17,7 @@ export type DeploymentProblem =
   | 'nextauth-url'
   | 'nextauth-url-https'
   | 'data-config'
+  | 'write-mode'
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
@@ -55,6 +56,11 @@ export function deploymentProblems(env: NodeJS.ProcessEnv = process.env): Deploy
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error
     problems.push('data-config')
+  }
+  // Producción solo lectura: en Cloud Run cualquier modo de escritura (V1.4) o lista de escritores impide arrancar.
+  if (isCloudRun(env)) {
+    const mode = env.PROJECT_OS_WRITE_MODE?.trim().toLowerCase() ?? ''
+    if ((mode !== '' && mode !== 'disabled') || (env.AUTH_WRITER_EMAILS?.trim() ?? '') !== '') problems.push('write-mode')
   }
   return problems
 }

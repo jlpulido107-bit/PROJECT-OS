@@ -51,7 +51,8 @@ Google OAuth ◀──── /api/auth/callback/google (redirect URI HTTPS regis
   permitidos). Unos 104 MB comprimida.
 - **Sonda:** `GET /api/health` es pública y no lee Sheets ni la sesión. Responde solo
   `{"status":"ok"}` (200) o `{"status":"unavailable"}` (503). Una revisión con configuración insegura (URL
-  sin HTTPS, clave JSON, datos sintéticos, falta de la cuenta esperada o de secretos) **no supera la sonda de
+  sin HTTPS, clave JSON, datos sintéticos, falta de la cuenta esperada o de secretos, o un modo de
+  escritura de V1.4 activo) **no supera la sonda de
   arranque y no recibe tráfico**.
   - **Límite:** la sonda solo valida la **configuración** (variables y política de credenciales). **No**
     comprueba que la identidad ADC tenga acceso real a la hoja, que OAuth funcione ni que Secret Manager
