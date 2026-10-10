@@ -2,12 +2,16 @@
 
 > El nombre del archivo se conserva desde V1.3 para no romper enlaces. El contenido corresponde a **V1.6**.
 
-**Estado (Misión 010, issue #16):**
+**Estado (Misión 012):**
 
-- **Código:** listo en `main`, en `372224f` (V1.3–V1.6 y CI unificada).
-- **Despliegue:** **no desplegado y sin recursos creados.**
-- **Compilación (Misión 011):** Cloud Build exige la cuenta dedicada `project-os-build` (§3.4 y §5.5). Sin recursos
-  creados ni comandos ejecutados contra GCP.
+- **Código:** listo en `main` (V1.3–V1.6 y CI unificada).
+- **Infraestructura mínima (Puerta B):** ejecutada por el propietario con el script V3, en el proyecto
+  `project-os-511102` y la región `northamerica-south1`. Según su reporte, la auditoría final fue correcta: existen el
+  bucket de origen, el repositorio Docker, la cuenta runtime y los permisos mínimos de `project-os-build` (§1.1).
+- **Puerta C (preparación):** procedimientos en [Puerta C](puerta-c-v1-6.md). **Ninguna operación de la Puerta C está
+  autorizada ni ejecutada.**
+- **Despliegue:** **no desplegado.** No hay imágenes, secretos ni servicio de Cloud Run.
+- **Compilación (Misión 011):** Cloud Build exige la cuenta dedicada `project-os-build` (§3.4 y §5.5).
 - **Autorización:** este documento **no autoriza** crear recursos facturables, habilitar facturación, publicar la
   app ni activar automatizaciones.
 - **Ejecución:** cada bloque de comandos es para **revisión y ejecución humana**. No hay ningún script de
@@ -26,11 +30,38 @@ Documentos relacionados:
 | # | Puerta | Quién decide | Estado |
 | --- | --- | --- | --- |
 | 1 | Código revisado y fusionado en `main`, sin merge automático | Usuario (revisión ChatGPT) | Completada: #6 (`82a7fa7`), #8, #10, #12 y #15 → `main` `372224f`, con CI de `push` en verde ([run 38010650421](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38010650421)) |
-| 2 | Decisiones del propietario: proyecto, facturación, región, URL, correos, presupuesto y alertas ([matriz](despliegue-v1-6-preparacion.md#2-matriz-de-decisiones-del-propietario)) | Usuario | Pendiente |
-| 3 | Crear recursos facturables (secciones 5.1–5.7) y desplegar | Usuario, autorización separada | Pendiente |
+| 2 | Decisiones del propietario: proyecto, facturación, región, URL, correos, presupuesto y alertas ([matriz](despliegue-v1-6-preparacion.md#2-matriz-de-decisiones-del-propietario)) | Usuario | Pendiente (parcial: el proyecto y la región ya se usaron en la Puerta B; faltan D5–D11) |
+| 3 | Crear recursos facturables (secciones 5.1–5.7) y desplegar | Usuario, autorización separada | Pendiente (parcial: infraestructura mínima de la Puerta B creada; Puerta C, build y despliegue sin autorizar) |
 | 4 | Acceso regular tras el [checklist de aceptación](despliegue-v1-6-aceptacion.md), mantenimiento y revisión de costos | Usuario | Pendiente |
 
 Completar una puerta **no** autoriza la siguiente. La Misión 010 solo prepara la puerta 2.
+
+### 1.1 Estado de los recursos
+
+Las etiquetas significan:
+
+- **Existente (Puerta B):** creado por el propietario.
+- **Pendiente:** no existe todavía.
+- **Requiere autorización:** su creación o cambio necesita una autorización expresa y separada.
+
+Detalle de cada operación (comando, precondiciones, impacto, verificación y fallos): [Puerta C](puerta-c-v1-6.md).
+
+| Recurso | Estado | Operación |
+| --- | --- | --- |
+| APIs `cloudbuild`, `artifactregistry`, `iam`, `storage` | Existente (Puerta B) | — |
+| Bucket de origen `PROJECT_ID-project-os-build-src` (privado, 7 días, sin borrado diferido) | Existente (Puerta B) | — |
+| Repositorio Docker `project-os` | Existente (Puerta B) | — |
+| Cuenta runtime `project-os-dashboard-run` (sin roles ni claves) | Existente (Puerta B) | — |
+| Cuenta `project-os-build` con `logging.logWriter`, `artifactregistry.writer` (repositorio) y `storage.objectViewer` (bucket) | Existente (Puerta B) | — |
+| Política de limpieza del repositorio | Pendiente · Requiere autorización | Puerta C, C1 y C1v (**bloquea el primer build**) |
+| APIs `run`, `secretmanager`, `sheets` | Pendiente · Requiere autorización | Puerta C, C2 |
+| Presupuesto y alertas | Pendiente · Requiere autorización | Puerta C, C3 |
+| Cliente OAuth de producción | Pendiente · Requiere autorización | Puerta C, C4 |
+| 3 secretos y acceso de la cuenta runtime | Pendiente · Requiere autorización | Puerta C, C5 y C6 |
+| Lector del Sheets maestro para la cuenta runtime | Pendiente · Requiere autorización | Puerta C, C7 |
+| Imagen, servicio de Cloud Run e invocación pública | Pendiente · Requiere autorización | Puerta 3: §5.5–§5.7, después de C8 |
+
+Las lecturas (C0, C1v, C8) no cambian nada; aun así, solo las ejecuta el propietario.
 
 ### Responsables
 
@@ -252,8 +283,8 @@ La estimación se hace **por escenario** y no es una promesa ni un techo
 ### 5.0 Variables (no secretas)
 
 ```bash
-export PROJECT_ID="project-os-XXXXXX"          # decisión D1 del propietario
-export REGION="us-central1"                    # decisión D3: us-central1 o northamerica-south1
+export PROJECT_ID="project-os-511102"          # proyecto usado en la Puerta B
+export REGION="northamerica-south1"            # región usada en la Puerta B
 export SERVICE_NAME="project-os-dashboard"
 export REPO="project-os"
 export RUNTIME_SA="project-os-dashboard-run@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -280,6 +311,9 @@ gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" \
 
 ### 5.3 APIs mínimas
 
+> **Estado:** `artifactregistry` (y `cloudbuild`, `iam` y `storage`) ya están habilitadas por la Puerta B. Las
+> pendientes (`run`, `secretmanager`, `sheets`) son la operación C2 de la [Puerta C](puerta-c-v1-6.md).
+
 ```bash
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
   secretmanager.googleapis.com sheets.googleapis.com
@@ -288,6 +322,9 @@ gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
 ```
 
 ### 5.4 Cuenta de servicio runtime y acceso de solo lectura a la hoja
+
+> **Estado:** la cuenta ya existe (Puerta B): **no** se vuelve a crear. Solo se ejecuta la verificación. Compartir la
+> hoja es la operación C7 de la [Puerta C](puerta-c-v1-6.md).
 
 ```bash
 gcloud iam service-accounts create project-os-dashboard-run \
@@ -302,6 +339,9 @@ En Google Sheets, abre el maestro y pulsa **Compartir**. Pega el correo de `RUNT
 
 ### 5.5 Artifact Registry y la imagen
 
+> **Estado:** el repositorio ya existe (Puerta B), **sin** política de limpieza: **no** se vuelve a crear. La política
+> se aplica y se verifica con el script de la Puerta C (C1 y C1v), que reemplaza al `set-cleanup-policies` de abajo.
+
 ```bash
 gcloud artifacts repositories create "$REPO" --repository-format=docker --location="$REGION" \
   --description="PROJECT-OS dashboard"
@@ -310,13 +350,16 @@ gcloud artifacts repositories set-cleanup-policies "$REPO" --location="$REGION" 
 export IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard:$(git rev-parse --short HEAD)"
 ```
 
-**Bloqueo antes del primer build o push.** Si el repositorio se creó con el script de infraestructura mínima (que no
-aplica la política de limpieza), o si hay dudas, comprueba antes de compilar o subir imágenes:
+**Bloqueo antes del primer build o push.** El repositorio se creó con el script de infraestructura mínima, que no
+aplica la política de limpieza. Antes de **cada** sesión de compilación o subida:
 
 ```bash
+bash web/deploy/infra/limpieza-artifact-v1-6.sh --check   # solo lectura; debe terminar con PERMITIDO (código 0)
+# Si dice BLOQUEADO, NO compiles ni subas imágenes. Aplicar la política es la operación C1 (Puerta C), con
+# autorización: bash web/deploy/infra/limpieza-artifact-v1-6.sh --apply
+# Consulta manual equivalente (solo lectura), si hiciera falta:
 gcloud artifacts repositories list-cleanup-policies "$REPO" --project="$PROJECT_ID" --location="$REGION"
-# Esperado: conservar-3-recientes y borrar-mayores-30-dias (web/deploy/cloudrun/artifact-cleanup-policy.json).
-# Si no aparecen, NO compiles ni subas imágenes: aplica antes el comando set-cleanup-policies de arriba.
+# Esperado: conservar-3-recientes y borrar-mayores-30-dias, con "Dry run is disabled."
 ```
 
 **Opción A — Cloud Build con cuenta dedicada (D10-b).** Usa minutos de build. La configuración generada declara la
@@ -325,9 +368,14 @@ depender del proyecto activo de gcloud.
 
 A.1 Una sola vez: identidad, permisos mínimos y bucket de origen (§3.4).
 
-> Existe un script con preflight de solo lectura y confirmación expresa para el bucket, el repositorio, la cuenta
-> runtime y estos permisos mínimos: [revisión de infraestructura mínima](infra-minima-v1-6-revision.md). Está
-> **pendiente de autorización** y no crea la cuenta de compilación ni concede `actAs`.
+> **Estado:** hecho en la Puerta B con el [script de infraestructura mínima](infra-minima-v1-6-revision.md): el bucket,
+> los tres permisos de `project-os-build` y la cuenta runtime existen. **No** se repite este bloque; queda como
+> referencia y para la verificación final. La API `cloudbuild` ya estaba habilitada y la cuenta de compilación ya
+> existía.
+>
+> La línea de `iam.serviceAccountUser` (`actAs`) **no** se ejecutó y **no** hace falta si compila la cuenta
+> propietaria, que ya puede actuar como la cuenta de compilación. Solo se concede si compila otra persona
+> (decisión D-C3 de la [Puerta C](puerta-c-v1-6.md)).
 
 ```bash
 gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID"
@@ -421,6 +469,9 @@ Antes de subir la imagen, valida localmente: `cd web && npm ci && npm run docker
 
 ### 5.6 Cliente OAuth de producción y secretos
 
+> **Estado:** pendiente. Son las operaciones C4 (OAuth), C5 (secretos) y C6 (acceso) de la
+> [Puerta C](puerta-c-v1-6.md), que añaden `--project`, la verificación previa al build y el procedimiento ante fallos.
+
 > **Estado:** ningún inicio de sesión real contra Cloud Run se ha probado todavía. La primera evidencia es el
 > checklist C1/C2. Una configuración de OAuth correcta en la consola no prueba que el login funcione.
 
@@ -449,21 +500,21 @@ export OAUTH_CLIENT_ID="NNNNNNNNNNNN-xxxxxxxx.apps.googleusercontent.com"
 
 # Secreto de sesión NUEVO (no reutilizar el de localhost); nunca se muestra:
 openssl rand -base64 32 | tr -d '\n' | gcloud secrets create project-os-nextauth-secret \
-  --replication-policy=automatic --data-file=-
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=-
 
 # Secreto del cliente OAuth de producción (entrada oculta, no queda en el historial):
 read -r -s -p "GOOGLE_CLIENT_SECRET de producción: " V; echo
 printf '%s' "$V" | gcloud secrets create project-os-google-client-secret \
-  --replication-policy=automatic --data-file=-; unset V
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=-; unset V
 
 # Correos permitidos (separados por coma), entrada oculta:
 read -r -s -p "AUTH_ALLOWED_EMAILS: " V; echo
 printf '%s' "$V" | gcloud secrets create project-os-allowed-emails \
-  --replication-policy=automatic --data-file=-; unset V
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=-; unset V
 
 for s in project-os-nextauth-secret project-os-google-client-secret project-os-allowed-emails; do
-  gcloud secrets add-iam-policy-binding "$s" \
-    --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor
+  gcloud secrets add-iam-policy-binding "$s" --project="$PROJECT_ID" --condition=None \
+    --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor --format=none
 done
 
 export SECRET_VERSION_NEXTAUTH=1 SECRET_VERSION_OAUTH=1 SECRET_VERSION_ALLOWLIST=1
@@ -523,7 +574,9 @@ gcloud run services update-traffic "$SERVICE_NAME" --region "$REGION" --to-revis
 ```
 
 - **Secreto comprometido:** agrega una versión nueva (`gcloud secrets versions add … --data-file=-`),
-  actualiza `SECRET_VERSION_*` y redespliega (5.7). Después deshabilita la versión anterior.
+  actualiza `SECRET_VERSION_*` y redespliega (5.7). Comprueba que la nueva revisión funciona y después **destruye** la
+  versión anterior (`gcloud secrets versions destroy N --secret=SECRETO --project="$PROJECT_ID"`). Una versión solo
+  deshabilitada sigue contando como activa y facturándose.
 - **Cerrar el acceso de inmediato** sin borrar nada:
   `gcloud run services remove-iam-policy-binding "$SERVICE_NAME" --region "$REGION" --member=allUsers --role=roles/run.invoker`.
   Esto solo cierra el acceso si el servicio usa el binding `allUsers`, que es el método de §5.7. Si en su lugar se
