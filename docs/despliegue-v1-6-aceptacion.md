@@ -21,6 +21,7 @@ Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVI
 | A5 | Identidad del servicio sin roles de proyecto | `…describe … --format='value(spec.template.spec.serviceAccountName)'` y la consulta de §5.4 del runbook | Es `$RUNTIME_SA`; la consulta de roles de proyecto sale **vacía** |
 | A6 | Secret Manager con versión fijada y acceso mínimo | `gcloud secrets get-iam-policy SECRETO` para los 3 secretos (nunca `versions access`) | Solo `$RUNTIME_SA` con `roles/secretmanager.secretAccessor`; la plantilla usa versiones numéricas, no `latest` |
 | A7 | Límites de costo aplicados | `…describe … --format='yaml(spec.template.metadata.annotations)'` | `minScale: '0'`, `maxScale: '1'`, `cpu-throttling: 'true'` |
+| A8 | Identidad de compilación (solo D10-b) | Log del build en *Cloud Build → Historial* y `gcloud builds describe BUILD_ID --region "$BUILD_REGION" --format='value(serviceAccount)'` | El paso `verificar-identidad` dice *"Identidad de compilación verificada"*. La cuenta es `project-os-build`. `gcloud projects get-iam-policy` (runbook §5.5, A.1) muestra solo `roles/logging.logWriter` para ella. N/A con Docker local |
 
 ## B. Smoke HTTP sin sesión
 
@@ -33,7 +34,7 @@ Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVI
 | # | Verificación | Cómo | Esperado |
 | --- | --- | --- | --- |
 | C1 | Invitado autorizado entra | Ventana privada → `$SERVICE_URL` → *Continuar con Google* con un correo de `AUTH_ALLOWED_EMAILS` | Inicio con origen **"Leído de Google Sheets"**, 12/12 pestañas válidas, totales iguales a la hoja |
-| C2 | Cuenta no autorizada es rechazada | Otra cuenta de Google en ventana privada | Vuelve a `/login` con acceso denegado; ninguna página ni API muestra datos |
+| C2 | Cuenta no autorizada es rechazada | Otra cuenta de Google en ventana privada. En el caso **interno** (D9-a), probar dos: una de la organización que no esté en la lista y, si existe, una externa | Vuelve a `/login` con acceso denegado; ninguna página ni API muestra datos. La cuenta externa es rechazada por Google antes de llegar a la app |
 | C3 | `401` y `403` | `401`: cubierto por B1. `403` (opcional): con una sesión abierta, retira ese correo de la lista (nueva versión del secreto + redespliegue) y recarga | `401` sin sesión; `403` o redirección con *AccessDenied* para una sesión cuyo correo ya no está permitido |
 | C4 | Dashboard | Inicio, Proyectos, Tareas, Actividad, Capacidad y plan | Cargan con datos reales, sin errores |
 | C5 | Planificación (V1.5) | `/planificacion` y un escenario simulado | Propuestas con explicaciones; aviso de que no se escribe nada; el escenario no cambia la hoja |
