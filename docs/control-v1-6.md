@@ -104,8 +104,8 @@ npm run build
 npm run test:e2e:control    # E2E HTTP: acceso, solo lectura, filtros, validación, minimización, errores
 ```
 
-En CI, las unitarias corren en `web-validation.yml` y el E2E en `control-validation.yml`, sin secretos y sin
-contactar Sheets.
+En CI, las unitarias y el E2E corren en el job `web` de `web-validation.yml` (en PR y en `push` a `main`), sin
+secretos y sin contactar Sheets.
 
 ## 6. Capturas (datos sintéticos)
 

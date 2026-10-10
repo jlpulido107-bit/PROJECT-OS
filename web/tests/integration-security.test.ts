@@ -3,8 +3,8 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Garantías del ÁRBOL INTEGRADO V1.3–V1.6 (solo en la rama de integración): todas las páginas y APIs
- * con autorización del servidor, navegación por rol y producción sin escritura.
+ * Garantías del árbol integrado V1.3–V1.6 en `main`: todas las páginas y APIs con autorización del
+ * servidor, navegación por rol y producción sin escritura.
  */
 const SRC = path.resolve(__dirname, '..', 'src')
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {

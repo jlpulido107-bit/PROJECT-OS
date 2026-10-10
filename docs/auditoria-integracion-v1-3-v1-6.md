@@ -1,10 +1,16 @@
 # Auditoría de integración V1.3–V1.6 (Misión 009)
 
-> **Rama temporal:** `integration/v1-3-to-v1-6`, creada desde `main` y **no destinada a fusionarse**.
+> **Estado:** #6, #8, #10 y #12 ya están fusionados en `main` (último merge `8dd3674`). El PR #15
+> (`feature/consolidation-ci-v1-6`) solo añade la CI unificada, las pruebas cruzadas y este informe.
 >
-> **Sin efectos externos:** no toca `main`, Google Sheets ni Cloud Run, y no crea recursos ni automatizaciones.
+> **Histórico:** la rama temporal `integration/v1-3-to-v1-6` (PR draft #14) sirvió para validar la combinación antes
+> de los merges. **No se fusiona**; se cierra una vez confirmada la cobertura de #15.
 >
-> **Ninguna fusión** se hace sin autorización explícita del usuario, revalidando el SHA justo antes.
+> **Sin efectos externos:** no toca Google Sheets ni Cloud Run, no habilita escritura real y no crea recursos ni
+> automatizaciones. **Ninguna fusión** se hace sin autorización explícita del usuario.
+
+Las secciones 1 a 4 conservan el análisis original de la rama de integración como referencia. La sección 5 recoge
+la validación posterior a los merges.
 
 ## 1. SHAs
 
@@ -32,7 +38,7 @@ Cada corrección tiene una prueba que **fallaba antes y pasa después**, y está
 | #8 P2 | `parseAudit` y los reintentos no verifican la integridad de la auditoría | `AUDIT_ID …-NN-TT`. Se detectan auditorías **parciales** (faltan filas o campos) y **contradictorias** (operación, hash, entidad, registro o lote distintos, índices repetidos, campos con valores distintos). Un reintento sobre ellas da `409 auditoria-inconsistente`; una entidad alterada sin operación auditada da `409 estado-divergente`. **Los reintentos legítimos tras ediciones auditadas siguen siendo `repetida`** | ídem (8 casos; 7 fallaban antes) |
 | #10 P2 | La segunda pasada ampliaba una tarea por encima de 180 min con alternativas pendientes | El hueco se reparte **por turnos de 30 min** en orden global. Lunes de 10 h con dos tareas de 6 h: 300/300 (antes 360/240) (`2dc5b62`) | `planning-engine.test.ts` |
 | #10 P2 | El saldo semanal no distinguía el hueco realmente colocable | `capacidad.colocableMin` (huecos diarios restantes, acotados por el saldo). Invariante nueva: propuesto ≤ colocable ≤ libre. Interfaz: "Saldo semanal" y "Colocable" | `planning-engine.test.ts` y `planning-properties.test.ts` |
-| #12 | El E2E de control solo corría en `pull_request` | `control-validation.yml` también en `push` a `main` (`957002a`). En la integración, el paso pasa a `web-validation.yml` | CI |
+| #12 | El E2E de control solo corría en `pull_request` | `control-validation.yml` también en `push` a `main` (`957002a`). En #15 el paso vive en el job `web` de `web-validation.yml` y `control-validation.yml` **se elimina** para no ejecutarlo dos veces | CI |
 
 ## 3. Puntos de contacto del árbol combinado
 
@@ -43,10 +49,10 @@ Ninguno produjo conflicto de texto. Se revisó la semántica:
 | `nav-links.tsx` | Inicio, **Control**, Proyectos, Tareas, Actividad, Capacidad y plan, **Planificación** para todo lector autorizado. **Operaciones** solo con `showOperations`, es decir, escritor y modo `mock` |
 | `security.test.ts` | Suma las protecciones de #6 (credenciales, `lib/credentials` y `lib/deployment` solo servidor, `/api/health` sin datos), #8 (adaptador de escritura no importado, guarda en las 4 rutas, `sheets` bloqueado) y #10/#12. Además, `integration-security.test.ts` exige **exactamente 13 páginas** con `privateData` y autorización del servidor en **todas** las APIs |
 | `data.ts` | Proveedor de tokens de V1.3 (`credentials.ts`, `spreadsheets.readonly`, clave local o ADC) **más** la invalidación de caché del mock de V1.4 (`writeGeneration`). Sin JWT por omisión ni escritura real (verificado por prueba) |
-| `web-validation.yml` | `pull_request` y **`push` a `main`**. Unitarias más E2E de autenticación, operaciones, planificación, **control** e **integración**, más el job **docker** de #6. `control-validation.yml` se retira en la integración |
+| `web-validation.yml` | `pull_request` y **`push` a `main`**. Unitarias más E2E de autenticación, operaciones, planificación, **control** e **integración**, más el job **docker** de #6. `control-validation.yml` se elimina (lo hace #15) |
 | `package.json` | Todos los scripts: `test:e2e`, `test:e2e:ops`, `test:e2e:planning`, `test:e2e:control`, `test:e2e:integration`, `docker:smoke`, `smoke:remote` |
 
-## 4. Resultados en la rama integrada
+## 4. Resultados en la rama de integración (#14, histórico)
 
 Entorno: Node 22.22.0, npm 10.9.4, Next 16.3.8. Ejecución local desde `npm ci` limpio, sin credenciales y sin
 contacto con Google.
@@ -94,38 +100,72 @@ Usa 5 servidores `next start`, todos con datos sintéticos y nunca con Google.
     muestran el error sin datos parciales.
 11. **Registros:** los logs de los 5 servidores no contienen correos.
 
-### 4.2 Reproducir
+## 5. Validación posterior a los merges
+
+Los resultados se atribuyen a cada árbol por separado. Entorno local: Node 22.22.0, npm 10.9.4, `npm ci` limpio,
+sin credenciales y sin contacto con Google.
+
+### 5.1 Sobre `main` en `8dd3674` (tras fusionar #12)
+
+Ejecución local en un worktree limpio de `main`, sin los archivos de #15.
+
+| Comprobación | Resultado |
+| --- | --- |
+| `npm ci`, `audit:prod`, `audit:critical`, `lint`, `typecheck`, `build` | OK (0 vulnerabilidades de producción, sin críticas) |
+| Vitest | 335/335 (sin `integration-security.test.ts`, que añade #15) |
+| `test:e2e` / `test:e2e:ops` / `test:e2e:planning` / `test:e2e:control` | 63/63 · 56/56 · 32/32 · 35/35 |
+| `check:client-secrets` | OK |
+| Python V1.1 | 18/18 |
+| `scripts/e2e-integration.mjs` copiado sobre el build de `main` | 63/63 (el árbol fusionado equivale al validado en #14) |
+
+### 5.2 Sobre #15 (`feature/consolidation-ci-v1-6`)
+
+Diferencia con `main`: CI unificada, `test:e2e:integration`, `integration-security.test.ts`, este informe y la
+**eliminación** de `control-validation.yml`. Ninguna lógica de negocio cambia.
+
+| Comprobación | Resultado |
+| --- | --- |
+| CI en `bdd09a0` (antes de esta revisión) | `validate`, `web`, `docker` y `control-e2e` en verde. El E2E de control corría **dos veces** (job `web` y `control-e2e`) |
+| Local, árbol con la revisión aplicada: `npm ci`, `audit:prod`, `audit:critical`, `lint`, `typecheck`, `build` | OK |
+| Vitest | 340/340 (22 archivos) |
+| `test:e2e` / `ops` / `planning` / `control` / `integration` | 63/63 · 56/56 · 32/32 · 35/35 · 63/63 |
+| `check:client-secrets` | OK |
+| Python V1.1 | 18/18 |
+| CI del nuevo HEAD | Ver los checks del PR: `validate`, `web` (incluye el E2E de control) y `docker`. `control-e2e` ya no existe |
+
+### 5.3 Reproducir
 
 ```bash
-git checkout integration/v1-3-to-v1-6
+git checkout feature/consolidation-ci-v1-6   # o main, una vez fusionado #15
 cd web && npm ci && npm run lint && npm run typecheck && npm test && npm run build
 for s in test:e2e test:e2e:ops test:e2e:planning test:e2e:control test:e2e:integration; do npm run $s; done
 npm run check:client-secrets && npm run audit:prod && npm run audit:critical
 cd .. && python3 -m unittest discover -s tests
 ```
 
-## 5. Decisiones para el usuario
+## 6. Decisiones
 
-1. **Estrategia de merge.**
-   - **(a) recomendada:** fusionar #6 → #8 → #10 → #12 en ese orden.
-     - Ninguno produce conflicto de texto, y el árbol resultante es el que se validó aquí.
-     - Tras cada merge, revalidar el SHA y la CI.
-     - Llevar después a `main` los commits de integración (CI unificada y E2E cruzado), en un PR pequeño.
-   - **(b)** fusionar solo este PR de integración, que contiene todo, y cerrar los cuatro.
-   - En ambos casos: **una autorización explícita por cada merge**.
-2. **CI en `push` a `main`:** se añade en la integración. Hay que confirmarlo (consume minutos de Actions; no
-   despliega nada).
+**Resueltas:**
+
+- **Estrategia de merge:** se aplicó la opción recomendada, #6 → #8 → #10 → #12 en orden y con autorización por
+  merge (`82a7fa7`, `74dbb10`, `ba53469`, `8dd3674`). El trabajo exclusivo de integración llega en #15, no en #14.
+
+**Pendientes para el usuario:**
+
+1. **CI en `push` a `main`:** la añade #15. Fusionarlo implica aceptarla (consume minutos de Actions; no despliega
+   nada). Se propone `squash merge`.
+2. **Cerrar #14** sin fusionar, una vez fusionado #15.
 3. **Planificador → control:** las señales V1.5 se pueden pasar al centro de control con una línea, y queda
    preparado. **No** se conectó, para no mezclar alcances.
-4. **Utilidades duplicadas:** el grafo de ciclos y el hash FNV están en #10 y #12. Conviene consolidarlos después
-   del merge.
+4. **Utilidades duplicadas:** el grafo de ciclos y el hash FNV están en V1.5 y V1.6. Conviene consolidarlos en un PR
+   aparte.
 
-## 6. Riesgos restantes
+## 7. Riesgos restantes
 
 - **Sin CAS en Sheets.** Una escritura real futura puede perder actualizaciones entre instancias. Hoy se detecta en
   la conciliación, pero **no se previene**. Mitigación antes de habilitar escritura real: un escritor único con
   exclusividad verificable o un backend transaccional (decisión pendiente en #8).
-- **Docker smoke:** verde en la CI del PR #14. No se repitió localmente porque no hay daemon de Docker.
+- **Docker smoke:** verde en la CI de #14 y de #15. No se repitió localmente porque no hay daemon de Docker.
 - **ADC real, OAuth real, IAM y presupuesto** sin probar contra GCP: son puertas de despliegue que requieren
   autorización **separada** (runbook de V1.3, §5).
 - **Heurísticas del control V1.6** (umbrales y evidencia): pueden generar ruido. Están documentadas como
