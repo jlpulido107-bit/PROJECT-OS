@@ -6,6 +6,8 @@
 
 - **Código:** listo en `main`, en `372224f` (V1.3–V1.6 y CI unificada).
 - **Despliegue:** **no desplegado y sin recursos creados.**
+- **Compilación (Misión 011):** Cloud Build exige la cuenta dedicada `project-os-build` (§3.4 y §5.5). Sin recursos
+  creados ni comandos ejecutados contra GCP.
 - **Autorización:** este documento **no autoriza** crear recursos facturables, habilitar facturación, publicar la
   app ni activar automatizaciones.
 - **Ejecución:** cada bloque de comandos es para **revisión y ejecución humana**. No hay ningún script de
@@ -123,7 +125,10 @@ posteriores basta con:
 - `roles/iam.serviceAccountUser` **sobre la cuenta runtime** (no sobre el proyecto)
 - `roles/artifactregistry.writer` sobre el repositorio
 - `roles/secretmanager.secretVersionAdder` para rotar secretos
-- `roles/cloudbuild.builds.editor`, solo si se construye con Cloud Build
+- Solo si se construye con Cloud Build (D10-b), ver §3.4:
+  - `roles/cloudbuild.builds.editor`;
+  - `roles/iam.serviceAccountUser` **sobre la cuenta de compilación**, no sobre el proyecto;
+  - escritura de objetos en el bucket de origen.
 
 GitHub Actions **no** recibe credenciales de Google Cloud.
 
@@ -136,6 +141,41 @@ GitHub Actions **no** recibe credenciales de Google Cloud.
 | Local opcional | `adc` | `gcloud auth application-default login --impersonate-service-account=…` | Con `SHEETS_EXPECTED_SERVICE_ACCOUNT`, una credencial de usuario normal es rechazada |
 
 No hay fallback silencioso: si la variable falta y no hay clave, la app no lee datos y lo indica.
+
+### 3.4 Cuenta de compilación (Cloud Build, opción D10-b)
+
+`project-os-build@PROJECT_ID.iam.gserviceaccount.com`. Solo construye y sube la imagen; **no despliega**.
+
+| Permiso | Ámbito | Para qué |
+| --- | --- | --- |
+| `roles/logging.logWriter` | Proyecto (el único rol de proyecto) | Con una cuenta propia, Cloud Build exige guardar los logs en Cloud Logging o en un bucket propio. Aquí, solo Cloud Logging |
+| `roles/artifactregistry.writer` | Solo el repositorio `project-os` | Subir la imagen |
+| `roles/storage.objectViewer` | Solo el bucket de origen `PROJECT_ID-project-os-build-src` | Leer el código subido |
+
+- **Nunca** Editor, Propietario ni roles sobre Cloud Run, Secret Manager o la hoja. No actúa como la cuenta runtime.
+- La identidad se exige en **cuatro capas**:
+  1. **Configuración:** `web/deploy/build-command.mjs` convierte `web/deploy/cloudbuild.template.yaml` en un YAML
+     **literal** del proyecto. Ese YAML declara `serviceAccount: projects/PROJECT_ID/serviceAccounts/project-os-build@…`
+     y no conserva ninguna interpolación de Cloud Build: solo el escape documentado `$$` del script.
+  2. **Comando:** el mismo generador imprime `gcloud builds submit` con `--project=PROJECT_ID` explícito, para no
+     depender del proyecto activo de gcloud, y `--service-account` con **la misma** cuenta.
+     - Rechaza las cuentas predeterminadas (Compute, la heredada de Cloud Build, App Engine) y la runtime.
+     - En el SDK local, `--service-account` solo sobrescribe `serviceAccount` de la configuración
+       (`submit_util._SetServiceAccount`); con el mismo valor no hay conflicto.
+  3. **Paso `verificar-identidad`:** es el primer paso del build. Consulta al metadata server con qué cuenta corre el
+     build y lo **aborta antes de construir o subir** si no es la dedicada. Es una defensa adicional por si se enviara
+     otra configuración o se omitiera la cuenta.
+  4. **IAM:** aunque algo fallara, la cuenta dedicada solo tiene los tres permisos acotados de la tabla.
+- **La plantilla no se envía tal cual.** Sus marcadores `__PROJECT_ID__`, `__BUILD_SERVICE_ACCOUNT__` e
+  `__IMAGE_TAG__` no forman una cuenta ni una imagen válidas: si alguien la enviara sin generar, el build no tendría
+  identidad válida y el paso 3 abortaría.
+- No se crean *triggers*: en los builds lanzados por *triggers*, el campo `serviceAccount` de la configuración se
+  ignora.
+- **La comprobación contra el metadata server solo está simulada.** `web/tests/cloudbuild.test.ts` ejecuta el
+  script real del paso 3 con un `curl` falso, con la cuenta dedicada, las predeterminadas, la runtime, la de otro
+  proyecto, una respuesta vacía y sin respuesta. **Necesita una prueba real posterior, con autorización** (puerta 3):
+  el primer build debe registrar *"Identidad de compilación verificada"* (checklist A8). Hasta entonces no se sabe si
+  el metadata server responde dentro del build; si no responde, el build falla cerrado.
 
 ## 4. Costos
 
@@ -153,6 +193,18 @@ La estimación se hace **por escenario** y no es una promesa ni un techo
 - Con tráfico anómalo o bots, o con la instancia ocupada de forma continua, el gasto **puede superar USD 1 o USD
   5**. El techo teórico de cómputo con `maxScale: 1` es ≈ USD 65 al mes, más solicitudes y salida a Internet.
 - Las dos regiones candidatas son Tier 1 en Cloud Run.
+
+### Compilación (Cloud Build) y verificación de costos
+
+- **Nivel gratuito:** 2 500 minutos de build al mes por cuenta de facturación (e2-standard-2). Después, unos USD
+  0,006 por minuto ([preparación §4.1](despliegue-v1-6-preparacion.md#41-precios-y-niveles-gratuitos)).
+- **Contar los builds y su duración:**
+  `gcloud builds list --project="$PROJECT_ID" --region "$BUILD_REGION" --format='table(id,createTime,finishTime,status)'`.
+- **Facturación:** en *Facturación → Informes*, filtra por el proyecto y por los servicios *Cloud Build*, *Cloud
+  Storage* y *Artifact Registry*.
+- **Almacenamiento:** el bucket de origen se vacía solo a los 7 días y sin borrado diferido, y la política de
+  Artifact Registry conserva 3 versiones. Los logs de build entran en los 50 GiB gratuitos de Cloud Logging.
+- **Alternativa sin Cloud Build:** Docker local (D10-a). No crea la cuenta, el bucket ni los minutos de build.
 
 ### Controles
 
@@ -258,15 +310,79 @@ gcloud artifacts repositories set-cleanup-policies "$REPO" --location="$REGION" 
 export IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard:$(git rev-parse --short HEAD)"
 ```
 
-**Opción A — Cloud Build** (usa minutos de build; `cloudbuild.yaml` fuerza BuildKit y `linux/amd64`):
+**Opción A — Cloud Build con cuenta dedicada (D10-b).** Usa minutos de build. La configuración generada declara la
+cuenta, verifica la identidad y fuerza BuildKit y `linux/amd64`. Todos los comandos fijan `--project`, para no
+depender del proyecto activo de gcloud.
+
+A.1 Una sola vez: identidad, permisos mínimos y bucket de origen (§3.4).
 
 ```bash
-# Prueba en seco, local y sin GCP: lista exactamente lo que se subiría al bucket de Cloud Build.
-# Esperado: .dockerignore, Dockerfile, package.json, package-lock.json, next.config.ts, tsconfig.json y src/.
-gcloud meta list-files-for-upload web
-gcloud builds submit web --config web/deploy/cloudbuild.yaml --substitutions=_IMAGE_TAG="$IMAGE_TAG"
+gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID"
+export BUILD_REGION="$REGION"   # Cloud Build y Cloud Storage admiten las dos regiones candidatas (nota más abajo)
+export BUILD_SA="project-os-build@${PROJECT_ID}.iam.gserviceaccount.com"
+export BUILD_BUCKET="${PROJECT_ID}-project-os-build-src"
+gcloud iam service-accounts create project-os-build --project="$PROJECT_ID" \
+  --display-name="PROJECT-OS compilación (sin despliegue)"
+# Único rol de proyecto: logs del build en Cloud Logging (obligatorio con una cuenta propia).
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --condition=None \
+  --member="serviceAccount:${BUILD_SA}" --role=roles/logging.logWriter
+# Subir imágenes solo a este repositorio.
+gcloud artifacts repositories add-iam-policy-binding "$REPO" --project="$PROJECT_ID" --location="$REGION" \
+  --member="serviceAccount:${BUILD_SA}" --role=roles/artifactregistry.writer
+# Origen: bucket regional y privado, sin borrado diferido, que elimina lo subido a los 7 días.
+gcloud storage buckets create "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" --location="$BUILD_REGION" \
+  --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0 \
+  --lifecycle-file=web/deploy/cloudbuild-source-lifecycle.json
+gcloud storage buckets add-iam-policy-binding "gs://${BUILD_BUCKET}" --project="$PROJECT_ID" \
+  --member="serviceAccount:${BUILD_SA}" --role=roles/storage.objectViewer
+# Quien lanza el build puede actuar como la cuenta de compilación, y solo como ella.
+gcloud iam service-accounts add-iam-policy-binding "$BUILD_SA" --project="$PROJECT_ID" \
+  --member="user:$(gcloud config get-value account)" --role=roles/iam.serviceAccountUser
+# Verificación. Esperado: solo roles/logging.logWriter (nunca roles/editor ni roles/owner).
+gcloud projects get-iam-policy "$PROJECT_ID" --flatten='bindings[].members' \
+  --filter="bindings.members:serviceAccount:${BUILD_SA}" --format='value(bindings.role)'
 ```
 
+A.2 En cada compilación:
+
+```bash
+# Prueba en seco, local y sin GCP: lista exactamente lo que se subiría al bucket de origen.
+# Esperado: .dockerignore, Dockerfile, package.json, package-lock.json, next.config.ts, tsconfig.json y src/.
+gcloud meta list-files-for-upload web
+# Genera la configuración literal y el comando (sin GCP). Falla si falta algo o si se pide otra identidad.
+node web/deploy/build-command.mjs --config-out=/tmp/project-os-cloudbuild.yaml
+less /tmp/project-os-cloudbuild.yaml   # revisión humana: serviceAccount, cuenta esperada e imagen del proyecto
+# Revisa la salida y ejecútala. Debe coincidir con esto:
+gcloud builds submit web \
+  --project="$PROJECT_ID" \
+  --config=/tmp/project-os-cloudbuild.yaml \
+  --region="$BUILD_REGION" \
+  --service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
+  --gcs-source-staging-dir="gs://${BUILD_BUCKET}/source"
+rm /tmp/project-os-cloudbuild.yaml
+```
+
+- `--config-out` solo acepta rutas absolutas terminadas en `.yaml` o `.yml` con letras, dígitos, `.`, `_`, `-` y
+  `/`, sin segmentos `.` ni `..`. El comando impreso no contiene caracteres con significado para el shell (comillas,
+  `$`, `;`, backticks…) y se puede pegar tal cual.
+- **Nunca** se envía un build sin la configuración generada y sin `--service-account`: Cloud Build usaría la
+  cuenta predeterminada. Si ocurre, el paso `verificar-identidad` aborta el build antes de construir o subir.
+- **Logs:** solo en Cloud Logging (*Cloud Build → Historial* o *Logs Explorer*). Si la terminal no los muestra,
+  se consultan en la consola. El log del primer build debe decir *"Identidad de compilación verificada"*.
+- **Origen:** `--gcs-source-staging-dir` evita el bucket predeterminado `PROJECT_ID_cloudbuild`, que es
+  multirregional y no se limpia solo. El bucket propio borra lo subido a los 7 días y no conserva copias
+  borradas (`--soft-delete-duration=0`).
+- **Región:** `--region` usa un pool regional de Cloud Build, y `BUILD_REGION=REGION`.
+  - La documentación oficial incluye `northamerica-south1` (México) tanto para Cloud Build como para Cloud Storage
+    (verificado el 2026-10-10):
+    - la [página de precios de Cloud Build](https://cloud.google.com/build/pricing) la lista entre sus regiones
+      (leída directamente) [A];
+    - las [ubicaciones de buckets de Cloud Storage](https://cloud.google.com/storage/docs/locations) la incluyen
+      como región única de Querétaro [M].
+  - `us-central1` también figura en ambas.
+  - La región sigue siendo la decisión **D3** del propietario: este cambio no elige región ni crea recursos.
+  - `BUILD_REGION` puede ser distinta de `REGION`. La imagen sigue en el repositorio de `REGION`, y el cambio
+    puede generar un cargo menor por transferencia entre regiones.
 - `--config` se lee **localmente** y se envía con la petición de build, por lo que no necesita estar
   dentro del código subido.
 - `web/.gcloudignore` es una lista de permitidos. Sin ella, gcloud subiría todo lo que no excluya
@@ -292,12 +408,27 @@ Antes de subir la imagen, valida localmente: `cd web && npm ci && npm run docker
 
 ### 5.6 Cliente OAuth de producción y secretos
 
-1. En *APIs y servicios → Credenciales*, crea un **ID de cliente OAuth nuevo** (Aplicación web), distinto
-   del de localhost:
+> **Estado:** ningún inicio de sesión real contra Cloud Run se ha probado todavía. La primera evidencia es el
+> checklist C1/C2. Una configuración de OAuth correcta en la consola no prueba que el login funcione.
+
+1. **Pantalla de consentimiento** (*Google Auth Platform*), según la decisión D9:
+   - **Caso interno.** Aplica si el proyecto pertenece a una organización de Google Workspace o Cloud Identity y
+     todas las personas autorizadas tienen cuenta en esa organización. Tipo de usuario: **Interno**.
+     - Solo las cuentas de la organización pueden autorizar la app.
+     - No hay lista de usuarios de prueba ni límite de 100, ni pantalla de "app no verificada".
+     - Un administrador de la organización puede tener que aprobar la app.
+     - **`AUTH_ALLOWED_EMAILS` sigue siendo la autorización real.** *Interno* no da acceso a toda la
+       organización: un correo de la organización que no esté en la lista es rechazado por la app.
+     - Con organización, sus políticas pueden afectar al despliegue. La restricción *Domain Restricted Sharing*
+       puede impedir `allUsers` en §5.7; en ese caso se usa la opción (c), `--no-invoker-iam-check`
+       ([preparación §3.6](despliegue-v1-6-preparacion.md#36-invocación-pública-frente-a-login-privado)).
+   - **Caso externo.** Aplica si no hay organización, por ejemplo con una cuenta personal; el tipo *Interno* no
+     está disponible. Tipo de usuario: **Externo**, en estado *Prueba*, con los usuarios de prueba = D5.
+2. En *Clientes*, crea un **ID de cliente OAuth nuevo** (Aplicación web), distinto del de localhost:
    - Orígenes autorizados: el valor de `$SERVICE_URL`.
    - URI de redirección: `$SERVICE_URL/api/auth/callback/google`, exacto.
-   - Mantén la pantalla de consentimiento en modo *Prueba*, con solo los usuarios permitidos.
-2. Copia el ID de cliente (no es secreto) a `OAUTH_CLIENT_ID`. El secreto del cliente se introduce de forma
+   - Los cambios pueden tardar de minutos a horas en aplicarse: crea el cliente antes de la ventana de despliegue.
+3. Copia el ID de cliente (no es secreto) a `OAUTH_CLIENT_ID`. El secreto del cliente se introduce de forma
    oculta:
 
 ```bash
@@ -337,6 +468,8 @@ gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='yaml(s
 # Navegador → OAuth requiere invocación pública (los datos siguen tras login + allowlist):
 gcloud run services add-iam-policy-binding "$SERVICE_NAME" --region "$REGION" \
   --member=allUsers --role=roles/run.invoker
+# Caso interno: si una política de la organización rechaza allUsers, usa EN SU LUGAR (decisión D8-c):
+# gcloud run services update "$SERVICE_NAME" --region "$REGION" --no-invoker-iam-check
 rm /tmp/project-os-service.yaml
 ```
 
@@ -383,6 +516,12 @@ gcloud run services update-traffic "$SERVICE_NAME" --region "$REGION" --to-revis
   Esto solo cierra el acceso si el servicio usa el binding `allUsers`, que es el método de §5.7. Si en su lugar se
   desactivó la comprobación IAM del invocador (`--no-invoker-iam-check`), hay que reactivarla con
   `gcloud run services update "$SERVICE_NAME" --region "$REGION" --invoker-iam-check`.
+- **Compilación (D10-b):** un build nunca despliega, así que una imagen defectuosa no llega a producción si no se
+  pasa a §5.7.
+  - Cancelar un build en curso: `gcloud builds cancel BUILD_ID --project="$PROJECT_ID" --region "$BUILD_REGION"`.
+  - Borrar una imagen defectuosa: `gcloud artifacts docker images delete "IMAGEN@sha256:…" --delete-tags`.
+  - Suspender la cuenta de compilación sin borrar nada: `gcloud iam service-accounts disable "$BUILD_SA"`.
+    Se reactiva con `enable`.
 - **Revocar sesiones:** rotar `project-os-nextauth-secret` (nueva versión, redespliegue) invalida todas las
   cookies. Quitar un correo de la lista (nueva versión de `project-os-allowed-emails`, redespliegue) lo bloquea en
   la siguiente petición, porque cada página y API vuelve a comprobar la lista.
@@ -396,12 +535,18 @@ for s in project-os-nextauth-secret project-os-google-client-secret project-os-a
   gcloud secrets delete "$s"
 done
 gcloud iam service-accounts delete "$RUNTIME_SA"
+# Solo si se usó Cloud Build (D10-b): bucket de origen con su contenido, rol de logs y cuenta de compilación.
+gcloud storage rm --recursive "gs://${BUILD_BUCKET}"
+gcloud projects remove-iam-policy-binding "$PROJECT_ID" --condition=None \
+  --member="serviceAccount:${BUILD_SA}" --role=roles/logging.logWriter
+gcloud iam service-accounts delete "$BUILD_SA"
 ```
 
 Después:
 
 - quita a la cuenta de servicio del **Compartir** del Sheets;
-- si se usó Cloud Build, revisa en *Cloud Storage* los buckets que haya creado para el código subido y bórralos;
+- revisa en *Cloud Storage* que no exista el bucket predeterminado `PROJECT_ID_cloudbuild`. Solo aparece si se lanzó
+  un build sin el comando generado; en ese caso, bórralo;
 - elimina el cliente OAuth de producción;
 - si el proyecto es dedicado, puedes cerrarlo (`gcloud projects delete`), lo que detiene toda la facturación
   del proyecto.
@@ -434,5 +579,10 @@ Después:
   [preparación §5](despliegue-v1-6-preparacion.md#5-riesgos-de-seguridad-y-costos)).
 - **Heurísticas del control V1.6.** Pueden generar alertas ruidosas con datos reales: la aceptación debe
   revisarlas sin tomarlas como decisiones.
+- **Cuenta predeterminada de Compute.** En proyectos sin organización suele recibir el rol Editor. Ni el servicio
+  ni el build la usan: la runtime y la de compilación son dedicadas y el build la rechaza. Quitarle Editor es una
+  decisión aparte del propietario, porque puede afectar a otros usos del proyecto.
+- **Verificación de identidad del build no probada contra GCP.** Depende de que el metadata server responda dentro
+  del build. Si no responde, el build **falla cerrado**: es seguro, pero bloquea. La evidencia es el checklist A8.
 - **Responsabilidades fuera de la app.** Facturación, cuotas compartidas y spend caps dependen de la cuenta
   de Google Cloud del usuario.

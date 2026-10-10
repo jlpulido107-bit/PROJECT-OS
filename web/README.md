@@ -126,7 +126,7 @@ npm ci && npm run audit:prod && npm run audit:critical && npm run lint && npm ru
   arranque de Cloud Run.
 - `deploy/cloudrun/service.template.yaml` es una plantilla declarativa (min 0 / max 1, CPU por solicitud,
   512 MiB, secretos de Secret Manager por versión). `deploy/cloudrun/render.mjs` la valida y genera el YAML.
-  `deploy/cloudbuild.yaml` es solo para build manual.
+  `deploy/cloudbuild.template.yaml` es solo para build manual: `deploy/build-command.mjs` genera la configuración literal con la cuenta dedicada.
 - El despliegue, el costo, el rollback y la eliminación de recursos están en
   [`docs/despliegue-privado-v1-3.md`](../docs/despliegue-privado-v1-3.md). Nada se despliega desde CI.
 

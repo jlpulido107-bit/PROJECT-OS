@@ -28,6 +28,7 @@
 - [x] Costos controlados en la plantilla: min 0 / max 1 instancia y limpieza de imágenes. El presupuesto con alertas lo crea el propietario.
 - [x] Despliegue manual y rollback documentados (`docs/despliegue-privado-v1-3.md`, actualizado a V1.6 en la Misión 010).
 - [x] Preparación V1.6: matriz de decisiones, auditoría estática, costos verificados y checklist de aceptación (Misión 010).
+- [x] Cloud Build con cuenta dedicada `project-os-build`, verificación de identidad en el build, bucket de origen propio y OAuth interno documentado (Misión 011; sin recursos creados).
 - [ ] Autorización del usuario para crear recursos facturables y desplegar.
 - [ ] Prueba real en Cloud Run: acceso permitido/denegado, datos reales, sin escrituras.
 

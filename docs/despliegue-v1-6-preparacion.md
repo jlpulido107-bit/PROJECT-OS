@@ -32,8 +32,8 @@ opción elegida, sin esos datos.
 | D6 | Presupuesto mensual | Importe en USD (p. ej. 5) | Alerta propuesta de USD 5, sabiendo que **no es un corte** de gasto | Solo genera avisos; el gasto real puede superarlo ([§4.3](#43-estimación-de-costo-por-escenario-no-es-una-promesa-ni-un-techo)) | Pendiente |
 | D7 | Alertas | Umbrales y destinatarios; opcional, desactivar la facturación automáticamente | 50 / 90 / 100 % del gasto real, más 100 % del previsto, al correo de administradores de facturación. **Sin** automatización de corte | Un corte automático es una automatización con efectos destructivos ([§4.4](#44-presupuestos-y-alertas)) y requiere aprobación aparte | Pendiente |
 | D8 | Acceso a la app | (a) `allUsers` invocador + login de la app; (b) IAP; (c) desactivar la comprobación IAM del invocador | Ver [§3.6](#36-invocación-pública-frente-a-login-privado) | Cambia quién alcanza `/login` y el procedimiento de cierre | Pendiente |
-| D9 | Pantalla de consentimiento OAuth | Tipo *Externo*; estado *Prueba* o *En producción* | *Externo* en *Prueba*, con los usuarios de prueba = D5 | Ver [§3.1](#31-oauth) | Pendiente |
-| D10 | Construcción de la imagen | (a) Docker local; (b) Cloud Build | (a) si hay Docker; si no, (b) | (b) usa minutos de build y un bucket de origen | Pendiente |
+| D9 | Pantalla de consentimiento OAuth | (a) *Interno*, si el proyecto pertenece a una organización de Workspace o Cloud Identity; (b) *Externo* en *Prueba*; (c) *Externo* en *En producción* | (a) si hay organización y todas las personas autorizadas son de ella; si no, (b) con los usuarios de prueba = D5 | (a) no exige usuarios de prueba, pero las políticas de la organización pueden bloquear `allUsers` (D8-c). Ver [§4.5](#45-oauth) | Pendiente |
+| D10 | Construcción de la imagen | (a) Docker local; (b) Cloud Build con la cuenta dedicada `project-os-build` (runbook §3.4) | (a) si hay Docker; si no, (b) | (b) añade una cuenta de servicio con 3 permisos acotados, un bucket de origen y minutos de build | Pendiente |
 | D11 | Duración de la prueba | Fecha de revisión y de apagado | Ventana fija (p. ej. 14 días) y después: puerta 4 o desmantelar (runbook §7) | Evita recursos olvidados | Pendiente |
 | D12 | Ejecución | Quién ejecuta y cuándo | El propietario, en una sola sesión, con el runbook y el checklist | Claude Code no ejecuta `gcloud` sobre el proyecto | Pendiente |
 
@@ -50,7 +50,7 @@ desplegar.
 | Correo verificado y lista | ✅ | `signIn` exige `email_verified === true` y el correo en `AUTH_ALLOWED_EMAILS`. Cada página y API vuelve a comprobar la lista en cada petición |
 | Sesión | ✅ | JWE de NextAuth, 8 h (`AUTH_SESSION_MAX_AGE_SECONDS=28800`, máximo 7 días). Sin *refresh tokens* de Google guardados. Bajo HTTPS la cookie es `__Secure-` |
 | Cliente de producción | ✅ (runbook) | Cliente **nuevo**, distinto del de localhost. Origen `$SERVICE_URL` y redirección exacta `$SERVICE_URL/api/auth/callback/google` |
-| Estado de publicación | ⚠️ | Ver [§4.5](#45-oauth). En *Prueba* solo entran los usuarios de prueba; la lista de la app sigue siendo la barrera real |
+| Tipo de usuario | ⚠️ | Ver [§4.5](#45-oauth). *Interno* limita la autorización a la organización y *Prueba*, a los usuarios de prueba. En ambos casos la lista de la app sigue siendo la barrera real. **Ningún login real se ha probado** (checklist C1 y C2) |
 | Login real | ⏳ | Checklist C1 y C2 |
 
 ### 3.2 ADC y solo lectura
@@ -72,7 +72,7 @@ desplegar.
 | Cuenta por defecto de Compute | No se usa: la plantilla fija `serviceAccountName` | ✅ |
 | Persona que despliega | Propietario en el alta. Después: `run.admin`, `iam.serviceAccountUser` **sobre la cuenta runtime**, `artifactregistry.writer`, `secretmanager.secretVersionAdder` y, solo con Cloud Build, `cloudbuild.builds.editor` | ✅ runbook §3.2 |
 | GitHub Actions | Sin credenciales de Google Cloud | ✅ |
-| Cloud Build (opción D10-b) | Usa su propia cuenta de servicio de build: revisar qué cuenta usa el proyecto antes del primer build ([§4.6](#46-otros-límites-y-referencias)) | ⏳ |
+| `project-os-build@PROJECT_ID.iam.gserviceaccount.com` (compilación, D10-b) | `logging.logWriter` (proyecto), `artifactregistry.writer` (solo el repositorio) y `storage.objectViewer` (solo el bucket de origen). Sin Editor ni Propietario. `serviceAccount` declarado en la configuración generada y en `--service-account`, con `--project` explícito. El build aborta si corre con otra identidad; esta comprobación contra el metadata server solo está simulada (runbook §3.4) | ✅ diseño y pruebas · ⏳ prueba real autorizada, checklist A8 |
 
 ### 3.4 Secret Manager
 
@@ -176,6 +176,7 @@ Los precios están en USD, para servicios con **facturación por solicitud** (la
 | --- | --- | --- |
 | Tarifa de Cloud Run | Tier 1 [A] | Tier 1 [A] |
 | Cloud Run, Artifact Registry y Secret Manager | Disponibles [M] | Disponibles: Artifact Registry desde 2024-11-20 y Secret Manager regional desde 2024-11-17 [M] |
+| Cloud Build y Cloud Storage | En la documentación oficial (precios de Cloud Build [A]; ubicaciones de Cloud Storage [M]) | En la documentación oficial (precios de Cloud Build [A]; ubicaciones de Cloud Storage [M], región única de Querétaro) |
 | Mapeo de dominio propio de Cloud Run | Disponible, pero en **Preview** y "no recomendado para producción" [M] | **No disponible** [M]. Un dominio propio exigiría un balanceador de aplicaciones global (con costo fijo) o Firebase Hosting |
 | Latencia desde Mérida | Mayor (centro de EE. UU.) | Menor (centro de México). Es una estimación geográfica, no una medición |
 | Cumplimiento del formato de `render.mjs` | ✅ | ✅ |
@@ -246,6 +247,7 @@ la puerta 3, el propietario debe revisar la calculadora oficial con la región e
   ([guía](https://support.google.com/cloud/answer/13464323)). Para la prueba no hace falta.
 - **Redirección:** coincidencia exacta, HTTPS salvo `localhost`, sin comodines [M]
   ([OAuth web](https://developers.google.com/identity/protocols/oauth2/web-server)).
+- **Tipo *Interno*:** solo para proyectos que pertenecen a una organización de Google Workspace o Cloud Identity. Solo sus miembros pueden autorizar la app. Sin pantalla de "app no verificada" ni límite de 100 usuarios. Puede requerir la aprobación de un administrador de la organización [M] ([configurar el consentimiento](https://developers.google.com/workspace/guides/configure-oauth-consent), [ayuda](https://support.google.com/cloud/answer/10311615)). Sin organización no está disponible: se usa *Externo*.
 - **Propagación:** *"It may take 5 minutes to a few hours for changes made to these settings to take effect"* [M]
   ([guía](https://support.google.com/cloud/answer/15549257)). Hay que crear el cliente **antes** de la ventana de
   despliegue.
@@ -260,7 +262,7 @@ la puerta 3, el propietario debe revisar la calculadora oficial con la región e
 | URL determinista | `https://SERVICIO-NUMERO_PROYECTO.REGION.run.app`, si el segmento DNS tiene ≤ 63 caracteres; siempre hay además una URL con hash [M] ([guía](https://cloud.google.com/run/docs/triggering/https-request)) | `project-os-dashboard-` + 12 dígitos ≈ 33 caracteres ✅ |
 | Token con alcances propios | El metadata server acepta `?scopes=` en Cloud Run [M] ([identidad del servicio](https://cloud.google.com/run/docs/securing/service-identity)) | Lo usa `spreadsheets.readonly` ✅ (⏳ checklist C1) |
 | Container Registry | Cerrado en 2025: solo Artifact Registry (`*-docker.pkg.dev`) [M] | El runbook y `render.mjs` ya exigen Artifact Registry ✅ |
-| Cuenta de servicio de Cloud Build | En proyectos nuevos usa por defecto la cuenta de Compute, y Google recomienda indicar una propia [M] ([cambios](https://cloud.google.com/build/docs/cloud-build-service-account-updates)) | Otro motivo para preferir D10-a (Docker local). Si se elige D10-b, revisar esa cuenta antes del primer build |
+| Cuenta de servicio de Cloud Build | En proyectos nuevos usa por defecto la cuenta de Compute, y Google recomienda indicar una propia [M] ([cambios](https://cloud.google.com/build/docs/cloud-build-service-account-updates)). Sin cuenta explícita se usa la predeterminada. Con una cuenta propia, los logs deben ir a Cloud Logging (`roles/logging.logWriter`) o a un bucket propio. En builds lanzados por *triggers*, el campo `serviceAccount` del YAML se ignora [M] ([cuentas de usuario](https://cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)) | ✅ Cuenta dedicada declarada en la configuración literal generada y en `--service-account`, `--project` explícito, logs `CLOUD_LOGGING_ONLY`, sin *triggers* y paso de verificación que aborta con otra identidad (runbook §3.4) |
 | `gcloud` | Última versión 588.0.0 (2026-10-06) [M]. Los comandos del runbook se comprobaron con `--help` en 570.0.0 | Actualizar y repetir la comprobación del runbook §5.-1 |
 
 ## 5. Riesgos de seguridad y costos
@@ -279,6 +281,7 @@ la puerta 3, el propietario debe revisar la calculadora oficial con la región e
 | R10 | Datos [M] desactualizados o mal indexados | Media | Bajo–medio | Fecha de verificación, fuentes enlazadas y revisión del propietario antes de la puerta 3 | — |
 | R11 | Recursos olvidados tras la prueba | Media | Bajo | Ventana fija (D11), proyecto dedicado (D1), runbook §7 | — |
 | R12 | Alertas ruidosas del control V1.6 con datos reales | Media | Bajo | Son sugerencias, no acciones; revisión en el checklist C6 | Ajustar umbrales en una misión aparte |
+| R13 | Build ejecutado con la cuenta predeterminada (posible Editor) o en otro proyecto | Baja | Alto | `serviceAccount` en la configuración literal generada, `--service-account` y `--project` en el comando, paso `verificar-identidad` que aborta antes de construir, pruebas (`cloudbuild.test.ts`) | La comprobación contra el metadata server solo está simulada: necesita una prueba real posterior con autorización (checklist A8). Si no responde, el build falla cerrado |
 
 **Conclusión:** no hay defectos críticos que obliguen a cambiar la lógica funcional antes de la prueba. Las mejoras
 (CSP, IAP) quedan propuestas para PRs separados.

@@ -1,0 +1,39 @@
+# PROJECT-OS V1.6 — PLANTILLA de build manual en Cloud Build (solo construye y sube la imagen; NO despliega).
+# No se envía tal cual: `node web/deploy/build-command.mjs` la convierte en un YAML LITERAL para un proyecto
+# (sin interpolaciones de Cloud Build salvo el escape documentado `$$`), lo escribe en un archivo local e imprime el
+# comando `gcloud builds submit` con --project y --service-account. Ver docs/despliegue-privado-v1-3.md §3.4 y §5.5.
+#
+# Identidad exigida en capas:
+#   1. `serviceAccount` declarado en la configuración generada: la cuenta dedicada project-os-build del proyecto.
+#   2. El mismo valor en --service-account del comando (gcloud solo sobrescribe el campo con el mismo valor).
+#   3. Paso `verificar-identidad`: consulta al metadata server la cuenta real del build y aborta antes de construir o
+#      subir si no es la dedicada. Solo está probado con un metadata server SIMULADO; falta una prueba real autorizada.
+# Los marcadores __…__ no son válidos para Cloud Build: si alguien enviara esta plantilla sin generar, el build no
+# tendría una cuenta válida ni una imagen válida, y el paso 3 abortaría igualmente.
+# Con una cuenta propia, Cloud Build exige guardar los logs en Cloud Logging o en un bucket propio: solo Cloud Logging.
+serviceAccount: 'projects/__PROJECT_ID__/serviceAccounts/__BUILD_SERVICE_ACCOUNT__'
+steps:
+  - id: verificar-identidad
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        expected='__BUILD_SERVICE_ACCOUNT__'
+        actual="$$(curl -sSf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email')"
+        if [ "$$actual" != "$$expected" ]; then
+          echo "Build abortado: la identidad de compilación no es la cuenta dedicada project-os-build." >&2
+          exit 1
+        fi
+        echo "Identidad de compilación verificada: cuenta dedicada project-os-build."
+  - id: construir-imagen
+    name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args: ['build', '--platform', 'linux/amd64', '-t', '__IMAGE_TAG__', '.']
+images:
+  - '__IMAGE_TAG__'
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
