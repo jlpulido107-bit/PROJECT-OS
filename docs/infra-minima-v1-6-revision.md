@@ -81,6 +81,34 @@ El propietario autorizó ejecutar el arnés en esta sesión. Resultados y correc
 | Revisión del PR: el `IFS=$'\n\t'` del arnés podría impedir que el gcloud falso dividiera por espacios las flags, las APIs y los roles | Comprobado: no ocurre. El falso es otro proceso bash, y bash **no hereda `IFS`** del entorno (ni exportado ni con `env`); además se lanza con `env -i`. Las 21 ejecuciones con `apply-correcto` en verde lo confirman, porque ese escenario necesita esas listas bien divididas | Igualmente, tokenización **explícita**: el falso fija `IFS=$' \t\n'` y usa arrays (`read -r -a`) | 6 pruebas que ejecutan **solo el gcloud falso**, con un `IFS` hostil en el entorno: una flag por línea, una API por línea y JSON con varios bindings. Con `IFS=$'\n\t'` forzado dentro del falso, 5 de ellas fallan |
 | Un fallo intermitente de `check-con-api-faltante` (falta el texto esperado) en 1 de 22 ejecuciones | **No identificada.** No se reprodujo en las ejecuciones siguientes | El arnés imprime ahora las últimas líneas de la salida, sin correos, cuando un escenario falla | — |
 
+### 4.4 Corrección tras el `--check` real en Cloud Shell (SDK 587.0.0)
+
+El propietario ejecutó `--check` desde `main` (`9dd40b3`) en Cloud Shell. El script se detuvo **sin cambios** y dijo
+que faltaban seis flags que sí están en la ayuda real: `storage buckets create` `--public-access-prevention`,
+`--soft-delete-duration` y `--lifecycle-file`; `artifacts repositories create` `--location` y `--description`;
+`artifacts repositories add-iam-policy-binding` `--location`. El error era de `verify_flags`, no de la versión del SDK.
+
+| Tema | Hallazgo | Corrección |
+| --- | --- | --- |
+| **Causa raíz** | En una terminal con color, `gcloud … --help` marca las flags con negrita ANSI aunque la salida se capture: `ESC[1m--soft-delete-durationESC[m=ESC[4mSOFT_DELETE_DURATIONESC[m`. El patrón exigía `--flag` seguido de `=`, espacio, `]` o fin de línea, y lo que seguía era `ESC`. Las demás flags pasaban porque también aparecen en texto sin formato (ejemplos o descripciones). Reproducido aquí con el SDK 570.0.0 y `TERM=xterm-256color` (66 líneas con escapes): el patrón anterior marca **exactamente las mismas seis flags**. Con `TERM=dumb`, la ayuda sale sin escapes | La ayuda se pide con `TERM=dumb`. Además se eliminan los escapes ANSI y el sobreimpreso `x<BS>x` (`plain_text`), por si una versión no respeta `TERM`. La flag se busca como **palabra completa** (`--flag` o `--[no-]flag`), sin depender de lo que la rodea. `CLOUDSDK_CORE_DISABLE_COLOR=true` no quita estas negritas (comprobado) |
+| `IFS=$'\n\t'` y `command gcloud $cmd --help` | No era la causa: había flags que sí coincidían, así que se obtenía la ayuda del subcomando correcto. Aun así, dividir `$cmd` dependía de un `IFS` local | El comando y las flags se pasan como **arrays** (`IFS=' ' read -r -a`, `"${words[@]}"`). Una prueba comprueba que el gcloud recibe `[storage][buckets][create][--help]` como argumentos separados |
+| Mensaje de error | Recomendaba actualizar gcloud, lo cual era engañoso | Ahora pide revisarlo con `gcloud <comando> --help`, sin recomendar ninguna actualización |
+
+**Pruebas de regresión** (`infra-minima.test.ts`, bloque «regresión Cloud Shell»): un gcloud falso que **siempre**
+responde con negritas ANSI, con las líneas de sinopsis copiadas de la ayuda real. Las pruebas cubren:
+
+- se aceptan las 17 flags, también con sobreimpreso;
+- se llama al comando con argumentos separados y `TERM=dumb`;
+- una flag que de verdad falta se sigue detectando (`--soft-delete-duration`, `--location`, `--description`);
+- `--condition` no se confunde con `--condition-from-file`.
+
+Contra el `verify_flags` de `9dd40b3`, **4 de estas pruebas fallan**. Con la corrección pasan todas.
+
+**Qué se probó de verdad y qué no.** El patrón nuevo, con `plain_text`, se aplicó a la ayuda **real** capturada del
+SDK 570.0.0 con escapes, y encontró las 17 flags. No hay aquí un SDK 587.0.0: la ayuda de las pruebas reproduce su
+formato a partir del 570.0.0 y del síntoma que se observó en Cloud Shell. Lo confirmará el `--check` del propietario
+en Cloud Shell una vez aprobada la corrección. **No se ejecutó `--check` ni `--apply` contra GCP.**
+
 ## 5. Fallo a mitad de `--apply`: conciliación manual
 
 No hay rollback automático. **No se borra nada automáticamente ni se reejecuta a ciegas.** Si se reejecuta, el preflight
@@ -118,11 +146,11 @@ runbook §5.5).
 | --- | --- | --- |
 | **Estática** | `bash -n` del script y del arnés | OK |
 | **Estática** | ShellCheck 0.11.0 `-S style`, script y arnés | Sin avisos |
-| **Estática** | Pruebas del texto del script (orden, alcance, flags, privacidad, `--check`, auditoría) y del arnés; `bash -n` y ShellCheck también del gcloud falso extraído | Incluidas en las 68 pruebas de `infra-minima.test.ts` |
-| **Funciones aisladas** | Funciones cargadas con `source` (no ejecuta `main`): listas, roles, bucket, `check_json`, máscara, `verify_flags` con un gcloud **falso**, también con textos de ~200 KB. El gcloud falso del arnés, ejecutado solo | Incluidas en las 68 pruebas |
+| **Estática** | Pruebas del texto del script (orden, alcance, flags, privacidad, `--check`, auditoría) y del arnés; `bash -n` y ShellCheck también del gcloud falso extraído | Incluidas en las 77 pruebas de `infra-minima.test.ts` |
+| **Funciones aisladas** | Funciones cargadas con `source` (no ejecuta `main`): listas, roles, bucket, `check_json`, máscara, `verify_flags` con un gcloud **falso**, también con textos de ~200 KB y con ayuda en negrita ANSI (§4.4). El gcloud falso del arnés, ejecutado solo | Incluidas en las 77 pruebas |
 | **Ejecución local limitada** | `--plan`, sin argumentos y con argumentos inválidos, con un gcloud falso que deja una marca si se invoca | Código 0 o 2; gcloud nunca invocado |
 | **Mutaciones** | Variantes deliberadamente incorrectas del script y del runbook | Cada una hace fallar al menos una prueba |
-| **Simulación de `--plan`, `--check` y `--apply` con gcloud falso** | Arnés `simular-infra-minima.sh`, ejecutado en esta sesión con **autorización expresa del propietario**. El primer intento, sin esa autorización, fue bloqueado por el entorno y no se eludió | Versión final (con la tokenización explícita): **19/19 en 11 ejecuciones consecutivas**; antes de ese cambio, 19/19 en otras 21. Ninguna llamada salió del gcloud falso (el arnés aborta si `gcloud` no resuelve al falso). Historial en §4.3 |
+| **Simulación de `--plan`, `--check` y `--apply` con gcloud falso** | Arnés `simular-infra-minima.sh`, ejecutado en esta sesión con **autorización expresa del propietario**. El primer intento, sin esa autorización, fue bloqueado por el entorno y no se eludió | Versión final (con la tokenización explícita): **19/19 en 11 ejecuciones consecutivas**; antes de ese cambio, 19/19 en otras 21. Con la corrección de `verify_flags` (§4.4), 19/19. Ninguna llamada salió del gcloud falso (el arnés aborta si `gcloud` no resuelve al falso). Historial en §4.3 |
 | **Contra GCP real** | Cualquier modo salvo `--plan` | **No ejecutado** |
 
 Los resultados de CI de cada SHA se publican en el PR.
@@ -160,7 +188,7 @@ Los resultados de CI de cada SHA se publican en el PR.
 
 | # | Riesgo | Mitigación / estado |
 | --- | --- | --- |
-| P1 | Nunca ejecutado contra GCP: permisos efectivos, políticas de organización y comportamiento real sin probar | `--check` (solo lectura) y luego `--apply` con autorización. `verify_flags` cubre la versión del SDK |
+| P1 | Nunca ejecutado contra GCP: permisos efectivos, políticas de organización y comportamiento real sin probar | `--check` (solo lectura) y luego `--apply` con autorización. `verify_flags` cubre la versión del SDK. El primer `--check` real (SDK 587.0.0) se detuvo sin cambios por un falso negativo de `verify_flags`; está corregido (§4.4) y el propietario debe repetir `--check` |
 | P2 | La simulación usa un gcloud falso: valida el flujo, el orden, los abortos y la privacidad, no el comportamiento real de GCP. Hubo un fallo intermitente sin causa identificada (§4.3) | `--check` real (solo lectura) con autorización separada. Ejecutar el arnés en CI sería otra opción, pero cambia los workflows y requiere aprobación |
 | P3 | Sin rollback automático | Orden con el paso más frágil primero; matriz de conciliación (§5) |
 | P4 | Nombre de bucket global | Fallaría el primer cambio sin dejar nada más creado |
