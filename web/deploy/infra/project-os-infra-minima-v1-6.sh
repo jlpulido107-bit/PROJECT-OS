@@ -142,17 +142,28 @@ PLAN
 }
 
 # Comprueba que el gcloud local acepta cada flag de los comandos mutantes (solo `--help`: sin red ni cambios).
+# La ayuda se pide con TERM=dumb y, además, se le quitan los códigos ANSI y el sobreimpreso: en una terminal con color
+# (p. ej. Cloud Shell) gcloud escribe `ESC[1m--flagESC[m=…` y un patrón sobre el texto crudo daba falsos negativos.
+# La flag se busca como palabra completa (`--flag` o `--[no-]flag`), sin depender de la maquetación de la ayuda.
 verify_flags() {
   local entry cmd flags flag help missing=''
+  local -a words
   for entry in "${MUTATING_FLAGS[@]}"; do
     cmd="${entry%%|*}"; flags="${entry#*|}"
-    # shellcheck disable=SC2086  # el nombre del comando se divide en palabras a propósito
-    help="$(IFS=' '; command gcloud $cmd --help 2>/dev/null)" || { missing+="${cmd} (sin ayuda), "; continue; }
-    for flag in ${flags// /$'\n'}; do
-      grep -Eq -- "--(\[no-\])?${flag}([= ]|\]|\$)" <<< "$help" || missing+="${cmd} --${flag}, "
+    IFS=' ' read -r -a words <<< "$cmd"
+    help="$(TERM=dumb command gcloud "${words[@]}" --help 2>/dev/null)" || { missing+="${cmd} (sin ayuda), "; continue; }
+    help="$(plain_text <<< "$help")"
+    IFS=' ' read -r -a words <<< "$flags"
+    for flag in "${words[@]}"; do
+      grep -Eq -- "(^|[^A-Za-z0-9-])--(\[no-\])?${flag}([^A-Za-z0-9-]|\$)" <<< "$help" || missing+="${cmd} --${flag}, "
     done
   done
-  [[ -z "$missing" ]] || die "el gcloud instalado no acepta: ${missing%, }. Actualiza gcloud; detenido sin cambios."
+  [[ -z "$missing" ]] || die "el gcloud instalado no acepta: ${missing%, }. Revísalo con \`gcloud <comando> --help\`; detenido sin cambios."
+}
+
+# Texto sin códigos de escape ANSI (negrita, subrayado, color) ni sobreimpreso `x<BS>x`.
+plain_text() {
+  LC_ALL=C sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e $'s/.\x08//g'
 }
 
 # ---- Preflight: SOLO LECTURA. Cualquier error de consulta detiene el script sin cambios. ----

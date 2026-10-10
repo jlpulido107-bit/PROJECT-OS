@@ -458,3 +458,110 @@ describe('gcloud falso del arnés: tokenización explícita (se ejecuta solo el 
     expect(policy.bindings.map((b) => b.role)).toEqual(roles)
   })
 })
+
+describe('verify_flags con la ayuda real de gcloud en una terminal con color (regresión Cloud Shell, SDK 587.0.0)', () => {
+  // Líneas de sinopsis y de flags copiadas de `gcloud … --help` con TERM=xterm-256color (SDK 570.0.0; el propietario
+  // vio el mismo formato y las mismas seis flags «faltantes» en Cloud Shell con 587.0.0). ESC[1m = negrita,
+  // ESC[4m = subrayado, ESC[m = fin. Con el patrón anterior, 6 de las 17 flags daban falso negativo.
+  const B = (s: string) => `\x1b[1m${s}\x1b[m`
+  const U = (s: string) => `\x1b[4m${s}\x1b[m`
+  const HELP: Record<string, string[]> = {
+    'storage buckets create': [
+      `        [${B('--ip-filter-file')}=${U('IP_FILTER_FILE')}] [${B('--lifecycle-file')}=${U('LIFECYCLE_FILE')}]`,
+      `        [${B('--location')}=${U('LOCATION')}, ${B('-l')} ${U('LOCATION')}]`,
+      `        [${B('--[no-]pap')}, ${B('--[no-]public-access-prevention')}]`,
+      `        [${B('--soft-delete-duration')}=${U('SOFT_DELETE_DURATION')}]`,
+      `        [${B('--[no-]uniform-bucket-level-access')}, ${B('-b')}]`,
+    ],
+    'artifacts repositories create': [
+      `    ${B('gcloud artifacts repositories create')} (${U('REPOSITORY')} : ${B('--location')}=${U('LOCATION')})`,
+      `        ${B('--repository-format')}=${U('REPOSITORY_FORMAT')} [${B('--allow-snapshot-overwrites')}]`,
+      `        [${B('--async')}] [${B('--description')}=${U('DESCRIPTION')}] [${B('--disable-remote-validation')}]`,
+    ],
+    'iam service-accounts create': [
+      `    ${B('gcloud iam service-accounts create')} ${U('NAME')} [${B('--description')}=${U('DESCRIPTION')}]`,
+      `        [${B('--display-name')}=${U('DISPLAY_NAME')}] [${U('GCLOUD_WIDE_FLAG ...')}]`,
+    ],
+    'projects add-iam-policy-binding': [
+      `    ${B('gcloud projects add-iam-policy-binding')} ${U('PROJECT_ID')} ${B('--member')}=${U('PRINCIPAL')}`,
+      `        ${B('--role')}=${U('ROLE')}`,
+      `        [${B('--condition')}=[${U('KEY')}=${U('VALUE')},...] | ${B('--condition-from-file')}=${U('PATH_TO_FILE')}]`,
+    ],
+    'artifacts repositories add-iam-policy-binding': [
+      `        (${U('REPOSITORY')} : ${B('--location')}=${U('LOCATION')}) ${B('--member')}=${U('PRINCIPAL')} ${B('--role')}=${U('ROLE')}`,
+    ],
+    'storage buckets add-iam-policy-binding': [
+      `    ${B('gcloud storage buckets add-iam-policy-binding')} ${U('URL')} ${B('--member')}=${U('PRINCIPAL')}`,
+      `        ${B('--role')}=${U('ROLE')}`,
+    ],
+  }
+  const dir = mkdtempSync(path.join(tmpdir(), 'infra-ansi-'))
+  const write = (name: string, lines: string[]) => writeFileSync(path.join(dir, name), `${lines.join('\n')}\n`)
+  for (const [cmd, lines] of Object.entries(HELP)) {
+    write(`${cmd.replace(/ /g, '_')}.txt`, lines)
+    // Sobreimpreso al estilo man (`x<BS>x`), otra forma de negrita que no debe romper la búsqueda.
+    write(`${cmd.replace(/ /g, '_')}.bs`, lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').replace(/--[a-z[\]-]+/g, (f) => [...f].map((c) => `${c}\b${c}`).join(''))))
+  }
+  // El gcloud falso SIEMPRE responde con escapes (como una terminal con color), registra TERM y cada argumento por
+  // separado, y falla si el comando no es uno de los seis (p. ej. si llegara como una sola palabra).
+  writeFileSync(path.join(dir, 'gcloud'), [
+    '#!/bin/sh',
+    'printf "TERM=%s argc=%s\\n" "$TERM" "$#" >> "$FAKE_LOG"',
+    'for a in "$@"; do printf "[%s]" "$a" >> "$FAKE_LOG"; done; echo >> "$FAKE_LOG"',
+    '[ "$#" -ge 2 ] || exit 2',
+    'name=""; for a in "$@"; do [ "$a" = --help ] || name="${name:+${name}_}$a"; done',
+    'f="$FAKE_DIR/$name.${FAKE_EXT:-txt}"; [ -f "$f" ] || exit 2',
+    'if [ -n "${FAKE_DROP_FLAG:-}" ]; then grep -v -- "$FAKE_DROP_FLAG" "$f"; else sed -e "${FAKE_SED:-}" "$f"; fi',
+  ].join('\n'))
+  chmodSync(path.join(dir, 'gcloud'), 0o755)
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+  const log = path.join(dir, 'llamadas.log')
+  const run = (env: Record<string, string> = {}) => {
+    writeFileSync(log, '')
+    return spawnSync('bash', ['-c', `source "${SCRIPT}"; verify_flags`], {
+      encoding: 'utf8', env: { PATH: `${dir}:/usr/bin:/bin`, TERM: 'xterm-256color', FAKE_DIR: dir, FAKE_LOG: log, ...env } as unknown as NodeJS.ProcessEnv,
+    })
+  }
+
+  it('la ayuda de prueba contiene escapes ANSI alrededor de las flags (es representativa)', () => {
+    expect(HELP['storage buckets create']?.join('\n')).toContain('\x1b[1m--soft-delete-duration\x1b[m=')
+  })
+
+  it('acepta todas las flags aunque la ayuda venga con negritas ANSI (antes: 6 falsos negativos)', () => {
+    const r = run()
+    expect(r.stderr).toBe('')
+    expect(r.status).toBe(0)
+  })
+
+  it('acepta todas las flags con sobreimpreso al estilo man (x<BS>x)', () => {
+    expect(run({ FAKE_EXT: 'bs' }).status).toBe(0)
+  })
+
+  it('invoca el subcomando real como argumentos separados y con TERM=dumb', () => {
+    run()
+    const calls = readFileSync(log, 'utf8')
+    expect(calls).toContain('[storage][buckets][create][--help]')
+    expect(calls).toContain('[projects][add-iam-policy-binding][--help]')
+    expect(calls).toContain('[artifacts][repositories][add-iam-policy-binding][--help]')
+    expect(calls.match(/^TERM=dumb argc=\d+$/gm)).toHaveLength(6)
+    expect(calls).not.toMatch(/TERM=xterm/)
+  })
+
+  it.each(['--soft-delete-duration', '--location', '--description'])('sigue detectando una flag que de verdad falta (%s), con escapes', (flag) => {
+    const r = run({ FAKE_DROP_FLAG: flag })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain(`${flag}`)
+    expect(r.stderr).toContain('el gcloud instalado no acepta')
+  })
+
+  it('no confunde una flag con otra que la contiene como prefijo (--condition frente a --condition-from-file)', () => {
+    // Se renombra solo `--condition` (seguida de ESC); `--condition-from-file` sigue en la misma línea.
+    const r = run({ FAKE_SED: 's/--condition\\([^-]\\)/--xcondition\\1/g' })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('projects add-iam-policy-binding --condition')
+  })
+
+  it('el mensaje de error no recomienda actualizar gcloud (el fallo puede ser del parseo, no de la versión)', () => {
+    expect(text).not.toMatch(/Actualiza gcloud/)
+  })
+})
