@@ -7,9 +7,14 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
   { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+  // Los navegadores solo aplican HSTS sobre HTTPS (Cloud Run); en http://localhost se ignora.
+  { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
 ]
 
 const nextConfig: NextConfig = {
+  // La imagen Docker compila con NEXT_OUTPUT=standalone (servidor autocontenido mínimo);
+  // el flujo local (`npm run build && npm start`) no cambia.
+  output: process.env.NEXT_OUTPUT === 'standalone' ? 'standalone' : undefined,
   poweredByHeader: false,
   // En desarrollo Next registra cada petición con su query string; las de /api/auth/* incluyen el
   // código OAuth de un solo uso (?code=…). No se registran para no dejar credenciales en logs.

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "conservar-3-recientes",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": { "keepCount": 3 }
+  },
+  {
+    "name": "borrar-mayores-30-dias",
+    "action": { "type": "Delete" },
+    "condition": { "tagState": "ANY", "olderThan": "2592000s" }
+  }
+]

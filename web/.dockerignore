@@ -1,0 +1,8 @@
+# Lista de permitidos: solo entra al contexto lo necesario para compilar.
+# Nunca entran .env*, claves, .git, node_modules, pruebas, capturas ni scripts.
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!src/**

@@ -4,9 +4,11 @@ import { getServerSession, type NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import { redirect } from 'next/navigation'
 import { isEmailAllowed, sessionMaxAge } from './access'
+import { authProblems } from './deployment'
 
+/** Solo se ofrece el inicio de sesión si la configuración de autenticación es completa y segura. */
 export function authConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.NEXTAUTH_SECRET)
+  return authProblems(env).length === 0
 }
 
 export const authOptions: NextAuthOptions = {

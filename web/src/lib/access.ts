@@ -26,10 +26,11 @@ export function sessionMaxAge(env: NodeJS.ProcessEnv = process.env): number {
   return Math.min(value, 7 * 24 * 60 * 60)
 }
 
-/** Rutas accesibles sin sesión. No devuelven datos de Sheets. */
+/** Rutas accesibles sin sesión. No devuelven datos de Sheets (/api/health solo responde ok/unavailable). */
 export function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/login' ||
+    pathname === '/api/health' ||
     pathname === '/robots.txt' ||
     pathname === '/favicon.ico' ||
     pathname.startsWith('/api/auth/') ||

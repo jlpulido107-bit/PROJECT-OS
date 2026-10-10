@@ -15,7 +15,7 @@ function files(dir: string): string[] {
 
 const sources = files(SRC).map((file) => ({ file: path.relative(SRC, file), text: readFileSync(file, 'utf8') }))
 
-const SERVER_ONLY_MODULES = ['lib/config', 'lib/data', 'lib/sheets-client', 'lib/auth', 'lib/page-data']
+const SERVER_ONLY_MODULES = ['lib/config', 'lib/data', 'lib/sheets-client', 'lib/auth', 'lib/page-data', 'lib/credentials', 'lib/deployment']
 
 describe('garantías de seguridad del código', () => {
   it('ningún código llama endpoints de escritura de Sheets ni usa el alcance de escritura', () => {
@@ -58,6 +58,11 @@ describe('garantías de seguridad del código', () => {
       const logs = text.match(/console\.(log|info|warn|error|debug)\([^)]*\)/g) ?? []
       for (const line of logs) expect(line, file).not.toMatch(/token|key|secret|credential|response|body|email/i)
     }
+  })
+
+  it('/api/health no lee datos de Sheets ni la sesión', () => {
+    const health = sources.find((s) => s.file === path.join('app', 'api', 'health', 'route.ts'))!.text
+    expect(health).not.toMatch(/getDataset|sheets-client|getServerSession|currentUser/)
   })
 
   it('cada página privada verifica la sesión antes de leer datos', () => {

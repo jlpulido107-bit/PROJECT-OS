@@ -1,11 +1,11 @@
 import 'server-only'
 
-import { JWT } from 'google-auth-library'
-import { cacheSeconds, ConfigError, dataSource, serviceAccount, spreadsheetId } from './config'
+import { cacheSeconds, ConfigError, dataSource, spreadsheetId } from './config'
+import { createTokenProvider, type TokenProvider } from './credentials'
 import { todayInMerida } from './dates'
 import { buildFixtureTabs } from './fixtures'
 import { TABS_READ } from './schema'
-import { createSheetsReader, SHEETS_READONLY_SCOPE, SheetsReadError, type SheetsErrorCode } from './sheets-client'
+import { createSheetsReader, SheetsReadError, type SheetsErrorCode } from './sheets-client'
 import { buildDataset } from './table'
 import type { Dataset } from './types'
 
@@ -24,19 +24,12 @@ let lastForced = 0
 const ERROR_CACHE_MS = 10_000
 const MIN_FORCED_INTERVAL_MS = 10_000
 
-let jwtClient: { key: string; client: JWT } | null = null
+let tokenProvider: TokenProvider | null = null
 
-async function accessToken(): Promise<string> {
-  const account = serviceAccount()
-  if (!jwtClient || jwtClient.key !== account.clientEmail) {
-    jwtClient = {
-      key: account.clientEmail,
-      client: new JWT({ email: account.clientEmail, key: account.privateKey, scopes: [SHEETS_READONLY_SCOPE] }),
-    }
-  }
-  const { token } = await jwtClient.client.getAccessToken()
-  if (!token) throw new Error('empty token')
-  return token
+/** Proveedor de tokens según la política explícita de credenciales (clave local o ADC). */
+function accessToken(): Promise<string> {
+  tokenProvider ??= createTokenProvider()
+  return tokenProvider.getAccessToken()
 }
 
 async function load(): Promise<LoadResult> {
@@ -54,7 +47,8 @@ async function load(): Promise<LoadResult> {
       return { ok: false, error: { code: error.code, message: error.message }, at: fetchedAt }
     }
     if (error instanceof ConfigError) {
-      // Mensaje propio sin valores de configuración.
+      // Mensaje propio sin valores de configuración ni secretos: seguro para logs del servidor.
+      console.warn('[project-os] Configuración inválida:', error.message)
       return { ok: false, error: { code: 'config', message: error.message }, at: fetchedAt }
     }
     console.error('[project-os] Error inesperado al leer datos:', error instanceof Error ? error.name : 'desconocido')
