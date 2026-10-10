@@ -9,6 +9,12 @@ on:
     paths:
       - 'web/**'
       - '.github/workflows/control-validation.yml'
+  # También tras integrar en main (revisión V1.6): la cobertura E2E no depende de que exista un PR.
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/control-validation.yml'
 
 permissions:
   contents: read
