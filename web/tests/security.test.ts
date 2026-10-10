@@ -18,12 +18,49 @@ const sources = files(SRC).map((file) => ({ file: path.relative(SRC, file), text
 const SERVER_ONLY_MODULES = ['lib/config', 'lib/data', 'lib/sheets-client', 'lib/auth', 'lib/page-data', 'lib/credentials', 'lib/deployment']
 
 describe('garantías de seguridad del código', () => {
+  // V1.4: el único archivo con endpoints de escritura es el adaptador PREPARADO, que nadie importa.
+  const WRITE_ADAPTER = path.join('lib', 'operations', 'sheets-table-store.ts')
+  // Módulos de V1.4 que solo pueden ejecutarse en el servidor (estado simulado y manejo de escrituras).
+  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http')
+
   it('ningún código llama endpoints de escritura de Sheets ni usa el alcance de escritura', () => {
     for (const { file, text } of sources) {
-      expect(text, file).not.toMatch(/:append|:batchUpdate|:clear|values:update|batchUpdateByDataFilter/)
+      if (file !== WRITE_ADAPTER) {
+        expect(text, file).not.toMatch(/:append|:batchUpdate|:clear|values:update|batchUpdateByDataFilter/)
+        // Quien hable con las APIs de Google solo puede leer.
+        if (/googleapis\.com/.test(text)) expect(text, file).not.toMatch(/method:\s*'(PUT|POST|PATCH|DELETE)'/)
+      }
       expect(text, file).not.toMatch(/auth\/spreadsheets['"]/)
       expect(text, file).not.toMatch(/auth\/drive/)
+      expect(text, file).not.toMatch(/USER_ENTERED/)
     }
+  })
+
+  it('el adaptador de escritura a Sheets no se importa desde la app (V1.4 solo simula)', () => {
+    for (const { file, text } of sources) {
+      if (file === WRITE_ADAPTER) continue
+      expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*sheets-table-store['"]/)
+      expect(text, file).not.toMatch(/new SheetsTableStore/)
+    }
+    const adapter = sources.find((s) => s.file === WRITE_ADAPTER)!.text
+    expect(adapter).toMatch(/valueInputOption=RAW/)
+    expect(adapter).not.toMatch(/process\.env|google-auth-library|readFileSync/)
+  })
+
+  it('todas las rutas de escritura pasan por la guarda del servidor', () => {
+    const routes = sources.filter((s) => s.file.startsWith(path.join('app', 'api', 'operaciones')) && s.file.endsWith('route.ts'))
+    expect(routes.length).toBe(4)
+    for (const { file, text } of routes) {
+      expect(text, file).toMatch(/handleWrite\(request,/)
+      expect(text, file).not.toMatch(/export async function (GET|PUT|DELETE)/)
+    }
+    const http = sources.find((s) => s.file === path.join('lib', 'operations', 'http.ts'))!.text
+    expect(http.indexOf('evaluateWriteRequest(')).toBeLessThan(http.indexOf('await run('))
+  })
+
+  it('el modo sheets no habilita escritura en esta versión', () => {
+    const config = sources.find((s) => s.file === path.join('lib', 'operations', 'config.ts'))!.text
+    expect(config).toMatch(/requested === 'sheets'[\s\S]*?mode: 'disabled'/)
   })
 
   it('el cliente de Sheets solo emite GET', () => {
@@ -67,7 +104,7 @@ describe('garantías de seguridad del código', () => {
 
   it('cada página privada verifica la sesión antes de leer datos', () => {
     const pages = sources.filter((s) => s.file.startsWith(path.join('app', '(private)')) && s.file.endsWith('page.tsx'))
-    expect(pages.length).toBe(6)
+    expect(pages.length).toBeGreaterThanOrEqual(6)
     for (const { file, text } of pages) expect(text, file).toContain('privateData(')
     const api = sources.find((s) => s.file === path.join('app', 'api', 'resumen', 'route.ts'))!.text
     expect(api.indexOf('currentUser()')).toBeLessThan(api.indexOf('getDataset()'))

@@ -58,6 +58,8 @@ jobs:
         run: npm run build
       - name: HTTP E2E de autorización (datos sintéticos)
         run: npm run test:e2e
+      - name: HTTP E2E de operaciones V1.4 (modo simulado; nunca Google Sheets)
+        run: npm run test:e2e:ops
       - name: Revisión de secretos en assets de cliente
         run: npm run check:client-secrets
 

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { EvidenceItem } from '@/components/evidence-item'
+import { writeAccess } from '@/components/operations/write-access'
 import { TaskCard } from '@/components/task-card'
 import { DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
 import { formatMinutes, indexTasks, projectStats, sortTasks } from '@/lib/aggregate'
@@ -16,11 +17,12 @@ const EVIDENCE_LIMIT = 20
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: rawId } = await params
   const id = decodeURIComponent(rawId)
-  const { result } = await privateData(`/proyectos/${encodeURIComponent(id)}`)
+  const { user, result } = await privateData(`/proyectos/${encodeURIComponent(id)}`)
   if (!result.ok) return <><h1>Proyecto</h1><LoadError result={result} /></>
   const data = result.data
   const project = data.proyectos.find((p) => p.id === id)
   if (!project) notFound()
+  const canEdit = writeAccess(user.email).allowed
 
   const st = projectStats(project.id, data)
   const hitos = data.hitos.filter((h) => h.proyectoId === project.id)
@@ -75,9 +77,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </Section>
 
       <Section title={`Tareas (${st.tareasAbiertas} abiertas de ${tareas.length})`} id="tareas"
-        actions={<Link href={`/tareas?proyecto=${encodeURIComponent(project.id)}`}>Filtrar tareas</Link>}>
+        actions={<span className="section-links">{canEdit ? <Link href={`/tareas/nueva?proyecto=${encodeURIComponent(project.id)}`}>Nueva tarea</Link> : null}<Link href={`/tareas?proyecto=${encodeURIComponent(project.id)}`}>Filtrar tareas</Link></span>}>
         {tareas.length === 0 ? <Empty>Este proyecto no tiene tareas registradas.</Empty> : (
-          <div className="stack">{tareas.map((t) => <TaskCard key={t.id} task={t} data={data} />)}</div>
+          <div className="stack">{tareas.map((t) => <TaskCard key={t.id} task={t} data={data} canEdit={canEdit} />)}</div>
         )}
       </Section>
 
@@ -93,7 +95,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         )}
       </Section>
 
-      <Section title={`Decisiones (${decisiones.length})`} id="decisiones">
+      <Section title={`Decisiones (${decisiones.length})`} id="decisiones"
+        actions={canEdit ? <Link href={`/decisiones/nueva?proyecto=${encodeURIComponent(project.id)}`}>Registrar decisión</Link> : undefined}>
         {decisiones.length === 0 ? <Empty>No hay decisiones registradas para este proyecto.</Empty> : (
           <ul className="cards">
             {decisiones.map((d) => (
