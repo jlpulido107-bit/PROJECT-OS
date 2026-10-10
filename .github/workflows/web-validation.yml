@@ -9,6 +9,13 @@ on:
       - 'web/**'
       - 'config/projects.json'
       - '.github/workflows/web-validation.yml'
+  # Integración V1.3–V1.6: todas las suites también tras integrar en main, no solo en PR.
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'config/projects.json'
+      - '.github/workflows/web-validation.yml'
 
 permissions:
   contents: read
@@ -62,6 +69,10 @@ jobs:
         run: npm run test:e2e
       - name: HTTP E2E de operaciones V1.4 (modo simulado; nunca Google Sheets)
         run: npm run test:e2e:ops
+      - name: HTTP E2E del centro de control V1.6 (datos sintéticos, solo lectura)
+        run: npm run test:e2e:control
+      - name: HTTP E2E de integración V1.3–V1.6 (interacciones cruzadas, sin Google)
+        run: npm run test:e2e:integration
       - name: Revisión de secretos en assets de cliente
         run: npm run check:client-secrets
 

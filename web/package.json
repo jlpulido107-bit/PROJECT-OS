@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test:e2e:control": "node scripts/e2e-control.mjs",
+    "test:e2e:integration": "node scripts/e2e-integration.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e:planning": "node scripts/e2e-planning.mjs",
