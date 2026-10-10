@@ -17,6 +17,14 @@ const OPS: Record<string, string> = {
   'decision.crear': 'Decisión registrada',
 }
 
+const RECONCILE_LABEL: Record<string, string> = {
+  'sin-efecto': 'Sin efecto',
+  divergente: 'Divergente',
+  'auditoria-parcial': 'Auditoría parcial',
+  'auditoria-inconsistente': 'Auditoría contradictoria',
+  'actualizacion-perdida': 'Posible actualización perdida',
+}
+
 export default async function OperationsPage() {
   const { user } = await privateData('/operaciones')
   return (
@@ -51,7 +59,7 @@ async function Operations() {
           <ul className="list">
             {report.pendientes.map((p) => (
               <li key={p.requestId}>
-                <Badge tone="warn">{p.motivo === 'sin-efecto' ? 'Sin efecto' : 'Divergente'}</Badge>{' '}
+                <Badge tone="warn">{RECONCILE_LABEL[p.motivo]}</Badge>{' '}
                 {OPS[p.operacion] ?? p.operacion} · <span className="mono">{p.id}</span> · solicitud <span className="mono">{p.requestId.slice(0, 8)}</span>
               </li>
             ))}

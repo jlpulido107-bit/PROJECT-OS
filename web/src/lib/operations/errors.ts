@@ -24,6 +24,8 @@ export type OperationErrorCode =
   | 'auditoria-fallida'
   | 'escritura-fallida'
   | 'verificacion-fallida'
+  | 'auditoria-inconsistente'
+  | 'estado-divergente'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -50,6 +52,8 @@ const STATUS: Record<OperationErrorCode, number> = {
   'auditoria-fallida': 503,
   'escritura-fallida': 503,
   'verificacion-fallida': 409,
+  'auditoria-inconsistente': 409,
+  'estado-divergente': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -77,6 +81,8 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'auditoria-fallida': 'No se pudo registrar la auditoría; no se escribió nada.',
   'escritura-fallida': 'La auditoría quedó registrada pero la escritura falló. Reintenta para completarla.',
   'verificacion-fallida': 'La escritura no se pudo verificar; queda pendiente de conciliación.',
+  'auditoria-inconsistente': 'La auditoría de esta solicitud está incompleta o es contradictoria; queda para revisión manual.',
+  'estado-divergente': 'El registro no coincide con lo auditado (cambio sin operación auditada); revisa la conciliación.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

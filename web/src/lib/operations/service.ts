@@ -39,7 +39,7 @@ export interface ReconcileItem {
   operacion: string
   entidad: string
   id: string
-  motivo: 'sin-efecto' | 'divergente'
+  motivo: 'sin-efecto' | 'divergente' | 'auditoria-parcial' | 'auditoria-inconsistente' | 'actualizacion-perdida'
 }
 
 export interface ReconcileReport {
@@ -79,6 +79,8 @@ interface AuditedOperation {
   /** CAMPO → { antes, despues } */
   fields: Map<string, { antes: string; despues: string }>
   order: number
+  /** completa | parcial (faltan filas o campos obligatorios) | inconsistente (filas contradictorias). */
+  integridad: 'completa' | 'parcial' | 'inconsistente'
 }
 
 const ORIGIN_PATTERN = /^dashboard-v1\.4;modo=(mock|sheets);op=([a-z.]+);req=([0-9a-f-]{36});h=([0-9a-f]{16})$/
@@ -262,13 +264,28 @@ export class OperationsService {
     const [audit, tareas, tiempos, decisiones] = await this.views('AUDITORIA', 'TAREAS', 'TIEMPOS', 'DECISIONES')
     const views: Record<EntityTab, TableView> = { TAREAS: tareas, TIEMPOS: tiempos, DECISIONES: decisiones }
     const ops = parseAudit(audit)
+    const pendientes: ReconcileItem[] = []
+    const item = (op: AuditedOperation, motivo: ReconcileItem['motivo']) =>
+      pendientes.push({ requestId: op.requestId, operacion: op.operacion, entidad: op.entidad, id: op.id, motivo })
+    // Auditorías incompletas o contradictorias: nunca se dan por conciliadas.
+    for (const op of ops) if (op.integridad !== 'completa') item(op, op.integridad === 'parcial' ? 'auditoria-parcial' : 'auditoria-inconsistente')
+    const complete = ops.filter((op) => op.integridad === 'completa')
+    // Actualización perdida: dos ediciones auditadas parten de la misma VERSION del mismo registro
+    // (posible solo sin CAS entre instancias; contrato §6). La segunda pisó a la primera.
+    const transitions = new Map<string, AuditedOperation[]>()
+    for (const op of complete) {
+      const before = op.operacion === 'tarea.editar' ? op.fields.get('VERSION')?.antes : undefined
+      if (before === undefined) continue
+      const key = `${op.entidad}|${op.id}|${before}`
+      transitions.set(key, [...(transitions.get(key) ?? []), op])
+    }
+    for (const list of transitions.values()) if (list.length > 1) for (const op of list.slice(1)) item(op, 'actualizacion-perdida')
     const latest = new Map<string, AuditedOperation>()
-    for (const op of ops) {
+    for (const op of complete) {
       const key = `${op.entidad}|${op.id}`
       const prev = latest.get(key)
       if (!prev || op.order > prev.order) latest.set(key, op)
     }
-    const pendientes: ReconcileItem[] = []
     for (const op of latest.values()) {
       const view = views[op.entidad as EntityTab]
       if (!view) continue
@@ -332,7 +349,7 @@ export class OperationsService {
     const origin = this.origin(op, requestId, hash)
     const rows = [...diff.entries()].map(([campo, { antes, despues }], i) =>
       toRow(auditView, {
-        AUDIT_ID: `AUD-${compact}-${batch}-${String(i + 1).padStart(2, '0')}`,
+        AUDIT_ID: `AUD-${compact}-${batch}-${String(i + 1).padStart(2, '0')}-${String(diff.size).padStart(2, '0')}`,
         FECHA_HORA: stamp,
         ACTOR: ctx.actor,
         ENTIDAD: entidad,
@@ -394,23 +411,37 @@ export class OperationsService {
     await this.verifyCreated('TAREAS', id, Object.fromEntries((WRITE_HEADERS.TAREAS as readonly string[]).map((c) => [c, next[c] ?? ''])))
   }
 
-  private findAudited(audit: TableView, requestId: string): AuditedOperation | null {
-    return parseAudit(audit).find((op) => op.requestId === requestId) ?? null
+  private findAudited(audit: TableView, requestId: string): { op: AuditedOperation; later: AuditedOperation[] } | null {
+    const ops = parseAudit(audit)
+    const op = ops.find((o) => o.requestId === requestId)
+    if (!op) return null
+    // Una auditoría parcial o contradictoria nunca se da por buena: queda para revisión manual.
+    if (op.integridad !== 'completa') throw new OperationError('auditoria-inconsistente')
+    const later = ops.filter((o) => o.integridad === 'completa' && o.entidad === op.entidad && o.id === op.id && o.order > op.order)
+    return { op, later }
   }
 
   /** Idempotencia de altas: repetir (entidad presente) o completar la intención auditada (entidad ausente). */
   private async replayCreate(
     op: OperationName, hash: string, requestId: string, audit: TableView, view: TableView,
   ): Promise<OperationResult | null> {
-    const audited = this.findAudited(audit, requestId)
-    if (!audited) return null
+    const found = this.findAudited(audit, requestId)
+    if (!found) return null
+    const audited = found.op
     if (audited.operacion !== op || audited.hash !== hash) throw new OperationError('conflicto-idempotencia')
     const tab = audited.entidad as EntityTab
     const record = Object.fromEntries([...audited.fields.entries()].map(([column, { despues }]) => [column, despues]))
-    if (findById(view, ID_COLUMN[tab], audited.id).length === 0) {
+    const existing = findById(view, ID_COLUMN[tab], audited.id)
+    if (existing.length === 0) {
       // Roll-forward: la auditoría registró la intención pero la entidad no llegó a escribirse.
       await this.appendEntity(tab, view, record)
       await this.verifyCreated(tab, audited.id, record)
+    } else {
+      // La fila existe: es una repetición solo si coincide con lo auditado o si operaciones auditadas posteriores
+      // explican el cambio. Una alteración sin operación auditada no se da por reconciliada.
+      const stored = toRecord(view, existing[0]!.cells)
+      const matches = Object.entries(record).every(([column, value]) => (stored[column] ?? '') === value)
+      if (!matches && found.later.length === 0) throw new OperationError('estado-divergente')
     }
     const version = tab === 'TAREAS' ? Number(record.VERSION ?? '1') : undefined
     return { operacion: op, entidad: tab, id: audited.id, version, repetida: true }
@@ -421,15 +452,19 @@ export class OperationsService {
     op: OperationName, hash: string, requestId: string, audit: TableView, tareas: TableView, sheetRow: number,
     current: Record<string, string>,
   ): Promise<OperationResult | null> {
-    const audited = this.findAudited(audit, requestId)
-    if (!audited) return null
+    const found = this.findAudited(audit, requestId)
+    if (!found) return null
+    const audited = found.op
     if (audited.operacion !== op || audited.hash !== hash || audited.id !== current.TAREA_ID) {
       throw new OperationError('conflicto-idempotencia')
     }
     const versionChange = audited.fields.get('VERSION')
     if (!versionChange) throw new OperationError('conflicto-idempotencia')
     const applied = [...audited.fields.entries()].every(([column, { despues }]) => (current[column] ?? '') === despues)
-    if (!applied) {
+    // Reintento legítimo: la operación se aplicó y después hubo ediciones AUDITADAS que la sustituyeron.
+    const superseded = found.later.some((o) => o.fields.get('VERSION')?.antes === versionChange.despues)
+    if (!applied && !superseded) {
+      if (current.VERSION === versionChange.despues) throw new OperationError('estado-divergente')
       if (current.VERSION !== versionChange.antes) throw new OperationError('conflicto-version')
       const next = { ...current }
       for (const [column, { despues }] of audited.fields) next[column] = despues
@@ -452,30 +487,64 @@ function parseVersion(raw: string): number {
   return Number.isInteger(n) && n >= 0 ? n : 0
 }
 
-/** Agrupa filas de AUDITORIA del dashboard V1.4 por solicitud (ORIGEN con req/hash). */
+/** Campos que una auditoría completa debe incluir por operación (además de que el ID coincida con REGISTRO_ID). */
+const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
+  'tarea.crear': ['TAREA_ID', 'VERSION'],
+  'tarea.editar': ['VERSION'],
+  'tiempo.registrar': ['SESION_ID'],
+  'decision.crear': ['DECISION_ID'],
+}
+const AUDIT_ID_PATTERN = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})(?:-(\d{2}))?$/
+
+/**
+ * Agrupa filas de AUDITORIA del dashboard V1.4 por solicitud (ORIGEN con req/hash) y verifica su integridad:
+ * - inconsistente: filas de la misma solicitud con distinta operación, hash, entidad, registro, lote de AUDIT_ID,
+ *   total declarado, índice repetido o el mismo CAMPO con valores distintos;
+ * - parcial: faltan índices (AUDIT_ID …-NN-TT) o campos obligatorios de la operación.
+ */
 export function parseAudit(audit: TableView): AuditedOperation[] {
-  const ops = new Map<string, AuditedOperation>()
+  const ops = new Map<string, AuditedOperation & { batch: string | null; total: number | null; indices: number[] }>()
   audit.rows.forEach((row, order) => {
     const origin = cell(audit, row.cells, 'ORIGEN')
     const match = ORIGIN_PATTERN.exec(origin)
     if (!match) return
     const [, , operacion, requestId, hash] = match as unknown as [string, string, string, string, string]
+    const entidad = cell(audit, row.cells, 'ENTIDAD')
+    const id = cell(audit, row.cells, 'REGISTRO_ID')
+    const auditId = AUDIT_ID_PATTERN.exec(cell(audit, row.cells, 'AUDIT_ID'))
+    const batch = auditId?.[1] ?? null
+    const index = auditId ? Number(auditId[2]) : null
+    const total = auditId?.[3] ? Number(auditId[3]) : null
     let op = ops.get(requestId)
     if (!op) {
-      op = {
-        requestId, operacion, hash, order,
-        entidad: cell(audit, row.cells, 'ENTIDAD'),
-        id: cell(audit, row.cells, 'REGISTRO_ID'),
-        fields: new Map(),
-      }
+      op = { requestId, operacion, hash, order, entidad, id, fields: new Map(), integridad: 'completa', batch, total, indices: [] }
       ops.set(requestId, op)
+    } else if (op.operacion !== operacion || op.hash !== hash || op.entidad !== entidad || op.id !== id || op.batch !== batch || op.total !== total) {
+      op.integridad = 'inconsistente'
     }
-    op.fields.set(cell(audit, row.cells, 'CAMPO'), {
-      antes: cell(audit, row.cells, 'VALOR_ANTES'),
-      despues: cell(audit, row.cells, 'VALOR_DESPUES'),
-    })
+    if (index !== null) {
+      if (op.indices.includes(index)) op.integridad = 'inconsistente'
+      op.indices.push(index)
+    }
+    const campo = cell(audit, row.cells, 'CAMPO')
+    const value = { antes: cell(audit, row.cells, 'VALOR_ANTES'), despues: cell(audit, row.cells, 'VALOR_DESPUES') }
+    const prev = op.fields.get(campo)
+    if (prev && (prev.antes !== value.antes || prev.despues !== value.despues)) op.integridad = 'inconsistente'
+    op.fields.set(campo, value)
   })
-  return [...ops.values()]
+  return [...ops.values()].map(({ batch, total, indices, ...op }) => {
+    void batch
+    if (op.integridad === 'completa') {
+      const missingIndex = total !== null && (indices.length !== total || indices.some((i) => i < 1 || i > total))
+      const required = REQUIRED_AUDIT_FIELDS[op.operacion] ?? []
+      const missingField = required.some((f) => !op.fields.has(f))
+      const idField = Object.entries(ID_COLUMN).find(([tab]) => tab === op.entidad)?.[1]
+      const idMismatch = idField !== undefined && op.operacion !== 'tarea.editar' && op.fields.get(idField)?.despues !== op.id
+      if (idMismatch && op.fields.has(idField)) op.integridad = 'inconsistente'
+      else if (missingIndex || missingField) op.integridad = 'parcial'
+    }
+    return op
+  })
 }
 
 export function todayForCommands(now: Date = new Date()): string {

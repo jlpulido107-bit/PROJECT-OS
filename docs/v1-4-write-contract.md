@@ -170,8 +170,13 @@ Google Sheets **no ofrece compare-and-swap** sobre valores de celdas. Solución 
      insertó o borró filas, el número de fila ya no corresponde ⇒ `409 conflicto-concurrente`.
 3. **Verificación posterior:** se relee la fila o el ID escrito. Si no coincide o el ID aparece duplicado ⇒
    `409 verificacion-fallida`; queda registrado y aparece en la conciliación.
-4. **Riesgo residual:** entre la relectura y la escritura hay una ventana de milisegundos sin garantía. Si una
-   persona edita la hoja a mano a la vez, puede perderse su cambio. Si en el futuro hay varios escritores o varias
+4. **Riesgo residual (sin CAS atómico):** entre la relectura y la escritura hay una ventana sin garantía. Estos
+   controles **no garantizan** que no se pierdan actualizaciones en Sheets.
+   - Una prueba con dos escritores independientes (`operations-audit-integrity.test.ts`) demuestra la carrera:
+     ambos leen `VERSION=N`, y el segundo pisa al primero si escribe dentro de esa ventana.
+   - La conciliación la **detecta** como `actualizacion-perdida`: dos ediciones auditadas parten de la misma
+     `VERSION`.
+   - Si una persona edita la hoja a mano a la vez, también puede perderse su cambio. Si en el futuro hay varios escritores o varias
    instancias, se recomienda, por orden y sin crear nada sin autorización:
    - (i) mantener un escritor único (`maxScale: 1`);
    - (ii) una cola de un solo consumidor;
@@ -185,7 +190,7 @@ Cada operación genera filas en `AUDITORIA`, **una por campo afectado**, que es 
 
 | Columna | Valor |
 | --- | --- |
-| `AUDIT_ID` | `AUD-AAAAMMDDHHMMSS-xxxxxxxx-NN` |
+| `AUDIT_ID` | `AUD-AAAAMMDDHHMMSS-xxxxxxxx-NN-TT`: índice de la fila y total de filas de la solicitud, para detectar auditorías parciales |
 | `FECHA_HORA` | Instante ISO (Mérida) |
 | `ACTOR` | Correo del escritor autenticado (dato personal: solo en la hoja privada, nunca en logs) |
 | `ENTIDAD` | `TAREAS` / `TIEMPOS` / `DECISIONES` |
@@ -213,8 +218,19 @@ cambio de esquema futuro se propondría como migración aparte.
 | Escribir la entidad tras la auditoría | Intención auditada sin efecto | **Reintentar con el mismo `requestId` completa la operación** (roll-forward); si no se reintenta, la conciliación la lista |
 | Verificación posterior | Escrito, pero posible interferencia | Revisar en conciliación; no se reescribe automáticamente |
 
-**Conciliación verificable:** compara la última operación auditada de cada registro con el estado actual de la entidad
-y lista las intenciones sin efecto o divergentes. En `mock` se muestra en `/operaciones`.
+**Conciliación verificable:** compara la última operación auditada **completa** de cada registro con el estado
+actual de la entidad. En `mock` se muestra en `/operaciones`. Lista:
+
+| Motivo | Cuándo |
+| --- | --- |
+| `sin-efecto` | La entidad no recibió la escritura auditada |
+| `divergente` | La entidad no coincide con lo auditado (por ejemplo, un cambio a mano sin operación auditada) |
+| `auditoria-parcial` | Faltan filas (índices `NN-TT`) o campos obligatorios de la operación |
+| `auditoria-inconsistente` | Filas de la misma solicitud con distinta operación, hash, entidad, registro o lote, índices repetidos o el mismo campo con valores distintos |
+| `actualizacion-perdida` | Dos ediciones auditadas parten de la misma `VERSION` del mismo registro |
+
+Una auditoría parcial o contradictoria **nunca** se da por conciliada ni se usa para un reintento: responde
+`409 auditoria-inconsistente`.
 
 ## 8. Idempotencia
 
@@ -222,7 +238,10 @@ y lista las intenciones sin efecto o divergentes. En `mock` se muestra en `/oper
   red reutiliza el mismo `requestId`; el botón se desactiva mientras se envía, para evitar dobles clics.
 - Antes de escribir se busca `req=<requestId>` en `AUDITORIA`, que es **persistente en la propia hoja**:
   - **Misma operación y mismo hash, entidad aplicada** ⇒ se devuelve el resultado original (`repetida: true`,
-    `200`), sin escribir.
+    `200`), sin escribir. También cuenta como aplicada si después hubo ediciones **auditadas** del mismo registro
+    (reintento legítimo).
+  - **La entidad existe pero no coincide con lo auditado y ninguna operación auditada posterior lo explica** ⇒
+    `409 estado-divergente`. Nunca se responde como repetición.
   - **Misma operación y mismo hash, entidad no aplicada** ⇒ se completa la operación con los valores auditados
     (roll-forward).
   - **Mismo `requestId` con otro payload u otra operación** ⇒ `409 conflicto-idempotencia`.
