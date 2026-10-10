@@ -6,6 +6,9 @@
  *   node scripts/smoke-remote.mjs --url https://SERVICIO-NUMERO.REGION.run.app
  *
  * - No inicia sesión, no emite cookies y no lee datos: solo verifica que lo privado está cerrado.
+ * - Solo usa GET: nunca envía un método de escritura, ni siquiera a las APIs de operaciones (V1.4), que
+ *   el proxy rechaza sin sesión antes de llegar al manejador.
+ * - Cubre todas las páginas privadas y APIs de V1.2–V1.6 (la lista se valida en tests/deploy-docs.test.ts).
  * - Imprime únicamente códigos de estado y OK/FALLA; nunca cuerpos de respuesta.
  * - No se ejecuta en CI.
  */
@@ -30,16 +33,27 @@ const health = await get('/api/health')
 const healthBody = await health.json().catch(() => ({}))
 check('/api/health → 200 {"status":"ok"}', health.status === 200 && healthBody.status === 'ok', health.status)
 
-for (const path of ['/', '/proyectos', '/tareas', '/actividad', '/capacidad']) {
+const PRIVATE_PAGES = [
+  '/', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones',
+  '/tareas/nueva', '/tareas/POS-001/editar', '/tiempos/nuevo', '/decisiones/nueva',
+]
+const PRIVATE_APIS = [
+  '/api/resumen', '/api/planificacion', '/api/control', '/api/operaciones/tareas', '/api/operaciones/tareas/POS-001',
+  '/api/operaciones/tiempos', '/api/operaciones/decisiones',
+]
+
+for (const path of PRIVATE_PAGES) {
   const res = await get(path)
   const location = res.headers.get('location') ?? ''
   check(`${path} sin sesión → redirección a /login`, res.status >= 300 && res.status < 400 && location.includes('/login'), res.status)
   await res.body?.cancel()
 }
 
-const api = await get('/api/resumen')
-const apiBody = await api.json().catch(() => ({}))
-check('/api/resumen sin sesión → 401 sin datos', api.status === 401 && Object.keys(apiBody).join() === 'error', api.status)
+for (const path of PRIVATE_APIS) {
+  const api = await get(path)
+  const apiBody = await api.json().catch(() => ({}))
+  check(`${path} sin sesión → 401 sin datos`, api.status === 401 && Object.keys(apiBody).join() === 'error', api.status)
+}
 
 const login = await get('/login')
 check('/login → 200', login.status === 200, login.status)
