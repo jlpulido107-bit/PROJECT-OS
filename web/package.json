@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test:e2e:planning": "node scripts/e2e-planning.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node scripts/e2e-auth.mjs",
