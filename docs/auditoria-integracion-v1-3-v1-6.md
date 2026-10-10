@@ -68,7 +68,7 @@ contacto con Google.
 | `check:client-secrets` | OK |
 | Python V1.1 | 18/18 |
 | Navegador (Playwright, escritor y lectora, 390 px y 1280 px, 12 páginas) | Sin desbordes ni errores JS |
-| `docker:smoke` | **No ejecutable aquí** (no hay daemon de Docker). Lo ejecuta el job `docker` de la CI del PR de integración |
+| `docker:smoke` | No ejecutable localmente (no hay daemon de Docker). **Verde en la CI del PR #14** (job `docker`, commit `4b2f89a`), igual que `web` (las 5 suites E2E) y `validate` |
 
 ### 4.1 E2E de integración: qué cubre (`scripts/e2e-integration.mjs`)
 
@@ -125,7 +125,7 @@ cd .. && python3 -m unittest discover -s tests
 - **Sin CAS en Sheets.** Una escritura real futura puede perder actualizaciones entre instancias. Hoy se detecta en
   la conciliación, pero **no se previene**. Mitigación antes de habilitar escritura real: un escritor único con
   exclusividad verificable o un backend transaccional (decisión pendiente en #8).
-- **Docker smoke** no se ejecutó localmente. Depende del job `docker` de la CI.
+- **Docker smoke:** verde en la CI del PR #14. No se repitió localmente porque no hay daemon de Docker.
 - **ADC real, OAuth real, IAM y presupuesto** sin probar contra GCP: son puertas de despliegue que requieren
   autorización **separada** (runbook de V1.3, §5).
 - **Heurísticas del control V1.6** (umbrales y evidencia): pueden generar ruido. Están documentadas como
