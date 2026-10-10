@@ -29,7 +29,7 @@ opción elegida, sin esos datos.
 | D3 | Región | `us-central1` (Iowa) o `northamerica-south1` (Querétaro) | Ver [§4.2](#42-región) | Precio, latencia, disponibilidad de servicios y mapeo de dominio | Pendiente |
 | D4 | URL | (a) `*.run.app` determinista; (b) dominio propio | (a) para la prueba | (b) añade DNS, certificados y, según la región, un balanceador con costo fijo ([§4.2](#42-región)) | Pendiente |
 | D5 | Correos autorizados | Solo el propietario; propietario + invitados con nombre | Propietario + como máximo 1 invitado de prueba, más una cuenta **no** autorizada para la prueba C2 | Se guardan solo en Secret Manager y como usuarios de prueba de OAuth; nunca en el repositorio | Pendiente |
-| D6 | Presupuesto mensual | Importe en USD (p. ej. 5) | Un importe bajo, del orden de USD 5, sabiendo que **no es un corte** de gasto | Solo genera avisos | Pendiente |
+| D6 | Presupuesto mensual | Importe en USD (p. ej. 5) | Alerta propuesta de USD 5, sabiendo que **no es un corte** de gasto | Solo genera avisos; el gasto real puede superarlo ([§4.3](#43-estimación-de-costo-por-escenario-no-es-una-promesa-ni-un-techo)) | Pendiente |
 | D7 | Alertas | Umbrales y destinatarios; opcional, desactivar la facturación automáticamente | 50 / 90 / 100 % del gasto real, más 100 % del previsto, al correo de administradores de facturación. **Sin** automatización de corte | Un corte automático es una automatización con efectos destructivos ([§4.4](#44-presupuestos-y-alertas)) y requiere aprobación aparte | Pendiente |
 | D8 | Acceso a la app | (a) `allUsers` invocador + login de la app; (b) IAP; (c) desactivar la comprobación IAM del invocador | Ver [§3.6](#36-invocación-pública-frente-a-login-privado) | Cambia quién alcanza `/login` y el procedimiento de cierre | Pendiente |
 | D9 | Pantalla de consentimiento OAuth | Tipo *Externo*; estado *Prueba* o *En producción* | *Externo* en *Prueba*, con los usuarios de prueba = D5 | Ver [§3.1](#31-oauth) | Pendiente |
@@ -185,18 +185,41 @@ Los precios están en USD, para servicios con **facturación por solicitud** (la
 mapeo de Cloud Run, o si prefiere la región con más funciones disponibles primero. Artifact Registry y el servicio
 deben estar en la **misma** región: la transferencia es gratis dentro de una ubicación.
 
-### 4.3 Estimación de costo (no es una promesa)
+### 4.3 Estimación de costo por escenario (no es una promesa ni un techo)
 
-Supuestos: 1–2 personas, unas 1 000 páginas al mes (≈ 30 000 solicitudes con los archivos estáticos), unos 0,3 s
-de CPU por solicitud, 3 secretos, 3 imágenes de unos 104 MB y builds locales.
+Cada cifra vale **solo** para su escenario. Se calcula con los precios Tier 1 de §4.1 [A], sin impuestos ni
+conversión de moneda. **El gasto real puede superar USD 1 o USD 5 al mes aunque la plantilla use `maxScale: 1`.**
+El presupuesto de USD 5 (D6) es una **propuesta de alerta**, nunca un límite (§4.4).
 
-| Escenario | Cálculo aproximado | Resultado |
+**Supuestos de carga esperada (escenarios E1 y E2):**
+
+- 1–2 personas y unas 1 000 páginas al mes, que equivalen a ≈ 30 000 solicitudes contando los archivos estáticos;
+- ≈ 0,3 s de CPU activa por solicitud, con 1 vCPU y 0,5 GiB;
+- 3 secretos con una versión activa cada uno;
+- 3 imágenes de ≈ 104 MB;
+- builds locales (D10-a);
+- ≈ 30 KB transferidos por solicitud.
+
+| Componente | Fórmula | E1: niveles gratuitos disponibles | E2: niveles gratuitos ya consumidos por otros proyectos de la misma cuenta |
+| --- | --- | --- | --- |
+| Cómputo de Cloud Run | vCPU-s × 0,000024 + GiB-s × 0,0000025 | ≈ 9 000 vCPU-s y ≈ 4 500 GiB-s: USD 0 | ≈ USD 0,22 + USD 0,01 |
+| Solicitudes de Cloud Run | USD 0,40 por millón | 0,03 M: USD 0 | ≈ USD 0,01 |
+| Secret Manager | USD 0,06 por versión activa al mes + USD 0,03 por 10 000 accesos | 3 versiones, pocos accesos: USD 0 | ≈ USD 0,18 |
+| Artifact Registry | ≈ USD 0,10 por GiB-mes | ≈ 0,3 GB: USD 0 | ≈ USD 0,03 |
+| Cloud Build (solo D10-b) | USD 0,006 por minuto (e2-standard-2) | Dentro de los 2 500 min: USD 0 | ≈ USD 0,03 por build de ≈ 5 min |
+| Salida a Internet | Tarifa de red de Cloud Run tras 1 GiB/mes en Norteamérica | ≈ 0,9 GB: USD 0 | Depende de la tarifa de red, **no estimada** aquí |
+| **Total del escenario** | — | **≈ USD 0** | **≈ USD 0,45 más la salida y los builds**, solo para esta carga |
+
+**Variabilidad (escenarios fuera de la carga esperada):**
+
+| Escenario | Supuesto | Orden de magnitud |
 | --- | --- | --- |
-| La cuenta de facturación no tiene otros consumos | ≈ 9 000 vCPU-s, ≈ 4 500 GiB-s, 0,03 M de solicitudes, 3 versiones de secretos y ≈ 0,3 GB de imágenes: todo dentro de los niveles gratuitos | **Probablemente USD 0** |
-| Los niveles gratuitos ya los gastan otros proyectos | CPU ≈ USD 0,22; memoria ≈ USD 0,01; solicitudes ≈ USD 0,01; secretos ≈ USD 0,18; imágenes ≈ USD 0,03 | **Menos de USD 1 al mes** |
-| Desvíos posibles | Bucles de recarga, bots contra `/login`, versiones de secretos sin destruir, imágenes sin limpiar, Cloud Build, dominio con balanceador | Detectables con alertas (D7) y el checklist F |
+| E3: tráfico anómalo o bots | 1 M de solicitudes al mes contra `/login` a ≈ 0,05 s de CPU cada una | Cómputo ≈ USD 1,26 + solicitudes USD 0,40, **más** salida (≈ 20 GB, no estimada) |
+| E4: techo teórico de cómputo con `maxScale: 1` | La única instancia ocupada las 24 h, todo el mes (2 592 000 s) | ≈ **USD 65** de cómputo (USD 62,21 de vCPU + USD 3,24 de memoria), **más** USD 0,40 por millón de solicitudes y la salida. Es un cálculo propio, no un tope de Google |
+| Otros desvíos | Bucles de recarga, versiones de secretos deshabilitadas sin destruir, imágenes sin limpiar, builds repetidos, dominio con balanceador | No acotados: se detectan con las alertas (D7) y el checklist F |
 
-Antes de la puerta 3, el propietario debe revisar la calculadora oficial con la región elegida.
+`maxScale: 1` acota el **cómputo**, pero no las solicitudes, la salida a Internet ni los demás servicios. Antes de
+la puerta 3, el propietario debe revisar la calculadora oficial con la región elegida.
 
 ### 4.4 Presupuestos y alertas
 
@@ -248,7 +271,7 @@ Antes de la puerta 3, el propietario debe revisar la calculadora oficial con la 
 | R2 | Correo de la lista comprometido | Baja | Alto (lectura de la hoja) | Lista mínima (D5); revocar con nueva versión del secreto y redespliegue; rotar `NEXTAUTH_SECRET` | Ventana hasta la revocación |
 | R3 | Cuenta de servicio con más permisos de los previstos | Baja | Alto | Sin roles de proyecto; Lector de un solo documento; identidad esperada verificada; checklist A5 y D2 | Depende de que el propietario no comparta otros documentos con ella |
 | R4 | Escritura accidental | Muy baja | Alto | Token de solo lectura, cliente solo `GET`, rol Lector, `mock` prohibido en Cloud Run, sonda 503 con variables de escritura, prueba de plantilla | Ninguno conocido en esta versión |
-| R5 | Gasto inesperado | Baja | Bajo–medio | `maxScale 1`, facturación por solicitud, limpieza de imágenes, alertas (D7), checklist F, apagado (runbook §7) | Un presupuesto **no es un corte**: hay retraso y no hay tope automático |
+| R5 | Gasto inesperado | Baja | Bajo–medio | `maxScale 1`, facturación por solicitud, limpieza de imágenes, alertas (D7), checklist F, apagado (runbook §7) | Un presupuesto **no es un corte**: hay retraso y no hay tope automático. El gasto puede superar USD 1 o USD 5 (escenarios E3 y E4 de §4.3) |
 | R6 | Datos personales en registros | Baja | Medio | Solo códigos en los `console.*`; sin registro de peticiones de `/api/auth/*`; checklist E | Errores de terceros (NextAuth, Google) sin revisar hasta la prueba real |
 | R7 | Sin CSP | Baja | Medio | React escapa el contenido, no hay HTML sin escapar ni contenido de terceros, `DENY` contra framing | Una CSP con *nonces* queda como mejora en un PR separado, sin cambiar la lógica en esta misión |
 | R8 | URL o redirección OAuth incorrecta | Media | Bajo | URL determinista conocida de antemano; comprobación §5.7 antes del primer login; checklist A2 | La propagación de cambios de OAuth puede tardar horas (§4.5) |

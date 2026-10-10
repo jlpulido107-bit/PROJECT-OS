@@ -143,11 +143,15 @@ Los precios, niveles gratuitos, regiones y su fecha de verificación (2026-10-10
 [preparación §4](despliegue-v1-6-preparacion.md#4-costos-y-regiones-verificados), con fuentes oficiales y nivel de
 confianza.
 
-Resumen de la estimación, que **no es una promesa**:
+La estimación se hace **por escenario** y no es una promesa ni un techo
+([§4.3](despliegue-v1-6-preparacion.md#43-estimación-de-costo-por-escenario-no-es-una-promesa-ni-un-techo)):
 
-- **Probablemente USD 0 al mes** si la cuenta de facturación no tiene otros consumos.
-- **Menos de USD 1 al mes** si otros proyectos ya consumen los niveles gratuitos, que se cuentan **por cuenta de
-  facturación**.
+- Con la carga esperada de 1–2 personas, la cifra depende de si quedan niveles gratuitos en la cuenta de
+  facturación, porque se cuentan **por cuenta**, no por proyecto:
+  - si quedan, ≈ USD 0;
+  - si otros proyectos ya los consumen, ≈ USD 0,45, más salida a Internet y builds.
+- Con tráfico anómalo o bots, o con la instancia ocupada de forma continua, el gasto **puede superar USD 1 o USD
+  5**. El techo teórico de cómputo con `maxScale: 1` es ≈ USD 65 al mes, más solicitudes y salida a Internet.
 - Las dos regiones candidatas son Tier 1 en Cloud Run.
 
 ### Controles
