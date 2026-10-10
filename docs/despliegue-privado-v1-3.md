@@ -324,6 +324,8 @@ la anterior queda disponible para el rollback.
    12/12 pestañas válidas y que los totales coinciden con la hoja.
 3. **Acceso denegado:** con otra cuenta de Google en ventana privada, el acceso debe ser rechazado.
 4. **Sin escrituras:** el historial de versiones del Sheets no muestra cambios de la cuenta de servicio.
+   La plantilla no define `PROJECT_OS_WRITE_MODE` ni `AUTH_WRITER_EMAILS` (V1.4); deben seguir ausentes, o
+   `PROJECT_OS_WRITE_MODE=disabled`, en producción. Una prueba lo verifica (`deploy-template.test.ts`).
 5. **Logs:** en Cloud Run → *Registros* no aparecen tokens, correos ni datos. Solo advertencias de
    configuración, con códigos.
 6. Registra el resultado (✅/❌, sin secretos ni correos) en el PR o issue correspondiente.

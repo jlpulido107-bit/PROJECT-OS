@@ -60,6 +60,15 @@ describe('plantilla de Cloud Run', () => {
     expect(template).not.toMatch(/@(gmail|hotmail|outlook|yahoo)\./i)
   })
 
+  it('nunca habilita escritura: sin PROJECT_OS_WRITE_MODE (o solo "disabled") ni AUTH_WRITER_EMAILS', () => {
+    // V1.4 añade escritura simulada; en producción debe quedar ausente o deshabilitada (revisión de V1.3).
+    const env = envEntries()
+    const mode = env.find((e) => e.name === 'PROJECT_OS_WRITE_MODE')
+    expect(mode === undefined || (!mode.secret && mode.value?.replace(/^'(.*)'$/, '$1') === 'disabled'), 'PROJECT_OS_WRITE_MODE').toBe(true)
+    expect(env.map((e) => e.name)).not.toContain('AUTH_WRITER_EMAILS')
+    expect(template).not.toMatch(/auth\/spreadsheets['"\s]|auth\/drive/)
+  })
+
   it('no fija PORT (lo inyecta Cloud Run) y la imagen va por digest', () => {
     expect(envEntries().map((e) => e.name)).not.toContain('PORT')
     expect(yamlValue('- image')).toBe('${IMAGE}')
