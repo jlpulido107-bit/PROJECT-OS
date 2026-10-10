@@ -1,127 +1,164 @@
-# PROJECT-OS V1.6 — Infraestructura mínima (Puerta B): revisión de la V2
+# PROJECT-OS V1.6 — Infraestructura mínima (Puerta B): revisión de la V3
 
 > **Estado: preparado para revisión.** Script: [`web/deploy/infra/project-os-infra-minima-v1-6.sh`](../web/deploy/infra/project-os-infra-minima-v1-6.sh).
 >
-> - **No se ha ejecutado contra Google Cloud.** Ejecutarlo (`--apply`) requiere una autorización expresa posterior.
+> - **No se ha ejecutado contra Google Cloud.** Ejecutarlo (`--apply`, e incluso `--check`) requiere una autorización
+>   expresa posterior.
 > - Este documento no autoriza crear recursos, modificar IAM, iniciar builds ni desplegar.
 
-Proyecto `project-os-511102`, región `northamerica-south1`. El historial del repositorio conserva la V1 literal (commit
-anterior) para que el diff V1 → V2 sea verificable.
+Proyecto `project-os-511102`, región `northamerica-south1`. El historial del repositorio conserva:
 
-## 1. Alcance de la V2
+1. la V1 literal;
+2. la V2, que corrige los 8 hallazgos de la primera revisión;
+3. la V3, que atiende las 6 observaciones de supervisión del PR #19.
 
-**Cambios** (solo tras escribir exactamente `AUTORIZO INFRA PROJECT-OS`), en este orden:
+## 1. Modos del script
 
-1. Bucket de origen `PROJECT_ID-project-os-build-src` en `northamerica-south1`:
-   - acceso uniforme;
-   - prevención de acceso público;
-   - borrado diferido desactivado;
-   - ciclo de vida que borra los objetos a los 7 días, aplicado **en la misma creación**.
-2. Repositorio Docker privado `project-os`.
-3. Cuenta runtime `project-os-dashboard-run`, **sin roles ni claves**.
-4. IAM mínimo **solo** para `project-os-build`:
+| Modo | Qué hace | Consulta GCP | Modifica GCP |
+| --- | --- | --- | --- |
+| `--plan` (predeterminado) | **Plan estático**: imprime lo que haría | **No**. No comprueba APIs, IAM ni recursos: no es un inventario real | No |
+| `--check` | **Comprobación real de solo lectura**: el mismo preflight de `--apply`, incluidas las flags del gcloud instalado (con `--help`, sin red) | Sí, solo lecturas | **Nunca**: termina antes de pedir confirmación |
+| `--apply` | Preflight de solo lectura → confirmación `AUTORIZO INFRA PROJECT-OS` → cambios → auditoría | Sí | Sí, solo tras la confirmación |
 
-   | Rol | Ámbito |
-   | --- | --- |
-   | `roles/logging.logWriter` | Proyecto |
-   | `roles/artifactregistry.writer` | Solo el repositorio |
-   | `roles/storage.objectViewer` | Solo el bucket |
-
-5. Auditoría de solo lectura que **verifica** cada resultado, sin imprimir políticas ni correos.
-
-**Excluido:** habilitar APIs (incluida Secret Manager), secretos, OAuth, acceso a Sheets, presupuesto, IAM de otras
-cuentas, `actAs` de la persona, builds, Cloud Run, despliegue y claves JSON.
-
-**Pendiente antes del primer despliegue:** la política de limpieza de imágenes del repositorio, como decisión aparte
-([runbook §5.5](despliegue-privado-v1-3.md#55-artifact-registry-y-la-imagen) usa
-`web/deploy/cloudrun/artifact-cleanup-policy.json`).
-
-## 2. Requisitos previos (el script los comprueba)
+## 2. Requisitos previos (los verifican `--check` y `--apply`)
 
 - `gcloud` y `python3` disponibles, y una cuenta de gcloud activa con permisos sobre el proyecto.
-- APIs **ya habilitadas**: `cloudbuild`, `artifactregistry`, `iam` y `storage`. El script no habilita ninguna: si
-  falta alguna, se detiene sin cambios.
-- La cuenta `project-os-build` **ya existe** y no tiene roles de proyecto distintos de `roles/logging.logWriter`.
-- No existen todavía el repositorio, el bucket ni la cuenta runtime. Si alguno existe, el script se detiene para
-  revisarlo.
+- El gcloud instalado acepta todas las flags de los comandos mutantes (lista `MUTATING_FLAGS`, comprobada con
+  `--help`).
+- APIs **ya habilitadas**: `cloudbuild`, `artifactregistry`, `iam` y `storage`. El script no habilita ninguna.
+- La cuenta `project-os-build` **ya existe** y, como roles **directos de proyecto**, solo tiene
+  `roles/logging.logWriter` o ninguno.
+- No existen todavía el repositorio, el bucket ni la cuenta runtime.
 
-## 3. Hallazgos de la revisión de la V1 y corrección en la V2
+## 3. Comandos mutantes (solo en `--apply`, tras `AUTORIZO`)
 
-| # | Hallazgo en la V1 | Corrección en la V2 | Prueba (`web/tests/infra-minima.test.ts`) |
+| # | Comando exacto (resumido) | Resultado y ámbito | Permiso que necesita quien ejecuta (rol típico) | Precondiciones | Costo potencial | Verificación en la auditoría |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `gcloud storage buckets create gs://project-os-511102-project-os-build-src --project=… --location=northamerica-south1 --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0 --lifecycle-file=…` | Bucket regional privado. Los objetos se borran a los 7 días; sin borrado diferido | `storage.buckets.create` (`roles/storage.admin`) | El nombre está libre (es global) | Almacenamiento Standard regional del código subido (pocos MB, máximo 7 días). Sin costo fijo | Ubicación, acceso uniforme, prevención de acceso público, `retentionDurationSeconds` = 0 y ciclo de vida exacto |
+| 2 | `gcloud artifacts repositories create project-os --project=… --location=northamerica-south1 --repository-format=docker` | Repositorio Docker privado | `artifactregistry.repositories.create` (`roles/artifactregistry.admin`) | No existe | Imágenes: 0,5 GiB-mes gratuitos por cuenta de facturación, luego unos USD 0,10/GiB-mes ([preparación §4.1](despliegue-v1-6-preparacion.md#41-precios-y-niveles-gratuitos)). **Sin política de limpieza (§6)** | Formato `DOCKER` |
+| 3 | `gcloud iam service-accounts create project-os-dashboard-run --project=…` | Cuenta runtime sin roles ni claves | `iam.serviceAccounts.create` (`roles/iam.serviceAccountCreator`) | No existe | Ninguno | Sin roles directos de proyecto; sin claves gestionadas por el usuario |
+| 4 | `gcloud projects add-iam-policy-binding project-os-511102 --project=… --condition=None --member=serviceAccount:project-os-build… --role=roles/logging.logWriter --format=none` | `logWriter` en el proyecto, para la cuenta de compilación | `resourcemanager.projects.setIamPolicy` (`roles/resourcemanager.projectIamAdmin`) | Lista permitida cumplida | Ninguno (los logs entran en el nivel gratuito) | Roles directos de proyecto dentro de la lista permitida, con `logWriter` presente |
+| 5 | `gcloud artifacts repositories add-iam-policy-binding project-os --project=… --location=… --member=serviceAccount:project-os-build… --role=roles/artifactregistry.writer --format=none` | `artifactregistry.writer` solo en el repositorio | `artifactregistry.repositories.setIamPolicy` (`roles/artifactregistry.admin`) | Repositorio creado (paso 2) | Ninguno | Binding presente en el repositorio |
+| 6 | `gcloud storage buckets add-iam-policy-binding gs://… --project=… --member=serviceAccount:project-os-build… --role=roles/storage.objectViewer --format=none` | `storage.objectViewer` solo en el bucket | `storage.buckets.setIamPolicy` (`roles/storage.admin`) | Bucket creado (paso 1) | Ninguno | Binding presente en el bucket |
+
+El propietario del proyecto tiene todos esos permisos. Los roles típicos son orientativos y no se han verificado contra
+el proyecto real.
+
+## 4. Correcciones
+
+### 4.1 Primera revisión: V1 → V2
+
+| # | Hallazgo en la V1 | Corrección | Prueba (`web/tests/infra-minima.test.ts`) |
 | --- | --- | --- | --- |
-| 1 | `add-iam-policy-binding` imprime la política completa, con correos personales; se imprimía la cuenta activa | `--format=none` en los tres bindings; la cuenta se muestra como `***@dominio`; las políticas se leen en JSON y se procesan en memoria (antes se escribía la del proyecto a un temporal) | Bindings con `--format=none`; cuenta enmascarada; ningún `get-iam-policy` en `yaml`/`table`; un único archivo escrito (el ciclo de vida) |
-| 2 | La auditoría del bucket pedía claves `camelCase` que `gcloud storage buckets describe` no devuelve sin `--raw` | Claves `snake_case` del SDK (`uniform_bucket_level_access`, `public_access_prevention`, `soft_delete_policy`, `lifecycle_config`), verificadas en `full_resource_formatter.py` y `gcs_json/metadata_util.py` del SDK 570.0.0. Cada protección se **comprueba** (OK/FALLA) | Formato exacto; 1 caso correcto y 8 incorrectos, incluido un JSON `camelCase` |
-| 3 | Solo rechazaba Editor y Owner (lista negra) | Lista **permitida**: cualquier rol de proyecto de `project-os-build` distinto de `roles/logging.logWriter` detiene el script antes de cambiar nada; la auditoría lo repite | 6 casos (Editor, Owner, `run.admin`, Editor de otro miembro…) y JSON no válido |
-| 4 | El bucket, el paso con más probabilidad de fallar (nombre global), iba después de habilitar la API y crear el repositorio; el ciclo de vida se aplicaba después con un `update` | El bucket es el **primer** cambio y se crea con `--lifecycle-file`; sin `buckets update` | Orden exacto de las 6 mutaciones; opciones de creación; sin `update` |
-| 5 | Cinco `services list \| grep -q`: un error de permisos parecía "API no habilitada" y había riesgo de SIGPIPE | **Una** consulta guardada en variable; un error de consulta detiene con su propio mensaje | Una sola llamada; manejo de error explícito; `missing_apis` probado |
-| 6 | Solo detectaba el repositorio por su nombre completo | `(^\|/)project-os$`: nombre corto o completo, sin confundir `my-project-os` o `project-os-old` | 7 casos |
-| 7 | Requisitos previos implícitos | El plan los enumera: cuenta `project-os-build` existente, APIs y ausencia de recursos | `--plan` contiene los requisitos y los pendientes |
-| 8 | Faltaba `--project` en varios comandos | `--project` explícito en todo comando de gcloud salvo `auth list` | Todas las invocaciones |
+| 1 | `add-iam-policy-binding` imprimía la política completa (con correos) y se mostraba la cuenta activa | `--format=none`; la cuenta se muestra como `***@dominio`; las políticas IAM se procesan en memoria | Bindings con `--format=none`; cuenta enmascarada; ningún `get-iam-policy` en `yaml`/`table`; un único archivo escrito |
+| 2 | La auditoría del bucket pedía claves `camelCase` que el SDK no devuelve | Claves `snake_case` del SDK 570.0.0 (`full_resource_formatter.py`, `gcs_json/metadata_util.py`), verificadas una por una | Formato exacto; 1 caso correcto y 8 incorrectos |
+| 3 | Solo rechazaba Editor y Owner | Lista **permitida** de roles directos de proyecto (`roles/logging.logWriter`) | Editor, Owner, `run.admin`, otro miembro, JSON no válido |
+| 4 | El bucket se creaba tarde y el ciclo de vida se aplicaba con un `update` | Bucket primero, con `--lifecycle-file` en la creación | Orden exacto; sin `update` |
+| 5 | Cinco consultas `services list \| grep -q` | Una consulta; los errores de consulta tienen su propio mensaje | Una llamada; `missing_apis` |
+| 6 | Repositorio detectado solo por nombre completo | Nombre corto o completo | 7 casos |
+| 7 | Requisitos previos implícitos | Enumerados en el plan | Texto del plan |
+| 8 | Faltaba `--project` | En todo comando salvo `auth list` | Todas las invocaciones |
 
-**Decisiones aplicadas:**
+### 4.2 Supervisión del PR #19: V2 → V3
 
-- Se excluye habilitar Secret Manager.
-- No se crean secretos ni se configura OAuth.
-- La limpieza de imágenes queda aplazada y documentada como pendiente.
-- La cuenta runtime se crea sin roles ni claves; la auditoría verifica ambas cosas.
-- No se modifica ninguna cuenta existente salvo los tres permisos de `project-os-build`.
+| # | Observación | Atención en la V3 | Prueba |
+| --- | --- | --- | --- |
+| 1 | `--plan` podía tomarse por una validación real | El plan dice **"PLAN ESTÁTICO… NO consulta GCP"**. Nuevo modo **`--check`**: preflight real de solo lectura que termina antes de la confirmación. La ayuda describe los tres modos | Textos del plan y de la ayuda; `--check` llama al preflight y retorna antes de `read` y de cualquier cambio; el preflight no tiene comandos mutantes; 3 combinaciones de argumentos inválidas → código 2 |
+| 2 | Falta evidencia integral de `--apply` | Arnés [`simular-infra-minima.sh`](../web/deploy/infra/simular-infra-minima.sh) con `gcloud` falso y 19 escenarios, para un **entorno autorizado** (§8). **No se ejecutó en esta sesión.** El preflight comprueba además las flags con el gcloud instalado (`verify_flags`), que es lo que confirma la versión de Cloud Shell | `verify_flags` con un gcloud falso (todas las flags / falta una); cada flag usada en un comando mutante está declarada; revisión estática del arnés (`bash -n`, sin gcloud real, escenarios) |
+| 3 | La auditoría mezclaba errores de lectura con fallos y podía cortarse a mitad | Tres estados: **OK**, **FALLA** (configuración incorrecta) y **NO VERIFICADO** (lectura fallida o formato no reconocido). La auditoría siempre termina y solo al final sale con error. Todo mensaje de error del SDK pasa por `mask_emails` (correos de personas → `***@***`; las cuentas de servicio se conservan) | 4 casos de `check_json` con contadores; solo dos `die`, al final; máscara probada con un gcloud falso |
+| 4 | La lista IAM tiene alcance limitado | El plan, la auditoría y este informe dicen "roles **directos** de proyecto" y que **no** certifica herencia, roles en otros recursos ni permisos efectivos. La revisión de IAM heredado sigue siendo manual (consola) | Texto del plan |
+| 5 | Limpieza de imágenes sin criterio de bloqueo | Bloqueo verificable **antes del primer build o push** (§6), en el plan y en el runbook | El runbook comprueba la política antes de `gcloud builds submit` y de `docker push` |
+| 6 | Fallos parciales sin procedimiento | Matriz de conciliación (§5) | — (documental) |
 
-**Otros cambios:**
+## 5. Fallo a mitad de `--apply`: conciliación manual
 
-- El script se carga con `source` sin ejecutar nada, porque `main` solo corre al invocarlo directamente. Así se
-  prueban sus funciones sin gcloud.
-- El archivo temporal del ciclo de vida, sin datos sensibles, se borra con un `trap` al salir.
+No hay rollback automático. **No se borra nada automáticamente ni se reejecuta a ciegas.** Si se reejecuta, el preflight
+se detendrá porque ya existe algún recurso, y eso es intencionado. Identifica el último paso completado con la salida y
+estas consultas de **solo lectura**:
 
-## 4. Validación (sin contacto con GCP)
+| Último paso completado | Estado probable | Consultas de conciliación (solo lectura) | Siguiente acción (manual, con autorización) |
+| --- | --- | --- | --- |
+| Ninguno (falló el paso 1) | Nada creado. Causa típica: nombre de bucket ocupado o permiso | `gcloud storage buckets describe gs://project-os-511102-project-os-build-src --project=project-os-511102 --format='json(name,location)'` | Si el nombre es ajeno, decidir otro nombre (cambio revisado del script). Si es por permiso, corregirlo y reejecutar |
+| 1 (bucket) | Bucket sí; repositorio, cuenta runtime y permisos no | La de arriba y `gcloud artifacts repositories list --project=… --location=northamerica-south1 --format='value(name)'` | Revisar el bucket con la auditoría manual (mismas protecciones). Ejecutar a mano los pasos 2–6 del script, uno a uno y revisados |
+| 2 (repositorio) | Además el repositorio | `gcloud iam service-accounts list --project=… --format='value(email)'` | Ejecutar a mano los pasos 3–6 |
+| 3 (cuenta runtime) | Además la cuenta runtime, sin roles | `gcloud iam service-accounts keys list --iam-account=project-os-dashboard-run@… --project=… --managed-by=user` | Ejecutar a mano los pasos 4–6 |
+| 4–5 (algunos permisos) | Faltan bindings | `get-iam-policy` del proyecto, del repositorio y del bucket con `--format=json`, procesado sin imprimir miembros (como hace la auditoría) | Aplicar solo los bindings que falten |
+| 6 (todo), auditoría con FALLA o NO VERIFICADO | Recursos creados; alguna verificación no pasó o no se pudo leer | Repetir la lectura indicada en la línea de la auditoría | FALLA: corregir esa configuración concreta. NO VERIFICADO: repetir la lectura (permiso o red). Nunca borrar sin decisión expresa |
 
-| Comprobación | Resultado |
-| --- | --- |
-| `bash -n` | OK |
-| ShellCheck 0.11.0, `-S style` | Sin avisos (V1 y V2) |
-| `--plan` y sin argumentos | Código 0; con un `gcloud` falso en el `PATH`, nunca se invoca |
-| Argumentos inválidos | Código 2, sin invocar gcloud |
-| `web/tests/infra-minima.test.ts` | 43/43 en V2; contra la V1, 37 de 43 fallan |
-| Mutaciones de la V2 | Cada una hace fallar al menos una prueba. Ver la lista de abajo |
+Borrar un recurso creado es una decisión del propietario. Los comandos están en el runbook §7.
 
-Mutaciones probadas sobre la V2:
+## 6. Bloqueo: política de limpieza de imágenes antes del primer build o push
 
-- quitar `--format=none`;
-- mostrar la cuenta sin enmascarar;
-- permitir Editor en la lista;
-- volver a una lista negra;
-- habilitar Secret Manager antes del `AUTORIZO`;
-- detectar el repositorio solo por su nombre completo;
-- relajar la comprobación de acceso uniforme.
+El script crea el repositorio **sin** política de limpieza. **No se compila ni se sube ninguna imagen** hasta que esta
+consulta muestre las políticas `conservar-3-recientes` y `borrar-mayores-30-dias`
+([`artifact-cleanup-policy.json`](../web/deploy/cloudrun/artifact-cleanup-policy.json)):
 
-**No se simuló `--apply`.** El entorno de esta sesión bloquea ejecutar el script completo y no se intentó esquivar
-esa restricción. Las pruebas cubren el texto del script, sus funciones cargadas con `source` y el modo `--plan`.
+```bash
+gcloud artifacts repositories list-cleanup-policies project-os --project=project-os-511102 --location=northamerica-south1
+```
 
-## 5. Uso cuando se autorice
+El runbook (§5.5) incluye esta comprobación antes de las opciones A (Cloud Build) y B (Docker local), y una prueba
+asegura que la comprobación aparece antes de ambas. Aplicar la política es otra decisión (`set-cleanup-policies`,
+runbook §5.5).
+
+## 7. Evidencia (2026-10-10), por tipo
+
+| Tipo | Qué | Resultado |
+| --- | --- | --- |
+| **Estática** | `bash -n` del script y del arnés | OK |
+| **Estática** | ShellCheck 0.11.0 `-S style`, script y arnés | Sin avisos |
+| **Estática** | Pruebas del texto del script (orden, alcance, flags, privacidad, `--check`, auditoría) y del arnés | Incluidas en las 58 pruebas de `infra-minima.test.ts` |
+| **Funciones aisladas** | Funciones cargadas con `source` (no ejecuta `main`): listas, roles, bucket, `check_json`, máscara, `verify_flags` con un gcloud **falso** | Incluidas en las 58 pruebas |
+| **Ejecución local limitada** | `--plan`, sin argumentos y con argumentos inválidos, con un gcloud falso que deja una marca si se invoca | Código 0 o 2; gcloud nunca invocado |
+| **Mutaciones** | Variantes deliberadamente incorrectas del script y del runbook | Cada una hace fallar al menos una prueba |
+| **Simulación de `--apply` o `--check`** | Arnés con gcloud falso | **NO ejecutada en esta sesión.** El entorno bloquea ejecutar el script completo y no se intentó esquivarlo. Pendiente en un entorno autorizado (§8) |
+| **Contra GCP real** | Cualquier modo salvo `--plan` | **No ejecutado** |
+
+Los resultados de CI de cada SHA se publican en el PR.
+
+## 8. Prueba en un entorno autorizado (antes de pedir `--apply`)
+
+1. En un equipo o en Cloud Shell, con autorización del propietario, clonar el repositorio en el SHA revisado.
+2. Ejecutar `bash web/deploy/infra/simular-infra-minima.sh`. Usa **solo** un gcloud falso: entorno vacío, `PATH` con el
+   falso primero y aborta si `gcloud` resolviera a otro. Recorre 19 escenarios:
+   - `--plan`;
+   - `--check`;
+   - `--apply` completo;
+   - confirmación incorrecta, línea vacía y sin entrada;
+   - API faltante y error de consulta;
+   - cuenta de compilación ausente o con roles extra (`run.admin`, Editor);
+   - cuenta runtime, repositorio (nombre corto o completo) o bucket existentes;
+   - gcloud sin una flag;
+   - `--check` con una API faltante;
+   - auditoría NO VERIFICADO y FALLA.
+3. Resultado esperado: `19 escenarios correctos, 0 con problemas`. Registrar la salida sin datos sensibles; no
+   contiene correos de personas.
+4. Después, con autorización separada, ejecutar `--check` en Cloud Shell contra el proyecto real (solo lectura) y
+   revisar su salida.
+5. Solo entonces solicitar autorización para `--apply`.
+
+## 9. Uso cuando se autorice `--apply`
 
 1. Leer el script completo y este informe.
-2. Ejecutar `bash web/deploy/infra/project-os-infra-minima-v1-6.sh --plan` en Cloud Shell, con el repositorio clonado
-   o el `.sh` subido.
-3. Solo con autorización expresa:
-   - ejecutar `… --apply`;
-   - revisar el preflight, que es de solo lectura;
-   - escribir `AUTORIZO INFRA PROJECT-OS`.
-4. La auditoría final debe mostrar solo líneas `OK`. Ante un error o una línea `FALLA`, **no reintentar a ciegas**:
-   no hay rollback automático. Revisar y reconciliar a mano.
-5. Registrar el resultado sin correos ni datos sensibles. La salida del script ya los omite.
+2. `--plan` (estático) y `--check` (solo lectura) en Cloud Shell.
+3. `--apply`: revisar el preflight y escribir `AUTORIZO INFRA PROJECT-OS`.
+4. La auditoría debe terminar con `FINALIZADO: auditoría correcta`. Ante FALLA, NO VERIFICADO o un error: §5.
+5. Registrar el resultado sin correos ni datos sensibles.
 
-## 6. Riesgos pendientes
+## 10. Riesgos pendientes
 
 | # | Riesgo | Mitigación / estado |
 | --- | --- | --- |
-| P1 | Nunca ejecutado contra GCP: flags, permisos efectivos, políticas de organización y versión del SDK de Cloud Shell sin probar | El primer `--apply` autorizado es la prueba real. El preflight se detiene ante cualquier error de lectura |
-| P2 | Sin rollback automático: un fallo a mitad deja recursos parciales | El orden pone primero el paso más frágil (bucket). Reconciliar a mano |
-| P3 | Nombre de bucket global: otro proyecto podría tenerlo | Fallaría el primer cambio, sin dejar nada más creado |
-| P4 | Ventana entre el preflight y la creación (otro operador crea los recursos) | La creación fallaría y no modificaría recursos ajenos |
-| P5 | La lista permitida solo cubre roles **directos de proyecto**. No evalúa roles heredados de carpeta u organización, roles en otros recursos ni el contenido de roles personalizados | La revisión de IAM heredado sigue siendo manual (consola) |
-| P6 | La auditoría depende de la forma de salida del SDK: claves `snake_case` y `retentionDurationSeconds` como texto `"0"`, verificadas en el SDK 570.0.0 | Si otra versión cambiara el formato, la auditoría daría `FALLA` (falla segura) y habría que revisar a mano |
-| P7 | Política de limpieza de imágenes no aplicada | Pendiente antes del primer despliegue (decisión aparte) |
-| P8 | La persona no puede actuar como `project-os-build` (`iam.serviceAccountUser`), así que todavía no puede lanzar builds | Autorización separada (runbook §5.5, A.1) |
-| P9 | Secret Manager API no habilitada | Necesaria antes del lote de secretos |
-| P10 | La cuenta predeterminada de Compute puede tener Editor | Ni el build ni la runtime la usan. Quitárselo es una decisión aparte |
-| P11 | El ID del proyecto queda escrito en el repositorio | No es un secreto: el acceso lo controla IAM |
-| P12 | Costos: el bucket y el repositorio pueden generar cargos menores por almacenamiento. No se crea presupuesto | Un presupuesto no es un límite de gasto ([preparación §4.4](despliegue-v1-6-preparacion.md#44-presupuestos-y-alertas)) |
+| P1 | Nunca ejecutado contra GCP: permisos efectivos, políticas de organización y comportamiento real sin probar | `--check` (solo lectura) y luego `--apply` con autorización. `verify_flags` cubre la versión del SDK |
+| P2 | El arnés de simulación no se ha ejecutado | Ejecutarlo en un entorno autorizado (§8) antes de pedir `--apply`. Ejecutarlo en CI sería otra opción, pero cambia los workflows y requiere aprobación |
+| P3 | Sin rollback automático | Orden con el paso más frágil primero; matriz de conciliación (§5) |
+| P4 | Nombre de bucket global | Fallaría el primer cambio sin dejar nada más creado |
+| P5 | Ventana entre el preflight y la creación | La creación fallaría y no modificaría recursos ajenos |
+| P6 | La lista permitida solo cubre roles **directos de proyecto**; no certifica herencia, roles en otros recursos ni permisos efectivos | IAM heredado revisado a mano en la consola. Esa evidencia sigue siendo manual |
+| P7 | La auditoría depende del formato de salida del SDK | Un formato distinto da NO VERIFICADO o FALLA (seguro) y requiere revisión manual |
+| P8 | Política de limpieza de imágenes no aplicada | **Bloqueo** antes del primer build o push (§6) |
+| P9 | La persona no puede actuar como `project-os-build` | Autorización separada (runbook §5.5, A.1) |
+| P10 | Secret Manager API no habilitada | Necesaria antes del lote de secretos |
+| P11 | La cuenta predeterminada de Compute puede tener Editor | No se usa. Quitárselo es una decisión aparte |
+| P12 | Costos del bucket y del repositorio; no se crea presupuesto | Un presupuesto no es un límite ([preparación §4.4](despliegue-v1-6-preparacion.md#44-presupuestos-y-alertas)) |
+| P13 | La máscara de correos usa una expresión regular | Cubre formatos habituales. Revisar la salida antes de publicarla como evidencia |

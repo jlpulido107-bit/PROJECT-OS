@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
 /**
- * Controles de seguridad del script de infraestructura mínima (Puerta B, V2). Todo es estático o local:
+ * Controles de seguridad del script de infraestructura mínima (Puerta B, V3). Todo es estático o local:
  * se lee el texto del script, se cargan sus funciones con `source` (no ejecuta `main`) y se corre `--plan`
  * con un `gcloud` falso que deja una marca si alguien lo invoca. Nunca se simula `--apply`.
  */
@@ -39,7 +39,7 @@ function bash(script: string, input = '') {
   return spawnSync('bash', ['-c', `source "${SCRIPT}"; ${script}`], { input, encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } as unknown as NodeJS.ProcessEnv })
 }
 
-describe('script de infraestructura mínima V2: controles estáticos', () => {
+describe('script de infraestructura mínima V3: controles estáticos', () => {
   it('no hay ninguna llamada mutante a gcloud antes de la confirmación AUTORIZO', () => {
     expect(ackLine).toBeGreaterThan(0)
     const before = gcloud.filter((g) => g.n < ackLine)
@@ -103,9 +103,9 @@ describe('script de infraestructura mínima V2: controles estáticos', () => {
   })
 
   it('la cuenta activa solo se muestra enmascarada', () => {
-    const prints = code.filter(({ line }) => /(echo|printf)[^\n]*active_account/.test(line))
+    const prints = code.filter(({ line }) => /(echo|printf)[^\n]*active_account/i.test(line))
     expect(prints.length).toBeGreaterThan(0)
-    for (const { line } of prints) expect(line).toContain('$(mask_account "$active_account")')
+    for (const { line } of prints) expect(line).toContain('$(mask_account "$ACTIVE_ACCOUNT")')
   })
 
   it('la auditoría del bucket usa los nombres snake_case del SDK y verifica cada protección', () => {
@@ -120,7 +120,7 @@ describe('script de infraestructura mínima V2: controles estáticos', () => {
   })
 })
 
-describe('script de infraestructura mínima V2: funciones (cargadas con source, sin gcloud)', () => {
+describe('script de infraestructura mínima V3: funciones (cargadas con source, sin gcloud real)', () => {
   it('cargar el script no ejecuta nada', () => {
     const r = bash('true')
     expect(r.status).toBe(0)
@@ -216,7 +216,7 @@ describe('script de infraestructura mínima V2: funciones (cargadas con source, 
   })
 })
 
-describe('script de infraestructura mínima V2: --plan', () => {
+describe('script de infraestructura mínima V3: --plan', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'infra-plan-'))
   const marker = path.join(dir, 'gcloud-invocado')
   writeFileSync(path.join(dir, 'gcloud'), `#!/bin/sh\ntouch "${marker}"\nexit 99\n`)
@@ -232,17 +232,143 @@ describe('script de infraestructura mínima V2: --plan', () => {
       expect(existsSync(marker)).toBe(false)
       for (const t of ['Requisitos previos', 'project-os-build@project-os-511102.iam.gserviceaccount.com ya existe',
         'cloudbuild.googleapis.com artifactregistry.googleapis.com iam.googleapis.com storage.googleapis.com',
-        'incluida Secret Manager', 'PENDIENTE ANTES DEL PRIMER DESPLIEGUE: política de limpieza de imágenes',
-        'Modo vista previa: no se llamó a gcloud.']) {
+        'incluida Secret Manager', 'BLOQUEO ANTES DEL PRIMER BUILD O PUSH', 'PLAN ESTÁTICO',
+        'Este plan NO consulta GCP', 'roles DIRECTOS de proyecto', 'Modo vista previa: no se llamó a gcloud.']) {
         expect(r.stdout, t).toContain(t)
       }
     }
   })
 
   it('argumentos inválidos → uso y código 2, sin invocar gcloud', () => {
-    for (const args of [['--foo'], ['--plan', '--apply']]) {
+    for (const args of [['--foo'], ['--plan', '--apply'], ['--check', '--apply']]) {
       expect(run(args).status).toBe(2)
     }
     expect(existsSync(marker)).toBe(false)
+  })
+})
+
+describe('script de infraestructura mínima V3: modo --check y verificaciones nuevas', () => {
+  const main = text.slice(text.indexOf('main() {'), text.indexOf('# ---- Auditoría posterior'))
+  const auditFn = text.slice(text.indexOf('audit() {'), text.indexOf('# Solo se ejecuta al invocarlo'))
+
+  it('--check ejecuta solo el preflight y termina antes de la confirmación y de cualquier cambio', () => {
+    const iPre = main.indexOf('  preflight\n')
+    const iCheck = main.indexOf(`if [[ "$mode" == '--check' ]]; then`)
+    const checkBlock = main.slice(iCheck, main.indexOf('\n  fi\n', iCheck))
+    const iReturn = iCheck + checkBlock.indexOf('return 0')
+    const iAck = main.indexOf('read -r -p')
+    const iFirstMut = main.indexOf('gcloud storage buckets create')
+    expect(iPre).toBeGreaterThan(0)
+    expect(iPre).toBeLessThan(iCheck)
+    expect(checkBlock).toMatch(/\n {4}return 0$/)
+    expect(iReturn).toBeGreaterThan(iCheck)
+    expect(iReturn).toBeLessThan(iAck)
+    expect(iAck).toBeLessThan(iFirstMut)
+    expect(main.slice(iPre, iReturn)).not.toMatch(MUTATING)
+    expect(main).toContain('Modo --check: solo lectura, no se modificó nada.')
+  })
+
+  it('el preflight no contiene comandos mutantes', () => {
+    const pre = text.slice(text.indexOf('preflight() {'), text.indexOf('main() {'))
+    const calls = [...pre.replace(/\\\n\s*/g, ' ').matchAll(/gcloud (?:auth|projects|services|iam|artifacts|storage) [^|)\n]*/g)].map((m) => m[0])
+    expect(calls.length).toBeGreaterThanOrEqual(7)
+    for (const c of calls) expect(c).not.toMatch(MUTATING)
+  })
+
+  it('cada flag de los comandos mutantes está declarada en MUTATING_FLAGS (verificada con --help antes de cambiar nada)', () => {
+    const declared = new Map(
+      [...text.matchAll(/^ {2}'([a-z -]+)\|([a-z -]+)'$/gm)].map((m) => [m[1] ?? '', new Set((m[2] ?? '').split(' '))]),
+    )
+    const muts = gcloud.filter((g) => MUTATING.test(g.cmd))
+    expect(muts).toHaveLength(6)
+    for (const g of muts) {
+      const name = [...declared.keys()].find((k) => g.cmd.startsWith(`gcloud ${k} `)) ?? g.cmd
+      const flags = [...g.cmd.matchAll(/--([a-z-]+)/g)].map((m) => m[1] ?? '').filter((f) => f !== 'project' && f !== 'format')
+      expect(declared.has(name), name).toBe(true)
+      for (const f of flags) expect(declared.get(name)?.has(f), `${name} --${f}`).toBe(true)
+    }
+  })
+
+  it('la auditoría no se interrumpe a mitad: solo termina con error al final, tras contar FALLA y NO VERIFICADO', () => {
+    const dies = [...auditFn.matchAll(/\bdie\b/g)].map((m) => m.index ?? 0)
+    expect(dies).toHaveLength(2)
+    expect(Math.min(...dies)).toBeGreaterThan(auditFn.lastIndexOf('report '))
+    expect(auditFn).not.toMatch(/\|\| die/)
+  })
+
+  const fake = mkdtempSync(path.join(tmpdir(), 'infra-fake-'))
+  writeFileSync(path.join(fake, 'gcloud'), [
+    '#!/bin/sh',
+    'case "$*" in',
+    '  *--help) for f in --location --uniform-bucket-level-access "--[no-]public-access-prevention" --soft-delete-duration --lifecycle-file --repository-format --description --display-name --member --role --condition; do',
+    '      case "$f" in *"${FAKE_DROP_FLAG:-@@}"*) ;; *) printf "  %s=VALOR\\n" "$f" ;; esac; done ;;',
+    '  *) echo "ERROR: permiso denegado para persona.real@gmail.com y project-os-build@project-os-511102.iam.gserviceaccount.com" >&2; exit 1 ;;',
+    'esac',
+  ].join('\n'))
+  chmodSync(path.join(fake, 'gcloud'), 0o755)
+  afterAll(() => rmSync(fake, { recursive: true, force: true }))
+  const withFake = (script: string, env: Record<string, string> = {}) =>
+    spawnSync('bash', ['-c', `source "${SCRIPT}"; ${script}`], { encoding: 'utf8', env: { PATH: `${fake}:/usr/bin:/bin`, ...env } as unknown as NodeJS.ProcessEnv })
+
+  it('verify_flags acepta un gcloud con todas las flags (solo --help, sin red)', () => {
+    expect(withFake('verify_flags').status).toBe(0)
+  })
+
+  it('verify_flags se detiene si el gcloud instalado no acepta una flag', () => {
+    const r = withFake('verify_flags', { FAKE_DROP_FLAG: 'soft-delete-duration' })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('storage buckets create --soft-delete-duration')
+  })
+
+  it('los errores del SDK se muestran sin correos de personas (las cuentas de servicio se conservan)', () => {
+    const r = withFake('gcloud services list; sleep 0.2')
+    expect(r.stderr).toContain('***@***')
+    expect(r.stderr).not.toContain('persona.real@gmail.com')
+    expect(r.stderr).toContain('project-os-build@project-os-511102.iam.gserviceaccount.com')
+  })
+
+  it.each([
+    ['sin lectura', "check_json 'x' '' has m r", 'NO VERIFICADO  x (no se pudo leer)', '0 1'],
+    ['JSON no válido', "check_json 'x' 'no-json' has m r", 'NO VERIFICADO  x (formato no reconocido)', '0 1'],
+    ['condición no cumplida', `check_json 'x' '{"bindings":[]}' has m r`, 'FALLA          x', '1 0'],
+    ['condición cumplida', `check_json 'x' '{"bindings":[{"role":"r","members":["m"]}]}' has m r`, 'OK             x', '0 0'],
+  ])('auditoría: %s', (_l, call, line, counters) => {
+    const r = bash(`${call}; echo "$AUDIT_FAILED $AUDIT_UNVERIFIED"`)
+    expect(r.stdout.split('\n')[0]).toBe(line)
+    expect(r.stdout.split('\n')[1]).toBe(counters)
+  })
+})
+
+describe('arnés de simulación para un entorno autorizado (solo revisión estática; no se ejecuta aquí)', () => {
+  const HARNESS = path.resolve(__dirname, '..', 'deploy', 'infra', 'simular-infra-minima.sh')
+  const harness = readFileSync(HARNESS, 'utf8')
+
+  it('es sintácticamente válido (bash -n, sin ejecutarlo)', () => {
+    expect(spawnSync('bash', ['-n', HARNESS]).status).toBe(0)
+  })
+
+  it('solo usa el gcloud falso: entorno vacío, PATH con el falso primero y aborta si gcloud resuelve a otro', () => {
+    expect(harness).toContain('[[ "$resolved" == "$WORK/bin/gcloud" ]] ||')
+    expect(harness).toContain('env -i PATH="$SAFE_PATH" HOME="$WORK/home" CLOUDSDK_CONFIG="$WORK/gcloud-config"')
+    expect(harness).not.toMatch(/google-cloud-sdk|\/usr\/bin\/gcloud|\/snap\/bin/)
+  })
+
+  it('cubre --plan, --check, --apply completo y cada aborto previsto', () => {
+    const names = [...harness.matchAll(/^scenario (\S+)/gm)].map((m) => m[1])
+    for (const n of ['plan', 'check-correcto', 'apply-correcto', 'apply-ack-incorrecto', 'apply-linea-vacia', 'apply-sin-entrada',
+      'api-faltante', 'error-consulta-apis', 'sin-cuenta-build', 'build-con-run-admin', 'build-con-editor', 'runtime-existente',
+      'repo-nombre-corto', 'repo-nombre-completo', 'bucket-existente', 'gcloud-sin-flag', 'auditoria-no-verificada', 'auditoria-falla']) {
+      expect(names, n).toContain(n)
+    }
+  })
+})
+
+describe('criterio de bloqueo de la limpieza de imágenes antes del primer build o push', () => {
+  const runbook = readFileSync(path.resolve(__dirname, '..', '..', 'docs', 'despliegue-privado-v1-3.md'), 'utf8')
+  it('el runbook exige comprobar la política de limpieza antes de `gcloud builds submit` y de `docker push`', () => {
+    const check = runbook.indexOf('gcloud artifacts repositories list-cleanup-policies')
+    expect(check).toBeGreaterThan(0)
+    expect(check).toBeLessThan(runbook.indexOf('gcloud builds submit web'))
+    expect(check).toBeLessThan(runbook.indexOf('docker push'))
   })
 })

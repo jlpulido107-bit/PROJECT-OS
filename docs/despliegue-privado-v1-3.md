@@ -310,6 +310,15 @@ gcloud artifacts repositories set-cleanup-policies "$REPO" --location="$REGION" 
 export IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/dashboard:$(git rev-parse --short HEAD)"
 ```
 
+**Bloqueo antes del primer build o push.** Si el repositorio se creó con el script de infraestructura mínima (que no
+aplica la política de limpieza), o si hay dudas, comprueba antes de compilar o subir imágenes:
+
+```bash
+gcloud artifacts repositories list-cleanup-policies "$REPO" --project="$PROJECT_ID" --location="$REGION"
+# Esperado: conservar-3-recientes y borrar-mayores-30-dias (web/deploy/cloudrun/artifact-cleanup-policy.json).
+# Si no aparecen, NO compiles ni subas imágenes: aplica antes el comando set-cleanup-policies de arriba.
+```
+
 **Opción A — Cloud Build con cuenta dedicada (D10-b).** Usa minutos de build. La configuración generada declara la
 cuenta, verifica la identidad y fuerza BuildKit y `linux/amd64`. Todos los comandos fijan `--project`, para no
 depender del proyecto activo de gcloud.
