@@ -17,6 +17,10 @@ export class ConfigError extends Error {
 
 export function dataSource(env: NodeJS.ProcessEnv = process.env): DataSource {
   const value = (env.DASHBOARD_DATA_SOURCE ?? 'sheets').trim().toLowerCase()
+  if (value === 'fixtures' && env.K_SERVICE?.trim()) {
+    // Cloud Run define K_SERVICE: allí los datos sintéticos podrían confundirse con datos reales.
+    throw new ConfigError('Los datos sintéticos (fixtures) no se permiten en Cloud Run')
+  }
   if (value === 'sheets' || value === 'fixtures') return value
   throw new ConfigError('DASHBOARD_DATA_SOURCE debe ser "sheets" o "fixtures"')
 }

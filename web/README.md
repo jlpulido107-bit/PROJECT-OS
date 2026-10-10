@@ -1,12 +1,17 @@
-# PROJECT-OS V1.2 — Dashboard web (solo lectura)
+# PROJECT-OS — Dashboard web (solo lectura)
 
 Panel privado, usable en móvil y escritorio, que **lee** la Google Sheet operativa de PROJECT-OS.
-No escribe en Sheets, no cierra tareas y no está publicado en internet: se ejecuta en **modo local/privado**
-hasta que el usuario apruebe un hosting.
+No escribe en Sheets ni cierra tareas.
+
+- **V1.2** (fusionada): ejecución local/privada, validada con Google OAuth y Sheets reales.
+- **V1.3** (en preparación): imagen Docker y despliegue **manual** en Google Cloud Run con identidad de
+  servicio (ADC, sin clave JSON), Secret Manager y costos controlados. **No está desplegado**; ver
+  [`docs/despliegue-privado-v1-3.md`](../docs/despliegue-privado-v1-3.md).
 
 - **Stack:** Next.js 16 (App Router) + TypeScript, NextAuth v4 (Google OAuth), `google-auth-library`; pruebas con Vitest 4.
 - **Nota npm:** `npm ci` funciona con npm 10. Para *cambiar* dependencias usa npm 11 (`npx npm@11 install …`): npm 10 falla al resolver los peers opcionales de Vitest 4.
 - **Datos:** Google Sheets API v4, cuenta de servicio, alcance `spreadsheets.readonly`, solo en el servidor.
+  Credenciales con selección explícita (`SHEETS_CREDENTIALS`): clave local fuera del repo, o ADC en Cloud Run.
 - **Pantallas:** Inicio ejecutivo · Proyectos (lista y detalle) · Tareas (filtros) · Actividad · Capacidad y plan diario.
 
 Decisiones técnicas, riesgos y límites: [`docs/decisiones-dashboard-v1-2.md`](../docs/decisiones-dashboard-v1-2.md).
@@ -48,9 +53,12 @@ Aun así exige iniciar sesión.
    ```
    DASHBOARD_DATA_SOURCE=sheets
    SHEETS_SPREADSHEET_ID=16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic
+   SHEETS_CREDENTIALS=service-account-key
    PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_FILE=/ruta/absoluta/fuera/del/repo/dashboard-sa.json
    ```
-   (Alternativa en un hosting con gestor de secretos: `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON` con el JSON completo.)
+   Si `SHEETS_CREDENTIALS` falta pero hay clave configurada, se usa la clave (compatibilidad con V1.2).
+   Nunca se cae a otra credencial en silencio. En Cloud Run las claves JSON están **prohibidas**
+   (`SHEETS_CREDENTIALS=adc` + `SHEETS_EXPECTED_SERVICE_ACCOUNT`).
 5. `npm run dev` y abre el **Diagnóstico de datos** al final del Inicio: las 12 pestañas deben aparecer como
    *Válido*. Si falta o cambia una columna, la pestaña se marca y sus datos se muestran como "no disponibles",
    nunca como cero.
@@ -90,6 +98,8 @@ Autenticación real con **NextAuth v4 + Google OAuth** (no hay formularios de co
 | `npm test` | Pruebas unitarias (Vitest): parsing, fechas Mérida, conteos, vacíos, cliente Sheets, autorización de rutas, revisiones de seguridad. |
 | `npm run test:e2e` | Requiere `npm run build`. Levanta `next start` con datos sintéticos y secretos aleatorios y comprueba, por HTTP real, que sin sesión válida ninguna página/API devuelve datos. |
 | `npm run audit:prod` / `npm run audit:critical` | Fallan ante vulnerabilidades high/critical de producción o critical en cualquier dependencia. Detalle en `docs/decisiones-dashboard-v1-2.md`. |
+| `npm run docker:smoke` | Construye la imagen y la prueba: usuario no root, sin archivos secretos, `PORT` configurable, autorización HTTP contra el contenedor, simulación de Cloud Run (configuración insegura → `/api/health` 503) y logs sin secretos. Sin Google Cloud. |
+| `npm run smoke:remote -- --url https://…` | Solo tras autorizar un despliegue: comprobaciones **sin sesión** contra la URL (solo imprime códigos HTTP). No se ejecuta en CI. |
 | `npm run check:client-secrets` | Requiere `npm run build`. Busca claves, tokens, correos y los valores de las variables secretas del entorno en `.next/static`. |
 
 En CI, `.github/workflows/web-validation.yml` ejecuta esta misma secuencia en cada PR que toca `web/`.
@@ -98,8 +108,27 @@ Validación completa antes de pedir revisión:
 
 ```bash
 npm ci && npm run audit:prod && npm run audit:critical && npm run lint && npm run typecheck && npm test && npm run build \
-  && npm run test:e2e && npm run check:client-secrets
+  && npm run test:e2e && npm run check:client-secrets && npm run docker:smoke
 ```
+
+`docker:smoke` necesita Docker. Detrás de un proxy corporativo que intercepta TLS, usa
+`EXTRA_CA_FILE=/ruta/ca.pem npm run docker:smoke`: la CA se monta solo durante `npm ci` y no queda en la imagen.
+
+## Docker y Cloud Run (V1.3)
+
+- `Dockerfile` multi-stage: Node 22 fijado por digest, `npm ci --ignore-scripts`, salida `standalone` de Next,
+  usuario `node` sin privilegios, código de solo lectura y `PORT`/`HOSTNAME=0.0.0.0`.
+- `.dockerignore` es una **lista de permitidos**: solo entran `package*.json`, `next.config.ts`,
+  `tsconfig.json` y `src/`. Nunca entran `.env.local`, claves ni `.git`.
+- `GET /api/health` es público y no lee Sheets ni la sesión. Responde `200 {"status":"ok"}` o
+  `503 {"status":"unavailable"}` si la configuración es insegura: URL sin HTTPS, secretos ausentes, clave
+  JSON o datos sintéticos en Cloud Run, o falta de `SHEETS_EXPECTED_SERVICE_ACCOUNT`. Es la sonda de
+  arranque de Cloud Run.
+- `deploy/cloudrun/service.template.yaml` es una plantilla declarativa (min 0 / max 1, CPU por solicitud,
+  512 MiB, secretos de Secret Manager por versión). `deploy/cloudrun/render.mjs` la valida y genera el YAML.
+  `deploy/cloudbuild.yaml` es solo para build manual.
+- El despliegue, el costo, el rollback y la eliminación de recursos están en
+  [`docs/despliegue-privado-v1-3.md`](../docs/despliegue-privado-v1-3.md). Nada se despliega desde CI.
 
 ## Datos: reglas de lectura
 
@@ -126,12 +155,16 @@ web/
   src/lib/table.ts             # validación de encabezados y mapeo tipado de filas
   src/lib/aggregate.ts         # conteos, bloqueos, tiempos, capacidad, filtros, paginación
   src/lib/sheets-client.ts     # cliente GET-only de Sheets API (server-only)
+  src/lib/credentials.ts       # política explícita: clave local o ADC (Cloud Run) + identidad esperada
+  src/lib/deployment.ts        # comprobaciones de configuración para /api/health
   src/lib/data.ts              # selección de fuente + caché corta (server-only)
   src/lib/auth.ts, access.ts, authz.ts  # NextAuth, lista de permitidos, decisión de acceso
   src/lib/fixtures.ts          # datos SINTÉTICOS (no es copia de la hoja real)
   src/app/(private)/…          # páginas privadas
   tests/                       # Vitest
-  scripts/                     # e2e de autorización y revisión de secretos en assets
+  scripts/                     # e2e de autorización, smoke Docker/remoto y revisión de secretos en assets
+  Dockerfile, .dockerignore    # imagen de producción
+  deploy/                      # plantilla Cloud Run, render, Cloud Build y limpieza de Artifact Registry
 ```
 
 ## Capturas (datos sintéticos)
@@ -143,7 +176,8 @@ web/
 Más: [tareas en escritorio](docs/capturas/escritorio-tareas.png), [capacidad en móvil](docs/capturas/movil-capacidad.png),
 [inicio de sesión](docs/capturas/movil-login.png).
 
-## Fuera de alcance (V1.2 inicial)
+## Fuera de alcance
 
-Escritura/CRUD, auditoría de cambios, reglas de cierre `COMPLETADO`, planificador, despliegue en internet,
-scheduling y cualquier segunda base de datos. Requieren aprobación del usuario.
+Escritura/CRUD, auditoría de cambios, reglas de cierre `COMPLETADO`, planificador, scheduling, despliegue
+automático (CD) y cualquier segunda base de datos. El despliegue manual de V1.3 requiere autorización
+explícita del usuario.

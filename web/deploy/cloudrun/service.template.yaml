@@ -1,0 +1,88 @@
+# PROJECT-OS V1.3 — servicio de Cloud Run (PLANTILLA para revisión humana; no se aplica desde CI).
+# Uso manual documentado en docs/despliegue-privado-v1-3.md:
+#   node deploy/cloudrun/render.mjs > /tmp/project-os-service.yaml   # valida variables; revisar el resultado
+#   gcloud run services replace /tmp/project-os-service.yaml --region "$REGION"
+# Variables: SERVICE_NAME, PROJECT_ID, REGION, IMAGE (con @sha256:…), RUNTIME_SA, SERVICE_URL,
+# OAUTH_CLIENT_ID, SECRET_VERSION_NEXTAUTH, SECRET_VERSION_OAUTH, SECRET_VERSION_ALLOWLIST.
+# Ningún valor secreto aparece aquí: los secretos se leen de Secret Manager por versión fijada.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ${SERVICE_NAME}
+  labels:
+    app: project-os
+    component: dashboard
+  annotations:
+    # Entrada HTTPS alcanzable por el navegador (necesaria para Google OAuth). Los datos siguen
+    # protegidos por la sesión de NextAuth + AUTH_ALLOWED_EMAILS en cada página y API.
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      labels:
+        app: project-os
+      annotations:
+        # Costos controlados: escala a cero y como máximo una instancia.
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '1'
+        # Facturación basada en solicitudes (CPU solo durante las peticiones).
+        run.googleapis.com/cpu-throttling: 'true'
+        run.googleapis.com/startup-cpu-boost: 'false'
+    spec:
+      # Identidad dedicada SIN roles de proyecto: Lector de la hoja + acceso a 3 secretos.
+      serviceAccountName: ${RUNTIME_SA}
+      containerConcurrency: 20
+      timeoutSeconds: 60
+      containers:
+        - image: ${IMAGE}
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: '1'
+              memory: 512Mi
+          env:
+            - name: NEXTAUTH_URL
+              value: ${SERVICE_URL}
+            - name: GOOGLE_CLIENT_ID
+              value: ${OAUTH_CLIENT_ID}
+            - name: DASHBOARD_DATA_SOURCE
+              value: sheets
+            - name: DASHBOARD_CACHE_SECONDS
+              value: '60'
+            - name: SHEETS_SPREADSHEET_ID
+              value: 16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic
+            - name: SHEETS_CREDENTIALS
+              value: adc
+            - name: SHEETS_EXPECTED_SERVICE_ACCOUNT
+              value: ${RUNTIME_SA}
+            - name: AUTH_SESSION_MAX_AGE_SECONDS
+              value: '28800'
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: project-os-nextauth-secret
+                  key: '${SECRET_VERSION_NEXTAUTH}'
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: project-os-google-client-secret
+                  key: '${SECRET_VERSION_OAUTH}'
+            - name: AUTH_ALLOWED_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: project-os-allowed-emails
+                  key: '${SECRET_VERSION_ALLOWLIST}'
+          # Una revisión mal configurada (p. ej. sin HTTPS, con clave JSON o sin cuenta esperada)
+          # no supera la sonda y no recibe tráfico: la revisión anterior sigue sirviendo.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 10
+  traffic:
+    - latestRevision: true
+      percent: 100
