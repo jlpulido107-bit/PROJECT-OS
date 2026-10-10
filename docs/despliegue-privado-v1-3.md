@@ -316,6 +316,10 @@ depender del proyecto activo de gcloud.
 
 A.1 Una sola vez: identidad, permisos mínimos y bucket de origen (§3.4).
 
+> Existe un script con preflight de solo lectura y confirmación expresa para el bucket, el repositorio, la cuenta
+> runtime y estos permisos mínimos: [revisión de infraestructura mínima](infra-minima-v1-6-revision.md). Está
+> **pendiente de autorización** y no crea la cuenta de compilación ni concede `actAs`.
+
 ```bash
 gcloud services enable cloudbuild.googleapis.com --project="$PROJECT_ID"
 export BUILD_REGION="$REGION"   # Cloud Build y Cloud Storage admiten las dos regiones candidatas (nota más abajo)
