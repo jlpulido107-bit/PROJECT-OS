@@ -18,7 +18,7 @@
 
 | Estado | Significado | Qué **no** basta |
 | --- | --- | --- |
-| **VERIFICADO** | Evidencia **real** del propietario con un resultado concreto (`P`, con su `EV-xx`). Para un control de **código**, una prueba en CI (marcado «(código)») | Un reporte sin dato (`R`), una simulación (`S`), una plantilla o «funciona» |
+| **VERIFICADO** | Evidencia **real** del propietario con un resultado concreto (`P`, con su `EV-xx`, que en el registro de la línea base también es `P`). Para un control de **código** (hoy solo D3), una prueba en CI (marcado «(código)») | Un reporte sin dato (`R`), una simulación (`S`), una plantilla o «funciona» |
 | **PARCIAL** | Hay evidencia real (`P` o `R`), pero incompleta. La columna *Falta* dice qué | — |
 | **PENDIENTE** | Sin evidencia real; puede haber CI o simulación | — |
 | **NO_APLICA** | El control no puede ejecutarse hoy, por una razón explícita y **hasta** una condición concreta. Solo G2 | Usarlo como sustituto de una prueba pendiente |
@@ -29,7 +29,7 @@ Etiquetas de evidencia. Cada una va en su columna: real, técnica, o tiempo y de
 | --- | --- | --- | --- |
 | **P** | Real, del propietario, con salida o resultado concreto y fecha (`EV-xx`) | Real | Sí |
 | **R** | Real, reportada por el propietario, sin salida adjunta | Real | No: como mucho PARCIAL |
-| **CI** | Prueba automatizada sobre el código del repositorio | Técnica | Solo los controles de código |
+| **CI** | Prueba automatizada sobre el código del repositorio | Técnica | Solo los controles de código (D3) |
 | **S** | Simulación con datos sintéticos (fixtures, `gcloud` falso, E2E locales) | Técnica | **Nunca**: prueba el diseño |
 | **T** | Requisito que depende del **paso del tiempo**, con fecha o condición | Tiempo o decisión | Bloquea VERIFICADO hasta cumplirse |
 | **DEC** | **Decisión de riesgo** del propietario todavía no tomada | Tiempo o decisión | Bloquea VERIFICADO hasta decidirse |

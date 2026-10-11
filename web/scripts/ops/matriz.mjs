@@ -7,8 +7,9 @@
  * Convierte en reglas comprobables lo que la Misión 014 exige a la matriz («cero falsos aprobados»):
  * - los 29 controles originales, en orden, con un estado del vocabulario (VERIFICADO, PARCIAL, PENDIENTE, NO_APLICA);
  * - el resumen coincide con las filas;
- * - VERIFICADO exige evidencia REAL del propietario (P, con su EV-xx del registro de la línea base) o, para un control de
- *   código, CI; nunca solo un reporte (R), una simulación (S), un requisito de tiempo (T) o una decisión pendiente (DEC);
+ * - VERIFICADO exige evidencia REAL del propietario (P, con su EV-xx del registro de la línea base, que allí también es P)
+ *   o, solo para los controles de código (D3), CI; nunca solo un reporte (R), una simulación (S), un requisito de tiempo
+ *   (T) o una decisión pendiente (DEC);
  * - PARCIAL exige evidencia real (P o R) y lo que falta; PENDIENTE no tiene evidencia real; NO_APLICA solo donde está
  *   justificado (G2) y con la condición que lo hace aplicable;
  * - H no puede aprobarse con controles sin evidencia salvo excepción explícita del propietario;
@@ -27,6 +28,9 @@ export const ESTADOS_MATRIZ = Object.freeze(['VERIFICADO', 'PARCIAL', 'PENDIENTE
 export const ETIQUETAS = Object.freeze(['P', 'R', 'CI', 'S', 'T', 'DEC'])
 /** Único NO_APLICA justificado hoy, y por qué: no se crea una revisión solo para cerrar el control. */
 export const NO_APLICA_PERMITIDO = Object.freeze({ G2: 'una sola revisión' })
+/** Únicos controles que la CI puede verificar sin evidencia real («VERIFICADO (código)»): D3 es una propiedad del código
+ *  (solo GET y alcance de lectura); su prueba real son D1 y D2. En cualquier otro control, «(código)» no sustituye a P. */
+export const VERIFICABLE_POR_CODIGO = Object.freeze(['D3'])
 /** Límites que el estado debe reflejar mientras el control no esté VERIFICADO (Misión 014, §5 y §9). */
 export const ETIQUETA_OBLIGATORIA = Object.freeze({ E1: 'T', F3: 'T', C3: 'DEC', G1: 'DEC' })
 /** Lo que la evidencia real debe nombrar para que el control pueda pasar a VERIFICADO (condiciones de cierre). */
@@ -88,7 +92,9 @@ export function validarMatriz(texto, { lineaBase = null, produccion = PRODUCCION
     if (lineaBase !== null && !lineaBase.includes(valor)) v.push(`identidad: la línea base no cita el ${campo} vigente: revalidar`)
   }
   if (/evidencia-ejemplo/.test(texto)) v.push('sintético: la matriz cita el ejemplo sintético como evidencia')
-  const registro = new Set(lineaBase === null ? [] : [...lineaBase.matchAll(/^\| (EV-\d{2}) \|/gm)].map((m) => m[1]))
+  // Registro de la línea base: EV-xx → tipo (columna «Tipo»: P con salida, R reporte sin salida).
+  const registro = new Map(lineaBase === null ? [] : lineaBase.split('\n').filter((l) => /^\| EV-\d{2} \|/.test(l)).map((l) => [celdas(l)[0], celdas(l)[4]]))
+  for (const [ev, tipo] of registro) if (!['P', 'R'].includes(tipo)) v.push(`registro: ${ev} sin tipo P o R en la línea base`)
 
   for (const f of filas) {
     const tag = (t) => etiquetas(`${f.real} ${f.tecnica} ${f.tiempo}`).includes(t)
@@ -101,9 +107,12 @@ export function validarMatriz(texto, { lineaBase = null, produccion = PRODUCCION
     const evs = [...f.real.matchAll(/EV-\d{2}/g)].map((m) => m[0])
     if (etiquetas(f.real).includes('P') && evs.length === 0) v.push(`${f.id}: evidencia P sin referencia EV-xx al registro de la línea base`)
     if (lineaBase !== null) for (const ev of evs) if (!registro.has(ev)) v.push(`${f.id}: cita ${ev}, que no está en el registro de la línea base`)
+    // Lo citado como P debe ser P en el registro: un reporte sin salida (R) no se presenta como resultado concreto.
+    const evsP = f.real.split(/(?=\*\*(?:P|R)(?: \+ CI)?:\*\*)/).filter((s) => /^\*\*P(?: \+ CI)?:\*\*/.test(s)).flatMap((s) => [...s.matchAll(/EV-\d{2}/g)].map((m) => m[0]))
+    for (const ev of new Set(evsP)) if (registro.get(ev) === 'R') v.push(`${f.id}: cita ${ev} como P, pero el registro de la línea base lo clasifica como R (reporte sin salida)`)
     const real = tag('P') || tag('R')
     if (f.estado === 'VERIFICADO') {
-      const deCodigo = /código/i.test(f.calificador)
+      const deCodigo = VERIFICABLE_POR_CODIGO.includes(f.id) && /código/i.test(f.calificador)
       if (!(tag('P') || (deCodigo && tag('CI')))) v.push(`${f.id}: VERIFICADO sin evidencia real del propietario (P)${deCodigo ? ' ni CI' : ''}: un reporte, una simulación o una plantilla no bastan`)
       if (!vacia(f.tiempo)) v.push(`${f.id}: VERIFICADO con un requisito de tiempo o una decisión pendiente`)
       if (!vacia(f.falta)) v.push(`${f.id}: VERIFICADO con evidencia faltante`)

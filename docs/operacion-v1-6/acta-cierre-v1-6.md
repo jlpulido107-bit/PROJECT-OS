@@ -67,7 +67,7 @@ Fusionar el PR #24 **no despliega nada**.
 | --- | --- |
 | `npm ci` | OK: 426 paquetes del lockfile |
 | `npm run lint` · `npm run typecheck` | Sin errores · sin errores |
-| `npm test` (Vitest) | **917/917** en 28 archivos |
+| `npm test` (Vitest) | **919/919** en 28 archivos |
 | `npm run build` | Compilado correctamente |
 | `npm run audit:prod` · `npm run audit:critical` | 0 vulnerabilidades · 0 críticas (5 altas de desarrollo, X-2) |
 | `npm run check:client-secrets -- --min-values=4` (valores falsos de la CI) | 22 archivos, 4 valores comparados, sin fugas |
@@ -80,10 +80,13 @@ Fusionar el PR #24 **no despliega nada**.
 
 - La CI del SHA final (jobs `web`, `docker` y `validate`), con sus enlaces, está en el **comentario de entrega del
   PR #24**: un commit no puede contener los resultados de su propia CI.
-- Referencia anterior: `aa246a8` en verde, en los tres jobs:
-  - [validate](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38169959764/job/114560302254);
-  - [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38169959796/job/114560303023);
-  - [docker](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38169959796/job/114560302815).
+- Referencia anterior: `9118727` en verde, en los tres jobs:
+  - [validate](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180643601/job/114592288467);
+  - [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180643592/job/114592288585);
+  - [docker](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180643592/job/114592288395).
+- `30f40b2` falló en [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180290994/job/114591212949):
+  una prueba alcanzó el `gcloud` del runner, sin credenciales. Lo corrigió `9118727` con un `PATH` hermético; el
+  detalle está en el comentario de entrega.
 
 **HTTP real** (`smoke:remote`, sin sesión): 26/26 en EV-03, EV-08 y EV-12. Lo ejecuta el propietario; nunca la CI.
 

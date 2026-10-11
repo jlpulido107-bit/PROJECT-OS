@@ -352,6 +352,20 @@ describe('matriz de aceptación (reglas de scripts/ops/matriz.mjs, Misión 014)'
     expect(validar(conFila('A5', { 3: '**P:** EV-99 (inventada)' })).join('\n')).toMatch(/A5: cita EV-99/)
   })
 
+  it('lo citado como P es P en el registro: un reporte sin salida (R) no se presenta como resultado concreto', () => {
+    expect(validar(conFila('A1', { 3: '**P:** EV-05 (consola, reportado)' })).join('\n')).toMatch(/A1: cita EV-05 como P, pero el registro de la línea base lo clasifica como R/)
+    expect(validar(conFila('A3', { 3: '**P:** EV-03 y EV-04' })).join('\n')).toMatch(/A3: cita EV-04 como P/)
+    // Un registro sin tipo deja la trazabilidad sin base.
+    const sinTipo = base.replace(/(\| EV-03 \|.*\| )P( \|)/, '$1?$2')
+    expect(validarMatriz(matriz, { lineaBase: sinTipo, produccion: PRODUCCION }).join('\n')).toMatch(/registro: EV-03 sin tipo P o R/)
+  })
+
+  it('«VERIFICADO (código)» solo vale para D3: en cualquier otro control la CI no sustituye a la evidencia real', () => {
+    const c5 = validar(conFila('C5', { 2: 'VERIFICADO (código)', 3: '—', 4: '**CI:** pruebas unitarias', 5: '—', 6: '—' }))
+    expect(c5.join('\n')).toMatch(/C5: VERIFICADO sin evidencia real del propietario \(P\)/)
+    expect(validar(matriz).filter((x) => x.startsWith('D3:'))).toEqual([]) // D3 sigue siendo válido solo con CI
+  })
+
   it.each([
     ['PARCIAL sin evidencia real', 'C1', { 3: '—' }, /C1: PARCIAL sin evidencia real/],
     ['PENDIENTE con evidencia real', 'C2', { 3: '**P:** EV-12' }, /C2: PENDIENTE con evidencia real/],

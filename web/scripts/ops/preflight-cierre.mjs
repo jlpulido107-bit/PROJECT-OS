@@ -110,7 +110,7 @@ export function preflightCierre(ROOT, { soloRepositorio = false } = {}) {
   // K10 — el script reutilizable de remediación conserva sus salvaguardas (las prueba remediacion-v1-6.test.ts).
   const salvaguardas = { 'revisión única': 'servicio_comprobable "$svc"', revalidación: 'revalidar_servicio "$huella"', etag: '--etag="$etag"', 'lector único': 'lector_unico "$s" "$cuenta"', 'verificación posterior': '(verificado)', 'lecturas fallidas': 'LECTURA_FALLIDA (no es un 0' }
   const sinSalvaguarda = Object.entries(salvaguardas).filter(([, marca]) => !rem.includes(marca)).map(([n]) => n)
-  add('K10', 'Remediación reutilizable: falla cerrado', sinSalvaguarda.length ? 'FALLO' : 'OK', sinSalvaguarda.length ? `faltan salvaguardas: ${sinSalvaguarda.join(', ')}` : 'revisión única, revalidación, etag, lector único, verificación posterior y lecturas fallidas (pruebas con gcloud falso)')
+  add('K10', 'Remediación reutilizable: falla cerrado', sinSalvaguarda.length ? 'FALLO' : 'OK', sinSalvaguarda.length ? `faltan salvaguardas: ${sinSalvaguarda.join(', ')}` : 'comprobación estática: siguen en el script la revisión única, la revalidación, el etag, el lector único, la verificación posterior y las lecturas fallidas. Su comportamiento lo prueba remediacion-v1-6.test.ts con gcloud falso')
 
   if (!soloRepositorio) {
     // Lo que NO puede verificarse offline: siempre NO_VERIFICADO, con su acción humana.
