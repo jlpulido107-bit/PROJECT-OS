@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -43,8 +43,15 @@ case "$1 $2 $3" in
   "run services describe")
     MAX=3; hecho 'run services update' && MAX=1
     REV=project-os-dashboard-00001-gsk; [[ -n "$FAKE_NUEVA_REVISION" ]] && hecho 'run services update' && REV=project-os-dashboard-00002-xyz
-    printf '{"metadata":{"annotations":{"run.googleapis.com/maxScale":"%s"}},"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/maxScale":"%s","autoscaling.knative.dev/minScale":"0"}},"spec":{"containers":[{"env":[{"name":"NEXTAUTH_URL","value":"VALOR-NO-DEBE-SALIR"},{"name":"NEXTAUTH_SECRET","valueFrom":{"secretKeyRef":{"name":"project-os-nextauth-secret","key":"1"}}},{"name":"GOOGLE_CLIENT_SECRET","valueFrom":{"secretKeyRef":{"key":"%s","name":"project-os-google-client-secret"}}},{"name":"AUTH_ALLOWED_EMAILS","valueFrom":{"secretKeyRef":{"name":"project-os-allowed-emails","key":"1"}}}]}]}}},"status":{"latestReadyRevisionName":"%s","traffic":[{"revisionName":"%s","percent":100}]}}\n' \
-      "$MAX" "\${FAKE_REV_MAX:-1}" "\${FAKE_FIJADA_CLIENTE:-2}" "$REV" "$REV" ;;
+    # FAKE_CAMBIA simula un cambio concurrente DESPUÉS de la primera lectura del servicio (entre el plan y la
+    # confirmación): fijada → la revisión pasa a fijar la versión 1; revision → otra revisión activa; referencia → un
+    # volumen de secretos empieza a usar la versión 1. FAKE_REF_EXTRA pone ese volumen desde el principio.
+    N=$(awk '/^--- run$/ { n = 0 } /^run services describe/ { n++ } END { print n }' "$FAKE_LOG")
+    FIJ="\${FAKE_FIJADA_CLIENTE:-2}"; VOL="\${FAKE_REF_EXTRA:-}"
+    if (( N >= 2 )); then case "\${FAKE_CAMBIA:-}" in fijada) FIJ=1 ;; revision) REV=project-os-dashboard-00003-cmb ;; referencia) VOL=1 ;; esac; fi
+    VOLS='[]'; [[ -n "$VOL" ]] && VOLS='[{"name":"extra","secret":{"secretName":"project-os-google-client-secret","items":[{"key":"1","path":"v"}]}}]'
+    printf '{"metadata":{"annotations":{"run.googleapis.com/maxScale":"%s"}},"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/maxScale":"%s","autoscaling.knative.dev/minScale":"0"}},"spec":{"containers":[{"env":[{"name":"NEXTAUTH_URL","value":"VALOR-NO-DEBE-SALIR"},{"name":"NEXTAUTH_SECRET","valueFrom":{"secretKeyRef":{"name":"project-os-nextauth-secret","key":"1"}}},{"name":"GOOGLE_CLIENT_SECRET","valueFrom":{"secretKeyRef":{"key":"%s","name":"project-os-google-client-secret"}}},{"name":"AUTH_ALLOWED_EMAILS","valueFrom":{"secretKeyRef":{"name":"project-os-allowed-emails","key":"1"}}}]}],"volumes":%s}}},"status":{"latestReadyRevisionName":"%s","traffic":[{"revisionName":"%s","percent":100}]}}\n' \
+      "$MAX" "\${FAKE_REV_MAX:-1}" "$FIJ" "$VOLS" "$REV" "$REV" ;;
   "secrets versions list")
     # JSON real de Secret Manager: «name» es la ruta completa. FAKE_NOMBRE_RARO simula un nombre no reconocible.
     V="projects/123/secrets/$4/versions"
@@ -77,11 +84,12 @@ const FILTRO = 'logName:"run.googleapis.com%2Frequests" AND resource.labels.serv
 
 function run(modo: string | string[], input: string | null = '', extra: Record<string, string> = {}, limpiar = true) {
   if (limpiar) writeFileSync(log, '')
+  appendFileSync(log, '--- run\n') // marca de inicio: el gcloud falso cuenta las lecturas del servicio de esta ejecución
   const r = spawnSync('bash', [SCRIPT, ...(Array.isArray(modo) ? modo : modo ? [modo] : [])], {
     input: input ?? undefined, stdio: [input === null ? 'ignore' : 'pipe', 'pipe', 'pipe'], encoding: 'utf8',
     env: { PATH: `${dir}:/usr/bin:/bin`, FAKE_LOG: log, FAKE_FILTRO: JSON.stringify(FILTRO), ...extra } as unknown as NodeJS.ProcessEnv,
   })
-  const calls = readFileSync(log, 'utf8').split('\n').filter(Boolean)
+  const calls = readFileSync(log, 'utf8').split('\n').filter((c) => c && c !== '--- run')
   const mutaciones = calls.filter((c) => /versions (disable|destroy)|services update|sinks update/.test(c))
   return { ...r, salida: r.stdout + r.stderr, calls, mutaciones }
 }
@@ -263,6 +271,43 @@ describe('remediación V1.6: mutaciones con confirmación (gcloud falso)', () =>
       expect(r.status, args.join(' ')).toBe(2)
       expect(r.calls, args.join(' ')).toEqual([])
     }
+  })
+
+  describe('R2-1: el servicio cambia entre el plan y la confirmación → ninguna mutación', () => {
+    for (const cambio of ['fijada', 'revision', 'referencia']) {
+      it(`deshabilitar-sobrantes con cambio «${cambio}»: aborta sin deshabilitar`, () => {
+        const r = run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n', { FAKE_CAMBIA: cambio })
+        expect(r.stdout).toContain(`${CLIENTE} 1`) // el plan sí la proponía
+        expect(r.status).toBe(1)
+        expect(r.stderr).toContain('el servicio cambió')
+        expect(r.mutaciones).toEqual([])
+      })
+
+      it(`destruir-version con cambio «${cambio}»: no destruye`, () => {
+        run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n')
+        const r = run(['destruir-version', CLIENTE, '1'], DESTRUIR, { FAKE_CAMBIA: cambio }, false)
+        expect(r.stdout).toContain('Se DESTRUIRÁ') // pasó las comprobaciones previas a la confirmación
+        expect(r.status).toBe(1)
+        expect(r.stderr).toContain('el servicio cambió')
+        expect(r.calls.filter((c) => c.includes('destroy'))).toEqual([])
+      })
+    }
+
+    it('la revalidación ocurre DESPUÉS de la confirmación: el servicio se vuelve a leer antes de mutar', () => {
+      const r = run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n')
+      const lecturas = r.calls.map((c, i) => (c.startsWith('run services describe') ? i : -1)).filter((i) => i >= 0)
+      const mutacion = r.calls.findIndex((c) => c.includes('versions disable'))
+      expect(lecturas.length).toBeGreaterThanOrEqual(2)
+      expect(lecturas.at(-1)).toBeLessThan(mutacion)
+    })
+
+    it('cuenta TODAS las referencias (también volúmenes de secretos), no solo una variable', () => {
+      const d = run('', '', { FAKE_REF_EXTRA: '1' })
+      expect(d.stdout).toContain(`${CLIENTE}: fijada=1,2; ENABLED=[2 1]; ENABLED_no_fijadas=[]`)
+      const r = run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n', { FAKE_REF_EXTRA: '1' })
+      expect(r.stdout).toContain('nada que hacer')
+      expect(r.mutaciones).toEqual([])
+    })
   })
 
   it('alinear-max-servicio: usa --max=1 (servicio) y confirma que la revisión no cambió', () => {

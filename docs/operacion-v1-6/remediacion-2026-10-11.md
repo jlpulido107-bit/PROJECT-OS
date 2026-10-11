@@ -65,6 +65,10 @@ con `NO_VERIFICADO` y no la modifica.
 - **Destruir es por par exacto:** `destruir-version <secreto> <versión>` nunca barre todas las `DISABLED`, que pueden
   ser históricas o de recuperación. Rechaza un secreto fuera de la lista, la versión fijada y cualquier versión que no
   esté `DISABLED`, y vuelve a comprobar el estado justo antes de destruir.
+- **Revalidación tras la confirmación (R2-1):** `deshabilitar-sobrantes` y `destruir-version` guardan una huella del
+  servicio al hacer el plan: revisión activa, tráfico y **todas** las referencias a secretos (variables de cada
+  contenedor y volúmenes). Tras escribir la frase, y antes de **cada** mutación, la vuelven a leer. Si cambió, o si la
+  versión objetivo pasó a estar referenciada o cambió de estado, se detienen y abortan lo que quede del plan.
 - **A7:** `--max=1` cambia el máximo del **servicio** sin desplegar una revisión nueva, según la ayuda de gcloud. El
   script lo comprueba: compara la revisión activa antes y después y avisa si cambió. **No** usa `--max-instances`, que
   sí crea una revisión nueva.
@@ -89,6 +93,9 @@ Revisión R1 (ChatGPT, PR #24), aplicada después de la ejecución y sin repetir
   `categoría no reconocida`.
 - **R1-2:** `destruir-deshabilitadas` se sustituyó por `destruir-version <secreto> <versión>`.
 - **R1-3:** la exclusión se verifica por nombre, filtro y estado; alcance solo `_Default`.
+
+Revisión R2 (ChatGPT, PR #24): **R2-1**, revalidar el servicio tras la confirmación y antes de cada mutación (§4).
+Endurece el script reutilizable; no implica que hubiera concurrencia en la ejecución del 2026-10-11.
 
 Hallazgo de la herramienta: en Cloud Shell, `--format='value(name.basename(),state)'` dejó vacía la lista de versiones.
 El script se detuvo sin cambios. Desde `2282a05` se lee el JSON y se extrae el número en Python, y el plan usa

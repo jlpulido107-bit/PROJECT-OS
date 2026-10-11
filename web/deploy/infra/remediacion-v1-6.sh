@@ -12,6 +12,7 @@
 #   deshabilitar-sobrantes      Mutación: deshabilita las versiones ENABLED que la revisión NO tiene fijadas.
 #   destruir-version S N        Mutación IRREVERSIBLE: destruye SOLO la versión N del secreto S, si sigue DISABLED y no
 #                               es la fijada. Nunca barre todas las DISABLED. Solo tras comprobar el login real.
+#   (Las mutaciones de secretos releen el servicio tras la confirmación y abortan si cambió desde el plan.)
 #   alinear-max-servicio        Mutación: fija el máximo de instancias del SERVICIO en 1 (--max=1). Según la ayuda de
 #                               gcloud, no despliega una revisión nueva; el script lo verifica.
 #   excluir-callback-en-logs    Mutación: añade SOLO al sink _Default una exclusión para las peticiones al callback OAuth,
@@ -68,6 +69,22 @@ def ruta_segura(url):
         if re.fullmatch(patron, ruta): return plantilla
     return '[ruta-omitida]'
 
+def referencias(svc):        # TODAS las referencias secreto/versión: env de cada contenedor y volúmenes de secretos
+    refs, spec = set(), svc['spec']['template']['spec']
+    for c in spec.get('containers') or []:
+        for e in c.get('env') or []:
+            ref = (e.get('valueFrom') or {}).get('secretKeyRef')
+            if ref: refs.add((str(ref.get('name', '?')), str(ref.get('key', 'latest'))))
+    for v in spec.get('volumes') or []:
+        sec = v.get('secret')
+        if sec:
+            for it in sec.get('items') or [{'key': 'latest'}]:
+                refs.add((str(sec.get('secretName', '?')), str(it.get('key', 'latest'))))
+    return sorted(refs)
+
+def trafico(svc):
+    return ';'.join(f"{x.get('revisionName', 'latest')}={x.get('percent', 0)}" for x in svc.get('status', {}).get('traffic', []))
+
 def codigo_app(txt):
     for categoria in APP:
         if txt.startswith(f'[project-os] {categoria}'): return f'[project-os] {categoria}'
@@ -104,11 +121,13 @@ elif mode == 'codigos':         # JSON de entradas → conteo por severidad, log
     for (sev, name, codigo, dia), n in sorted(c.items(), key=lambda kv: tuple(map(str, kv[0]))):
         print(f'  {n:>5}  {sev:<8} {name}  {codigo} ({dia})')
     if not c: print('      0  (sin avisos)')
-elif mode == 'fijadas':         # JSON del servicio → «secreto versión» por cada variable de Secret Manager
+elif mode == 'fijadas':         # JSON del servicio → «secreto versión» por cada referencia (contenedores y volúmenes)
+    for n, k in referencias(json.load(sys.stdin)): print(n, k)
+elif mode == 'huella':          # JSON del servicio → revisión activa, tráfico y referencias: se compara antes/después
     svc = json.load(sys.stdin)
-    for e in svc['spec']['template']['spec']['containers'][0].get('env', []):
-        ref = (e.get('valueFrom') or {}).get('secretKeyRef')
-        if ref: print(ref['name'], ref['key'])
+    print('revision_activa', svc.get('status', {}).get('latestReadyRevisionName', '?'))
+    print('trafico', trafico(svc))
+    for n, k in referencias(svc): print('ref', n, k)
 elif mode == 'escala':          # JSON del servicio → límites y revisión activa
     svc = json.load(sys.stdin)
     print('servicio_maxScale', svc['metadata'].get('annotations', {}).get('run.googleapis.com/maxScale', 'ninguno'))
@@ -116,7 +135,7 @@ elif mode == 'escala':          # JSON del servicio → límites y revisión act
     print('revision_maxScale', t.get('autoscaling.knative.dev/maxScale', 'ninguno'))
     print('revision_minScale', t.get('autoscaling.knative.dev/minScale', 'ninguno'))
     print('revision_activa', svc.get('status', {}).get('latestReadyRevisionName', '?'))
-    print('trafico', ';'.join(f"{x.get('revisionName', 'latest')}={x.get('percent', 0)}" for x in svc.get('status', {}).get('traffic', [])))
+    print('trafico', trafico(svc))
 elif mode == 'versiones':       # JSON de «secrets versions list» → «N ESTADO» (N = número final de la ruta; ? si no hay)
     for v in json.load(sys.stdin) or []:
         m = re.search(r'/versions/(\d+)$', str(v.get('name', '')))
@@ -148,8 +167,21 @@ describe_service() { gcloud run services describe "$SERVICE" --project="$PROJECT
 # de transformaciones de --format (en Cloud Shell, value(name.basename(),state) dejó la lista vacía, 2026-10-11).
 versions_of() { gcloud secrets versions list "$1" --project="$PROJECT_ID" --format=json | py versiones; }
 
-pinned_of() {   # $1 = salida de «fijadas», $2 = secreto → versión fijada (vacío si no hay)
-  awk -v s="$2" '$1 == s { print $2 }' <<< "$1"
+pinned_of() {   # $1 = salida de «fijadas», $2 = secreto → versiones referenciadas separadas por comas (vacío si no hay)
+  awk -v s="$2" '$1 == s { printf "%s%s", sep, $2; sep = "," }' <<< "$1"
+}
+numeric_list() { [[ "$1" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]]; }
+in_list() { [[ ",$2," == *",$1,"* ]]; }   # $1 está en la lista separada por comas $2
+# Versiones ENABLED de la lista $1 (salida de versions_of) que NO están en la lista de referencias $2.
+no_referenciadas() { awk -v f="$2" 'BEGIN { split(f, a, ","); for (i in a) r[a[i]] = 1 } $2 == "ENABLED" && !($1 in r) { print $1 }' <<< "$1"; }
+estado_de() { awk -v n="$2" '$1 == n { print $2 }' <<< "$1"; }   # estado de la versión $2 en la salida $1
+
+# Revalidación tras la confirmación y antes de CADA mutación (revisión R2-1): revisión activa, tráfico y todas las
+# referencias a secretos deben seguir como en el plan; si no, se aborta lo que quede.
+revalidar_servicio() {   # $1 = huella del plan
+  local ahora
+  ahora="$(describe_service | py huella)" || die 'no se pudo releer el servicio tras la confirmación; abortado lo que quedaba.'
+  [[ "$ahora" == "$1" ]] || die 'el servicio cambió (revisión, tráfico o referencias a secretos) desde el plan; abortado lo que quedaba. Vuelve a ejecutar el modo para recalcular el plan.'
 }
 
 confirm() {     # $1 = frase exacta
@@ -182,7 +214,7 @@ diagnostico() {
     fij="$(pinned_of "$fijadas" "$s")"
     if grep -q '^?' <<< "$v"; then echo "  $s: VERSIONES_ILEGIBLES (no se reconoce el número de versión)"; continue; fi
     enabled="$(awk '$2 == "ENABLED" { printf "%s ", $1 }' <<< "$v")"
-    sobrantes="$(awk -v f="$fij" '$2 == "ENABLED" && $1 != f { printf "%s ", $1 }' <<< "$v")"
+    sobrantes="$(no_referenciadas "$v" "$fij" | tr '\n' ' ')"
     echo "  $s: fijada=${fij:-?}; ENABLED=[${enabled% }]; ENABLED_no_fijadas=[${sobrantes% }]"
   done
   echo
@@ -193,17 +225,19 @@ diagnostico() {
 }
 
 deshabilitar_sobrantes() {
-  local svc fijadas s v fij sobrantes n plan=()
+  local svc fijadas huella s v fij f n plan=()
   svc="$(describe_service)" || die 'no se pudo leer el servicio.'
   fijadas="$(py fijadas <<< "$svc")"
+  huella="$(py huella <<< "$svc")"
   for s in "${SECRETS[@]}"; do
     v="$(versions_of "$s")" || die "no se pudieron leer las versiones de $s."
     ! grep -q '^?' <<< "$v" || die "$s: versiones ilegibles; detenido sin cambios."
     fij="$(pinned_of "$fijadas" "$s")"
-    [[ "$fij" =~ ^[1-9][0-9]*$ ]] || die "$s: la revisión no fija una versión numérica (${fij:-ninguna}); detenido sin cambios."
-    awk -v f="$fij" '$1 == f && $2 == "ENABLED" { ok=1 } END { exit !ok }' <<< "$v" \
-      || die "$s: la versión fijada $fij no está ENABLED; detenido sin cambios (el servicio la necesita)."
-    while read -r n; do [[ -n "$n" ]] && plan+=("$s $n"); done < <(awk -v f="$fij" '$2 == "ENABLED" && $1 != f { print $1 }' <<< "$v")
+    numeric_list "$fij" || die "$s: la revisión no fija versiones numéricas (${fij:-ninguna}); detenido sin cambios."
+    for f in ${fij//,/$'\n'}; do
+      [[ "$(estado_de "$v" "$f")" == 'ENABLED' ]] || die "$s: la versión fijada $f no está ENABLED; detenido sin cambios (el servicio la necesita)."
+    done
+    while read -r n; do [[ -n "$n" ]] && plan+=("$s $n"); done < <(no_referenciadas "$v" "$fij")
   done
   if [[ ${#plan[@]} -eq 0 ]]; then echo 'No hay versiones ENABLED sin usar: nada que hacer.'; return 0; fi
   echo 'Se DESHABILITARÁN (la revisión no las usa; se pueden volver a habilitar con «versions enable»):'
@@ -212,6 +246,9 @@ deshabilitar_sobrantes() {
   local item
   for item in "${plan[@]}"; do
     s="${item% *}"; n="${item#* }"
+    revalidar_servicio "$huella"
+    v="$(versions_of "$s")" || die "no se pudieron releer las versiones de $s; abortado lo que quedaba."
+    [[ "$(estado_de "$v" "$n")" == 'ENABLED' ]] || die "$s versión $n ya no está ENABLED; abortado lo que quedaba."
     gcloud secrets versions disable "$n" --secret="$s" --project="$PROJECT_ID" --format=none
     echo "  deshabilitada: $s versión $n"
   done
@@ -223,22 +260,27 @@ deshabilitar_sobrantes() {
 # Destruye UNA versión concreta, indicada por argumentos (revisión R1-2): nunca barre todas las DISABLED, que pueden ser
 # históricas o de recuperación. Comprueba justo antes que el par sigue DISABLED y no está fijado en la revisión.
 destruir_version() {
-  local s="$1" n="$2" svc fijadas v fij estado
+  local s="$1" n="$2" svc fijadas huella v fij estado
   in_secrets "$s" || die "secreto no reconocido: $s; detenido sin cambios."
   [[ "$n" =~ ^[1-9][0-9]*$ ]] || die "versión no numérica: $n; detenido sin cambios."
   svc="$(describe_service)" || die 'no se pudo leer el servicio.'
   fijadas="$(py fijadas <<< "$svc")"
+  huella="$(py huella <<< "$svc")"
   fij="$(pinned_of "$fijadas" "$s")"
-  [[ "$fij" =~ ^[1-9][0-9]*$ ]] || die "$s: sin versión fijada numérica; detenido sin cambios."
-  [[ "$n" != "$fij" ]] || die "$s versión $n es la FIJADA en la revisión: nunca se destruye. Detenido sin cambios."
+  numeric_list "$fij" || die "$s: sin versiones fijadas numéricas; detenido sin cambios."
+  ! in_list "$n" "$fij" || die "$s versión $n es la FIJADA en la revisión: nunca se destruye. Detenido sin cambios."
   v="$(versions_of "$s")" || die "no se pudieron leer las versiones de $s."
-  estado="$(awk -v n="$n" '$1 == n { print $2 }' <<< "$v")"
+  estado="$(estado_de "$v" "$n")"
   [[ "$estado" == 'DISABLED' ]] || die "$s versión $n está en estado «${estado:-inexistente}», no DISABLED; detenido sin cambios."
   echo "Se DESTRUIRÁ de forma IRREVERSIBLE: $s versión $n (DISABLED; la fijada es $fij)."
   confirm 'AUTORIZO DESTRUIR VERSION TRAS VERIFICAR EL LOGIN'
-  # Segunda comprobación inmediatamente antes de destruir: nada cambió durante la confirmación.
+  # Segunda comprobación inmediatamente antes de destruir (R2-1): el servicio (revisión activa, tráfico y TODAS las
+  # referencias) sigue como en el plan, la versión sigue sin referenciarse y sigue DISABLED.
+  revalidar_servicio "$huella"
+  fijadas="$(describe_service | py fijadas)" || die 'no se pudo releer el servicio; detenido sin cambios.'
+  ! in_list "$n" "$(pinned_of "$fijadas" "$s")" || die "$s versión $n pasó a estar referenciada; detenido sin cambios."
   v="$(versions_of "$s")" || die "no se pudieron releer las versiones de $s."
-  [[ "$(awk -v n="$n" '$1 == n { print $2 }' <<< "$v")" == 'DISABLED' ]] || die "$s versión $n cambió de estado; detenido sin cambios."
+  [[ "$(estado_de "$v" "$n")" == 'DISABLED' ]] || die "$s versión $n cambió de estado; detenido sin cambios."
   gcloud secrets versions destroy "$n" --secret="$s" --project="$PROJECT_ID" --quiet --format=none
   echo "  destruida: $s versión $n"
 }
