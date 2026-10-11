@@ -1,13 +1,17 @@
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
 /**
  * Remediación de los hallazgos de la auditoría en Cloud Shell (E1, A6, A7/D-1). Se ejecuta el script real contra un
- * gcloud FALSO (tests/helpers/gcloud-falso-remediacion.sh) que simula el estado observado. El gcloud real
- * (/usr/local/bin) no está en el PATH: nunca hay GCP. Revisiones R1 y R2 de ChatGPT (PR #24) y Misión 014 (A.2).
+ * gcloud FALSO (tests/helpers/gcloud-falso-remediacion.sh) que simula el estado observado. Revisiones R1 y R2 de
+ * ChatGPT (PR #24) y Misión 014 (A.2).
+ *
+ * PATH HERMÉTICO: el gcloud real nunca es alcanzable. El PATH solo contiene el directorio del gcloud falso y otro con
+ * enlaces a las utilidades exactas que usan el script y el falso. No incluye /usr/bin: en los runners de GitHub, el
+ * Cloud SDK está instalado en /usr/bin/gcloud.
  */
 const SCRIPT = path.resolve(__dirname, '..', 'deploy', 'infra', 'remediacion-v1-6.sh')
 const FAKE = path.resolve(__dirname, 'helpers', 'gcloud-falso-remediacion.sh')
@@ -17,6 +21,16 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 const log = path.join(dir, 'llamadas.log')
 copyFileSync(FAKE, path.join(dir, 'gcloud'))
 chmodSync(path.join(dir, 'gcloud'), 0o755)
+const UTILIDADES = ['bash', 'cat', 'python3', 'awk', 'sed', 'grep', 'tr']
+const BIN = path.join(dir, 'bin-minimo')
+mkdirSync(BIN)
+const encontradas = spawnSync('sh', ['-c', `for u in ${UTILIDADES.join(' ')}; do command -v "$u"; done`], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } as unknown as NodeJS.ProcessEnv })
+  .stdout.split('\n').filter(Boolean)
+for (const u of UTILIDADES) {
+  const ruta = encontradas.find((r) => path.basename(r) === u)
+  if (!ruta) throw new Error(`utilidad no disponible para las pruebas: ${u}`)
+  symlinkSync(ruta, path.join(BIN, u))
+}
 
 const FILTRO = 'logName:"run.googleapis.com%2Frequests" AND resource.labels.service_name:"project-os-dashboard" AND httpRequest.requestUrl:"/api/auth/callback/google"'
 const CLIENTE = 'project-os-google-client-secret'
@@ -29,7 +43,7 @@ const FRASE = {
 const MUTACION = /^(secrets versions (disable|destroy)|run services update|logging sinks update)/
 
 /** Ejecuta el script. `limpiar = false` conserva el estado simulado de ejecuciones anteriores (p. ej. una versión ya deshabilitada). */
-function run(modo: string | string[], input: string | null = '', extra: Record<string, string> = {}, limpiar = true, PATH = `${dir}:/usr/bin:/bin`) {
+function run(modo: string | string[], input: string | null = '', extra: Record<string, string> = {}, limpiar = true, PATH = `${dir}:${BIN}`) {
   if (limpiar) writeFileSync(log, '')
   appendFileSync(log, '--- run\n')
   const r = spawnSync('bash', [SCRIPT, ...(Array.isArray(modo) ? modo : modo ? [modo] : [])], {
@@ -81,8 +95,14 @@ describe('remediación V1.6: controles estáticos', () => {
     expect(text).toContain('destruida (verificado)')
   })
 
+  it('el PATH de las pruebas es hermético: solo el gcloud falso y las utilidades enlazadas', () => {
+    const r = spawnSync('bash', ['-c', 'type -P gcloud'], { encoding: 'utf8', env: { PATH: `${dir}:${BIN}` } as unknown as NodeJS.ProcessEnv })
+    expect(r.stdout.trim()).toBe(path.join(dir, 'gcloud'))
+    expect(spawnSync('bash', ['-c', 'type -P gcloud'], { encoding: 'utf8', env: { PATH: BIN } as unknown as NodeJS.ProcessEnv }).status).not.toBe(0)
+  })
+
   it('sin el EJECUTABLE gcloud se detiene: la función gcloud() del script no lo enmascara', () => {
-    const r = run('', '', {}, true, '/usr/bin:/bin')
+    const r = run('', '', {}, true, BIN)
     expect(r.status).toBe(1)
     expect(r.stderr).toContain('gcloud no disponible')
     expect(r.calls).toEqual([])
