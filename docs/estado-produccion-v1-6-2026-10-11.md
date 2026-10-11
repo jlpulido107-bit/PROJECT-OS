@@ -6,6 +6,12 @@
 
 > Este documento actualiza el estado histórico de preparación de la [Puerta C](puerta-c-v1-6.md) y el [runbook](despliegue-privado-v1-3.md). No sustituye la [lista completa de aceptación](despliegue-v1-6-aceptacion.md), que conserva comprobaciones operativas pendientes.
 
+> **Estado vigente (Misión 014):** las §2 y §5 conservan lo observado **durante** el despliegue. Por ejemplo, la
+> etiqueta `produccion` sin confirmar y el `maxScale` de servicio en 3. Las operaciones posteriores están en la **§7**.
+> El estado congelado de la versión, con la fecha y la procedencia de cada evidencia, está en la
+> [línea base V1.6](operacion-v1-6/linea-base-v1-6.md), y el estado de cada control en la
+> [matriz](operacion-v1-6/matriz-aceptacion.md).
+
 ## 1. Identidad de la versión desplegada
 
 | Elemento | Valor / resultado |
@@ -94,3 +100,7 @@ Cada mutación se hizo con confirmación expresa y se verificó de inmediato. **
 
 Pendientes en navegador: callback en la consola OAuth (A2), 12 pestañas y totales (C1), cuenta no autorizada (C2),
 historial y permisos de la hoja (D1, D2), presupuesto y gasto (F1, F2) y máximo histórico de instancias (A7).
+
+**Nota (Misión 014):** la herramienta que añadió la exclusión solo comprobó que existiera **con ese nombre**. El filtro
+y `disabled=false` no se verificaron, y la exclusión solo cubre el sink `_Default`. Su estado (`CORRECTA` esperado) lo
+muestra `diagnostico` ([hoja del propietario](operacion-v1-6/hoja-propietario.md), bloque 5).

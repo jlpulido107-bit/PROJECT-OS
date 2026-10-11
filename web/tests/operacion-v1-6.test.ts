@@ -66,9 +66,26 @@ describe('preflight de aceptación offline', () => {
   it('sin git, P14 queda NO_VERIFICADO y el código de salida es 3: NO_VERIFICADO nunca cuenta como OK', () => {
     const { status, por, out } = estados(fixtureRoot())
     expect(por.P14).toBe('NO_VERIFICADO')
-    expect(Object.entries(por).filter(([id]) => id !== 'P14').every(([, e]) => e === 'OK')).toBe(true)
+    // P15: el colector V1.1 usa una clave de cuenta de servicio de Google (riesgo pendiente de decisión).
+    expect(por.P15).toBe('NO_VERIFICADO')
+    expect(Object.entries(por).filter(([id]) => !['P14', 'P15'].includes(id)).every(([, e]) => e === 'OK')).toBe(true)
     expect(status).toBe(3)
     expect(out.codigo).toBe(3)
+  })
+
+  it('M14 · P12 ya no es un falso OK: la clave del colector se declara en P15 (NO_VERIFICADO) y nunca como OK', () => {
+    const { por, out } = estados(fixtureRoot())
+    const p15 = out.resultados.find((r) => r.id === 'P15') as { motivo: string } | undefined
+    expect(p15?.motivo).toMatch(/pr-validation\.yml/)
+    expect(p15?.motivo).toMatch(/decisión del propietario/)
+    expect(por.P12).toBe('OK')
+    const sinColector = estados(fixtureRoot((r) => {
+      for (const f of ['pr-validation.yml', 'manual-github-evidence.yml']) rmSync(path.join(r, '.github/workflows', f))
+    }))
+    expect(sinColector.por.P15).toBe('OK')
+    // Un workflow NUEVO con la misma clave no se blanquea como «colector»: FALLO en P12.
+    const nuevo = estados(fixtureRoot((r) => writeFileSync(path.join(r, '.github/workflows/nuevo.yml'), 'env:\n  K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n')))
+    expect(nuevo.por.P12).toBe('FALLO')
   })
 
   it.each([
@@ -118,6 +135,88 @@ describe('preflight de aceptación offline', () => {
   it('uso incorrecto → código 2', () => {
     expect(node(PREFLIGHT, ['--borrar']).status).toBe(2)
     expect(node(PREFLIGHT, ['--root']).status).toBe(2)
+  })
+})
+
+describe('preflight de CIERRE (Misión 014, D.1)', () => {
+  const CIERRE = path.join(OPS, 'preflight-cierre.mjs')
+  type Fila = { id: string; control: string; estado: string; evidencia: string; accion: string }
+  const ejecutar = (root: string | null, ...flags: string[]) => {
+    const r = node(CIERRE, [...(root ? ['--root', root] : []), '--json', ...flags])
+    const out = JSON.parse(r.stdout) as { resultados: Fila[]; codigo: number }
+    return { status: r.status, por: Object.fromEntries(out.resultados.map((x) => [x.id, x.estado])), out }
+  }
+  /** Copia del repositorio con lo que leen los preflights (sin .git: K2/P14 quedan NO_VERIFICADO). */
+  function repo(mutate?: (root: string) => void) {
+    const root = tmp('cierre-')
+    for (const rel of ['docs', 'web/src', 'web/scripts', 'web/deploy', '.github/workflows']) cpSync(path.join(ROOT, rel), path.join(root, rel), { recursive: true })
+    mutate?.(root)
+    return root
+  }
+
+  it('es offline: solo importa las herramientas del repositorio; ni red, ni gcloud, ni procesos propios', () => {
+    const src = read(CIERRE)
+    expect(src).not.toMatch(/child_process|fetch\(|https?:\/\/|process\.env\./)
+    expect([...src.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]).sort()).toEqual(['./evidencia.mjs', './matriz.mjs', './plan-inspeccion.mjs', './preflight-aceptacion.mjs', './produccion-v1-6.mjs', 'node:fs', 'node:path'])
+  })
+
+  it('sobre el repositorio real: K1–K10 sin FALLO; lo real (K11–K16) siempre NO_VERIFICADO, nunca OK', () => {
+    const { status, por, out } = ejecutar(null)
+    for (const id of ['K1', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'K10']) expect(por[id], id).toBe('OK')
+    expect(['OK', 'NO_VERIFICADO']).toContain(por.K2)
+    for (const id of ['K11', 'K12', 'K13', 'K14', 'K15', 'K16']) expect(por[id], id).toBe('NO_VERIFICADO')
+    expect(status).toBe(3)
+    expect(out.resultados.filter((r) => r.estado === 'NO_VERIFICADO').every((r) => r.accion !== '—')).toBe(true)
+    const solo = ejecutar(null, '--solo-repositorio')
+    expect([0, 3]).toContain(solo.status)
+    expect(Object.keys(solo.por)).toEqual(['K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'K10'])
+  })
+
+  it('imprime la tabla CONTROL | ESTADO | EVIDENCIA | ACCIÓN PENDIENTE', () => {
+    const r = node(CIERRE, [])
+    expect(r.stdout).toContain('| CONTROL | ESTADO | EVIDENCIA | ACCIÓN PENDIENTE |')
+    expect(r.stdout).toMatch(/^\| K12 Configuración real en GCP .* \| NO_VERIFICADO \|/m)
+  })
+
+  it.each([
+    ['una matriz con un falso aprobado', 'K8', (r: string) => {
+      const f = path.join(r, 'docs/operacion-v1-6/matriz-aceptacion.md')
+      writeFileSync(f, read(f).replace(/^\| C2 \| (.*?) \| PENDIENTE \|/m, '| C2 | $1 | VERIFICADO |'))
+    }],
+    ['el acta ausente', 'K5', (r: string) => rmSync(path.join(r, 'docs/operacion-v1-6/acta-cierre-v1-6.md'))],
+    ['el acta sin la identidad completa', 'K1', (r: string) => {
+      const f = path.join(r, 'docs/operacion-v1-6/acta-cierre-v1-6.md')
+      writeFileSync(f, read(f).replaceAll('7f44216bdf85a9832e014f45c27ac643e00ceff9', '7f44216'))
+    }],
+    ['la hoja con un comando de mutación', 'K9', (r: string) => {
+      const f = path.join(r, 'docs/operacion-v1-6/hoja-propietario.md')
+      writeFileSync(f, `${read(f)}\nEjecuta bash web/deploy/infra/remediacion-v1-6.sh destruir-version x 1\n`)
+    }],
+    ['la hoja sin el bloque 4', 'K9', (r: string) => {
+      const f = path.join(r, 'docs/operacion-v1-6/hoja-propietario.md')
+      writeFileSync(f, read(f).replace('## Bloque 4.', '## Costos.'))
+    }],
+    ['la remediación sin la compuerta de revisión única', 'K10', (r: string) => {
+      const f = path.join(r, 'web/deploy/infra/remediacion-v1-6.sh')
+      writeFileSync(f, read(f).replaceAll('servicio_comprobable "$svc"', 'true'))
+    }],
+    ['un diagnóstico que muta', 'K6', (r: string) => {
+      const f = path.join(r, 'web/deploy/infra/remediacion-v1-6.sh')
+      writeFileSync(f, read(f).replace("  echo \"== E1: coincidencias por ORIGEN", "  gcloud secrets versions disable 1 --secret=x --project=\"$PROJECT_ID\"\n  echo \"== E1: coincidencias por ORIGEN"))
+    }],
+    ['un ejemplo de evidencia que no se declara sintético', 'K7', (r: string) => {
+      const f = path.join(r, 'docs/operacion-v1-6/evidencia-ejemplo.json')
+      writeFileSync(f, read(f).replace('"ejemplo_sintetico": true', '"ejemplo_sintetico": false'))
+    }],
+  ])('%s → FALLO en %s y código 1', (_n, id, mutate) => {
+    const { status, por } = ejecutar(repo(mutate))
+    expect(por[id]).toBe('FALLO')
+    expect(status).toBe(1)
+  })
+
+  it('uso incorrecto → código 2', () => {
+    expect(node(CIERRE, ['--borrar']).status).toBe(2)
+    expect(node(CIERRE, ['--root']).status).toBe(2)
   })
 })
 
@@ -181,44 +280,113 @@ describe('check:client-secrets: autoprueba con valores canario inventados', () =
   })
 })
 
-describe('matriz de aceptación', () => {
+describe('matriz de aceptación (reglas de scripts/ops/matriz.mjs, Misión 014)', async () => {
+  const { validarMatriz, leerMatriz, resumenCalculado, IDS } = (await import(path.join(OPS, 'matriz.mjs'))) as {
+    validarMatriz: (t: string, o?: { lineaBase?: string | null; produccion?: Record<string, unknown> }) => string[]
+    leerMatriz: (t: string) => { filas: Array<{ id: string; estado: string; real: string; tecnica: string; tiempo: string; falta: string; columnas: number }> }
+    resumenCalculado: (t: string) => Record<string, string[]>
+    IDS: string[]
+  }
+  const { PRODUCCION } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { PRODUCCION: Record<string, string> }
   const matriz = read(path.join(DOCS, 'matriz-aceptacion.md'))
-  const IDS = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'B1', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'D3', 'E1', 'E2', 'F1', 'F2', 'F3', 'G1', 'G2', 'G3', 'H']
-  const filas = matriz.slice(matriz.indexOf('## 2. Matriz'), matriz.indexOf('**Resumen')).split('\n')
-    .filter((l) => /^\| [A-H]\d? \|/.test(l)).map((l) => l.split('|').slice(1, -1).map((c) => c.trim()))
-  const estado = (f: string[]) => (f[3] ?? '').replace(/\*/g, '').split(/[\s(—]/)[0] ?? ''
+  const base = read(path.join(DOCS, 'linea-base-v1-6.md'))
+  const validar = (t: string, produccion = PRODUCCION) => validarMatriz(t, { lineaBase: base, produccion })
+  /** Copia de la matriz con la fila `id` cambiada: columnas 0-7 (ID, control, estado, real, técnica, tiempo, falta, siguiente). */
+  const conFila = (id: string, cambio: Partial<Record<number, string>>) => matriz.split('\n').map((l) => {
+    if (!l.startsWith(`| ${id} |`)) return l
+    const c = l.split('|').slice(1, -1).map((x) => x.trim())
+    for (const [i, v] of Object.entries(cambio)) c[Number(i)] = v ?? ''
+    return `| ${c.join(' | ')} |`
+  }).join('\n')
+  const por = Object.fromEntries(leerMatriz(matriz).filas.map((f) => [f.id, f.estado]))
 
-  it('una fila por cada control del checklist (A1–H), con 8 columnas', () => {
-    expect(filas.map((f) => f[0])).toEqual(IDS)
-    for (const f of filas) expect(f, f[0]).toHaveLength(8)
+  it('la matriz real cumple todas las reglas: ningún falso aprobado', () => {
+    expect(validar(matriz)).toEqual([])
+    const r = node(path.join(OPS, 'matriz.mjs'), [])
+    expect(r.status, r.stdout).toBe(0)
+    expect(r.stdout).toContain('Sin violaciones')
+  })
+
+  it('conserva los 29 controles originales A1–H, en orden, con 8 columnas, y el checklist los define', () => {
+    const filas = leerMatriz(matriz).filas
+    expect(filas.map((f) => f.id)).toEqual(IDS)
+    for (const f of filas) expect(f.columnas, f.id).toBe(8)
     const checklist = read(path.join(ROOT, 'docs', 'despliegue-v1-6-aceptacion.md'))
     for (const id of IDS.filter((i) => i !== 'H')) expect(checklist, id).toContain(`| ${id} |`)
   })
 
-  it('los estados son del vocabulario y el resumen coincide con la tabla', () => {
-    for (const f of filas) expect(['VERIFICADO', 'PARCIAL', 'PENDIENTE', 'NO_APLICA'], f[0]).toContain(estado(f))
-    for (const e of ['VERIFICADO', 'PARCIAL', 'PENDIENTE', 'NO_APLICA']) {
-      const ids = filas.filter((f) => estado(f) === e).map((f) => f[0])
-      const linea = new RegExp(`\\| ${e} \\((\\d+)\\) \\| ([^|]+) \\|`).exec(matriz)
-      expect(linea, e).not.toBeNull()
-      expect(Number(linea?.[1]), e).toBe(ids.length)
-      expect((linea?.[2] ?? '').replace(/\s*\([^)]*\)/g, '').split(',').map((s) => s.trim()), e).toEqual(ids)
+  it('el resumen coincide con todas las filas (y una fila cambiada sin actualizarlo se detecta)', () => {
+    const resumen = resumenCalculado(matriz)
+    expect(resumen.VERIFICADO).toEqual(['A1', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'B1', 'D3'])
+    expect(resumen.NO_APLICA).toEqual(['G2'])
+    expect(validar(conFila('C4', { 2: 'PENDIENTE', 3: '—' }))).toEqual(expect.arrayContaining([expect.stringMatching(/^resumen: PARCIAL/)]))
+  })
+
+  it('los estados que la misión exige destacar no figuran como verificados', () => {
+    for (const id of ['C2', 'D1', 'D2', 'F2', 'G1', 'G3', 'H']) expect(por[id], id).toBe('PENDIENTE')
+    for (const id of ['A2', 'C1', 'C3', 'E1', 'E2', 'F3']) expect(por[id], id).toBe('PARCIAL')
+    expect(por.G2).toBe('NO_APLICA')
+  })
+
+  it.each([
+    ['solo un reporte (R)', 'C1', { 2: 'VERIFICADO', 3: '**R:** EV-04 (12/12 pestañas, dicho de palabra)', 6: '—' }],
+    ['solo una simulación (S), aunque mencione el procedimiento', 'G3', { 2: 'VERIFICADO', 6: '—' }],
+    ['solo CI sin ser un control de código', 'C5', { 2: 'VERIFICADO', 6: '—' }],
+    ['evidencia real pero con algo pendiente', 'A2', { 2: 'VERIFICADO' }],
+    ['un requisito de tiempo sin cumplir', 'E1', { 2: 'VERIFICADO', 6: '—' }],
+    ['una decisión pendiente', 'C3', { 2: 'VERIFICADO', 6: '—' }],
+    ['evidencia real que no menciona su condición de cierre', 'A2', { 2: 'VERIFICADO', 3: '**P:** EV-06 (URL estable)', 6: '—' }],
+  ])('VERIFICADO con %s → violación (controles compuestos y evidencia incompleta no se aprueban)', (_n, id, cambio) => {
+    expect(validar(conFila(id, cambio)).some((v) => v.startsWith(`${id}:`))).toBe(true)
+  })
+
+  it('la evidencia simulada nunca cuenta como producción: ni como VERIFICADO ni citando el ejemplo sintético', () => {
+    expect(validar(conFila('A1', { 3: '—' })).join('\n')).toMatch(/A1: VERIFICADO sin evidencia real/)
+    expect(validar(conFila('A1', { 3: '**P:** EV-06; ver evidencia-ejemplo.json' })).join('\n')).toMatch(/sintético/)
+    // Una etiqueta en la columna equivocada (una simulación presentada como evidencia real) se rechaza.
+    expect(validar(conFila('A1', { 3: '**S:** gcloud falso' })).join('\n')).toMatch(/columna equivocada/)
+  })
+
+  it('cada P cita un EV-xx que existe en el registro de la línea base (trazabilidad)', () => {
+    expect(validar(conFila('A5', { 3: '**P:** auditoría propia' })).join('\n')).toMatch(/A5: evidencia P sin referencia EV-xx/)
+    expect(validar(conFila('A5', { 3: '**P:** EV-99 (inventada)' })).join('\n')).toMatch(/A5: cita EV-99/)
+  })
+
+  it.each([
+    ['PARCIAL sin evidencia real', 'C1', { 3: '—' }, /C1: PARCIAL sin evidencia real/],
+    ['PENDIENTE con evidencia real', 'C2', { 3: '**P:** EV-12' }, /C2: PENDIENTE con evidencia real/],
+    ['PENDIENTE sin decir qué falta', 'D2', { 6: '—' }, /D2: PENDIENTE sin indicar qué falta/],
+    ['NO_APLICA como sustituto de una prueba pendiente', 'G1', { 2: 'NO_APLICA hasta que haya ventana' }, /G1: NO_APLICA no justificado/],
+    ['NO_APLICA sin la condición que lo hace aplicable', 'G2', { 2: 'NO_APLICA', 6: 'Revisión anterior', 7: 'Reevaluar' }, /G2: NO_APLICA sin la condición/],
+    ['E1 sin su límite de tiempo (T)', 'E1', { 5: '—' }, /E1: debe reflejar su límite con la etiqueta T/],
+    ['F3 sin su límite de tiempo (T)', 'F3', { 5: '—' }, /F3: debe reflejar su límite con la etiqueta T/],
+    ['C3 sin su decisión pendiente (DEC)', 'C3', { 5: '—' }, /C3: debe reflejar su límite con la etiqueta DEC/],
+    ['G1 sin su decisión pendiente (DEC)', 'G1', { 5: '—' }, /G1: debe reflejar su límite con la etiqueta DEC/],
+    ['un estado fuera del vocabulario', 'A3', { 2: 'OK' }, /A3: estado «OK» fuera del vocabulario/],
+  ])('PARCIAL, PENDIENTE y NO_APLICA se distinguen: %s → violación', (_n, id, cambio, error) => {
+    expect(validar(conFila(id, cambio)).join('\n')).toMatch(error)
+  })
+
+  it('un cambio de SHA, revisión o digest exige revalidar la matriz y la línea base', () => {
+    for (const [campo, valor] of [['commit', 'a'.repeat(40)], ['revision', 'project-os-dashboard-00002-abc'], ['digest', `sha256:${'1'.repeat(64)}`]] as const) {
+      const v = validar(matriz, { ...PRODUCCION, [campo]: valor })
+      expect(v.filter((x) => x.startsWith('identidad:')), campo).toHaveLength(2)
     }
   })
 
-  it('VERIFICADO solo con un hecho registrado (H) o código con prueba en CI; nunca solo con reporte o plantilla', () => {
-    for (const f of filas.filter((x) => estado(x) === 'VERIFICADO')) expect(f[2], f[0]).toMatch(/\*\*H:\*\*|\*\*O \+ CI:\*\*/)
-  })
-
-  it('los controles que la misión exige destacar no figuran como verificados', () => {
-    const por = Object.fromEntries(filas.map((f) => [f[0], estado(f)]))
-    // Tras la auditoría y la remediación en Cloud Shell (2026-10-11): solo quedan pendientes los controles de navegador,
-    // de costos y de procedimiento; A9 pasó a VERIFICADO con la etiqueta aplicada y E1 sigue PARCIAL hasta la caducidad.
-    for (const id of ['C2', 'D1', 'D2', 'F2', 'G1', 'G3']) expect(por[id], id).toBe('PENDIENTE')
-    for (const id of ['A2', 'C1', 'E1', 'F3']) expect(por[id], id).toBe('PARCIAL')
-    expect(por.A9).toBe('VERIFICADO')
-    expect(por.G2).toBe('NO_APLICA')
-    expect(matriz).toMatch(/run\.googleapis\.com\/maxScale: '3'/)
+  it('H no puede aprobarse con bloqueadores; sí con evidencia o con excepciones expresas, fechadas y referenciadas', () => {
+    // H aprobado exige además la aprobación real del propietario registrada como evidencia (acta firmada).
+    const hAprobado = conFila('H', { 2: 'VERIFICADO', 3: '**P:** EV-12 (aprobación del propietario en el acta)', 6: '—' })
+    expect(validar(conFila('H', { 2: 'VERIFICADO', 6: '—' })).join('\n')).toMatch(/H: VERIFICADO sin evidencia real/)
+    expect(validar(hAprobado).join('\n')).toMatch(/H: VERIFICADO con controles sin evidencia ni excepción del propietario: A2, C1/)
+    const pendientes = leerMatriz(matriz).filas.filter((f) => !['VERIFICADO', 'NO_APLICA'].includes(f.estado) && f.id !== 'H').map((f) => f.id)
+    const tabla = '| ID | Excepción | Fecha | Referencia |\n| --- | --- | --- | --- |\n'
+    const conExcepciones = (filas: string) => hAprobado.replace(`${tabla}`, `${tabla}${filas}`)
+    const todas = pendientes.map((id) => `| ${id} | Aceptada | 2026-11-20 | https://github.com/jlpulido107-bit/PROJECT-OS/pull/24#issuecomment-1 |`).join('\n') + '\n'
+    expect(validar(conExcepciones(todas)).filter((x) => x.startsWith('H:'))).toEqual([])
+    // Una excepción sin fecha o sin referencia no cuenta.
+    const sinFecha = todas.replace('| 2026-11-20 |', '| pronto |')
+    expect(validar(conExcepciones(sinFecha)).join('\n')).toMatch(/excepciones: .* sin fecha o sin referencia/)
   })
 })
 
@@ -440,7 +608,8 @@ describe('evidencia saneada: validación y evaluación', () => {
   const run = (controles: unknown[], extra: Record<string, unknown> = {}) => {
     const f = path.join(tmp('evidencia-'), 'e.json')
     writeFileSync(f, JSON.stringify({ ...BASE, ...extra, controles }))
-    const r = node(EVID, [f, '--json'])
+    // Las pruebas de reglas evalúan subconjuntos a propósito: --parcial (la cobertura se prueba aparte).
+    const r = node(EVID, [f, '--json', '--parcial'])
     const out = r.stdout ? (JSON.parse(r.stdout) as { controles: Res[]; lecturas: Res[] }) : { controles: [], lecturas: [] }
     const por = Object.fromEntries(out.controles.map((x) => [x.id, x.estado]))
     return { ...r, res: out.controles, lecturas: out.lecturas, por }
@@ -606,7 +775,7 @@ describe('evidencia saneada: validación y evaluación', () => {
     ['F3 PERMITIDO pero imágenes no protegidas', 'F3', { check: 'PERMITIDO', imagenes: 6, mayores_30_dias_no_protegidas: 1 }, 'FALLO'],
     ['humano sin resultado', 'D1', { resultado: '' }, 'NO_VERIFICADO'],
     ['humano FALLO', 'C2', { resultado: 'fallo' }, 'FALLO'],
-    ['control sin regla', 'Z9', { algo: 1 }, 'NO_VERIFICADO'],
+    ['control sin regla', 'H', { algo: 1 }, 'NO_VERIFICADO'],
   ])('%s → %s', (_n, id, observado, esperado) => {
     const r = uno(id, observado)
     expect(r.por[id]).toBe(esperado)
@@ -675,7 +844,124 @@ describe('evidencia saneada: validación y evaluación', () => {
     expect(e.fecha).toBe('2000-01-01')
     const r = node(EVID, [ejemplo])
     expect(r.stdout).toContain('EJEMPLO SINTÉTICO')
+    expect(r.stdout).toContain('NO cuentan por el límite')
+    expect(r.status).toBe(3)
+    // Los controles agregados (los que deciden) no tienen ningún OK.
+    expect(r.stdout.slice(r.stdout.indexOf('Controles (peor'))).not.toMatch(/^\s+OK /m)
     expect(read(path.join(DOCS, 'matriz-aceptacion.md'))).not.toContain('evidencia-ejemplo')
+  })
+
+  // ---- Misión 014 (D.2 y C): la evidencia falla cerrado ----
+  const COMPLETA = [
+    { id: 'A1', observado: { imagen: `northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard@${DIGEST}` } },
+    { id: 'A2', observado: { urls: [URL], nextauth_url: URL, callback_oauth: `${URL}/api/auth/callback/google` } },
+    { id: 'A4', observado: { variables: ['NEXTAUTH_URL', 'SHEETS_CREDENTIALS'] } },
+    { id: 'A5', observado: { cuenta: RUNTIME, roles_proyecto: [] } },
+    ...SECRETOS.map((x) => secretoOK(x)),
+    { id: 'A7', observado: A7_CONFIG },
+    { id: 'A8', observado: { cuenta_build: 'project-os-build@project-os-511102.iam.gserviceaccount.com', lineas_identidad_verificada: 1 } },
+    { id: 'A9', observado: { digest_produccion: DIGEST } },
+    ...['correo', 'token', 'bearer', 'codigo_oauth'].map((x) => E1_OK(x)),
+    { id: 'F3', observado: { check: 'PERMITIDO', imagenes: 6, mayores_30_dias_no_protegidas: 0 } },
+    { id: 'G2', observado: { revisiones: ['project-os-dashboard-00001-gsk', 'project-os-dashboard-00002-abc'], imagen_anterior_digest: DIGEST, ensayo_rollback: 'OK' } },
+  ]
+  const evaluarArchivo = (contenido: unknown, ...flags: string[]) => {
+    const f = path.join(tmp('evidencia-'), 'e.json')
+    writeFileSync(f, JSON.stringify(contenido))
+    const r = node(EVID, [f, '--json', ...flags])
+    const out = r.stdout ? (JSON.parse(r.stdout) as { controles: Res[]; cobertura: { completa: boolean; faltan: string[] }; limite: string | null }) : null
+    return { ...r, out, por: Object.fromEntries((out?.controles ?? []).map((x) => [x.id, x.estado])) }
+  }
+
+  it('M14 · CONTROLES_LECTURA coincide con los controles del plan de inspección', async () => {
+    const { CONTROLES_LECTURA } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { CONTROLES_LECTURA: string[] }
+    const pasos = JSON.parse(node(path.join(OPS, 'plan-inspeccion.mjs'), ['--json']).stdout).pasos as Array<{ control: string }>
+    expect([...CONTROLES_LECTURA].sort()).toEqual([...new Set(pasos.map((p) => p.control))].sort())
+  })
+
+  it('M14 · evidencia completa y correcta (con condiciones que hoy no existen: 2 revisiones, ensayo, 6 imágenes) → 0', () => {
+    const r = evaluarArchivo({ ...BASE, controles: COMPLETA })
+    expect(r.status, r.stdout).toBe(0)
+    expect(r.out?.cobertura.completa).toBe(true)
+  })
+
+  it('M14 · sin TODOS los controles del plan nunca hay «todo OK» (cobertura); --parcial evalúa un subconjunto a propósito', () => {
+    const solo = { ...BASE, controles: [{ id: 'A9', observado: { digest_produccion: DIGEST } }] }
+    const r = evaluarArchivo(solo)
+    expect(r.status).toBe(3)
+    expect(r.por.A9).toBe('OK')
+    expect(r.por.COB).toBe('NO_VERIFICADO')
+    expect(r.out?.cobertura.faltan).toContain('A1')
+    expect(evaluarArchivo(solo, '--parcial').status).toBe(0)
+  })
+
+  it('M14 · un ejemplo sintético nunca aprueba nada, aunque sus valores sean perfectos', () => {
+    const r = evaluarArchivo({ ...BASE, ejemplo_sintetico: true, controles: COMPLETA })
+    expect(r.status).toBe(3)
+    expect(Object.entries(r.por).filter(([, e]) => e === 'OK')).toEqual([])
+    expect(r.out?.limite).toMatch(/ejemplo sintético/)
+  })
+
+  it('M14 · una fecha anterior al despliegue (2026-10-11) no describe esta versión → ningún OK ni FALLO', () => {
+    const r = evaluarArchivo({ ...BASE, fecha: '2026-10-10', controles: [...COMPLETA, { id: 'A9', observado: { digest_produccion: 'NOT_FOUND' } }] })
+    expect(r.status).toBe(3)
+    expect(Object.values(r.por).every((e) => e === 'NO_VERIFICADO')).toBe(true)
+  })
+
+  it.each([
+    ['otra revisión', { revision: 'project-os-dashboard-00002-abc' }],
+    ['revisión sin declarar', { revision: undefined }],
+  ])('M14 · %s → requiere nueva validación: ningún OK; los FALLO se mantienen', (_n, extra) => {
+    const r = evaluarArchivo({ ...BASE, ...extra, controles: [...COMPLETA.filter((c) => c.id !== 'A9'), { id: 'A9', observado: { digest_produccion: 'NOT_FOUND' } }] })
+    expect(r.status).toBe(1)
+    expect(r.por.A9).toBe('FALLO')
+    expect(r.por.VER).toBe('NO_VERIFICADO')
+    expect(Object.entries(r.por).filter(([, e]) => e === 'OK')).toEqual([])
+  })
+
+  it('M14 · la revisión sirve otro digest (A1 FALLO) → la línea base cambió: ningún otro control queda en OK', () => {
+    const r = evaluarArchivo({ ...BASE, controles: [...COMPLETA.filter((c) => c.id !== 'A1'), { id: 'A1', observado: { imagen: `northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard@sha256:${'1'.repeat(64)}` } }] })
+    expect(r.status).toBe(1)
+    expect(r.por.A1).toBe('FALLO')
+    expect(r.out?.limite).toMatch(/otro digest/)
+    expect(Object.entries(r.por).filter(([, e]) => e === 'OK')).toEqual([])
+  })
+
+  it('M14 · F3 solo con --check (sin el conteo de imágenes) no se aprueba: falta el efecto real', () => {
+    expect(uno('F3', { check: 'PERMITIDO' }).por.F3).toBe('NO_VERIFICADO')
+  })
+
+  it.each([
+    ['URL con code= y state=', { nota: `${URL}/api/auth/callback/google?code=CODIGO-FALSO-123&state=xyz` }, 'CODIGO-FALSO-123'],
+    ['parámetro token= suelto', { nota: 'callback &token=VALOR-FALSO-123' }, 'VALOR-FALSO-123'],
+    ['código de autorización OAuth', { nota: `4/0A${'c'.repeat(40)}` }, `4/0A${'c'.repeat(40)}`],
+    ['refresh token', { nota: `1//0${'d'.repeat(40)}` }, `1//0${'d'.repeat(40)}`],
+    ['token de GitHub', { nota: `ghp_${'e'.repeat(36)}` }, `ghp_${'e'.repeat(36)}`],
+    ['ID de cliente OAuth', { nota: `123456789012-${'f'.repeat(32)}.apps.googleusercontent.com` }, `123456789012-${'f'.repeat(32)}`],
+    ['cookie de sesión', { nota: '__Secure-next-auth.session-token=VALOR-COOKIE' }, 'VALOR-COOKIE'],
+    ['enlace a la hoja', { nota: 'https://docs.google.com/spreadsheets/d/ID-FALSO-DE-HOJA/edit' }, 'ID-FALSO-DE-HOJA'],
+    ['dirección IP', { nota: 'visto desde 203.0.113.77' }, '203.0.113.77'],
+    ['campo con nombre de secreto', { token: 'valor-inocuo-xyz' }, 'valor-inocuo-xyz'],
+    ['clave que es un correo, con un valor sensible', { 'persona.fuga@correo-falso.test': `ya29.${'g'.repeat(30)}` }, 'persona.fuga'],
+    ['línea de log con insertId', { linea: { insertId: 'abc123', severity: 'WARNING' } }, 'abc123'],
+  ])('M14 · rechaza (código 4) evidencia con %s y nunca imprime el valor', (_n, observado, valor) => {
+    const f = path.join(tmp('evidencia-'), 'e.json')
+    writeFileSync(f, JSON.stringify({ ...BASE, controles: [{ id: 'C2', observado }] }))
+    const r = node(EVID, [f])
+    expect(r.status).toBe(4)
+    expect(r.stdout + r.stderr).not.toContain(valor)
+  })
+
+  it('M14 · la evaluación nunca repite texto libre: ids, patrones y valores desconocidos se muestran como marcadores', () => {
+    const r = evaluarArchivo({ ...BASE, controles: [
+      { id: 'Control de Juan Pérez', observado: { resultado: 'OK' } },
+      { id: 'E1', observado: { patron: 'Juan Pérez', coincidencias: 0, alcance: 'todos-los-campos', ventana_dias: 30 } },
+      { id: 'A7', observado: { ...A7_CONFIG, servicio_maxScale: 'Juan Pérez' } },
+    ] }, '--parcial')
+    expect(r.stdout).not.toContain('Juan')
+    expect(r.por['??']).toBe('NO_VERIFICADO')
+    expect(r.por.E1).toBe('NO_VERIFICADO')
+    expect(r.por.A7).toBe('NO_VERIFICADO')
   })
 })
 
@@ -684,25 +970,42 @@ describe('documentos de operación (Entregas B y C)', () => {
 
   it('el índice enlaza todos los documentos de la carpeta', () => {
     const indice = doc('README.md')
-    for (const n of ['matriz-aceptacion.md', 'auditoria-seguridad.md', 'runbook-operativo.md', 'evidencia.md', 'mantenimiento-dependencias.md', 'backlog-v1-7.md', 'hoja-propietario.md']) {
+    for (const n of ['matriz-aceptacion.md', 'auditoria-seguridad.md', 'runbook-operativo.md', 'evidencia.md', 'mantenimiento-dependencias.md', 'backlog-v1-7.md', 'hoja-propietario.md', 'remediacion-2026-10-11.md', 'linea-base-v1-6.md', 'acta-cierre-v1-6.md', 'propuesta-arquitectura-v1-7.md']) {
       expect(indice, n).toContain(`(${n})`)
     }
   })
 
-  it('la hoja del propietario es breve, ordenada y no pide pruebas que Claude ya hizo ni mutaciones', () => {
+  it('M14 · la hoja del propietario: 5 bloques ordenados, 6 columnas, solo lecturas y respuestas OK / FALLO / NO_VERIFICADO', () => {
     const hoja = doc('hoja-propietario.md')
-    expect(hoja.length).toBeLessThan(6000)
-    const pasos = [...hoja.matchAll(/^\| (\d) \|/gm)].map((m) => Number(m[1]))
-    expect(pasos).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect([...hoja.matchAll(/^## Bloque (\d)\./gm)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5])
+    const cabecera = '| Control | Dónde entrar | Acción | Resultado correcto | Qué reportar | Qué hacer si falla |'
+    expect(hoja.split(cabecera).length - 1).toBe(5)
+    const filas = [...hoja.matchAll(/^\| (\d)\.(\d) · ([A-Z]\d)/gm)].map((m) => `${m[1]}.${m[2]}`)
+    expect(filas).toEqual(['1.1', '1.2', '1.3', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2', '4.1', '4.2', '4.3', '5.1', '5.2', '5.3', '5.4', '5.5'])
+    for (const l of hoja.split('\n').filter((x) => /^\| \d\.\d · /.test(x))) expect(l.split('|').slice(1, -1), l.slice(0, 30)).toHaveLength(6)
+    // Los controles humanos que la misión exige, en la hoja.
+    for (const c of ['A2', 'C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'F1', 'F2', 'A7', 'E1', 'E2', 'A6', 'G3']) expect(hoja, c).toContain(`· ${c} `)
+    expect(hoja).toContain('OK / FALLO / NO_VERIFICADO')
+    expect(hoja).toMatch(/70 minutos/)
+    expect(hoja).toMatch(/Nunca compartas/)
+    // Nunca pide pruebas que ya están en la CI ni comandos que cambien producción.
     expect(hoja).not.toMatch(/npm (test|run (lint|typecheck|build|test:e2e))/)
-    expect(hoja).not.toMatch(/tags add|services update|add-iam-policy-binding|versions access|--apply/)
+    expect(hoja).not.toMatch(/tags add|services update|add-iam-policy-binding|versions (access|destroy|disable)|--apply|sinks update|deshabilitar-sobrantes|destruir-version|alinear-max-servicio|excluir-callback-en-logs/)
+    // La plantilla de entrega no tiene campos para correos, cuentas, IDs ni cifras de la hoja.
+    const entrega = hoja.slice(hoja.indexOf('## Cómo entregar el resultado'), hoja.indexOf('## Decisiones que solo tú'))
+    expect(entrega).not.toMatch(/correo|@|ID de|valor/i)
   })
 
   it('el runbook distingue instrucción de ejecución y marca las mutaciones', () => {
     const rb = doc('runbook-operativo.md')
     expect(rb).toMatch(/Instrucción no es ejecución/)
     expect((rb.match(/\[M\]/g) ?? []).length).toBeGreaterThanOrEqual(10)
-    for (const t of ['401 inesperado', '403 de un usuario permitido', 'Callback OAuth', 'Lectura de Sheets 503', 'Fallo de sonda', 'Costo inesperado', 'Posible exposición de datos', 'Bloqueo de acceso']) expect(rb, t).toContain(t)
+    for (const t of ['401 inesperado', '403 de un usuario permitido', 'Callback OAuth', 'Lectura de Sheets 503', 'Fallo de sonda', 'Costo inesperado', 'Posible exposición de datos', 'Bloqueo de acceso', 'Errores 5xx del dashboard', 'Pérdida de acceso a la aplicación']) expect(rb, t).toContain(t)
+    // M14 · el mapa de incidentes cubre las 10 situaciones exigidas, y cada una apunta a una fila o sección existente.
+    const mapa = rb.slice(rb.indexOf('### 7.1 Mapa de incidentes'), rb.indexOf('## 8.'))
+    expect(mapa.split('\n').filter((l) => /^\| [A-ZÁÉÍÓÚ]/.test(l) && !l.startsWith('| Situación'))).toHaveLength(10)
+    // Cada referencia «…» del mapa existe también fuera del mapa (la fila o la sección que describe el procedimiento).
+    for (const [, ref] of mapa.matchAll(/«([^»]+)»/g)) expect(rb.split(ref ?? '').length - 1, ref).toBeGreaterThanOrEqual(2)
     expect(rb).toMatch(/una sola revisión/i)
     expect(rb).toMatch(/alerta, no un límite/)
   })
@@ -714,10 +1017,58 @@ describe('documentos de operación (Entregas B y C)', () => {
     expect(b).toMatch(/X6 \| \*\*Escritura real en Sheets\*\*/)
   })
 
+  it('M14 · la propuesta V1.7 no está aprobada, está separada del acta y cubre lo que la misión exige', () => {
+    const v17 = doc('propuesta-arquitectura-v1-7.md')
+    expect(v17).toMatch(/NO APROBADA/)
+    expect(v17).toMatch(/separada\*\* del \[acta de cierre de la V1\.6\]/)
+    for (const concepto of ['fuente operativa', 'IDs estables', 'validación del esquema', 'GitHub ↔ tareas', 'Auditoría', 'Idempotencia', 'concurrencia', 'Aprobación humana', 'Hechos ≠ inferencias ≠ propuestas', 'Reversión', 'Permisos mínimos', 'Fallas parciales']) {
+      expect(v17.toLowerCase(), concepto).toContain(concepto.toLowerCase())
+    }
+    expect(v17).toMatch(/No crea workflows, `schedule`/)
+    // El acta no aprueba la V1.7 ni la incluye en su alcance.
+    expect(doc('acta-cierre-v1-6.md')).toMatch(/no aprueba ninguna funcionalidad de la V1\.7/)
+  })
+
+  it('M14 · la línea base: identidad completa, registro EV-01…EV-12 fechado y las condiciones de reapertura', async () => {
+    const base = doc('linea-base-v1-6.md')
+    const { PRODUCCION } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { PRODUCCION: Record<string, string> }
+    for (const v of [PRODUCCION.commit, PRODUCCION.digest, PRODUCCION.revision, PRODUCCION.url]) expect(base).toContain(v)
+    const ev = [...base.matchAll(/^\| (EV-\d{2}) \| (\d{4}-\d{2}-\d{2}) \|.*\| (P|R) \| [^|]+ \|$/gm)]
+    expect(ev.map((m) => m[1])).toEqual(Array.from({ length: 12 }, (_, i) => `EV-${String(i + 1).padStart(2, '0')}`))
+    expect(ev.every((m) => m[2] === '2026-10-11')).toBe(true)
+    expect([...base.matchAll(/^\| (\d{1,2}) \| /gm)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect((base.slice(base.indexOf('## 7.'), base.indexOf('## 8.')).match(/^\d+\. \*\*/gm) ?? []).length).toBeGreaterThanOrEqual(10)
+    expect(base).not.toContain('evidencia-ejemplo.json)**')
+    expect(base).toMatch(/no verifica recursos nuevos/)
+  })
+
+  it('M14 · el acta está preparada SIN aprobación ficticia, con los 4 estados y la matriz exacta', async () => {
+    const acta = doc('acta-cierre-v1-6.md')
+    const { PRODUCCION } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { PRODUCCION: Record<string, string> }
+    for (const v of [PRODUCCION.commit, PRODUCCION.digest, PRODUCCION.revision]) expect(acta).toContain(v)
+    for (const e of ['LISTA PARA ACEPTACIÓN', 'ESTABLE CON EXCEPCIONES ACEPTADAS', 'ACEPTADA', 'BLOQUEADA']) expect(acta).toContain(`| \`${e}\` |`)
+    expect(acta).toMatch(/\*\*Estado propuesto hoy: `LISTA PARA ACEPTACIÓN`\.\*\*/)
+    expect(acta).not.toMatch(/Estado (propuesto|declarado)[^|\n]*`(ACEPTADA|ESTABLE CON EXCEPCIONES ACEPTADAS)`/)
+    // Firma y decisiones vacías: nada lo aprueba Claude.
+    const aprobacion = acta.slice(acta.indexOf('## 13. Aprobación'))
+    const valores = [...aprobacion.matchAll(/^\| [^|]+ \| ([^|]+) \|$/gm)].map((m) => (m[1] ?? '').trim()).filter((v) => v !== 'Valor' && v !== '---')
+    expect(valores).toEqual(['Pendiente', 'Pendiente', 'Pendiente', 'Pendiente', 'Pendiente'])
+    const excepciones = acta.slice(acta.indexOf('## 8.'), acta.indexOf('## 9.')).split('\n').filter((l) => /^\| (C3|G1|X-2|X-8|E1|F3) \|/.test(l))
+    expect(excepciones).toHaveLength(6)
+    for (const l of excepciones) expect(l.split('|').slice(4, 7).map((c) => c.trim()), l.slice(0, 12)).toEqual(['', '', ''])
+    // El resumen del acta es el de la matriz.
+    const { resumenCalculado } = (await import(path.join(OPS, 'matriz.mjs'))) as { resumenCalculado: (t: string) => Record<string, string[]> }
+    const resumen = resumenCalculado(doc('matriz-aceptacion.md'))
+    for (const [estado, ids] of Object.entries(resumen)) expect(acta, estado).toMatch(new RegExp(`\\| ${estado} \\| ${ids.length} \\| ${ids.join(', ')}`))
+    // Límites precisos de E1, F3, C3, G1 y G2 (no NO_APLICA como sustituto).
+    for (const [id, tipo] of [['E1', 'Temporal'], ['F3', 'Temporal'], ['C3', 'Opcional'], ['G1', 'Opcional, con autorización'], ['G2', 'De aplicabilidad']]) expect(acta).toMatch(new RegExp(`\\| ${id} \\| \\*\\*${tipo}`))
+    expect(acta).not.toContain('⟨por completar⟩')
+  })
+
   it('las advertencias centrales de la misión están explícitas', () => {
     const todo = ['matriz-aceptacion.md', 'auditoria-seguridad.md', 'runbook-operativo.md', 'mantenimiento-dependencias.md'].map(doc).join('\n')
     // A9: la advertencia original quedó resuelta y registrada (etiqueta creada por el propietario, C9).
-    expect(todo).toMatch(/etiqueta `produccion` \*\*creada\*\*/)
+    expect(todo).toMatch(/etiqueta `produccion` (\*\*)?creada/)
     expect(todo).toContain("run.googleapis.com/maxScale: '3'")
     expect(todo).toMatch(/5 alertas altas|Las 5 alertas altas/)
     expect(todo).toMatch(/alerta, no un límite|no es un corte|avisa, no corta/)

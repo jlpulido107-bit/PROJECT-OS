@@ -38,6 +38,11 @@ Documentos relacionados:
 
 Completar una puerta **no** autoriza la siguiente. La Misión 010 solo prepara la puerta 2.
 
+> **Nota (Misión 014):** esta tabla es el registro de **preparación** y no se reescribe. Las puertas 2 y 3 se
+> ejecutaron con la autorización del propietario: despliegue del 2026-10-11, [registro](estado-produccion-v1-6-2026-10-11.md).
+> La puerta 4 (acceso regular) sigue pendiente de la [aceptación](operacion-v1-6/acta-cierre-v1-6.md). Estado de los
+> recursos: [línea base](operacion-v1-6/linea-base-v1-6.md).
+
 ### 1.1 Estado de los recursos
 
 Las etiquetas significan:

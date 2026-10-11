@@ -11,6 +11,8 @@
  * - Cubre todas las páginas privadas y APIs de V1.2–V1.6 (la lista se valida en tests/deploy-docs.test.ts).
  * - Imprime únicamente códigos de estado y OK/FALLA; nunca cuerpos de respuesta.
  * - No se ejecuta en CI.
+ * - Es una prueba de acceso SIN SESIÓN: no sustituye el login real con OAuth, la validación de los datos de Sheets
+ *   ni la revisión de la facturación (docs/operacion-v1-6/README.md).
  */
 const arg = process.argv.indexOf('--url')
 const raw = arg > -1 ? process.argv[arg + 1] : undefined

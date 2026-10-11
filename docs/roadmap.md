@@ -1,5 +1,10 @@
 # Hoja de ruta de PROJECT-OS
 
+> **Estado vigente (2026-10-11):** la V1.6 está desplegada **en solo lectura**: sin escritura, sin automatizaciones y
+> sin usuarios nuevos. Ver la [línea base](operacion-v1-6/linea-base-v1-6.md). Las casillas sin marcar son trabajo
+> futuro, no funciones de la V1.6. La automatización futura (tareas, decisiones, planificación y avances) está en la
+> [propuesta de arquitectura V1.7](operacion-v1-6/propuesta-arquitectura-v1-7.md), **no aprobada**.
+
 ## V1.0 — Estructura (actual)
 - [x] Google Sheets maestro con 16 pestañas.
 - [x] Repositorio privado identificado e inicializado.
@@ -32,6 +37,7 @@
 - [x] Autorización del usuario para crear recursos facturables y desplegar (V1.6 desplegada, commit `7f44216`; [registro](estado-produccion-v1-6-2026-10-11.md)).
 - [ ] Prueba real en Cloud Run: acceso permitido/denegado, datos reales, sin escrituras. Acceso permitido y uso confirmados; denegado, totales y escrituras pendientes ([matriz](operacion-v1-6/matriz-aceptacion.md)).
 - [ ] Operación V1.6 (Misión 013): evidencia de solo lectura y [hoja del propietario](operacion-v1-6/hoja-propietario.md). Las hipótesis V1.7 están en el [backlog](operacion-v1-6/backlog-v1-7.md), **no aprobadas**.
+- [ ] Cierre V1.6 (Misión 014): [línea base](operacion-v1-6/linea-base-v1-6.md), [matriz](operacion-v1-6/matriz-aceptacion.md) sin falsos aprobados y [acta](operacion-v1-6/acta-cierre-v1-6.md). Falta la aceptación del propietario.
 
 ## V1.4 — Informes y planificación (antes V1.3)
 - [ ] Captura de avances no técnicos.

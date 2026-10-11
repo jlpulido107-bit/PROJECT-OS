@@ -6,7 +6,8 @@
 > No se configuran horarios, alertas automáticas, acciones de facturación ni workflows con credenciales.
 >
 > Servicio `project-os-dashboard` (`project-os-511102`, `northamerica-south1`), revisión
-> `project-os-dashboard-00001-gsk`, código `7f44216`. Comandos de lectura: `node web/scripts/ops/plan-inspeccion.mjs`.
+> `project-os-dashboard-00001-gsk`, código `7f44216`. Comandos de lectura: `node web/scripts/ops/plan-inspeccion.mjs` y
+> `bash web/deploy/infra/remediacion-v1-6.sh diagnostico`. Estado vigente y evidencia: [línea base](linea-base-v1-6.md).
 
 ## 1. Principios
 
@@ -25,7 +26,7 @@
 | Tras cada despliegue | Imagen protegida | Lectura A9 [L]; si falta, C9 [M] | Etiquetar `produccion` y mover `produccion-anterior` | Propietario | A9 = OK |
 | Tras cada despliegue | Límites de escala | Lectura A7 [L] | Si el `maxScale` de servicio ≠ 1: decisión D-1 | Propietario | Revisión 1; servicio `ninguno` o 1 |
 | Primeras 24–48 h | Gasto real | *Facturación → Informes*, filtrado por el proyecto [L] | Comparar con la estimación E1/E2 | Propietario | Cualquier cargo inesperado se investiga (§6) |
-| Primeras 24–48 h | Errores de la app | Logs Explorer, conteos de severidad ≥ WARNING (§5) [L] | Agrupar por código `[project-os] …`; no copiar líneas | Propietario | > 0 errores `unavailable`/`auth`/`permission` → §6 |
+| Primeras 24–48 h | Errores de la app | Logs Explorer, líneas `[project-os]` de **cualquier** severidad (§5.1) [L] | Agrupar por código `[project-os] …`; no copiar líneas | Propietario | > 0 errores `unavailable`/`auth`/`permission` → §6 |
 | Semanal | Solicitudes y bots | *Cloud Run → Métricas → Request count*, por código de respuesta [L] | Distinguir uso normal de bots (abajo) | Propietario | Tendencia, no un número fijo |
 | Semanal | Latencia | *Cloud Run → Métricas → Request latency* p95 [L] | Si sube de forma sostenida: revisar cuota de Sheets y arranques en frío | Propietario | p95 sostenido > 5 s (indicativo) |
 | Semanal | Logs sin PII | Conteos E1 (§5) [L] | Si hay coincidencias: §5.3 | Propietario | 0 |
@@ -46,9 +47,9 @@
   - Indicios de bots: picos nocturnos, muchos 404 o 307, rutas como `/wp-login.php` y user-agents automáticos.
   - Las solicitudes rechazadas por la app **sí** se facturan como solicitudes, pero sin leer la hoja.
 - **Techos.**
-  - `maxScale: 1` de revisión acota el cómputo (escenario E4: ≈ USD 65 al mes si la instancia estuviera ocupada
-    todo el mes).
-  - Si el máximo efectivo fuera el de servicio (3, D-1), el techo se triplicaría.
+  - `maxScale: 1` acota el cómputo (escenario E4: ≈ USD 65 al mes si la instancia estuviera ocupada todo el mes).
+  - Desde el 2026-10-11 también el máximo de **servicio** es 1 (D-1 resuelta, EV-11). Antes era 3, y el techo se habría
+    triplicado.
   - Las solicitudes y la salida a Internet no tienen techo.
 - **Si el gasto se dispara:** §6, incidente "costo inesperado".
 
@@ -76,8 +77,13 @@ Base del filtro:
 resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-dashboard"
 ```
 
-- **Errores de la app:** base + `severity>=WARNING AND textPayload:"[project-os]"`. Las líneas de la app solo
-  contienen **códigos** (`Configuración inválida`, `operación rechazada: …`, nombres de error), nunca valores.
+- **Errores de la app:** base + `textPayload:"[project-os]"`, **sin filtro de severidad**. La app escribe con
+  `console.warn` y `console.error`, en texto sin estructura, y esas líneas pueden no llevar nivel de log: un filtro
+  `severity>=WARNING` no las vería (Misión 014, D-12). Las líneas de la app solo contienen **códigos**
+  (`Configuración inválida`, `operación rechazada: …`, nombres de error), nunca valores. El `diagnostico` de la
+  remediación ya combina ambos criterios.
+- **Exclusión del callback OAuth:** `diagnostico` muestra su estado en `_Default` (`CORRECTA` es lo esperado). Solo
+  cubre ese sink: no dice nada de otros sinks, buckets o exportaciones.
 - **PII y tokens:** base + el texto **sin campo** (`"@"`, `"ya29."`, `"Bearer "` o `"code="`). Una búsqueda sin
   campo se aplica a **todos** los campos del registro: `textPayload`, `jsonPayload`, `protoPayload`, `httpRequest`…
   La ventana es de **30 días**, la retención de `_Default`. Se ejecutan como **conteo**: los comandos E1 del plan
@@ -118,21 +124,43 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
 | **Costo inesperado** | Alerta de presupuesto o cargo raro en *Informes* | *Informes* por servicio; solicitudes por código (bots); instancias (A7); imágenes (F3); versiones de secretos (A6) | Por causa: bots → evaluar IAP o cerrar el acceso [M]; imágenes → `--check`; secretos → destruir versiones [M]. Último recurso: cerrar el acceso o desmantelar (runbook §6–§7) [M] | Gasto diario de vuelta a la línea base |
 | **Posible exposición de datos** | Una ruta privada responde sin sesión, o un token o dato aparece donde no debe | `smoke:remote` (B1); conteos E1 | **1)** Cerrar el acceso de inmediato: quitar `allUsers` [M] (runbook §6). **2)** Si hay un secreto implicado: rotarlo [M]. **3)** Issue sin datos. **4)** Reabrir solo con autorización | B1 26/26 antes de reabrir |
 | **Bloqueo de acceso** | Hay que cerrar el servicio a todos ya | — | Quitar `allUsers` [M]. Sin borrar nada; reversible volviendo a añadirlo | La URL devuelve un error de Google sin llegar a la app |
+| **Errores 5xx del dashboard** | Páginas o APIs con 500/502/503 para usuarios con sesión | *Cloud Run → Métricas*, por código de respuesta. Líneas `[project-os]` por código (§5.1). `/api/health`: 503 indica configuración. ¿Arranques fallidos? Si la imagen no existe, falla el arranque en frío (A9: ¿sigue `produccion` en el digest?) | Configuración: corregir y redesplegar [M]. Sheets: fila «Lectura de Sheets 503». Imagen borrada: volver a etiquetar el digest, si aún existe, o reconstruirla desde `7f44216` [M]. Mientras tanto, cerrar el acceso si hay riesgo [M] | `smoke:remote` 26/26 y login real |
+| **Pérdida de acceso a la aplicación** | Ningún usuario autorizado entra (incluido el propietario) | ¿Responde la URL? ¿`/api/health` 200? ¿El cliente OAuth existe, con el callback (A2)? ¿Sigue la versión fijada del secreto de la lista (A6)? ¿Cambió el estado *Testing* o los usuarios de prueba? | Según la causa: restaurar el cliente OAuth o su callback [M]; nueva versión de la lista y redespliegue [M]. **Nunca** se abre el acceso a más correos para «probar» | Login real (hoja, bloque 1) |
 
 ## 7. Recuperación y rollback
 
 - **Estado actual: una sola revisión** (`…-00001-gsk`). Un rollback de **tráfico** a una revisión anterior **no es
   posible ni está ensayado** (G2 = NO_APLICA). Se habilita tras el próximo despliegue, siempre que la imagen anterior
   se conserve (`produccion-anterior`, A9).
-- **Sin segunda revisión**, las opciones son:
+- **Recuperación sin revisión anterior** (hoy). Las opciones son:
   1. *Fix forward:* corregir y redesplegar [M].
   2. Volver a aplicar el mismo manifiesto con la **misma imagen por digest** [M], si el problema fue de configuración.
   3. Cerrar el acceso mientras tanto [M].
-- **Con segunda revisión:** `gcloud run services update-traffic … --to-revisions=REVISION=100` [M], solo si su
-  imagen sigue en el repositorio (lectura A9 o F3 antes).
+- **Recuperación futura con dos o más revisiones:** `gcloud run services update-traffic … --to-revisions=REVISION=100`
+  [M], solo si su imagen sigue en el repositorio (lectura A9 o F3 antes). Después, `smoke:remote` 26/26 y login. Tras
+  cualquier cambio de tráfico, la línea base cambia y hay que revalidar (línea base §7). El primer uso real es el ensayo
+  autorizado de G2.
 - **Sesiones:** rotar `project-os-nextauth-secret` invalida todas [M]. Quitar un correo de la lista lo bloquea en la
   siguiente petición, tras la nueva versión y el redespliegue [M].
 - **No se ensaya** ningún corte en producción sin una decisión explícita y una ventana acordada (G1).
+
+### 7.1 Mapa de incidentes (cobertura exigida por la Misión 014)
+
+| Situación | Dónde |
+| --- | --- |
+| Usuario autorizado que recibe 403 | §6, «403 de un usuario permitido» |
+| Fallo del callback OAuth | §6, «Callback OAuth» |
+| Google Sheets no disponible | §6, «Lectura de Sheets 503» |
+| Errores 5xx del dashboard | §6, «Errores 5xx del dashboard» |
+| Sospecha de datos expuestos | §6, «Posible exposición de datos» y §5.3 |
+| Incremento inesperado de costos | §6, «Costo inesperado» y §3 |
+| Pérdida de acceso a la aplicación | §6, «Pérdida de acceso a la aplicación» |
+| Cerrar temporalmente el servicio | §6, «Bloqueo de acceso»; [runbook histórico](../despliegue-privado-v1-3.md) §6 |
+| Recuperación sin revisión anterior | §7, «Recuperación sin revisión anterior» |
+| Recuperación futura con dos o más revisiones | §7, «Recuperación futura con dos o más revisiones» |
+
+Ninguno de estos procedimientos se ha ejecutado en producción como prueba: solo con un incidente real o con una
+autorización expresa (G1, G2).
 
 ## 8. Permisos mínimos y quién aporta cada evidencia
 
@@ -153,9 +181,9 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
 | Bloque | Claude, offline (hecho en este PR) | Propietario |
 | --- | --- | --- |
 | Diseño y código | Preflight P1–P14, auditoría, pruebas unitarias, E2E sintéticas, build y `check:client-secrets` con valores falsos | — |
-| Configuración real | Comandos (`plan-inspeccion.mjs`) y evaluación (`evidencia.mjs`) | Ejecutar las lecturas y rellenar la evidencia ([hoja](hoja-propietario.md), paso 1) |
-| Personas y datos | — | C1, C2, D1, D2 ([hoja](hoja-propietario.md), pasos 2–4) |
-| Logs y costos | Filtros y reglas | E1, E2, F1, F2 ([hoja](hoja-propietario.md), pasos 5–6) |
+| Configuración real | Comandos (`plan-inspeccion.mjs`, `diagnostico`) y evaluación (`evidencia.mjs`) | Ya aportada el 2026-10-11 (EV-06 a EV-12). Repetirla si cambia algo de la línea base §7 |
+| Personas y datos | — | A2, C1–C7, D1, D2 ([hoja](hoja-propietario.md), bloques 1–3) |
+| Logs y costos | Filtros, reglas y `diagnostico` | E1, E2, F1, F2, A7 ([hoja](hoja-propietario.md), bloques 4–5) |
 | Mutaciones | Propuestas (C9, D-1) | Decidir y autorizar cada una por separado |
 
 ## 10. Cambios autorizados
