@@ -31,6 +31,16 @@ export const PASOS = [
     esperado: `incluye ${P.url}`, evidencia: { urls: null },
   },
   {
+    control: 'A2', titulo: 'NEXTAUTH_URL de la revisión (es la URL pública, no un secreto)', tipo: 'gcloud',
+    comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='yaml(spec.template.spec.containers[0].env)' | grep -A1 'name: NEXTAUTH_URL$'`,
+    esperado: P.url, evidencia: { nextauth_url: '' },
+  },
+  {
+    control: 'A2', titulo: 'Callback registrado en el cliente OAuth de producción', tipo: 'consola',
+    comando: 'Google Auth Platform → Clientes → cliente de producción → URI de redireccionamiento autorizados',
+    esperado: `${P.url}/api/auth/callback/google`, evidencia: { callback_oauth: '' },
+  },
+  {
     control: 'A4', titulo: 'Nombres de variables de la revisión (nunca valores)', tipo: 'gcloud',
     comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='value(spec.template.spec.containers[0].env[].name)'`,
     esperado: `sin ${P.variablesEscritura.join(' ni ')}`, evidencia: { variables: null },
@@ -43,9 +53,15 @@ export const PASOS = [
   ...P.secretos.map((s) => ({
     control: 'A6', titulo: `Acceso y versiones del secreto ${s} (nunca su valor)`, tipo: 'gcloud',
     comando: `gcloud secrets get-iam-policy ${s} ${G} --flatten='bindings[].members' --format='value(bindings.role,bindings.members)' && gcloud secrets versions list ${s} ${G} --format='value(name,state)'`,
-    esperado: `una sola fila: roles/secretmanager.secretAccessor ${RUNTIME}; la versión fijada en ENABLED`,
-    evidencia: { secreto: s, miembros: null, versiones: null },
+    esperado: `una sola fila: roles/secretmanager.secretAccessor ${RUNTIME}; exactamente una versión ENABLED`,
+    evidencia: { secreto: s, miembros: null, versiones: null, version_fijada: '' },
   })),
+  {
+    control: 'A6', titulo: 'Versión fijada de cada secreto en la revisión (número de versión, nunca el valor)', tipo: 'gcloud',
+    comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='yaml(spec.template.spec.containers[0].env)' | grep -B1 'name: project-os-'`,
+    esperado: 'para cada secreto, key: un número (nunca latest). Anótalo en version_fijada de su entrada A6',
+    evidencia: null,
+  },
   {
     control: 'A7', titulo: 'Límites de escala: revisión Y servicio (D-1)', tipo: 'gcloud',
     comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='yaml(metadata.annotations."run.googleapis.com/maxScale",spec.template.metadata.annotations)'`,
@@ -61,6 +77,11 @@ export const PASOS = [
     control: 'A8', titulo: 'Cuenta del build que produjo la imagen', tipo: 'gcloud',
     comando: `gcloud builds describe 7768d6a3-332a-48bb-9872-db6b000e929a ${G} ${R} --format='value(serviceAccount)'`,
     esperado: `projects/${P.proyecto}/serviceAccounts/${P.cuentaBuild}`, evidencia: { cuenta_build: '' },
+  },
+  {
+    control: 'A8', titulo: 'Paso verificar-identidad en el log del build (CONTEO, sin contenido)', tipo: 'gcloud',
+    comando: `gcloud builds log 7768d6a3-332a-48bb-9872-db6b000e929a ${G} ${R} | grep -c 'Identidad de compilación verificada'`,
+    esperado: '1 o más', evidencia: { lineas_identidad_verificada: '' },
   },
   {
     control: 'A9', titulo: 'Digest al que apunta la etiqueta produccion', tipo: 'gcloud',
@@ -81,20 +102,28 @@ export const PASOS = [
   ...[
     ['correo', '@'], ['token', 'ya29.'], ['bearer', 'Bearer '], ['codigo_oauth', 'code='],
   ].map(([nombre, patron]) => ({
-    control: 'E1', titulo: `Logs de la app: CONTEO de coincidencias de «${patron}» (nunca su contenido)`, tipo: 'gcloud',
-    comando: `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="${P.servicio}" AND textPayload:"${patron}"' ${G} --freshness=7d --limit=1000 --format='value(timestamp)' | wc -l`,
+    // Búsqueda de texto libre (sin campo): Cloud Logging la aplica a TODOS los campos (textPayload, jsonPayload,
+    // protoPayload, httpRequest…). 30 días = retención del bucket _Default. Solo se imprime un CONTEO.
+    control: 'E1', titulo: `Logs del servicio: CONTEO de «${patron}» en todos los campos, 30 días (nunca su contenido)`, tipo: 'gcloud',
+    comando: `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="${P.servicio}" AND "${patron}"' ${G} --freshness=30d --limit=100000 --format='value(timestamp)' | wc -l`,
     esperado: '0. Si es > 0, NO copiar líneas: seguir el runbook operativo §5',
-    evidencia: { patron: nombre, coincidencias: '' },
+    evidencia: { patron: nombre, coincidencias: '', alcance: 'todos-los-campos', ventana_dias: 30 },
   })),
   {
     control: 'G2', titulo: 'Revisiones disponibles para rollback', tipo: 'gcloud',
     comando: `gcloud run revisions list --service=${P.servicio} ${G} ${R} --format='value(metadata.name,status.conditions[0].status)'`,
-    esperado: 'hoy, solo la revisión 00001: G2 es NO_APLICA', evidencia: { revisiones: null },
+    esperado: 'hoy, solo la revisión 00001: G2 es NO_APLICA', evidencia: { revisiones: null, imagen_anterior_digest: '', ensayo_rollback: '' },
+  },
+  {
+    control: 'G2', titulo: 'Solo si hay ≥ 2 revisiones: ¿sigue existiendo la imagen de la anterior?', tipo: 'gcloud',
+    comando: `gcloud run revisions describe REVISION_ANTERIOR ${G} ${R} --format='value(spec.containers[0].image)'`,
+    esperado: 'una imagen @sha256:…; después comprobarla con «artifacts docker images describe» y anotar su digest o NOT_FOUND en imagen_anterior_digest. ensayo_rollback solo tras un ensayo AUTORIZADO',
+    evidencia: null,
   },
 ]
 
 /** Verbos permitidos (solo lectura) y fragmentos prohibidos. La comprobación es estricta: falla cerrado. */
-const PERMITIDO = /^(gcloud (run services describe|run revisions list|projects get-iam-policy|secrets get-iam-policy|secrets versions list|builds describe|artifacts docker images (describe|list)|logging read) |bash web\/deploy\/infra\/limpieza-artifact-v1-6\.sh --check$)/
+const PERMITIDO = /^(gcloud (run services describe|run revisions (list|describe)|builds log|projects get-iam-policy|secrets get-iam-policy|secrets versions list|builds describe|artifacts docker images (describe|list)|logging read) |bash web\/deploy\/infra\/limpieza-artifact-v1-6\.sh --check$)/
 const PROHIBIDO = /versions access|--apply|add-iam|remove-iam|set-iam|\s(update|delete|create|replace|deploy|auth|enable|disable)\b|tags add|set-cleanup|--fix|>\s*\S/
 
 export function comandosInseguros(pasos = PASOS) {
@@ -124,7 +153,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (args.includes('--plantilla-evidencia')) {
     const plantilla = {
       version: 1, fecha: 'AAAA-MM-DD', commit_desplegado: P.commit, revision: P.revision,
-      controles: pasos.map((p) => ({ id: p.control, fuente: 'propietario', comando: p.comando, observado: p.evidencia })),
+      controles: pasos.filter((p) => p.evidencia).map((p) => ({ id: p.control, fuente: 'propietario', comando: p.comando, observado: p.evidencia })),
     }
     console.log(JSON.stringify(plantilla, null, 2))
   } else if (args.includes('--json')) {

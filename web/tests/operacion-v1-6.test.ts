@@ -252,7 +252,22 @@ describe('plan de inspección de solo lectura', () => {
     for (const p of plan().pasos.filter((x) => x.control === 'E1')) {
       expect(p.comando).toMatch(/--format='value\(timestamp\)' \| wc -l$/)
       expect(p.comando).not.toMatch(/textPayload\)|jsonPayload\)|--format=json/)
+      // R1-3: búsqueda en TODOS los campos (sin restringir a textPayload) y ventana de 30 días (retención de _Default).
+      expect(p.comando).not.toMatch(/textPayload:|jsonPayload:|protoPayload:/)
+      expect(p.comando).toContain('--freshness=30d')
     }
+  })
+
+  it('R1-4: A2, A6 y A8 piden todas sus partes; los conteos del log del build no imprimen contenido', () => {
+    const { pasos } = plan()
+    const de = (c: string) => pasos.filter((p) => p.control === c).map((p) => p.comando).join('\n')
+    expect(de('A2')).toContain("grep -A1 'name: NEXTAUTH_URL$'")
+    expect(de('A2')).toContain('URI de redireccionamiento autorizados')
+    expect(de('A6')).toContain("grep -B1 'name: project-os-'")
+    expect(de('A8')).toMatch(/gcloud builds log \S+ .*\| grep -c 'Identidad de compilación verificada'$/m)
+    const plantilla = JSON.parse(node(PLAN, ['--plantilla-evidencia', '--control', 'A6']).stdout)
+    expect(plantilla.controles).toHaveLength(3)
+    for (const c of plantilla.controles) expect(c.observado).toEqual(expect.objectContaining({ version_fijada: '', versiones: null, miembros: null }))
   })
 
   it('la lista de lectura falla cerrado ante cualquier comando mutante o con redirección', async () => {
@@ -291,12 +306,20 @@ describe('evidencia saneada: validación y evaluación', () => {
   const BASE = { version: 1, fecha: '2026-10-12', commit_desplegado: '7f44216bdf85a9832e014f45c27ac643e00ceff9', revision: 'project-os-dashboard-00001-gsk' }
   const RUNTIME = 'project-os-dashboard-run@project-os-511102.iam.gserviceaccount.com'
   const DIGEST = 'sha256:f6e46596ef36522134096d97431f32036bb71298033f9694023137497d3d5c07'
+  const URL = 'https://project-os-dashboard-235975889400.northamerica-south1.run.app'
+  const IAM = [`roles/secretmanager.secretAccessor serviceAccount:${RUNTIME}`]
+  const SECRETOS = ['project-os-nextauth-secret', 'project-os-google-client-secret', 'project-os-allowed-emails']
+  const secretoOK = (secreto: string, extra: Record<string, unknown> = {}) => ({ id: 'A6', observado: { secreto, miembros: IAM, versiones: ['1 ENABLED'], version_fijada: '1', ...extra } })
+  const A7_CONFIG = { revision_minScale: '0', revision_maxScale: '1', cpu_throttling: 'true', servicio_maxScale: '1' }
+  const E1_OK = (patron: string, extra: Record<string, unknown> = {}) => ({ id: 'E1', observado: { patron, coincidencias: 0, alcance: 'todos-los-campos', ventana_dias: 30, ...extra } })
+  type Res = { id: string; estado: string; motivo: string }
   const run = (controles: unknown[], extra: Record<string, unknown> = {}) => {
     const f = path.join(tmp('evidencia-'), 'e.json')
     writeFileSync(f, JSON.stringify({ ...BASE, ...extra, controles }))
     const r = node(EVID, [f, '--json'])
-    const out = r.stdout ? (JSON.parse(r.stdout) as { resultados: Array<{ id: string; estado: string; motivo: string }> }) : { resultados: [] }
-    return { ...r, res: out.resultados }
+    const out = r.stdout ? (JSON.parse(r.stdout) as { controles: Res[]; lecturas: Res[] }) : { controles: [], lecturas: [] }
+    const por = Object.fromEntries(out.controles.map((x) => [x.id, x.estado]))
+    return { ...r, res: out.controles, lecturas: out.lecturas, por }
   }
   const uno = (id: string, observado: Record<string, unknown>) => run([{ id, fuente: 'propietario', observado }])
 
@@ -304,63 +327,116 @@ describe('evidencia saneada: validación y evaluación', () => {
     expect(read(EVID)).not.toMatch(/child_process|fetch\(|https?:\/\//)
   })
 
-  it('camino feliz: todo OK → código 0', () => {
+  it('camino feliz con TODAS las partes de cada control compuesto → código 0', () => {
     const r = run([
       { id: 'A1', observado: { imagen: `northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard@${DIGEST}` } },
-      { id: 'A2', observado: { urls: 'https://project-os-dashboard-235975889400.northamerica-south1.run.app,https://project-os-dashboard-abc123-uc.a.run.app' } },
+      { id: 'A2', observado: { urls: `${URL},https://project-os-dashboard-abc123-uc.a.run.app` } },
+      { id: 'A2', observado: { nextauth_url: URL } },
+      { id: 'A2', observado: { callback_oauth: `${URL}/api/auth/callback/google` } },
+      ...SECRETOS.map((s) => secretoOK(s)),
+      { id: 'A7', observado: A7_CONFIG },
+      { id: 'A7', observado: { instancias_max_30d: 1 } },
+      { id: 'A8', observado: { cuenta_build: 'projects/project-os-511102/serviceAccounts/project-os-build@project-os-511102.iam.gserviceaccount.com' } },
+      { id: 'A8', observado: { lineas_identidad_verificada: 1 } },
       { id: 'A9', observado: { digest_produccion: DIGEST } },
-      { id: 'A7', observado: { revision_minScale: '0', revision_maxScale: '1', cpu_throttling: 'true', servicio_maxScale: 'ninguno' } },
+      ...['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p)),
       { id: 'C2', observado: { resultado: 'OK' } },
     ])
-    expect(r.res.map((x) => x.estado)).toEqual(['OK', 'OK', 'OK', 'OK', 'OK'])
+    expect(r.res.map((x) => `${x.id}:${x.estado}`)).toEqual(['A1:OK', 'A2:OK', 'A6:OK', 'A7:OK', 'A8:OK', 'A9:OK', 'E1:OK', 'C2:OK'])
     expect(r.status).toBe(0)
   })
 
+  // ---- R1-1: A6 ----
   it.each([
-    ['etiqueta ausente', { digest_produccion: 'ERROR: NOT_FOUND' }, 'FALLO'],
-    ['otro digest', { digest_produccion: `sha256:${'0'.repeat(64)}` }, 'FALLO'],
-    ['sin dato', { digest_produccion: '' }, 'NO_VERIFICADO'],
-    ['permiso denegado', { error: 'PERMISSION_DENIED' }, 'NO_VERIFICADO'],
-  ])('A9 — %s → %s', (_n, observado, esperado) => {
-    const r = uno('A9', observado)
-    expect(r.res[0]?.estado).toBe(esperado)
-    expect(r.status).toBe(esperado === 'FALLO' ? 1 : 3)
+    ['versiones null', { versiones: null }, 'NO_VERIFICADO'],
+    ['versiones []', { versiones: [] }, 'NO_VERIFICADO'],
+    ['todas DISABLED', { versiones: ['2 DISABLED', '1 DISABLED'] }, 'FALLO'],
+    ['dos ENABLED', { versiones: ['2 ENABLED', '1 ENABLED'] }, 'FALLO'],
+    ['versión fijada no observada', { version_fijada: '' }, 'NO_VERIFICADO'],
+    ['versión fijada latest', { version_fijada: 'latest' }, 'FALLO'],
+    ['versión fijada distinta de la ENABLED', { versiones: ['2 ENABLED', '1 DISABLED'], version_fijada: '1' }, 'FALLO'],
+    ['dos lectores', { miembros: [...IAM, 'roles/secretmanager.secretAccessor serviceAccount:otra@project-os-511102.iam.gserviceaccount.com'] }, 'FALLO'],
+    ['miembros null', { miembros: null }, 'NO_VERIFICADO'],
+  ])('R1-1 · A6 con %s → %s (los otros dos secretos, correctos)', (_n, cambio, esperado) => {
+    const r = run([secretoOK(SECRETOS[0] ?? '', cambio), secretoOK(SECRETOS[1] ?? ''), secretoOK(SECRETOS[2] ?? '')])
+    expect(r.por.A6).toBe(esperado)
+  })
+
+  it('R1-1 · un solo secreto correcto no da A6 completo: faltan los otros dos → NO_VERIFICADO', () => {
+    const r = run([secretoOK(SECRETOS[0] ?? '')])
+    expect(r.lecturas[0]?.estado).toBe('OK')
+    expect(r.por.A6).toBe('NO_VERIFICADO')
+    expect(r.res[0]?.motivo).toMatch(/faltan secretos/)
+    expect(r.status).toBe(3)
+  })
+
+  // ---- R1-2: A7 ----
+  it.each([
+    ['solo la métrica (1)', [{ instancias_max_30d: 1 }], 'NO_VERIFICADO'],
+    ['revisión 3 + métrica 1', [{ ...A7_CONFIG, revision_maxScale: '3', instancias_max_30d: 1 }], 'FALLO'],
+    ['servicio 3 + métrica 1', [{ ...A7_CONFIG, servicio_maxScale: '3', instancias_max_30d: 1 }], 'NO_VERIFICADO'],
+    ['servicio 3, en lecturas separadas', [{ ...A7_CONFIG, servicio_maxScale: '3' }, { instancias_max_30d: 1 }], 'NO_VERIFICADO'],
+    ['servicio no anotado', [{ ...A7_CONFIG, servicio_maxScale: '' }], 'NO_VERIFICADO'],
+    ['configuración correcta + métrica 2', [A7_CONFIG, { instancias_max_30d: 2 }], 'FALLO'],
+    ['sin cpu-throttling', [{ ...A7_CONFIG, cpu_throttling: 'false' }], 'FALLO'],
+    ['configuración correcta sin métrica', [A7_CONFIG], 'OK'],
+  ])('R1-2 · A7 %s → %s', (_n, partes, esperado) => {
+    expect(run(partes.map((observado) => ({ id: 'A7', observado }))).por.A7).toBe(esperado)
+  })
+
+  // ---- R1-3: E1 ----
+  it.each([
+    ['un único patrón con conteo 0', [E1_OK('correo')], 'NO_VERIFICADO'],
+    ['4 patrones, pero solo textPayload', ['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p, { alcance: 'textPayload' })), 'NO_VERIFICADO'],
+    ['4 patrones, pero 7 días', ['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p, { ventana_dias: 7 })), 'NO_VERIFICADO'],
+    ['4 patrones sin alcance declarado', ['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => ({ id: 'E1', observado: { patron: p, coincidencias: 0 } })), 'NO_VERIFICADO'],
+    ['una coincidencia aunque el alcance sea parcial', [E1_OK('token', { coincidencias: 2, alcance: 'textPayload' })], 'FALLO'],
+    ['4 patrones, todos los campos, 30 días', ['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p)), 'OK'],
+  ])('R1-3 · E1 %s → %s', (_n, entradas, esperado) => {
+    expect(run(entradas).por.E1).toBe(esperado)
+  })
+
+  // ---- R1-4: A2, A8 y G2 ----
+  it.each([
+    ['A2 solo con la URL publicada', 'A2', [{ urls: [URL] }], 'NO_VERIFICADO'],
+    ['A2 URL publicada + NEXTAUTH_URL, sin callback', 'A2', [{ urls: [URL] }, { nextauth_url: URL }], 'NO_VERIFICADO'],
+    ['A2 con callback distinto', 'A2', [{ urls: [URL] }, { nextauth_url: URL }, { callback_oauth: 'https://otra.example.com/api/auth/callback/google' }], 'FALLO'],
+    ['A2 sin la URL estable entre las publicadas', 'A2', [{ urls: ['https://project-os-dashboard-abc123-uc.a.run.app'] }], 'FALLO'],
+    ['A8 solo con la cuenta', 'A8', [{ cuenta_build: 'projects/project-os-511102/serviceAccounts/project-os-build@project-os-511102.iam.gserviceaccount.com' }], 'NO_VERIFICADO'],
+    ['A8 con la línea de identidad ausente', 'A8', [{ cuenta_build: 'project-os-build@project-os-511102.iam.gserviceaccount.com', lineas_identidad_verificada: 0 }], 'FALLO'],
+    ['A8 con otra cuenta', 'A8', [{ cuenta_build: 'projects/project-os-511102/serviceAccounts/123-compute@developer.gserviceaccount.com', lineas_identidad_verificada: 1 }], 'FALLO'],
+    ['G2 con 2 revisiones y nada más', 'G2', [{ revisiones: ['project-os-dashboard-00001-gsk', 'project-os-dashboard-00002-abc'] }], 'NO_VERIFICADO'],
+    ['G2 con imagen anterior disponible, sin ensayo', 'G2', [{ revisiones: ['project-os-dashboard-00001-gsk', 'project-os-dashboard-00002-abc'], imagen_anterior_digest: DIGEST }], 'NO_VERIFICADO'],
+    ['G2 con imagen anterior borrada', 'G2', [{ revisiones: ['project-os-dashboard-00001-gsk', 'project-os-dashboard-00002-abc'], imagen_anterior_digest: 'NOT_FOUND' }], 'FALLO'],
+    ['G2 con una sola revisión', 'G2', [{ revisiones: ['project-os-dashboard-00001-gsk'] }], 'NO_VERIFICADO'],
+    ['G2 con ensayo autorizado OK', 'G2', [{ revisiones: ['project-os-dashboard-00001-gsk', 'project-os-dashboard-00002-abc'], imagen_anterior_digest: DIGEST, ensayo_rollback: 'OK' }], 'OK'],
+  ])('R1-4 · %s → %s', (_n, id, partes, esperado) => {
+    expect(run(partes.map((observado) => ({ id, observado }))).por[id]).toBe(esperado)
+  })
+
+  it('dos lecturas contradictorias del mismo campo → NO_VERIFICADO, nunca la última gana', () => {
+    expect(run([{ id: 'A9', observado: { digest_produccion: DIGEST } }, { id: 'A9', observado: { digest_produccion: 'NOT_FOUND' } }]).por.A9).toBe('NO_VERIFICADO')
   })
 
   it.each([
-    ['servicio 3 frente a revisión 1 (D-1)', { servicio_maxScale: '3' }, 'NO_VERIFICADO'],
-    ['servicio no anotado', { servicio_maxScale: '' }, 'NO_VERIFICADO'],
-    ['servicio 1', { servicio_maxScale: '1' }, 'OK'],
-    ['revisión 3', { revision_maxScale: '3', servicio_maxScale: '1' }, 'FALLO'],
-    ['sin cpu-throttling', { cpu_throttling: 'false', servicio_maxScale: '1' }, 'FALLO'],
-  ])('A7 — %s → %s (una anomalía de maxScale nunca es OK)', (_n, cambio, esperado) => {
-    const r = uno('A7', { revision_minScale: '0', revision_maxScale: '1', cpu_throttling: 'true', ...cambio })
-    expect(r.res[0]?.estado).toBe(esperado)
-  })
-
-  it('A7 con instancias observadas > 1 → FALLO; ≤ 1 → OK', () => {
-    expect(uno('A7', { instancias_max_30d: 2 }).res[0]?.estado).toBe('FALLO')
-    expect(uno('A7', { instancias_max_30d: 1 }).res[0]?.estado).toBe('OK')
-  })
-
-  it.each([
-    ['URL distinta', 'A2', { urls: ['https://project-os-dashboard-abc123-uc.a.run.app'] }, 'FALLO'],
-    ['imagen por etiqueta', 'A1', { imagen: 'northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard:7f44216' }, 'FALLO'],
-    ['variable de escritura', 'A4', { variables: ['NEXTAUTH_URL', 'PROJECT_OS_WRITE_MODE'] }, 'FALLO'],
-    ['runtime con roles', 'A5', { cuenta: RUNTIME, roles_proyecto: ['roles/editor'] }, 'FALLO'],
-    ['otra cuenta de servicio', 'A5', { cuenta: 'otra@project-os-511102.iam.gserviceaccount.com', roles_proyecto: [] }, 'FALLO'],
-    ['secreto con dos lectores', 'A6', { secreto: 'project-os-nextauth-secret', miembros: [`roles/secretmanager.secretAccessor serviceAccount:${RUNTIME}`, 'roles/secretmanager.secretAccessor serviceAccount:otra@project-os-511102.iam.gserviceaccount.com'] }, 'FALLO'],
-    ['dos versiones habilitadas', 'A6', { secreto: 'project-os-nextauth-secret', miembros: [`roles/secretmanager.secretAccessor serviceAccount:${RUNTIME}`], versiones: ['2 ENABLED', '1 ENABLED'] }, 'FALLO'],
-    ['build con otra cuenta', 'A8', { cuenta_build: 'projects/project-os-511102/serviceAccounts/123-compute@developer.gserviceaccount.com' }, 'FALLO'],
-    ['logs con coincidencias', 'E1', { patron: 'correo', coincidencias: 3 }, 'FALLO'],
-    ['limpieza bloqueada', 'F3', { check: 'BLOQUEADO' }, 'FALLO'],
-    ['pocas imágenes', 'F3', { imagenes: 2, mayores_30_dias_no_protegidas: 0 }, 'NO_VERIFICADO'],
-    ['una sola revisión', 'G2', { revisiones: ['project-os-dashboard-00001-gsk'] }, 'NO_VERIFICADO'],
+    ['A9 etiqueta ausente', 'A9', { digest_produccion: 'ERROR: NOT_FOUND' }, 'FALLO'],
+    ['A9 otro digest', 'A9', { digest_produccion: `sha256:${'0'.repeat(64)}` }, 'FALLO'],
+    ['A9 sin dato', 'A9', { digest_produccion: '' }, 'NO_VERIFICADO'],
+    ['A9 permiso denegado', 'A9', { error: 'PERMISSION_DENIED' }, 'NO_VERIFICADO'],
+    ['A1 imagen por etiqueta', 'A1', { imagen: 'northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard:7f44216' }, 'FALLO'],
+    ['A4 variable de escritura', 'A4', { variables: ['NEXTAUTH_URL', 'PROJECT_OS_WRITE_MODE'] }, 'FALLO'],
+    ['A5 runtime con roles', 'A5', { cuenta: RUNTIME, roles_proyecto: ['roles/editor'] }, 'FALLO'],
+    ['A5 otra cuenta', 'A5', { cuenta: 'otra@project-os-511102.iam.gserviceaccount.com', roles_proyecto: [] }, 'FALLO'],
+    ['F3 bloqueada', 'F3', { check: 'BLOQUEADO' }, 'FALLO'],
+    ['F3 pocas imágenes', 'F3', { imagenes: 2, mayores_30_dias_no_protegidas: 0 }, 'NO_VERIFICADO'],
+    ['F3 PERMITIDO pero imágenes no protegidas', 'F3', { check: 'PERMITIDO', imagenes: 6, mayores_30_dias_no_protegidas: 1 }, 'FALLO'],
     ['humano sin resultado', 'D1', { resultado: '' }, 'NO_VERIFICADO'],
     ['humano FALLO', 'C2', { resultado: 'fallo' }, 'FALLO'],
     ['control sin regla', 'Z9', { algo: 1 }, 'NO_VERIFICADO'],
-  ])('%s (%s) → %s', (_n, id, observado, esperado) => {
-    expect(uno(id, observado).res[0]?.estado).toBe(esperado)
+  ])('%s → %s', (_n, id, observado, esperado) => {
+    const r = uno(id, observado)
+    expect(r.por[id]).toBe(esperado)
+    expect(r.status).toBe(esperado === 'FALLO' ? 1 : esperado === 'OK' ? 0 : 3)
   })
 
   it('evidencia de otro commit desplegado → FALLO y no se evalúa nada más', () => {
@@ -391,14 +467,12 @@ describe('evidencia saneada: validación y evaluación', () => {
   })
 
   it('una plantilla rellenada a medias no produce un OK falso (null ≠ "ninguno")', () => {
-    expect(uno('A5', { cuenta: RUNTIME, roles_proyecto: null }).res[0]?.estado).toBe('NO_VERIFICADO')
-    expect(uno('A4', { variables: [] }).res[0]?.estado).toBe('NO_VERIFICADO')
-    expect(uno('A6', { secreto: 'project-os-nextauth-secret', miembros: null }).res[0]?.estado).toBe('NO_VERIFICADO')
+    expect(uno('A5', { cuenta: RUNTIME, roles_proyecto: null }).por.A5).toBe('NO_VERIFICADO')
+    expect(uno('A4', { variables: [] }).por.A4).toBe('NO_VERIFICADO')
   })
 
   it('acepta cuentas de servicio del proyecto y correos de example.com', () => {
-    const r = uno('A5', { cuenta: RUNTIME, roles_proyecto: [], nota: 'contacto@example.com' })
-    expect(r.status).toBe(0)
+    expect(uno('A5', { cuenta: RUNTIME, roles_proyecto: [], nota: 'contacto@example.com' }).status).toBe(0)
   })
 
   it('formato inválido o archivo ilegible → rechazo o uso incorrecto, nunca OK', () => {
@@ -408,15 +482,15 @@ describe('evidencia saneada: validación y evaluación', () => {
     expect(node(EVID, []).status).toBe(2)
   })
 
-  it('la plantilla del plan de inspección pasa el saneamiento; con la fecha rellenada, todo es NO_VERIFICADO (código 3)', () => {
+  it('la plantilla del plan de inspección pasa el saneamiento; con la fecha rellenada, todos los controles son NO_VERIFICADO (código 3)', () => {
     const plantilla = JSON.parse(node(path.join(OPS, 'plan-inspeccion.mjs'), ['--plantilla-evidencia']).stdout)
     plantilla.fecha = '2026-10-12'
     const f = path.join(tmp('evidencia-'), 'p.json')
     writeFileSync(f, JSON.stringify(plantilla))
     const r = node(EVID, [f, '--json'])
     expect(r.status).toBe(3)
-    const res = JSON.parse(r.stdout).resultados as Array<{ estado: string }>
-    expect(res.length).toBeGreaterThanOrEqual(15)
+    const res = JSON.parse(r.stdout).controles as Res[]
+    expect(res.map((x) => x.id).sort()).toEqual(['A1', 'A2', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'E1', 'F3', 'G2'])
     expect(res.every((x) => x.estado === 'NO_VERIFICADO')).toBe(true)
   })
 

@@ -33,23 +33,33 @@ un OK.
 
 ## 3. Reglas de evaluación
 
+**Fusión, peor evidencia y cobertura.** Corrección de la revisión R1 de ChatGPT:
+
+- Las lecturas de un mismo control se **fusionan** antes de evaluarlo (y, en A6 y E1, también las del mismo secreto
+  o patrón). Dos lecturas con valores distintos para el mismo campo dan NO_VERIFICADO: nunca gana la última.
+- Cada control se agrega con la **peor** evidencia (FALLO > NO_VERIFICADO > OK) y debe cumplir una **cobertura
+  mínima**. Un control compuesto **nunca** queda en OK por una sola parte.
+- El código de salida se calcula sobre los controles agregados. `--json` devuelve `controles` (agregados) y
+  `lecturas` (por grupo).
+
 | Control | OK solo si | FALLO si | NO_VERIFICADO si |
 | --- | --- | --- | --- |
 | A1 | La imagen es `…/dashboard@sha256:f6e46596…` | Otro digest o una etiqueta | Falta el dato |
-| A2 | Las URLs incluyen la URL de NextAuth | No la incluyen | Falta el dato |
+| A2 | Hay **las tres** partes: la URL estable está entre las publicadas, **`nextauth_url`** es esa URL y **`callback_oauth`** es `URL/api/auth/callback/google` | Alguna parte es distinta | Falta cualquiera de las tres |
 | A4 | Ninguna variable de escritura | `PROJECT_OS_WRITE_MODE` o `AUTH_WRITER_EMAILS` | Lista vacía o nula |
 | A5 | Cuenta runtime y `roles_proyecto: []` | Otra cuenta o algún rol | Falta la cuenta o los roles son `null` |
-| A6 | Una sola fila: `secretAccessor` para la cuenta runtime; como máximo una versión `ENABLED` | Otra fila o varias versiones habilitadas | Faltan los miembros |
-| A7 (anotaciones) | Revisión `0` / `1` / `true` y servicio `ninguno` o `1` | Revisión distinta | Servicio con otro valor (**D-1**: ambiguo, nunca OK) o falta el dato |
-| A7 (métrica) | Máximo de instancias ≤ 1 | Más de 1 | Falta el dato |
-| A8 | Cuenta `project-os-build` | Otra cuenta | Falta el dato |
+| A6 | **Los 3 secretos**, cada uno con: una sola fila (`secretAccessor` para la runtime); **exactamente una** versión `ENABLED`; y `version_fijada` numérica, igual a la `ENABLED` | Otra fila; ninguna o varias `ENABLED`; versión fijada `latest` o distinta de la `ENABLED` | Faltan miembros o versiones (`null` o `[]`), la versión fijada o alguno de los 3 secretos |
+| A7 | **Configuración** de revisión `0` / `1` / `true` y de servicio `ninguno` o `1`; si hay métrica, ≤ 1 | Revisión distinta, o métrica > 1 | Sin configuración (**la métrica sola nunca aprueba**), servicio con otro valor (**D-1**) o datos faltantes |
+| A8 | Cuenta `project-os-build` **y** ≥ 1 línea *"Identidad de compilación verificada"* en el log | Otra cuenta, o 0 líneas | Falta cualquiera de las dos |
 | A9 | `digest_produccion` = digest desplegado | `NOT_FOUND` u otro digest | Falta el dato |
-| E1 | 0 coincidencias | Más de 0 | Falta el conteo |
-| F3 (`--check`) | `PERMITIDO` | `BLOQUEADO` u otro resultado | Falta el dato |
-| F3 (efecto) | ≥ 5 imágenes y 0 no protegidas de más de 30 días | Alguna no protegida de más de 30 días | Menos de 5 imágenes |
-| G2 | ≥ 2 revisiones | — | Una sola revisión (rollback NO_APLICA) |
+| E1 | **Los 4 patrones** (`correo`, `token`, `bearer`, `codigo_oauth`), cada uno con 0 coincidencias, `alcance: todos-los-campos` y `ventana_dias ≥ 30` | Cualquier conteo > 0 | Falta algún patrón, o el alcance es parcial (solo `textPayload`, menos de 30 días o sin declarar) |
+| F3 | `--check` `PERMITIDO`; si hay conteos, ≥ 5 imágenes y 0 no protegidas de más de 30 días | `BLOQUEADO`, o alguna no protegida de más de 30 días | Faltan datos, o hay menos de 5 imágenes |
+| G2 | ≥ 2 revisiones, la imagen anterior existe **y** `ensayo_rollback: OK` (ensayo **autorizado**) | La imagen anterior ya no existe, o el ensayo falló | Una sola revisión; imagen anterior sin comprobar; sin ensayo |
 | Humanos | `resultado: OK` | `resultado: FALLO` | Vacío |
 | Otro id | — | — | Siempre: sin regla |
+
+E1 en OK significa que no aparecen esos 4 patrones en ningún campo durante la retención. **No** demuestra la
+ausencia de toda PII: la revisión humana de E2 sigue siendo necesaria.
 
 Códigos de salida: `0` todo OK · `1` algún FALLO · `3` sin fallos pero con NO_VERIFICADO · `4` evidencia rechazada ·
 `2` uso incorrecto.

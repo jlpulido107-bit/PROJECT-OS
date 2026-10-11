@@ -58,17 +58,38 @@ export function hallazgosSensibles(dato, ruta = '$') {
 }
 
 // ---- Evaluación por control ----
+// Cada entrada de evidencia se evalúa por separado. Después, cada CONTROL se agrega con la PEOR evidencia
+// (FALLO > NO_VERIFICADO > OK) y debe cumplir su COBERTURA mínima: un control compuesto nunca queda en OK por una
+// sola parte (revisión R1 de ChatGPT, PR #23).
 const vacio = (v) => v === undefined || v === null || v === ''
 const lista = (v) => (Array.isArray(v) ? v : String(v ?? '').split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean)
 const r = (id, estado, motivo) => ({ id, estado, motivo })
+const RANGO = { OK: 0, NO_VERIFICADO: 1, FALLO: 2 }
+const peor = (estados) => estados.reduce((a, b) => (RANGO[b] > RANGO[a] ? b : a), 'OK')
+const URL_CALLBACK = `${P.url}/api/auth/callback/google`
+/** Patrones de E1 y alcance mínimo para que un conteo 0 cuente: búsqueda en todos los campos y 30 días (retención). */
+export const PATRONES_E1 = Object.freeze(['correo', 'token', 'bearer', 'codigo_oauth'])
+export const VENTANA_E1_DIAS = 30
+
+/** Evalúa una lista de [estado, motivo] parciales y devuelve el peor, con sus motivos. */
+function combinar(partes) {
+  const estado = peor(partes.map((p) => p[0]))
+  return [estado, partes.filter((p) => p[0] === estado).map((p) => p[1]).join('; ')]
+}
 
 const REGLAS = {
   A1: (o) => (vacio(o.imagen) ? ['NO_VERIFICADO', 'falta la imagen observada']
     : o.imagen === `${P.imagenBase}@${P.digest}` ? ['OK', 'la revisión sirve el digest desplegado']
       : ['FALLO', 'la imagen observada no es el digest desplegado']),
-  A2: (o) => (o.urls == null || lista(o.urls).length === 0 ? ['NO_VERIFICADO', 'faltan las URLs observadas']
-    : lista(o.urls).includes(P.url) ? ['OK', 'Cloud Run publica la URL de NextAuth y OAuth']
-      : ['FALLO', 'la URL de NextAuth/OAuth no está entre las publicadas']),
+  // A2 es compuesto: URL publicada por Cloud Run + NEXTAUTH_URL de la revisión + callback registrado en el cliente OAuth.
+  A2: (o) => combinar([
+    o.urls == null || lista(o.urls).length === 0 ? ['NO_VERIFICADO', 'faltan las URLs publicadas']
+      : lista(o.urls).includes(P.url) ? ['OK', 'Cloud Run publica la URL estable'] : ['FALLO', 'la URL estable no está entre las publicadas'],
+    vacio(o.nextauth_url) ? ['NO_VERIFICADO', 'falta NEXTAUTH_URL de la revisión']
+      : o.nextauth_url === P.url ? ['OK', 'NEXTAUTH_URL = URL estable'] : ['FALLO', 'NEXTAUTH_URL distinta de la URL estable'],
+    vacio(o.callback_oauth) ? ['NO_VERIFICADO', 'falta el callback registrado en el cliente OAuth']
+      : o.callback_oauth === URL_CALLBACK ? ['OK', 'callback OAuth = URL estable'] : ['FALLO', 'callback OAuth distinto de la URL estable'],
+  ]),
   A4: (o) => {
     const v = lista(o.variables)
     // Una revisión real siempre tiene variables: una lista vacía es un campo sin rellenar, no un OK.
@@ -81,95 +102,187 @@ const REGLAS = {
     if (o.cuenta !== P.cuentaRuntime) return ['FALLO', 'el servicio no corre con la cuenta runtime']
     return lista(o.roles_proyecto).length ? ['FALLO', 'la cuenta runtime tiene roles de proyecto'] : ['OK', 'cuenta runtime sin roles de proyecto']
   },
+  // A6, por secreto: IAM (una sola fila) + versiones (exactamente una ENABLED) + versión fijada en la revisión (numérica y ENABLED).
   A6: (o) => {
     if (!P.secretos.includes(o.secreto)) return ['NO_VERIFICADO', 'secreto no reconocido']
-    if (o.miembros == null || lista(o.miembros).length === 0) return ['NO_VERIFICADO', `faltan los miembros de ${o.secreto}`]
+    const s = o.secreto
     const esperado = `roles/secretmanager.secretAccessor serviceAccount:${P.cuentaRuntime}`
-    const filas = (Array.isArray(o.miembros) ? o.miembros : [o.miembros]).map((x) => String(x).replace(/\s+/g, ' ').trim())
-    if (filas.length !== 1 || filas[0] !== esperado) return ['FALLO', `${o.secreto}: acceso distinto de una sola fila para la cuenta runtime`]
-    const habilitadas = (o.versiones ?? []).map(String).filter((x) => /ENABLED/.test(x))
-    if (o.versiones != null && habilitadas.length > 1) return ['FALLO', `${o.secreto}: más de una versión habilitada (facturación y rotación)`]
-    return ['OK', `${o.secreto}: solo la cuenta runtime lo lee`]
+    const filas = o.miembros == null ? [] : (Array.isArray(o.miembros) ? o.miembros : [o.miembros]).map((x) => String(x).replace(/\s+/g, ' ').trim()).filter(Boolean)
+    const iam = filas.length === 0 ? ['NO_VERIFICADO', `${s}: faltan los miembros`]
+      : filas.length === 1 && filas[0] === esperado ? ['OK', `${s}: solo la cuenta runtime lo lee`]
+        : ['FALLO', `${s}: acceso distinto de una sola fila para la cuenta runtime`]
+    let versiones
+    let habilitadas = []
+    if (o.versiones == null) versiones = ['NO_VERIFICADO', `${s}: faltan las versiones`]
+    else {
+      const filasV = (Array.isArray(o.versiones) ? o.versiones : [o.versiones]).map((x) => String(x).trim()).filter(Boolean)
+      habilitadas = filasV.filter((x) => /\bENABLED\b/.test(x)).map((x) => x.split(/\s+/)[0])
+      versiones = filasV.length === 0 ? ['NO_VERIFICADO', `${s}: lista de versiones vacía`]
+        : habilitadas.length === 0 ? ['FALLO', `${s}: ninguna versión ENABLED (la revisión no podría leerlo)`]
+          : habilitadas.length > 1 ? ['FALLO', `${s}: más de una versión ENABLED (facturación y rotación)`]
+            : ['OK', `${s}: una sola versión ENABLED`]
+    }
+    const fijada = String(o.version_fijada ?? '').trim()
+    const referencia = fijada === '' ? ['NO_VERIFICADO', `${s}: falta la versión fijada en la revisión`]
+      : !/^[1-9]\d*$/.test(fijada) ? ['FALLO', `${s}: la revisión no usa una versión numérica fijada`]
+        : versiones[0] === 'NO_VERIFICADO' ? ['NO_VERIFICADO', `${s}: no se puede contrastar la versión fijada`]
+          : habilitadas.includes(fijada) ? ['OK', `${s}: la versión fijada está ENABLED`]
+            : ['FALLO', `${s}: la versión fijada no es la ENABLED`]
+    return combinar([iam, versiones, referencia])
   },
+  // A7: la configuración es obligatoria; la métrica observada solo puede EMPEORAR el resultado, nunca aprobarlo sola.
   A7: (o) => {
+    const partes = []
+    const hayConfig = ['revision_minScale', 'revision_maxScale', 'cpu_throttling', 'servicio_maxScale'].some((k) => k in o)
+    if (hayConfig) {
+      if ([o.revision_minScale, o.revision_maxScale, o.cpu_throttling].some(vacio)) partes.push(['NO_VERIFICADO', 'faltan anotaciones de revisión'])
+      else if (String(o.revision_minScale) !== '0' || String(o.revision_maxScale) !== '1' || String(o.cpu_throttling) !== 'true') {
+        partes.push(['FALLO', 'la revisión no tiene minScale 0, maxScale 1 y cpu-throttling true'])
+      } else partes.push(['OK', 'revisión: minScale 0, maxScale 1, CPU por solicitud'])
+      const sv = String(o.servicio_maxScale ?? '').trim().toLowerCase()
+      if (sv === '') partes.push(['NO_VERIFICADO', 'falta el maxScale de servicio (anotar "ninguno" si no existe)'])
+      else if (sv === 'ninguno' || sv === '1') partes.push(['OK', 'maxScale de servicio coherente (1 o ninguno)'])
+      else partes.push(['NO_VERIFICADO', `maxScale de servicio ${sv} frente a revisión 1: tope efectivo ambiguo (D-1); nunca se da por bueno`])
+    }
     if ('instancias_max_30d' in o) {
-      if (vacio(o.instancias_max_30d)) return ['NO_VERIFICADO', 'falta el máximo de instancias observado']
-      return Number(o.instancias_max_30d) <= 1 ? ['OK', 'nunca hubo más de 1 instancia en 30 días']
-        : ['FALLO', `se observaron ${Number(o.instancias_max_30d)} instancias: el tope efectivo no es 1 (D-1)`]
+      if (vacio(o.instancias_max_30d)) partes.push(['NO_VERIFICADO', 'falta el máximo de instancias observado'])
+      else if (Number(o.instancias_max_30d) > 1) partes.push(['FALLO', `se observaron ${Number(o.instancias_max_30d)} instancias: el tope efectivo no es 1 (D-1)`])
+      else partes.push(['OK', 'métrica: nunca más de 1 instancia en 30 días (no prueba el máximo configurado)'])
     }
-    if ([o.revision_minScale, o.revision_maxScale, o.cpu_throttling].some(vacio)) return ['NO_VERIFICADO', 'faltan anotaciones de revisión']
-    if (String(o.revision_minScale) !== '0' || String(o.revision_maxScale) !== '1' || String(o.cpu_throttling) !== 'true') {
-      return ['FALLO', 'la revisión no tiene minScale 0, maxScale 1 y cpu-throttling true']
-    }
-    if (o.servicio_maxScale === undefined || o.servicio_maxScale === '') return ['NO_VERIFICADO', 'falta el maxScale de servicio (anotar "ninguno" si no existe)']
-    const s = String(o.servicio_maxScale).trim().toLowerCase()
-    if (s === 'ninguno' || s === '1') return ['OK', 'límites de revisión y servicio coherentes (tope 1)']
-    return ['NO_VERIFICADO', `maxScale de servicio ${s} frente a revisión 1: tope efectivo ambiguo (D-1); nunca se da por bueno`]
+    if (partes.length === 0) return ['NO_VERIFICADO', 'sin datos de escalado']
+    return combinar(partes)
   },
-  A8: (o) => (vacio(o.cuenta_build) ? ['NO_VERIFICADO', 'falta la cuenta del build']
-    : o.cuenta_build === `projects/${P.proyecto}/serviceAccounts/${P.cuentaBuild}` || o.cuenta_build === P.cuentaBuild
-      ? ['OK', 'el build usó la cuenta dedicada'] : ['FALLO', 'el build no usó la cuenta dedicada']),
+  // A8 es compuesto: cuenta del build + la línea "Identidad de compilación verificada" en su log.
+  A8: (o) => combinar([
+    vacio(o.cuenta_build) ? ['NO_VERIFICADO', 'falta la cuenta del build']
+      : o.cuenta_build === `projects/${P.proyecto}/serviceAccounts/${P.cuentaBuild}` || o.cuenta_build === P.cuentaBuild
+        ? ['OK', 'el build usó la cuenta dedicada'] : ['FALLO', 'el build no usó la cuenta dedicada'],
+    vacio(o.lineas_identidad_verificada) ? ['NO_VERIFICADO', 'falta el conteo de "Identidad de compilación verificada" en el log']
+      : Number(o.lineas_identidad_verificada) >= 1 ? ['OK', 'el paso verificar-identidad se ejecutó']
+        : ['FALLO', 'el log del build no contiene "Identidad de compilación verificada"'],
+  ]),
   A9: (o) => {
     if (vacio(o.digest_produccion)) return ['NO_VERIFICADO', 'falta el digest de la etiqueta produccion']
     if (/NOT_FOUND|no existe/i.test(o.digest_produccion)) return ['FALLO', 'la etiqueta produccion no existe: la imagen desplegada no tiene protección explícita']
     return o.digest_produccion === P.digest ? ['OK', 'produccion apunta al digest desplegado']
       : ['FALLO', 'produccion apunta a otro digest']
   },
+  // F3: configuración (--check) y efecto real (conteos) se evalúan juntos; el efecto solo es observable con ≥ 5 imágenes.
   F3: (o) => {
+    const partes = []
     if ('check' in o) {
-      if (vacio(o.check)) return ['NO_VERIFICADO', 'falta el resultado de --check']
-      return o.check === 'PERMITIDO' ? ['OK', 'política de limpieza activa'] : ['FALLO', `--check: ${o.check === 'BLOQUEADO' ? 'BLOQUEADO' : 'resultado inesperado'}`]
+      partes.push(vacio(o.check) ? ['NO_VERIFICADO', 'falta el resultado de --check']
+        : o.check === 'PERMITIDO' ? ['OK', 'política de limpieza activa'] : ['FALLO', `--check: ${o.check === 'BLOQUEADO' ? 'BLOQUEADO' : 'resultado inesperado'}`])
     }
-    if (vacio(o.imagenes) || vacio(o.mayores_30_dias_no_protegidas)) return ['NO_VERIFICADO', 'faltan los conteos de imágenes']
-    if (Number(o.imagenes) < 5) return ['NO_VERIFICADO', 'menos de 5 imágenes: el efecto de la limpieza aún no es observable']
-    return Number(o.mayores_30_dias_no_protegidas) === 0 ? ['OK', 'no quedan imágenes no protegidas de más de 30 días']
-      : ['FALLO', 'hay imágenes no protegidas de más de 30 días: la limpieza no actúa como se espera']
+    if ('imagenes' in o || 'mayores_30_dias_no_protegidas' in o) {
+      partes.push(vacio(o.imagenes) || vacio(o.mayores_30_dias_no_protegidas) ? ['NO_VERIFICADO', 'faltan los conteos de imágenes']
+        : Number(o.mayores_30_dias_no_protegidas) > 0 ? ['FALLO', 'hay imágenes no protegidas de más de 30 días: la limpieza no actúa como se espera']
+          : Number(o.imagenes) < 5 ? ['NO_VERIFICADO', 'menos de 5 imágenes: el efecto de la limpieza aún no es observable']
+            : ['OK', 'no quedan imágenes no protegidas de más de 30 días'])
+    }
+    return partes.length ? combinar(partes) : ['NO_VERIFICADO', 'sin datos de limpieza']
   },
-  E1: (o) => (vacio(o.coincidencias) ? ['NO_VERIFICADO', `falta el conteo de «${o.patron ?? '?'}»`]
-    : Number(o.coincidencias) === 0 ? ['OK', `0 coincidencias de ${o.patron}`]
-      : ['FALLO', `${Number(o.coincidencias)} coincidencias de ${o.patron}: seguir el runbook operativo §5 sin copiar líneas`]),
+  // E1: un conteo solo vale si cubre TODOS los campos del registro y la ventana completa de retención.
+  E1: (o) => {
+    if (vacio(o.coincidencias)) return ['NO_VERIFICADO', `falta el conteo de «${o.patron ?? '?'}»`]
+    if (Number(o.coincidencias) > 0) return ['FALLO', `${Number(o.coincidencias)} coincidencias de ${o.patron}: seguir el runbook operativo §5 sin copiar líneas`]
+    if (o.alcance !== 'todos-los-campos' || !(Number(o.ventana_dias) >= VENTANA_E1_DIAS)) {
+      return ['NO_VERIFICADO', `0 coincidencias de ${o.patron}, pero con alcance parcial (se exigen todos los campos y ${VENTANA_E1_DIAS} días)`]
+    }
+    return ['OK', `0 coincidencias de ${o.patron} en todos los campos, ${Number(o.ventana_dias)} días`]
+  },
+  // G2: encontrar varias revisiones no prueba un rollback. OK solo con precondiciones reales Y un ensayo autorizado.
   G2: (o) => {
     if (o.revisiones == null || lista(o.revisiones).length === 0) return ['NO_VERIFICADO', 'faltan las revisiones']
-    return lista(o.revisiones).filter((x) => x.startsWith(`${P.servicio}-`)).length >= 2
-      ? ['OK', 'existe al menos una revisión anterior (comprobar su imagen con A9)']
-      : ['NO_VERIFICADO', 'una sola revisión: rollback NO_APLICA']
+    if (lista(o.revisiones).filter((x) => x.startsWith(`${P.servicio}-`)).length < 2) return ['NO_VERIFICADO', 'una sola revisión: rollback NO_APLICA']
+    const imagen = String(o.imagen_anterior_digest ?? '').trim()
+    if (imagen === '') return ['NO_VERIFICADO', 'falta comprobar que la imagen de la revisión anterior sigue en el repositorio']
+    if (/NOT_FOUND|no existe/i.test(imagen)) return ['FALLO', 'la imagen de la revisión anterior ya no existe: el rollback no es viable']
+    const ensayo = String(o.ensayo_rollback ?? '').toUpperCase()
+    if (ensayo === 'FALLO') return ['FALLO', 'el ensayo autorizado de rollback falló']
+    if (ensayo !== 'OK') return ['NO_VERIFICADO', 'precondiciones presentes, pero el rollback no se ha ensayado (requiere autorización)']
+    return ['OK', 'rollback ensayado con autorización y con la imagen anterior disponible']
   },
 }
 /** Controles que solo puede comprobar una persona: el propietario anota OK o FALLO, sin datos. */
 const MANUALES = new Set(['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'E2', 'F1', 'F2', 'G1', 'G3'])
+
+/** Cobertura mínima por control compuesto: si falta una parte, el control agregado es NO_VERIFICADO. */
+const COBERTURA = {
+  A6: (entradas) => {
+    const vistos = new Set(entradas.map((c) => c?.observado?.secreto))
+    const faltan = P.secretos.filter((s) => !vistos.has(s))
+    return faltan.length ? `faltan secretos: ${faltan.join(', ')}` : null
+  },
+  A7: (entradas) => (entradas.some((c) => ['revision_maxScale', 'servicio_maxScale'].some((k) => k in (c?.observado ?? {})))
+    ? null : 'falta la configuración de escalado (la métrica sola no basta)'),
+  E1: (entradas) => {
+    const vistos = new Set(entradas.map((c) => c?.observado?.patron))
+    const faltan = PATRONES_E1.filter((x) => !vistos.has(x))
+    return faltan.length ? `faltan patrones: ${faltan.join(', ')}` : null
+  },
+}
+
+function evaluarEntrada(id, o) {
+  if (typeof o.error === 'string' && o.error) {
+    return r(id, 'NO_VERIFICADO', /PERMISSION_DENIED|403|denegad/i.test(o.error) ? 'permiso denegado al leer' : 'la lectura falló')
+  }
+  if (REGLAS[id]) {
+    const [estado, motivo] = REGLAS[id](o)
+    return r(id, estado, motivo)
+  }
+  if (MANUALES.has(id)) {
+    const v = String(o.resultado ?? '').toUpperCase()
+    return r(id, v === 'OK' ? 'OK' : v === 'FALLO' ? 'FALLO' : 'NO_VERIFICADO',
+      v === 'OK' || v === 'FALLO' ? `comprobación humana: ${v}` : 'falta el resultado (OK o FALLO) de la comprobación humana')
+  }
+  return r(id, 'NO_VERIFICADO', 'control sin regla de evaluación')
+}
 
 export function evaluar(evidencia) {
   const errores = []
   if (evidencia?.version !== 1) errores.push('version debe ser 1')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(evidencia?.fecha ?? ''))) errores.push('fecha debe ser AAAA-MM-DD')
   if (!Array.isArray(evidencia?.controles) || evidencia.controles.length === 0) errores.push('controles debe ser una lista no vacía')
-  if (errores.length) return { errores, resultados: [] }
+  if (errores.length) return { errores, resultados: [], controles: [] }
 
-  const resultados = []
   if (evidencia.commit_desplegado !== P.commit) {
-    resultados.push(r('VER', 'FALLO', 'la evidencia corresponde a otro commit desplegado: no se evalúa contra esta versión'))
-    return { errores, resultados }
+    const ver = [r('VER', 'FALLO', 'la evidencia corresponde a otro commit desplegado: no se evalúa contra esta versión')]
+    return { errores, resultados: ver, controles: ver }
   }
-  if (evidencia.revision !== undefined && evidencia.revision !== P.revision) {
-    resultados.push(r('VER', 'NO_VERIFICADO', 'revisión distinta de la registrada: revisar si hubo un despliegue posterior'))
-  }
+  // Las partes de un mismo control (y del mismo secreto o patrón) se FUSIONAN antes de evaluar: así A2, A7 y A8 pueden
+  // llegar en varias lecturas. Dos lecturas que den valores distintos para el mismo campo son contradictorias.
+  const grupos = new Map()
   for (const c of evidencia.controles) {
     const id = String(c?.id ?? '?')
     const o = c?.observado ?? {}
-    if (typeof o.error === 'string' && o.error) {
-      resultados.push(r(id, 'NO_VERIFICADO', /PERMISSION_DENIED|403|denegad/i.test(o.error) ? 'permiso denegado al leer' : 'la lectura falló'))
-    } else if (REGLAS[id]) {
-      const [estado, motivo] = REGLAS[id](o)
-      resultados.push(r(id, estado, motivo))
-    } else if (MANUALES.has(id)) {
-      const v = String(o.resultado ?? '').toUpperCase()
-      resultados.push(r(id, v === 'OK' ? 'OK' : v === 'FALLO' ? 'FALLO' : 'NO_VERIFICADO',
-        v === 'OK' || v === 'FALLO' ? `comprobación humana: ${v}` : 'falta el resultado (OK o FALLO) de la comprobación humana'))
-    } else {
-      resultados.push(r(id, 'NO_VERIFICADO', 'control sin regla de evaluación'))
+    const clave = `${id}|${o.secreto ?? ''}|${o.patron ?? ''}`
+    const g = grupos.get(clave) ?? { id, observado: {}, conflicto: null }
+    for (const [k, v] of Object.entries(o)) {
+      if (vacio(v)) { if (!(k in g.observado)) g.observado[k] = v; continue }
+      if (!vacio(g.observado[k]) && JSON.stringify(g.observado[k]) !== JSON.stringify(v)) g.conflicto = k
+      else g.observado[k] = v
     }
+    grupos.set(clave, g)
   }
-  return { errores, resultados }
+  const resultados = [...grupos.values()].map((g) => (g.conflicto
+    ? r(g.id, 'NO_VERIFICADO', `lecturas contradictorias del campo ${g.conflicto}`)
+    : evaluarEntrada(g.id, g.observado)))
+  const controles = []
+  if (evidencia.revision !== undefined && evidencia.revision !== P.revision) {
+    controles.push(r('VER', 'NO_VERIFICADO', 'revisión distinta de la registrada: revisar si hubo un despliegue posterior'))
+  }
+  for (const id of [...new Set(resultados.map((x) => x.id))]) {
+    const propios = resultados.filter((x) => x.id === id)
+    const entradas = evidencia.controles.filter((c) => String(c?.id ?? '?') === id)
+    const falta = COBERTURA[id]?.(entradas) ?? null
+    const estados = propios.map((x) => x.estado).concat(falta ? ['NO_VERIFICADO'] : [])
+    const estado = peor(estados)
+    const motivo = falta && estado !== 'FALLO' ? `cobertura incompleta: ${falta}`
+      : propios.length === 1 ? propios[0].motivo : `${propios.length} lecturas; peor: ${propios.find((x) => x.estado === estado)?.motivo ?? estado}`
+    controles.push(r(id, estado, motivo))
+  }
+  return { errores, resultados, controles }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -192,19 +305,23 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     for (const [ruta, tipo] of sensibles) console.error(` - ${ruta}: ${tipo}`)
     process.exit(4)
   }
-  const { errores, resultados } = evaluar(evidencia)
+  const { errores, resultados, controles } = evaluar(evidencia)
   if (errores.length) {
     console.error(`EVIDENCIA RECHAZADA: formato no válido (${errores.join('; ')})`)
     process.exit(4)
   }
-  const codigo = codigoDeSalida(resultados)
-  if (args.includes('--json')) console.log(JSON.stringify({ version: 1, resultados, codigo }, null, 2))
+  // El código de salida y el resumen se calculan sobre los CONTROLES agregados (peor evidencia + cobertura).
+  const codigo = codigoDeSalida(controles)
+  if (args.includes('--json')) console.log(JSON.stringify({ version: 2, controles, lecturas: resultados, codigo }, null, 2))
   else {
     console.log(`PROJECT-OS V1.6 — evaluación de evidencia (${evidencia.fecha}, commit ${String(evidencia.commit_desplegado).slice(0, 7)})`)
     if (evidencia.ejemplo_sintetico === true) console.log('EJEMPLO SINTÉTICO: los valores son inventados; esto NO es evidencia de producción.')
-    for (const x of resultados) console.log(linea(x))
-    const n = (e) => resultados.filter((x) => x.estado === e).length
-    console.log(`\nOK ${n('OK')} · FALLO ${n('FALLO')} · NO_VERIFICADO ${n('NO_VERIFICADO')} (no cuenta como OK)`)
+    console.log('Lecturas:')
+    for (const x of resultados) console.log('  ' + linea(x))
+    console.log('Controles (peor evidencia y cobertura mínima):')
+    for (const x of controles) console.log('  ' + linea(x))
+    const n = (e) => controles.filter((x) => x.estado === e).length
+    console.log(`\nControles: OK ${n('OK')} · FALLO ${n('FALLO')} · NO_VERIFICADO ${n('NO_VERIFICADO')} (no cuenta como OK)`)
   }
   process.exit(codigo)
 }
