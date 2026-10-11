@@ -370,7 +370,7 @@ describe('evidencia saneada: validación y evaluación', () => {
   })
 
   it.each([
-    ['correo de persona', { resultado: 'OK', nota: 'probado por persona.real@gmail.com' }],
+    ['correo de persona', { resultado: 'OK', nota: 'probado por persona.ficticia@correo-falso.test' }],
     ['token', { error: `ya29.${'b'.repeat(40)}` }],
     ['cabecera Bearer', { nota: 'Authorization: Bearer abcdefghijklmnop' }],
     ['ID de facturación', { nota: '0A1B2C-3D4E5F-6A7B8C' }],
@@ -387,7 +387,7 @@ describe('evidencia saneada: validación y evaluación', () => {
     for (const v of Object.values(observado)) {
       if (typeof v === 'string') expect(r.stdout + r.stderr).not.toContain(v)
     }
-    expect(r.stdout + r.stderr).not.toMatch(/persona\.real|ya29\.b|abcdefghijklmnop|0A1B2C/)
+    expect(r.stdout + r.stderr).not.toMatch(/persona\.ficticia|ya29\.b|abcdefghijklmnop|0A1B2C/)
   })
 
   it('una plantilla rellenada a medias no produce un OK falso (null ≠ "ninguno")', () => {
