@@ -58,7 +58,24 @@ registros anteriores.
   script lo comprueba: compara la revisión activa antes y después y avisa si cambió. **No** usa `--max-instances`, que
   sí crea una revisión nueva.
 
-## 5. Lo que sigue siendo manual
+## 5. Ejecución (2026-10-11)
+
+| Paso | Resultado |
+| --- | --- |
+| 1 `diagnostico` | E1: `@` solo en auditoría de Google (3, luego 6 con estas operaciones); `code=` 1 en peticiones. E2: 0 avisos de la app; 401/403/404 de la plataforma. A6: versión 1 sobrante. A7: servicio 3 |
+| 3 `deshabilitar-sobrantes` | Versión 1 de `project-os-google-client-secret` deshabilitada; `smoke:remote` 26/26 |
+| 5 `destruir-deshabilitadas` | Versión 1 destruida, tras comprobar el login. Dos intentos previos se cancelaron sin cambios por la frase (espacios y errata); desde `cc24d13` se ignoran los espacios al pegar |
+| 7 `alinear-max-servicio` | Servicio 1, revisión 1, misma revisión activa |
+| 9 `excluir-callback-en-logs` | Exclusión activa |
+| Cierre | `smoke:remote` 26/26; `diagnostico`: A6 sin versiones sobrantes, servicio `maxScale` 1 |
+
+Pendiente: el paso 6, el máximo histórico de instancias en *Metrics Explorer*.
+
+Hallazgo de la herramienta: en Cloud Shell, `--format='value(name.basename(),state)'` dejó vacía la lista de versiones.
+El script se detuvo sin cambios. Desde `2282a05` se lee el JSON y se extrae el número en Python, y el plan usa
+`value(name,state)`.
+
+## 6. Lo que sigue siendo manual
 
 - **A2:** en la consola OAuth, el callback es exactamente `…run.app/api/auth/callback/google`.
 - **C1 y C4–C7:** 12/12 pestañas, totales y recorrido de las páginas.

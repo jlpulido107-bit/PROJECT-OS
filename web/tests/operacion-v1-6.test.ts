@@ -212,8 +212,11 @@ describe('matriz de aceptación', () => {
 
   it('los controles que la misión exige destacar no figuran como verificados', () => {
     const por = Object.fromEntries(filas.map((f) => [f[0], estado(f)]))
-    for (const id of ['A9', 'C2', 'D1', 'D2', 'E1', 'E2', 'F2', 'G1', 'G3']) expect(por[id], id).toBe('PENDIENTE')
-    expect(por.C1).toBe('PARCIAL')
+    // Tras la auditoría y la remediación en Cloud Shell (2026-10-11): solo quedan pendientes los controles de navegador,
+    // de costos y de procedimiento; A9 pasó a VERIFICADO con la etiqueta aplicada y E1 sigue PARCIAL hasta la caducidad.
+    for (const id of ['C2', 'D1', 'D2', 'F2', 'G1', 'G3']) expect(por[id], id).toBe('PENDIENTE')
+    for (const id of ['A2', 'C1', 'E1', 'F3']) expect(por[id], id).toBe('PARCIAL')
+    expect(por.A9).toBe('VERIFICADO')
     expect(por.G2).toBe('NO_APLICA')
     expect(matriz).toMatch(/run\.googleapis\.com\/maxScale: '3'/)
   })
@@ -713,7 +716,8 @@ describe('documentos de operación (Entregas B y C)', () => {
 
   it('las advertencias centrales de la misión están explícitas', () => {
     const todo = ['matriz-aceptacion.md', 'auditoria-seguridad.md', 'runbook-operativo.md', 'mantenimiento-dependencias.md'].map(doc).join('\n')
-    expect(todo).toMatch(/etiqueta `produccion`[^\n]*(no está confirmada|sin confirmar|no confirmad)/i)
+    // A9: la advertencia original quedó resuelta y registrada (etiqueta creada por el propietario, C9).
+    expect(todo).toMatch(/etiqueta `produccion` \*\*creada\*\*/)
     expect(todo).toContain("run.googleapis.com/maxScale: '3'")
     expect(todo).toMatch(/5 alertas altas|Las 5 alertas altas/)
     expect(todo).toMatch(/alerta, no un límite|no es un corte|avisa, no corta/)

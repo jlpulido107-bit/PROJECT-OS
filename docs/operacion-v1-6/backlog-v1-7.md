@@ -15,6 +15,7 @@
 | Q3 | Reporte de calidad de datos: por pestaña, filas descartadas, columnas faltantes y fechas inválidas, sin valores. Ya existe el contador "12/12 pestañas válidas" | M | B | — | M | P2 |
 | Q4 | Que los PR solo de `docs/**` también ejecuten `npm test` en CI (hoy el filtro es `web/**`) | M | B | Cambio de workflow | S | P2 |
 | Q5 | Prueba que vincule el resumen de la matriz con el registro de producción al actualizar estados | B | B | — | S | P3 |
+| Q6 | Añadir `favicon.ico`: hoy responde 404 (visto en E2), sin efecto funcional | B | B | Cambio de código, desplegado en el próximo build autorizado | S | P3 |
 
 ## 2. Mejoras arquitectónicas (repositorio; exigen diseño y revisión)
 
