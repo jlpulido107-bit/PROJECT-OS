@@ -430,3 +430,48 @@ describe('evidencia saneada: validación y evaluación', () => {
     expect(read(path.join(DOCS, 'matriz-aceptacion.md'))).not.toContain('evidencia-ejemplo')
   })
 })
+
+describe('documentos de operación (Entregas B y C)', () => {
+  const doc = (n: string) => read(path.join(DOCS, n))
+
+  it('el índice enlaza todos los documentos de la carpeta', () => {
+    const indice = doc('README.md')
+    for (const n of ['matriz-aceptacion.md', 'auditoria-seguridad.md', 'runbook-operativo.md', 'evidencia.md', 'mantenimiento-dependencias.md', 'backlog-v1-7.md', 'hoja-propietario.md']) {
+      expect(indice, n).toContain(`(${n})`)
+    }
+  })
+
+  it('la hoja del propietario es breve, ordenada y no pide pruebas que Claude ya hizo ni mutaciones', () => {
+    const hoja = doc('hoja-propietario.md')
+    expect(hoja.length).toBeLessThan(6000)
+    const pasos = [...hoja.matchAll(/^\| (\d) \|/gm)].map((m) => Number(m[1]))
+    expect(pasos).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(hoja).not.toMatch(/npm (test|run (lint|typecheck|build|test:e2e))/)
+    expect(hoja).not.toMatch(/tags add|services update|add-iam-policy-binding|versions access|--apply/)
+  })
+
+  it('el runbook distingue instrucción de ejecución y marca las mutaciones', () => {
+    const rb = doc('runbook-operativo.md')
+    expect(rb).toMatch(/Instrucción no es ejecución/)
+    expect((rb.match(/\[M\]/g) ?? []).length).toBeGreaterThanOrEqual(10)
+    for (const t of ['401 inesperado', '403 de un usuario permitido', 'Callback OAuth', 'Lectura de Sheets 503', 'Fallo de sonda', 'Costo inesperado', 'Posible exposición de datos', 'Bloqueo de acceso']) expect(rb, t).toContain(t)
+    expect(rb).toMatch(/una sola revisión/i)
+    expect(rb).toMatch(/alerta, no un límite/)
+  })
+
+  it('el backlog V1.7 son hipótesis no aprobadas y separa lo que exige autorización', () => {
+    const b = doc('backlog-v1-7.md')
+    expect(b).toMatch(/hipótesis, \*\*no aprobadas\*\*/)
+    for (const s of ['Quick wins', 'Mejoras arquitectónicas', 'exigen autorización explícita']) expect(b).toContain(s)
+    expect(b).toMatch(/X6 \| \*\*Escritura real en Sheets\*\*/)
+  })
+
+  it('las advertencias centrales de la misión están explícitas', () => {
+    const todo = ['matriz-aceptacion.md', 'auditoria-seguridad.md', 'runbook-operativo.md', 'mantenimiento-dependencias.md'].map(doc).join('\n')
+    expect(todo).toMatch(/etiqueta `produccion`[^\n]*(no está confirmada|sin confirmar|no confirmad)/i)
+    expect(todo).toContain("run.googleapis.com/maxScale: '3'")
+    expect(todo).toMatch(/5 alertas altas|Las 5 alertas altas/)
+    expect(todo).toMatch(/alerta, no un límite|no es un corte|avisa, no corta/)
+    expect(todo).toMatch(/\*\*0\*\* \[registro\]|comparó \*\*0\*\*|0 valores/)
+  })
+})

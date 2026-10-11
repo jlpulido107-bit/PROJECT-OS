@@ -29,8 +29,9 @@
 - [x] Despliegue manual y rollback documentados (`docs/despliegue-privado-v1-3.md`, actualizado a V1.6 en la Misión 010).
 - [x] Preparación V1.6: matriz de decisiones, auditoría estática, costos verificados y checklist de aceptación (Misión 010).
 - [x] Cloud Build con cuenta dedicada `project-os-build`, verificación de identidad en el build, bucket de origen propio y OAuth interno documentado (Misión 011; sin recursos creados).
-- [ ] Autorización del usuario para crear recursos facturables y desplegar.
-- [ ] Prueba real en Cloud Run: acceso permitido/denegado, datos reales, sin escrituras.
+- [x] Autorización del usuario para crear recursos facturables y desplegar (V1.6 desplegada, commit `7f44216`; [registro](estado-produccion-v1-6-2026-10-11.md)).
+- [ ] Prueba real en Cloud Run: acceso permitido/denegado, datos reales, sin escrituras. Acceso permitido y uso confirmados; denegado, totales y escrituras pendientes ([matriz](operacion-v1-6/matriz-aceptacion.md)).
+- [ ] Operación V1.6 (Misión 013): evidencia de solo lectura y [hoja del propietario](operacion-v1-6/hoja-propietario.md). Las hipótesis V1.7 están en el [backlog](operacion-v1-6/backlog-v1-7.md), **no aprobadas**.
 
 ## V1.4 — Informes y planificación (antes V1.3)
 - [ ] Captura de avances no técnicos.
