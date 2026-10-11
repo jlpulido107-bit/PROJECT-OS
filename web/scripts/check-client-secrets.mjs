@@ -8,7 +8,19 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
-const root = path.resolve(import.meta.dirname, '..', '.next', 'static')
+// Opciones (para la autoprueba y la CI): --dir <ruta> revisa otro directorio en lugar de .next/static;
+// --min-values=N falla (código 3) si se comparan menos de N valores del entorno, para que una ejecución sin
+// valores no pase por buena en silencio.
+const args = process.argv.slice(2)
+const dirArg = args.indexOf('--dir')
+const minArg = args.find((a) => a.startsWith('--min-values='))
+const minValues = minArg ? Number(minArg.split('=')[1]) : 0
+if (!Number.isInteger(minValues) || minValues < 0 || (dirArg > -1 && !args[dirArg + 1])) {
+  console.error('Uso: node scripts/check-client-secrets.mjs [--dir <ruta>] [--min-values=N]')
+  process.exit(2)
+}
+const root = dirArg > -1 ? path.resolve(args[dirArg + 1]) : path.resolve(import.meta.dirname, '..', '.next', 'static')
+const shown = dirArg > -1 ? args[dirArg + 1] : '.next/static'
 
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -21,7 +33,7 @@ let files
 try {
   files = walk(root).filter((f) => /\.(js|css|json|txt|html|map)$/.test(f))
 } catch {
-  console.error('No existe .next/static: ejecuta `npm run build` primero.')
+  console.error(`No existe ${shown}: ejecuta \`npm run build\` primero.`)
   process.exit(2)
 }
 
@@ -68,4 +80,8 @@ if (findings.length > 0) {
   for (const f of findings) console.error(' - ' + f)
   process.exit(1)
 }
-console.log('OK: sin claves, tokens, correos ni valores secretos en .next/static.')
+if (envValues.length < minValues) {
+  console.error(`NO_VERIFICADO: se exigían al menos ${minValues} valores de entorno y se compararon ${envValues.length}.`)
+  process.exit(3)
+}
+console.log(`OK: sin claves, tokens, correos ni valores secretos en ${shown}.`)

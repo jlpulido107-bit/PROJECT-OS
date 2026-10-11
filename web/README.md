@@ -4,9 +4,10 @@ Panel privado, usable en móvil y escritorio, que **lee** la Google Sheet operat
 No escribe en Sheets ni cierra tareas.
 
 - **V1.2** (fusionada): ejecución local/privada, validada con Google OAuth y Sheets reales.
-- **V1.3** (en preparación): imagen Docker y despliegue **manual** en Google Cloud Run con identidad de
-  servicio (ADC, sin clave JSON), Secret Manager y costos controlados. **No está desplegado**; ver
-  [`docs/despliegue-privado-v1-3.md`](../docs/despliegue-privado-v1-3.md).
+- **V1.3–V1.6**: imagen Docker y despliegue **manual** en Google Cloud Run con identidad de servicio (ADC, sin
+  clave JSON), Secret Manager y costos controlados. **V1.6 desplegada** (commit `7f44216`); ver el
+  [registro de producción](../docs/estado-produccion-v1-6-2026-10-11.md) y la
+  [operación V1.6](../docs/operacion-v1-6/README.md).
 
 - **Stack:** Next.js 16 (App Router) + TypeScript, NextAuth v4 (Google OAuth), `google-auth-library`; pruebas con Vitest 4.
 - **Nota npm:** `npm ci` funciona con npm 10. Para *cambiar* dependencias usa npm 11 (`npx npm@11 install …`): npm 10 falla al resolver los peers opcionales de Vitest 4.

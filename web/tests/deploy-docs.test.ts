@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest'
  * las rutas privadas.
  */
 const ROOT = path.resolve(__dirname, '..', '..')
-const DOCS = ['docs/despliegue-privado-v1-3.md', 'docs/despliegue-v1-6-preparacion.md', 'docs/despliegue-v1-6-aceptacion.md', 'docs/infra-minima-v1-6-revision.md', 'docs/puerta-c-v1-6.md']
+const DOCS = ['docs/despliegue-privado-v1-3.md', 'docs/despliegue-v1-6-preparacion.md', 'docs/despliegue-v1-6-aceptacion.md', 'docs/infra-minima-v1-6-revision.md', 'docs/puerta-c-v1-6.md', 'docs/operacion-v1-6/matriz-aceptacion.md', 'docs/operacion-v1-6/auditoria-seguridad.md', 'docs/operacion-v1-6/evidencia.md',
+  'docs/operacion-v1-6/README.md', 'docs/operacion-v1-6/runbook-operativo.md', 'docs/operacion-v1-6/mantenimiento-dependencias.md',
+  'docs/operacion-v1-6/backlog-v1-7.md', 'docs/operacion-v1-6/hoja-propietario.md']
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), 'utf8')
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const full = path.join(dir, n)

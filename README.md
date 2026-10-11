@@ -25,7 +25,7 @@ Dirigir proyectos técnicos y no técnicos mediante metas, hitos, capacidad sema
 
 ## Aún pendiente
 - Sincronización GitHub → Sheets (`EVIDENCIAS`, `SYNC_RUNS`): manual y opcional, sin calendario (ver [`docs/sheets-sync-setup.md`](docs/sheets-sync-setup.md)).
-- Dashboard web V1.6: **desplegado y operativo** en [Cloud Run](https://project-os-dashboard-235975889400.northamerica-south1.run.app); ver [registro de producción](docs/estado-produccion-v1-6-2026-10-11.md), [runbook](docs/despliegue-privado-v1-3.md) y [checklist de aceptación](docs/despliegue-v1-6-aceptacion.md). Pendientes de operación: seguimiento de costos, etiqueta `produccion` de la imagen, revisión de logs y pruebas de rollback.
+- Dashboard web V1.6: **desplegado y operativo** en [Cloud Run](https://project-os-dashboard-235975889400.northamerica-south1.run.app); ver [registro de producción](docs/estado-produccion-v1-6-2026-10-11.md), [runbook](docs/despliegue-privado-v1-3.md) y [checklist de aceptación](docs/despliegue-v1-6-aceptacion.md). Pendientes de operación: seguimiento de costos, etiqueta `produccion` de la imagen, revisión de logs y pruebas de rollback. Operación y aceptación: [`docs/operacion-v1-6/`](docs/operacion-v1-6/README.md) (matriz, runbook operativo y [hoja del propietario](docs/operacion-v1-6/hoja-propietario.md)).
 - Captura de avances no técnicos mediante dashboard.
 - Conciliación de commits/PRs con IDs de tareas.
 - Planificación inteligente con revisión y aprobación humana.
