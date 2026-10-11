@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -250,12 +250,54 @@ describe('plan de inspección de solo lectura', () => {
 
   it('los comandos de logs solo cuentan coincidencias: nunca imprimen el contenido', () => {
     for (const p of plan().pasos.filter((x) => x.control === 'E1')) {
-      expect(p.comando).toMatch(/--format='value\(timestamp\)' \| wc -l$/)
+      expect(p.comando).toMatch(/--format='value\(timestamp\)' \| wc -l\) && echo "conteo=\$n"/)
       expect(p.comando).not.toMatch(/textPayload\)|jsonPayload\)|--format=json/)
       // R1-3: búsqueda en TODOS los campos (sin restringir a textPayload) y ventana de 30 días (retención de _Default).
       expect(p.comando).not.toMatch(/textPayload:|jsonPayload:|protoPayload:/)
       expect(p.comando).toContain('--freshness=30d')
     }
+  })
+
+  // ---- R2-2: una lectura fallida nunca se convierte en «0» ----
+  describe('R2-2 · los comandos de conteo propagan el fallo (gcloud FALSO, nunca GCP)', () => {
+    const fake = tmp('gcloud-falso-')
+    // FAKE_MODE: falla → error y código 1; vacio → sin salida; tres → 3 líneas; frase → log con la línea de identidad.
+    writeFileSync(path.join(fake, 'gcloud'), [
+      '#!/bin/sh',
+      'case "$FAKE_MODE" in',
+      '  falla) echo "ERROR: (gcloud) PERMISSION_DENIED" >&2; exit 1 ;;',
+      '  vacio) exit 0 ;;',
+      '  tres) printf "2026-10-01T00:00:00Z\\n2026-10-02T00:00:00Z\\n2026-10-03T00:00:00Z\\n" ;;',
+      '  frase) printf "Paso 1\\nIdentidad de compilación verificada\\nPaso 2\\n" ;;',
+      'esac',
+    ].join('\n'))
+    chmodSync(path.join(fake, 'gcloud'), 0o755)
+    const ejecutar = (comando: string, modo: string) =>
+      spawnSync('bash', ['-c', comando], { encoding: 'utf8', env: { PATH: `${fake}:/usr/bin:/bin`, FAKE_MODE: modo } as unknown as NodeJS.ProcessEnv }).stdout.trim()
+    const comandos = (c: string) => plan().pasos.filter((p) => p.control === c && /conteo=/.test(p.comando)).map((p) => p.comando)
+
+    it('E1: fallo → conteo=LECTURA_FALLIDA; vacío → conteo=0; tres líneas → conteo=3', () => {
+      expect(comandos('E1')).toHaveLength(4)
+      for (const c of comandos('E1')) {
+        expect(ejecutar(c, 'falla')).toBe('conteo=LECTURA_FALLIDA')
+        expect(ejecutar(c, 'vacio')).toBe('conteo=0')
+        expect(ejecutar(c, 'tres')).toBe('conteo=3')
+      }
+    })
+
+    it('A8: fallo → conteo=LECTURA_FALLIDA; log sin la línea → conteo=0; con la línea → conteo=1', () => {
+      const [c] = comandos('A8')
+      expect(c).toBeDefined()
+      expect(ejecutar(c ?? '', 'falla')).toBe('conteo=LECTURA_FALLIDA')
+      expect(ejecutar(c ?? '', 'vacio')).toBe('conteo=0')
+      expect(ejecutar(c ?? '', 'frase')).toBe('conteo=1')
+    })
+
+    it('y el evaluador trata LECTURA_FALLIDA como NO_VERIFICADO, nunca como 0', () => {
+      expect(read(PLAN)).toContain('set -o pipefail')
+      // Cubierto en «R2-1 · E1 … LECTURA_FALLIDA» (evidencia); aquí solo se confirma que el plan lo indica.
+      for (const p of plan().pasos.filter((x) => /conteo=/.test(x.comando))) expect((p as Paso & { esperado: string }).esperado).toContain('nunca 0')
+    })
   })
 
   it('R1-4: A2, A6 y A8 piden todas sus partes; los conteos del log del build no imprimen contenido', () => {
@@ -264,7 +306,7 @@ describe('plan de inspección de solo lectura', () => {
     expect(de('A2')).toContain("grep -A1 'name: NEXTAUTH_URL$'")
     expect(de('A2')).toContain('URI de redireccionamiento autorizados')
     expect(de('A6')).toContain("grep -B1 'name: project-os-'")
-    expect(de('A8')).toMatch(/gcloud builds log \S+ .*\| grep -c 'Identidad de compilación verificada'$/m)
+    expect(de('A8')).toMatch(/gcloud builds log \S+ .*\| \{ grep -c 'Identidad de compilación verificada' \|\| true; \}\) && echo "conteo=\$n"/m)
     const plantilla = JSON.parse(node(PLAN, ['--plantilla-evidencia', '--control', 'A6']).stdout)
     expect(plantilla.controles).toHaveLength(3)
     for (const c of plantilla.controles) expect(c.observado).toEqual(expect.objectContaining({ version_fijada: '', versiones: null, miembros: null }))
@@ -282,6 +324,11 @@ describe('plan de inspección de solo lectura', () => {
       'bash web/deploy/infra/limpieza-artifact-v1-6.sh --apply',
     ]
     for (const comando of malos) expect(comandosInseguros([{ control: 'X', tipo: 'gcloud', comando }]), comando).toHaveLength(1)
+    // La envoltura de conteo no blanquea una mutación ni un comando ajeno dentro de ella.
+    const { contar } = (await import(PLAN)) as { contar: (t: string) => string }
+    for (const interior of ['gcloud run services update s --project=p | wc -l', 'curl https://ejemplo.invalid | wc -l']) {
+      expect(comandosInseguros([{ control: 'X', tipo: 'gcloud', comando: contar(interior) }]), interior).toHaveLength(1)
+    }
     expect(comandosInseguros(plan().pasos)).toEqual([])
   })
 
@@ -412,6 +459,37 @@ describe('evidencia saneada: validación y evaluación', () => {
     ['G2 con ensayo autorizado OK', 'G2', [{ revisiones: ['project-os-dashboard-00001-gsk', 'project-os-dashboard-00002-abc'], imagen_anterior_digest: DIGEST, ensayo_rollback: 'OK' }], 'OK'],
   ])('R1-4 · %s → %s', (_n, id, partes, esperado) => {
     expect(run(partes.map((observado) => ({ id, observado }))).por[id]).toBe(esperado)
+  })
+
+  // ---- R2-1: conteos inválidos nunca son éxito ----
+  const INVALIDOS: Array<[string, unknown]> = [['texto', 'NO_DISPONIBLE'], ['LECTURA_FALLIDA', 'LECTURA_FALLIDA'], ['negativo', -1], ['decimal', 0.5], ['decimal en texto', '0.5'], ['infinito', Infinity], ['NaN en texto', 'NaN'], ['booleano', false], ['lista', [0]]]
+  it.each(INVALIDOS)('R2-1 · E1: los 4 patrones con coincidencias %s → NO_VERIFICADO y código ≠ 0', (_n, valor) => {
+    const r = run(['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p, { coincidencias: valor })))
+    expect(r.por.E1).toBe('NO_VERIFICADO')
+    expect(r.status).not.toBe(0)
+  })
+  it.each(INVALIDOS)('R2-1 · E1: ventana_dias %s → NO_VERIFICADO', (_n, valor) => {
+    expect(run(['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p, { ventana_dias: valor }))).por.E1).toBe('NO_VERIFICADO')
+  })
+  it.each(INVALIDOS)('R2-1 · A7: configuración correcta + instancias_max_30d %s → NO_VERIFICADO', (_n, valor) => {
+    const r = run([{ id: 'A7', observado: { ...A7_CONFIG, instancias_max_30d: valor } }])
+    expect(r.por.A7).toBe('NO_VERIFICADO')
+    expect(r.status).not.toBe(0)
+  })
+  it.each(INVALIDOS)('R2-1 · F3: conteos de imágenes %s → NO_VERIFICADO', (_n, valor) => {
+    const r = run([{ id: 'F3', observado: { check: 'PERMITIDO', imagenes: valor, mayores_30_dias_no_protegidas: valor } }])
+    expect(r.por.F3).toBe('NO_VERIFICADO')
+    expect(r.status).not.toBe(0)
+  })
+  it.each(INVALIDOS)('R2-1 · A8: lineas_identidad_verificada %s → NO_VERIFICADO', (_n, valor) => {
+    const r = run([{ id: 'A8', observado: { cuenta_build: 'project-os-build@project-os-511102.iam.gserviceaccount.com', lineas_identidad_verificada: valor } }])
+    expect(r.por.A8).toBe('NO_VERIFICADO')
+  })
+  it('R2-1 · los enteros válidos se aceptan como número o texto ("0", " 3 "); F3 incoherente → NO_VERIFICADO', async () => {
+    const { conteo } = (await import(EVID)) as { conteo: (v: unknown) => number | null }
+    expect([conteo(0), conteo('0'), conteo(' 3 '), conteo(12)]).toEqual([0, 0, 3, 12])
+    expect(run([{ id: 'F3', observado: { imagenes: 5, mayores_30_dias_no_protegidas: 6 } }]).por.F3).toBe('NO_VERIFICADO')
+    expect(run(['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p, { coincidencias: '0', ventana_dias: '30' }))).por.E1).toBe('OK')
   })
 
   it('dos lecturas contradictorias del mismo campo → NO_VERIFICADO, nunca la última gana', () => {

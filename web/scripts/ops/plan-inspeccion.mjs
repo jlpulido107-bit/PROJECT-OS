@@ -15,6 +15,12 @@
 import { PRODUCCION as P } from './produccion-v1-6.mjs'
 
 const G = `--project=${P.proyecto}`
+/**
+ * Envuelve una tubería de CONTEO para que un fallo de gcloud no se convierta en "0" (revisión R2): con pipefail,
+ * si cualquier comando falla se imprime `conteo=LECTURA_FALLIDA`; si no, `conteo=<n>`. Siempre una sola línea.
+ */
+export const contar = (tuberia) => `( set -o pipefail; n=$(${tuberia}) && echo "conteo=$n" ) || echo "conteo=LECTURA_FALLIDA"`
+const ENVOLTURA = /^\( set -o pipefail; n=\$\((.+)\) && echo "conteo=\$n" \) \|\| echo "conteo=LECTURA_FALLIDA"$/
 const R = `--region=${P.region}`
 const RUNTIME = `serviceAccount:${P.cuentaRuntime}`
 
@@ -80,8 +86,8 @@ export const PASOS = [
   },
   {
     control: 'A8', titulo: 'Paso verificar-identidad en el log del build (CONTEO, sin contenido)', tipo: 'gcloud',
-    comando: `gcloud builds log 7768d6a3-332a-48bb-9872-db6b000e929a ${G} ${R} | grep -c 'Identidad de compilación verificada'`,
-    esperado: '1 o más', evidencia: { lineas_identidad_verificada: '' },
+    comando: contar(`gcloud builds log 7768d6a3-332a-48bb-9872-db6b000e929a ${G} ${R} | { grep -c 'Identidad de compilación verificada' || true; }`),
+    esperado: 'conteo=1 o más. Si sale conteo=LECTURA_FALLIDA, anota error: "LECTURA_FALLIDA" (nunca 0)', evidencia: { lineas_identidad_verificada: '' },
   },
   {
     control: 'A9', titulo: 'Digest al que apunta la etiqueta produccion', tipo: 'gcloud',
@@ -105,8 +111,8 @@ export const PASOS = [
     // Búsqueda de texto libre (sin campo): Cloud Logging la aplica a TODOS los campos (textPayload, jsonPayload,
     // protoPayload, httpRequest…). 30 días = retención del bucket _Default. Solo se imprime un CONTEO.
     control: 'E1', titulo: `Logs del servicio: CONTEO de «${patron}» en todos los campos, 30 días (nunca su contenido)`, tipo: 'gcloud',
-    comando: `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="${P.servicio}" AND "${patron}"' ${G} --freshness=30d --limit=100000 --format='value(timestamp)' | wc -l`,
-    esperado: '0. Si es > 0, NO copiar líneas: seguir el runbook operativo §5',
+    comando: contar(`gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="${P.servicio}" AND "${patron}"' ${G} --freshness=30d --limit=100000 --format='value(timestamp)' | wc -l`),
+    esperado: 'conteo=0. Si es > 0, NO copiar líneas: runbook operativo §5. Si sale conteo=LECTURA_FALLIDA, anota error: "LECTURA_FALLIDA" (nunca 0)',
     evidencia: { patron: nombre, coincidencias: '', alcance: 'todos-los-campos', ventana_dias: 30 },
   })),
   {
@@ -127,7 +133,9 @@ const PERMITIDO = /^(gcloud (run services describe|run revisions (list|describe)
 const PROHIBIDO = /versions access|--apply|add-iam|remove-iam|set-iam|\s(update|delete|create|replace|deploy|auth|enable|disable)\b|tags add|set-cleanup|--fix|>\s*\S/
 
 export function comandosInseguros(pasos = PASOS) {
-  return pasos.filter((p) => p.tipo !== 'consola').flatMap((p) => p.comando.split(' && ')
+  // La envoltura de conteo es fija y se valida aparte; dentro solo puede haber una tubería de lectura permitida.
+  const nucleo = (c) => ENVOLTURA.exec(c)?.[1] ?? c
+  return pasos.filter((p) => p.tipo !== 'consola').flatMap((p) => nucleo(p.comando).split(' && ')
     .filter((c) => !PERMITIDO.test(c) || PROHIBIDO.test(c)).map((c) => `${p.control}: ${c}`))
 }
 

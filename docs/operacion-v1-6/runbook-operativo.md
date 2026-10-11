@@ -80,8 +80,9 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
   contienen **códigos** (`Configuración inválida`, `operación rechazada: …`, nombres de error), nunca valores.
 - **PII y tokens:** base + el texto **sin campo** (`"@"`, `"ya29."`, `"Bearer "` o `"code="`). Una búsqueda sin
   campo se aplica a **todos** los campos del registro: `textPayload`, `jsonPayload`, `protoPayload`, `httpRequest`…
-  La ventana es de **30 días**, la retención de `_Default`. Se ejecutan como **conteo** (comandos E1 del plan, que
-  terminan en `| wc -l`).
+  La ventana es de **30 días**, la retención de `_Default`. Se ejecutan como **conteo**: los comandos E1 del plan
+  usan `set -o pipefail` e imprimen `conteo=<n>`. Si `gcloud` falla, imprimen `conteo=LECTURA_FALLIDA`; eso **no** es
+  un 0 y se registra como error. Hay que ejecutarlos en **bash** (Cloud Shell).
 - **Límite:** cero coincidencias de esos 4 patrones no demuestra la ausencia de toda PII. E2 (revisión humana de los
   códigos) sigue siendo necesaria. La semántica de búsqueda en todos los campos es la documentada por Cloud Logging
   [M]: confírmala la primera vez en Logs Explorer.

@@ -58,6 +58,12 @@ un OK.
 | Humanos | `resultado: OK` | `resultado: FALLO` | Vacío |
 | Otro id | — | — | Siempre: sin regla |
 
+**Conteos estrictos** (revisión R2). `coincidencias`, `ventana_dias`, `instancias_max_30d`, `imagenes`,
+`mayores_30_dias_no_protegidas` y `lineas_identidad_verificada` deben ser enteros finitos ≥ 0, como número o texto de
+solo dígitos. Cualquier otro valor (`LECTURA_FALLIDA`, texto, negativo, decimal, infinito) da **NO_VERIFICADO**,
+nunca OK. Los comandos de conteo del plan se ejecutan con `pipefail` e imprimen una sola línea: `conteo=<n>`, o
+`conteo=LECTURA_FALLIDA` si la lectura falló. En ese caso se anota `error: "LECTURA_FALLIDA"` y **nunca** un 0.
+
 E1 en OK significa que no aparecen esos 4 patrones en ningún campo durante la retención. **No** demuestra la
 ausencia de toda PII: la revisión humana de E2 sigue siendo necesaria.
 

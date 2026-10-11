@@ -64,6 +64,19 @@ export function hallazgosSensibles(dato, ruta = '$') {
 const vacio = (v) => v === undefined || v === null || v === ''
 const lista = (v) => (Array.isArray(v) ? v : String(v ?? '').split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean)
 const r = (id, estado, motivo) => ({ id, estado, motivo })
+/**
+ * Conteo estricto: entero finito ≥ 0, como número o como texto de solo dígitos. Cualquier otra cosa (NaN,
+ * 'LECTURA_FALLIDA', negativos, decimales, Infinity, '') devuelve null y el control queda NO_VERIFICADO (revisión R2).
+ */
+export function conteo(v) {
+  if (typeof v === 'number') return Number.isSafeInteger(v) && v >= 0 ? v : null
+  if (typeof v === 'string' && /^\s*\d+\s*$/.test(v)) {
+    const n = Number(v.trim())
+    return Number.isSafeInteger(n) ? n : null
+  }
+  return null
+}
+const ilegible = (campo) => ['NO_VERIFICADO', `${campo}: valor ausente o ilegible (se exige un entero ≥ 0; la lectura pudo fallar)`]
 const RANGO = { OK: 0, NO_VERIFICADO: 1, FALLO: 2 }
 const peor = (estados) => estados.reduce((a, b) => (RANGO[b] > RANGO[a] ? b : a), 'OK')
 const URL_CALLBACK = `${P.url}/api/auth/callback/google`
@@ -145,8 +158,9 @@ const REGLAS = {
       else partes.push(['NO_VERIFICADO', `maxScale de servicio ${sv} frente a revisión 1: tope efectivo ambiguo (D-1); nunca se da por bueno`])
     }
     if ('instancias_max_30d' in o) {
-      if (vacio(o.instancias_max_30d)) partes.push(['NO_VERIFICADO', 'falta el máximo de instancias observado'])
-      else if (Number(o.instancias_max_30d) > 1) partes.push(['FALLO', `se observaron ${Number(o.instancias_max_30d)} instancias: el tope efectivo no es 1 (D-1)`])
+      const n = conteo(o.instancias_max_30d)
+      if (n === null) partes.push(ilegible('instancias_max_30d'))
+      else if (n > 1) partes.push(['FALLO', `se observaron ${n} instancias: el tope efectivo no es 1 (D-1)`])
       else partes.push(['OK', 'métrica: nunca más de 1 instancia en 30 días (no prueba el máximo configurado)'])
     }
     if (partes.length === 0) return ['NO_VERIFICADO', 'sin datos de escalado']
@@ -157,8 +171,8 @@ const REGLAS = {
     vacio(o.cuenta_build) ? ['NO_VERIFICADO', 'falta la cuenta del build']
       : o.cuenta_build === `projects/${P.proyecto}/serviceAccounts/${P.cuentaBuild}` || o.cuenta_build === P.cuentaBuild
         ? ['OK', 'el build usó la cuenta dedicada'] : ['FALLO', 'el build no usó la cuenta dedicada'],
-    vacio(o.lineas_identidad_verificada) ? ['NO_VERIFICADO', 'falta el conteo de "Identidad de compilación verificada" en el log']
-      : Number(o.lineas_identidad_verificada) >= 1 ? ['OK', 'el paso verificar-identidad se ejecutó']
+    conteo(o.lineas_identidad_verificada) === null ? ilegible('lineas_identidad_verificada')
+      : conteo(o.lineas_identidad_verificada) >= 1 ? ['OK', 'el paso verificar-identidad se ejecutó']
         : ['FALLO', 'el log del build no contiene "Identidad de compilación verificada"'],
   ]),
   A9: (o) => {
@@ -175,21 +189,26 @@ const REGLAS = {
         : o.check === 'PERMITIDO' ? ['OK', 'política de limpieza activa'] : ['FALLO', `--check: ${o.check === 'BLOQUEADO' ? 'BLOQUEADO' : 'resultado inesperado'}`])
     }
     if ('imagenes' in o || 'mayores_30_dias_no_protegidas' in o) {
-      partes.push(vacio(o.imagenes) || vacio(o.mayores_30_dias_no_protegidas) ? ['NO_VERIFICADO', 'faltan los conteos de imágenes']
-        : Number(o.mayores_30_dias_no_protegidas) > 0 ? ['FALLO', 'hay imágenes no protegidas de más de 30 días: la limpieza no actúa como se espera']
-          : Number(o.imagenes) < 5 ? ['NO_VERIFICADO', 'menos de 5 imágenes: el efecto de la limpieza aún no es observable']
-            : ['OK', 'no quedan imágenes no protegidas de más de 30 días'])
+      const total = conteo(o.imagenes)
+      const sinProteger = conteo(o.mayores_30_dias_no_protegidas)
+      partes.push(total === null ? ilegible('imagenes') : sinProteger === null ? ilegible('mayores_30_dias_no_protegidas')
+        : sinProteger > total ? ['NO_VERIFICADO', 'conteos incoherentes: más imágenes no protegidas que imágenes']
+          : sinProteger > 0 ? ['FALLO', 'hay imágenes no protegidas de más de 30 días: la limpieza no actúa como se espera']
+            : total < 5 ? ['NO_VERIFICADO', 'menos de 5 imágenes: el efecto de la limpieza aún no es observable']
+              : ['OK', 'no quedan imágenes no protegidas de más de 30 días'])
     }
     return partes.length ? combinar(partes) : ['NO_VERIFICADO', 'sin datos de limpieza']
   },
   // E1: un conteo solo vale si cubre TODOS los campos del registro y la ventana completa de retención.
   E1: (o) => {
-    if (vacio(o.coincidencias)) return ['NO_VERIFICADO', `falta el conteo de «${o.patron ?? '?'}»`]
-    if (Number(o.coincidencias) > 0) return ['FALLO', `${Number(o.coincidencias)} coincidencias de ${o.patron}: seguir el runbook operativo §5 sin copiar líneas`]
-    if (o.alcance !== 'todos-los-campos' || !(Number(o.ventana_dias) >= VENTANA_E1_DIAS)) {
-      return ['NO_VERIFICADO', `0 coincidencias de ${o.patron}, pero con alcance parcial (se exigen todos los campos y ${VENTANA_E1_DIAS} días)`]
+    const n = conteo(o.coincidencias)
+    if (n === null) return ilegible(`coincidencias de «${o.patron ?? '?'}»`)
+    if (n > 0) return ['FALLO', `${n} coincidencias de ${o.patron}: seguir el runbook operativo §5 sin copiar líneas`]
+    const dias = conteo(o.ventana_dias)
+    if (o.alcance !== 'todos-los-campos' || dias === null || dias < VENTANA_E1_DIAS) {
+      return ['NO_VERIFICADO', `0 coincidencias de ${o.patron}, pero con alcance parcial o ilegible (se exigen todos los campos y ${VENTANA_E1_DIAS} días)`]
     }
-    return ['OK', `0 coincidencias de ${o.patron} en todos los campos, ${Number(o.ventana_dias)} días`]
+    return ['OK', `0 coincidencias de ${o.patron} en todos los campos, ${dias} días`]
   },
   // G2: encontrar varias revisiones no prueba un rollback. OK solo con precondiciones reales Y un ensayo autorizado.
   G2: (o) => {
