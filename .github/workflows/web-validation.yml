@@ -74,7 +74,8 @@ jobs:
       - name: HTTP E2E de integración V1.3–V1.6 (interacciones cruzadas, sin Google)
         run: npm run test:e2e:integration
       - name: Revisión de secretos en assets de cliente
-        run: npm run check:client-secrets
+        # Exige comparar los 4 valores FALSOS del entorno del job (3 variables + 1 correo): sin ellos, falla.
+        run: npm run check:client-secrets -- --min-values=4
 
   docker:
     # Construye y prueba la imagen localmente en el runner. NO publica la imagen, NO usa Google Cloud

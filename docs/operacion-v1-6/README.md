@@ -14,8 +14,8 @@
 | Checklist de aceptación | [`despliegue-v1-6-aceptacion.md`](../despliegue-v1-6-aceptacion.md) | Lista de controles A–H |
 | Runbook de despliegue y Puerta C | [`despliegue-privado-v1-3.md`](../despliegue-privado-v1-3.md), [`puerta-c-v1-6.md`](../puerta-c-v1-6.md) | **Histórico**: preparación, no estado presente |
 
-`509458b` y `7f44216` difieren solo en `docs/estado-produccion-v1-6-2026-10-11.md`. El código de `web/` de `main`
-es el desplegado.
+`git diff --stat 7f44216 509458b` solo muestra 4 archivos Markdown (`README.md`, el registro de producción, el runbook
+y la Puerta C). Por tanto, `web/` en `main` es idéntico al código desplegado.
 
 ## Documentos de esta carpeta
 
