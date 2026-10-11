@@ -28,6 +28,7 @@ y la Puerta C). Por tanto, `web/` en `main` es idéntico al código desplegado.
 | [`mantenimiento-dependencias.md`](mantenimiento-dependencias.md) | Las 5 alertas altas de desarrollo y la cobertura de CI | C |
 | [`backlog-v1-7.md`](backlog-v1-7.md) | Hipótesis priorizadas para V1.7, **no aprobadas** | C |
 | [`hoja-propietario.md`](hoja-propietario.md) | Acciones irreduciblemente humanas, en orden | C |
+| [`remediacion-2026-10-11.md`](remediacion-2026-10-11.md) | Resultados de la auditoría en Cloud Shell y pasos para corregir A6, A7 y E1 (`web/deploy/infra/remediacion-v1-6.sh`) | Posterior |
 
 ## Herramientas (`web/scripts/ops/`)
 

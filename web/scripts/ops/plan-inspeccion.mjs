@@ -117,8 +117,10 @@ export const PASOS = [
   ].map(([nombre, patron]) => ({
     // Búsqueda de texto libre (sin campo): Cloud Logging la aplica a TODOS los campos (textPayload, jsonPayload,
     // protoPayload, httpRequest…). 30 días = retención del bucket _Default. Solo se imprime un CONTEO.
+    // Se excluyen los registros de AUDITORÍA de Google: guardan por diseño el correo de quien administra el servicio
+    // (principalEmail) y no son una fuga de la app (auditoría en Cloud Shell, 2026-10-11).
     control: 'E1', titulo: `Logs del servicio: CONTEO de «${patron}» en todos los campos, 30 días (nunca su contenido)`, tipo: 'gcloud',
-    comando: contar(`gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="${P.servicio}" AND "${patron}"' ${G} --freshness=30d --limit=100000 --format='value(timestamp)' | wc -l`),
+    comando: contar(`gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="${P.servicio}" AND "${patron}" AND NOT logName:"cloudaudit.googleapis.com"' ${G} --freshness=30d --limit=100000 --format='value(timestamp)' | wc -l`),
     esperado: 'conteo=0. Si es > 0, NO copiar líneas: runbook operativo §5. Si sale conteo=LECTURA_FALLIDA, anota error: "LECTURA_FALLIDA" (nunca 0)',
     evidencia: { patron: nombre, coincidencias: '', alcance: 'todos-los-campos', ventana_dias: 30 },
   })),

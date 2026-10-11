@@ -255,6 +255,8 @@ describe('plan de inspección de solo lectura', () => {
       // R1-3: búsqueda en TODOS los campos (sin restringir a textPayload) y ventana de 30 días (retención de _Default).
       expect(p.comando).not.toMatch(/textPayload:|jsonPayload:|protoPayload:/)
       expect(p.comando).toContain('--freshness=30d')
+      // Los registros de auditoría de Google (principalEmail del administrador) no cuentan como fuga de la app.
+      expect(p.comando).toContain('AND NOT logName:"cloudaudit.googleapis.com"')
     }
   })
 

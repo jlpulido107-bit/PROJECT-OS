@@ -83,6 +83,10 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
   La ventana es de **30 días**, la retención de `_Default`. Se ejecutan como **conteo**: los comandos E1 del plan
   usan `set -o pipefail` e imprimen `conteo=<n>`. Si `gcloud` falla, imprimen `conteo=LECTURA_FALLIDA`; eso **no** es
   un 0 y se registra como error. Hay que ejecutarlos en **bash** (Cloud Shell).
+- **Auditoría excluida:** los comandos E1 añaden `AND NOT logName:"cloudaudit.googleapis.com"`. Los registros de
+  auditoría de Google guardan por diseño el correo de quien administra el servicio (`principalEmail`); no son salida de
+  la app y no se pueden ni se deben suprimir. Para clasificar coincidencias por origen sin ver contenido:
+  `bash web/deploy/infra/remediacion-v1-6.sh diagnostico`.
 - **Límite:** cero coincidencias de esos 4 patrones no demuestra la ausencia de toda PII. E2 (revisión humana de los
   códigos) sigue siendo necesaria. La semántica de búsqueda en todos los campos es la documentada por Cloud Logging
   [M]: confírmala la primera vez en Logs Explorer.
