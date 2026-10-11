@@ -112,7 +112,9 @@ pinned_of() {   # $1 = salida de «fijadas», $2 = secreto → versión fijada (
 confirm() {     # $1 = frase exacta
   local ack=''
   read -r -p "Para continuar escribe exactamente: $1: " ack || die 'sin confirmación; cancelado sin cambios.'
-  [[ "$ack" == "$1" ]] || { echo 'Cancelado sin cambios.'; exit 1; }
+  # Se ignoran los espacios al principio y al final (p. ej. al pegar); el texto en sí debe ser idéntico.
+  ack="${ack#"${ack%%[![:space:]]*}"}"; ack="${ack%"${ack##*[![:space:]]}"}"
+  [[ "$ack" == "$1" ]] || { echo "Cancelado sin cambios: la frase no coincide (se esperaba «$1»)."; exit 1; }
 }
 
 diagnostico() {

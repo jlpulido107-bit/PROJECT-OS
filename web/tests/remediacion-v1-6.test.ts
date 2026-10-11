@@ -145,6 +145,15 @@ describe('remediación V1.6: mutaciones con confirmación (gcloud falso)', () =>
     }
   })
 
+  it('la confirmación tolera espacios al pegar, pero no frases incompletas o con erratas', () => {
+    expect(run('alinear-max-servicio', '  AUTORIZO MAX SERVICIO 1   \n').mutaciones).toHaveLength(1)
+    for (const mala of ['AUTORIZO MAX SERVICIO\n', 'AUTORIZO MAX SERVICIO 1 X\n', 'autorizo max servicio 1\n']) {
+      const r = run('alinear-max-servicio', mala)
+      expect(r.mutaciones, mala).toEqual([])
+      expect(r.stdout).toContain('la frase no coincide')
+    }
+  })
+
   it('deshabilitar-sobrantes: deshabilita SOLO la versión no fijada (1), nunca la fijada (2)', () => {
     const r = run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n')
     expect(r.status).toBe(0)
