@@ -1,5 +1,7 @@
 # PROJECT-OS V1.6 — Despliegue privado de pruebas en Google Cloud Run (manual)
 
+> **Actualización 2026-10-11:** PROJECT-OS V1.6 **ya está desplegado y operativo** en Cloud Run. El apartado **Estado (Misión 012)** que sigue es un **registro histórico de preparación** y no representa el estado actual. Ver [evidencia de puesta en producción](estado-produccion-v1-6-2026-10-11.md) para versión, URL, validaciones y pendientes. Los comandos del runbook siguen sujetos a autorizaciones específicas; esta actualización no autoriza ejecutarlos.
+
 > El nombre del archivo se conserva desde V1.3 para no romper enlaces. El contenido corresponde a **V1.6**.
 
 **Estado (Misión 012):**

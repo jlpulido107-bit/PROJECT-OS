@@ -1,6 +1,6 @@
 # PROJECT-OS — Centro de Dirección
 
-**Estado:** V1.2–V1.6 fusionadas en `main` (dashboard de solo lectura, planificación y centro de control; la escritura de V1.4 solo existe simulada en local). Despliegue privado en Cloud Run preparado y documentado (Misión 010), **sin desplegar ni crear recursos**. No hay sincronizaciones ni informes programados.
+**Estado (2026-10-11):** V1.6 operativa en Google Cloud Run, con Google OAuth y lectura de Sheets, confirmada mediante pruebas y validación del propietario. La aplicación en producción corresponde al commit `7f44216`; las operaciones de escritura continúan deshabilitadas en Cloud Run. **[Registro de puesta en producción](docs/estado-produccion-v1-6-2026-10-11.md)**. No hay sincronizaciones ni informes programados.
 
 ## Objetivo
 Dirigir proyectos técnicos y no técnicos mediante metas, hitos, capacidad semanal flexible, evidencia y decisiones verificables.
@@ -25,8 +25,7 @@ Dirigir proyectos técnicos y no técnicos mediante metas, hitos, capacidad sema
 
 ## Aún pendiente
 - Sincronización GitHub → Sheets (`EVIDENCIAS`, `SYNC_RUNS`): manual y opcional, sin calendario (ver [`docs/sheets-sync-setup.md`](docs/sheets-sync-setup.md)).
-- Dashboard web: V1.2 de solo lectura en [`web/`](web/README.md), validada localmente con Google OAuth y Sheets reales.
-  Acceso remoto privado preparado para Cloud Run: runbook [`docs/despliegue-privado-v1-3.md`](docs/despliegue-privado-v1-3.md) (V1.6), [preparación y decisiones](docs/despliegue-v1-6-preparacion.md) y [checklist de aceptación](docs/despliegue-v1-6-aceptacion.md); el despliegue requiere autorización.
+- Dashboard web V1.6: **desplegado y operativo** en [Cloud Run](https://project-os-dashboard-235975889400.northamerica-south1.run.app); ver [registro de producción](docs/estado-produccion-v1-6-2026-10-11.md), [runbook](docs/despliegue-privado-v1-3.md) y [checklist de aceptación](docs/despliegue-v1-6-aceptacion.md). Pendientes de operación: seguimiento de costos, etiqueta `produccion` de la imagen, revisión de logs y pruebas de rollback.
 - Captura de avances no técnicos mediante dashboard.
 - Conciliación de commits/PRs con IDs de tareas.
 - Planificación inteligente con revisión y aprobación humana.
