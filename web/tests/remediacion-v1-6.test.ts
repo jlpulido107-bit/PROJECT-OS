@@ -24,9 +24,19 @@ case "$1 $2 $3" in
     if [[ "$*" == *"--format=json"* ]]; then
       echo '[{"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"WARNING","textPayload":"[project-os] Configuración inválida: SHEETS_CREDENTIALS"},
              {"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"WARNING","textPayload":"persona.ficticia@correo-falso.test texto libre"},
-             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T03:04:05Z","httpRequest":{"status":404,"requestUrl":"https://x.run.app/wp-login.php?u=x&code=SECRETO"}}]'
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T03:04:05Z","httpRequest":{"status":404,"requestUrl":"https://x.run.app/wp-login.php?u=x&code=SECRETO"}},
+             {"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"ERROR","textPayload":"[project-os] usuario.fuga@correo-falso.test token=TOKEN-FUGA-1"},
+             {"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"ERROR","textPayload":"[project-os] operación rechazada: titular.fuga@correo-falso.test"},
+             {"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"WARNING","textPayload":"[next-auth][warn][NO_SECRET] cuenta.fuga@correo-falso.test"},
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T04:00:00Z","httpRequest":{"status":404,"requestUrl":"https://x.run.app/usuarios/ruta.fuga@dominio.test?token=TOKEN-FUGA-2"}},
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T04:00:00Z","httpRequest":{"status":404,"requestUrl":"https://x.run.app/reset/TOKEN-FUGA-3"}},
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T04:00:00Z","httpRequest":{"status":400,"requestUrl":"https://x.run.app/api/auth/callback/google?code=CODIGO-FUGA&state=ESTADO-FUGA"}},
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T04:00:00Z","httpRequest":{"status":404,"requestUrl":"https://x.run.app/proyectos/id.fuga@correo-falso.test"}},
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"sev.fuga@correo-falso.test","timestamp":"fecha.fuga@correo-falso.test","httpRequest":{"status":"estado.fuga@correo-falso.test","requestUrl":"/"}},
+             {"logName":"projects/p/logs/log.fuga%40correo-falso.test","severity":"WARNING","textPayload":"texto libre"}]'
     elif [[ "$3" == *'"@"'* ]]; then
       for i in 1 2 3; do echo 'projects/project-os-511102/logs/cloudaudit.googleapis.com%2Factivity'; done
+      echo 'projects/project-os-511102/logs/nombre.fuga%40correo-falso.test'
     elif [[ "$3" == *'"code="'* ]]; then
       echo 'projects/project-os-511102/logs/run.googleapis.com%2Frequests'
     fi ;;
@@ -43,22 +53,33 @@ case "$1 $2 $3" in
       if hecho 'versions destroy 1 --secret=project-os-google-client-secret'; then S1=DESTROYED
       elif hecho 'versions disable 1 --secret=project-os-google-client-secret'; then S1=DISABLED
       else S1=ENABLED; fi
-      printf '[{"name":"%s/2","state":"ENABLED"},{"name":"%s/1","state":"%s"}]\n' "$V" "$V" "$S1"
+      # La versión 3 es DISABLED ajena a la remediación (histórica o de recuperación): nunca debe destruirse.
+      printf '[{"name":"%s/2","state":"ENABLED"},{"name":"%s/1","state":"%s"},{"name":"%s/3","state":"DISABLED"}]\n' "$V" "$V" "$S1" "$V"
     else printf '[{"name":"%s/1","state":"ENABLED"}]\n' "$V"; fi ;;
   "secrets versions disable"|"secrets versions destroy"|"run services update") ;;
   "logging sinks describe")
-    if hecho 'logging sinks update'; then echo '{"name":"_Default","exclusions":[{"name":"project-os-callback-oauth"}]}'; else echo '{"name":"_Default"}'; fi ;;
+    # FAKE_SINK: (vacío) ausente hasta el update y luego correcta; distinta/deshabilitada desde el inicio; rota = tras
+    # el update queda con otro filtro. FAKE_FILTRO es el filtro esperado, ya codificado como cadena JSON.
+    ex() { printf '{"name":"_Default","exclusions":[{"name":"project-os-callback-oauth","filter":%s,"disabled":%s}]}\n' "$1" "$2"; }
+    case "\${FAKE_SINK:-}" in
+      distinta) ex '"logName:\"otro\""' false ;;
+      deshabilitada) ex "$FAKE_FILTRO" true ;;
+      rota) if hecho 'logging sinks update'; then ex '"logName:\"otro\""' false; else echo '{"name":"_Default"}'; fi ;;
+      *) if hecho 'logging sinks update'; then ex "$FAKE_FILTRO" false; else echo '{"name":"_Default"}'; fi ;;
+    esac ;;
   "logging sinks update") ;;
   *) echo "gcloud falso: llamada no prevista: $*" >&2; exit 97 ;;
 esac
 `.replaceAll('\\$', '$'))
 chmodSync(path.join(dir, 'gcloud'), 0o755)
 
-function run(modo: string, input: string | null = '', extra: Record<string, string> = {}, limpiar = true) {
+const FILTRO = 'logName:"run.googleapis.com%2Frequests" AND resource.labels.service_name:"project-os-dashboard" AND httpRequest.requestUrl:"/api/auth/callback/google"'
+
+function run(modo: string | string[], input: string | null = '', extra: Record<string, string> = {}, limpiar = true) {
   if (limpiar) writeFileSync(log, '')
-  const r = spawnSync('bash', [SCRIPT, ...(modo ? [modo] : [])], {
+  const r = spawnSync('bash', [SCRIPT, ...(Array.isArray(modo) ? modo : modo ? [modo] : [])], {
     input: input ?? undefined, stdio: [input === null ? 'ignore' : 'pipe', 'pipe', 'pipe'], encoding: 'utf8',
-    env: { PATH: `${dir}:/usr/bin:/bin`, FAKE_LOG: log, ...extra } as unknown as NodeJS.ProcessEnv,
+    env: { PATH: `${dir}:/usr/bin:/bin`, FAKE_LOG: log, FAKE_FILTRO: JSON.stringify(FILTRO), ...extra } as unknown as NodeJS.ProcessEnv,
   })
   const calls = readFileSync(log, 'utf8').split('\n').filter(Boolean)
   const mutaciones = calls.filter((c) => /versions (disable|destroy)|services update|sinks update/.test(c))
@@ -73,7 +94,7 @@ describe('remediación V1.6: controles estáticos', () => {
   })
 
   it('cada mutación exige una frase de confirmación propia', () => {
-    for (const frase of ['AUTORIZO DESHABILITAR VERSIONES', 'AUTORIZO DESTRUIR VERSIONES TRAS VERIFICAR EL LOGIN', 'AUTORIZO MAX SERVICIO 1', 'AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS']) {
+    for (const frase of ['AUTORIZO DESHABILITAR VERSIONES', 'AUTORIZO DESTRUIR VERSION TRAS VERIFICAR EL LOGIN', 'AUTORIZO MAX SERVICIO 1', 'AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS']) {
       expect(text).toContain(`confirm '${frase}'`)
     }
     expect(text).toContain('--max=1')
@@ -96,12 +117,32 @@ describe('remediación V1.6: diagnóstico (solo lectura, gcloud falso)', () => {
     expect(r.stdout).not.toContain('SALIDA DE LA APP')
   })
 
+  it('E1: un nombre de log fuera de la lista cerrada se omite (R1-1)', () => {
+    expect(r.stdout).toMatch(/1 {2}\[log-omitido\] {2}\[otro\]/)
+    expect(r.salida).not.toContain('nombre.fuga')
+  })
+
   it('E2: agrupa por código sin mostrar texto libre, correos ni URLs', () => {
     expect(r.stdout).toContain('[project-os] Configuración inválida')
-    // Peticiones: estado, RUTA sin query y día; nunca parámetros (code=, correos…).
-    expect(r.stdout).toContain('petición HTTP 404 /wp-login.php (2026-10-11)')
     expect(r.stdout).toContain('(otro; no se muestra)')
     for (const prohibido of ['persona.ficticia', 'SHEETS_CREDENTIALS', 'u=x', 'SECRETO', 'texto libre', 'VALOR-NO-DEBE-SALIR']) expect(r.salida).not.toContain(prohibido)
+  })
+
+  it('E2: vocabulario cerrado — correo, token y query incrustados en textPayload o en la ruta nunca salen (R1-1)', () => {
+    // textPayload: sin categoría conocida → marcador; con categoría conocida → solo la categoría.
+    expect(r.stdout).toContain('[project-os] (categoría no reconocida; no se muestra)')
+    expect(r.stdout).toContain('[project-os] operación rechazada (')
+    expect(r.stdout).toContain('[next-auth][warn][NO_SECRET] (')
+    // Rutas: solo las de la lista fija o sus plantillas; cualquier otra → [ruta-omitida]; nunca la query.
+    expect(r.stdout).toContain('petición HTTP 404 [ruta-omitida] (2026-10-11)')
+    expect(r.stdout).toContain('petición HTTP 400 /api/auth/callback/google (2026-10-11)')
+    expect(r.stdout).toContain('petición HTTP 404 /proyectos/[id] (2026-10-11)')
+    expect(r.stdout).not.toContain('wp-login')
+    // Severidad, estado y día fuera de formato → «?»; log desconocido → [log-omitido].
+    expect(r.stdout).toContain('?        run.googleapis.com/requests  petición HTTP ? / (?)')
+    expect(r.stdout).toMatch(/WARNING +\[log-omitido\] {2}\(otro; no se muestra\)/)
+    // «code=» sí aparece en la cabecera «Patrón «code=»» del script; aquí se busca como parámetro de query.
+    expect(r.salida).not.toMatch(/fuga|TOKEN|CODIGO|ESTADO-|@correo|@dominio|token=|[?&]code=|state=|\/usuarios|\/reset/)
   })
 
   it('A6: señala la versión ENABLED no fijada de google-client-secret', () => {
@@ -168,12 +209,60 @@ describe('remediación V1.6: mutaciones con confirmación (gcloud falso)', () =>
     expect(r.mutaciones).toEqual([])
   })
 
-  it('destruir-deshabilitadas: antes de deshabilitar no hay nada que destruir; después destruye solo la DISABLED no fijada', () => {
-    expect(run('destruir-deshabilitadas', 'AUTORIZO DESTRUIR VERSIONES TRAS VERIFICAR EL LOGIN\n').mutaciones).toEqual([])
+  const DESTRUIR = 'AUTORIZO DESTRUIR VERSION TRAS VERIFICAR EL LOGIN\n'
+  const CLIENTE = 'project-os-google-client-secret'
+
+  it('el modo antiguo que barría todas las DISABLED ya no existe (R1-2)', () => {
+    expect(text).not.toContain('destruir-deshabilitadas')
+    const r = run('destruir-deshabilitadas', DESTRUIR)
+    expect(r.status).toBe(2)
+    expect(r.mutaciones).toEqual([])
+  })
+
+  it('deshabilitar-sobrantes: indica el comando exacto de destrucción para cada versión deshabilitada', () => {
+    const r = run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n')
+    expect(r.stdout).toContain(`destruir-version ${CLIENTE} 1`)
+    expect(r.stdout).not.toContain(`destruir-version ${CLIENTE} 3`)
+  })
+
+  it('destruir-version: destruye SOLO el par indicado; la versión DISABLED ajena (3) no se toca (R1-2)', () => {
     run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n')
-    const r = run('destruir-deshabilitadas', 'AUTORIZO DESTRUIR VERSIONES TRAS VERIFICAR EL LOGIN\n', {}, false)
+    const r = run(['destruir-version', CLIENTE, '1'], DESTRUIR, {}, false)
     expect(r.status).toBe(0)
-    expect(r.mutaciones.filter((c) => c.includes('destroy'))).toEqual(['secrets versions destroy 1 --secret=project-os-google-client-secret --project=project-os-511102 --quiet --format=none'])
+    expect(r.mutaciones.filter((c) => c.includes('destroy'))).toEqual([`secrets versions destroy 1 --secret=${CLIENTE} --project=project-os-511102 --quiet --format=none`])
+    expect(r.calls.join('\n')).not.toMatch(/versions destroy 3/)
+    expect(r.stdout).toContain(`destruida: ${CLIENTE} versión 1`)
+  })
+
+  it('destruir-version: sin la frase exacta no destruye nada', () => {
+    run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n')
+    for (const mala of ['AUTORIZO DESTRUIR VERSIONES TRAS VERIFICAR EL LOGIN\n', 'si\n', null]) {
+      const r = run(['destruir-version', CLIENTE, '1'], mala, {}, false)
+      expect(r.status).toBe(1)
+      expect(r.calls.filter((c) => c.includes('destroy'))).toEqual([])
+    }
+  })
+
+  it('destruir-version: rechaza la fijada, una no DISABLED, una inexistente, un secreto ajeno y argumentos mal formados', () => {
+    const casos: [string[], RegExp][] = [
+      [['destruir-version', CLIENTE, '2'], /es la FIJADA/],
+      [['destruir-version', CLIENTE, '1'], /estado «ENABLED», no DISABLED/],
+      [['destruir-version', CLIENTE, '9'], /estado «inexistente»/],
+      [['destruir-version', 'otro-secreto', '1'], /secreto no reconocido/],
+      [['destruir-version', CLIENTE, '1a'], /versión no numérica/],
+      [['destruir-version', CLIENTE, '0'], /versión no numérica/],
+    ]
+    for (const [args, error] of casos) {
+      const r = run(args, DESTRUIR)
+      expect(r.status, args.join(' ')).toBe(1)
+      expect(r.stderr, args.join(' ')).toMatch(error)
+      expect(r.mutaciones, args.join(' ')).toEqual([])
+    }
+    for (const args of [['destruir-version'], ['destruir-version', CLIENTE], ['destruir-version', CLIENTE, '1', '3'], ['diagnostico', 'extra']]) {
+      const r = run(args, DESTRUIR)
+      expect(r.status, args.join(' ')).toBe(2)
+      expect(r.calls, args.join(' ')).toEqual([])
+    }
   })
 
   it('alinear-max-servicio: usa --max=1 (servicio) y confirma que la revisión no cambió', () => {
@@ -203,8 +292,38 @@ describe('remediación V1.6: mutaciones con confirmación (gcloud falso)', () =>
     // El filtro va dentro de clave=valor,…: no puede contener «=» ni «,».
     const filtro = /filter=(.*) --format=none$/.exec(r.mutaciones[0] ?? '')?.[1] ?? ''
     expect(filtro).not.toMatch(/[=,]/)
-    expect(r.stdout).toContain('OK: exclusión project-os-callback-oauth activa')
+    expect(r.stdout).toContain('OK: exclusión project-os-callback-oauth activa, con el filtro esperado')
+    expect(r.stdout).toContain('al sink _Default (solo ese sink)')
     const otra = run('excluir-callback-en-logs', 'AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS\n', {}, false)
-    expect(otra.stdout).toContain('ya existe: nada que hacer')
+    expect(otra.stdout).toContain('ya existe con el filtro esperado y activa: nada que hacer')
+    expect(otra.mutaciones).toHaveLength(1) // solo la del primer run: el log no se limpió entre ambos
+  })
+
+  it('excluir-callback-en-logs: el filtro que se añade es exactamente el que se verifica', () => {
+    expect(text).toContain(`EXCLUSION_FILTER="${FILTRO.replaceAll('"', '\\"').replace('project-os-dashboard', '${SERVICE}')}"`)
+  })
+
+  it('excluir-callback-en-logs: con el mismo nombre pero otro filtro → NO_VERIFICADO, sin modificar (R1-3)', () => {
+    const r = run('excluir-callback-en-logs', 'AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS\n', { FAKE_SINK: 'distinta' })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('DISTINTA')
+    expect(r.stderr).toContain('NO_VERIFICADO')
+    expect(r.mutaciones).toEqual([])
+  })
+
+  it('excluir-callback-en-logs: existente pero disabled=true → NO_VERIFICADO, sin modificar (R1-3)', () => {
+    const r = run('excluir-callback-en-logs', 'AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS\n', { FAKE_SINK: 'deshabilitada' })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('DESHABILITADA')
+    expect(r.stderr).toContain('NO_VERIFICADO')
+    expect(r.mutaciones).toEqual([])
+  })
+
+  it('excluir-callback-en-logs: si tras añadirla no queda CORRECTA, no declara éxito (R1-3)', () => {
+    const r = run('excluir-callback-en-logs', 'AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS\n', { FAKE_SINK: 'rota' })
+    expect(r.status).toBe(1)
+    expect(r.mutaciones).toHaveLength(1)
+    expect(r.stderr).toContain('NO_VERIFICADO')
+    expect(r.stdout).not.toContain('OK: exclusión')
   })
 })

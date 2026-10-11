@@ -28,13 +28,16 @@ Desde la raíz de un clon actualizado del repositorio en Cloud Shell, siempre en
 | 2 | Según el paso 1, E1 (§3) | Decisión | — |
 | 3 | `bash web/deploy/infra/remediacion-v1-6.sh deshabilitar-sobrantes` | Mutación (frase `AUTORIZO DESHABILITAR VERSIONES`) | Qué versión se deshabilitó |
 | 4 | Login real en el navegador y `cd web && npm run smoke:remote -- --url https://project-os-dashboard-235975889400.northamerica-south1.run.app` | Comprobación | ✅/❌ y 26/26 |
-| 5 | Solo si el paso 4 está bien: `bash web/deploy/infra/remediacion-v1-6.sh destruir-deshabilitadas` | Mutación **irreversible** (frase `AUTORIZO DESTRUIR VERSIONES TRAS VERIFICAR EL LOGIN`) | Qué versión se destruyó |
+| 5 | Solo si el paso 4 está bien: `bash web/deploy/infra/remediacion-v1-6.sh destruir-version <secreto> <versión>`, con el par exacto que imprime el paso 3 | Mutación **irreversible** (frase `AUTORIZO DESTRUIR VERSION TRAS VERIFICAR EL LOGIN`) | Qué versión se destruyó |
 | 6 | *Metrics Explorer* → instancias de `project-os-dashboard`, máximo de 30 días | Lectura en la consola | El número máximo |
 | 7 | `bash web/deploy/infra/remediacion-v1-6.sh alinear-max-servicio` | Mutación (frase `AUTORIZO MAX SERVICIO 1`) | La salida (máximo 1 y la misma revisión activa) |
 | 8 | Repetir el paso 4 (smoke y login) | Comprobación | ✅ y 26/26 |
-| 9 | Solo si se decide en §3: `bash web/deploy/infra/remediacion-v1-6.sh excluir-callback-en-logs` | Mutación (frase `AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS`) | "exclusión activa" |
+| 9 | Solo si se decide en §3: `bash web/deploy/infra/remediacion-v1-6.sh excluir-callback-en-logs` | Mutación (frase `AUTORIZO EXCLUIR CALLBACK OAUTH DE LOS LOGS`) | "exclusión activa, con el filtro esperado" |
 
 Si una frase no se escribe exactamente, el script cancela sin cambios. Cada mutación se verifica sola al terminar.
+
+> **Ya ejecutado (§5): no repetir.** Esta tabla queda como registro de cómo se hizo. Si en el futuro hiciera falta
+> otra vez, empezar siempre por el paso 1 y decidir con su salida.
 
 ## 3. E1 — cómo decidir
 
@@ -49,11 +52,19 @@ El diagnóstico clasifica cada coincidencia por **nombre de log**, sin mostrar c
 Con el paso 9 aplicado, E1 debe quedar en 0 en los comandos del plan **a partir de los 30 días**, cuando caduquen los
 registros anteriores.
 
+**Alcance de la exclusión:** solo el sink `_Default` (y su bucket `_Default`). No afecta a otros sinks ni a
+exportaciones, si los hubiera (no se ha verificado cuáles existen), ni borra los registros ya guardados. El script solo da la exclusión por buena si, con su nombre, el
+**filtro** coincide con el esperado y **no** está deshabilitada; si existe con otro filtro o deshabilitada, se detiene
+con `NO_VERIFICADO` y no la modifica.
+
 ## 4. A6 y A7 — por qué y qué no hacen
 
-- **A6:** solo se tocan las versiones `ENABLED` que la revisión **no** tiene fijadas. El script se detiene si la
+- **A6:** solo se deshabilitan las versiones `ENABLED` que la revisión **no** tiene fijadas. El script se detiene si la
   versión fijada no está `ENABLED`. Deshabilitar es reversible (`gcloud secrets versions enable`). Destruir no lo es, y
   por eso va después de comprobar el login. Una versión solo deshabilitada sigue facturándose.
+- **Destruir es por par exacto:** `destruir-version <secreto> <versión>` nunca barre todas las `DISABLED`, que pueden
+  ser históricas o de recuperación. Rechaza un secreto fuera de la lista, la versión fijada y cualquier versión que no
+  esté `DISABLED`, y vuelve a comprobar el estado justo antes de destruir.
 - **A7:** `--max=1` cambia el máximo del **servicio** sin desplegar una revisión nueva, según la ayuda de gcloud. El
   script lo comprueba: compara la revisión activa antes y después y avisa si cambió. **No** usa `--max-instances`, que
   sí crea una revisión nueva.
@@ -64,12 +75,20 @@ registros anteriores.
 | --- | --- |
 | 1 `diagnostico` | E1: `@` solo en auditoría de Google (3, luego 6 con estas operaciones); `code=` 1 en peticiones. E2: 0 avisos de la app; 401/403/404 de la plataforma. A6: versión 1 sobrante. A7: servicio 3 |
 | 3 `deshabilitar-sobrantes` | Versión 1 de `project-os-google-client-secret` deshabilitada; `smoke:remote` 26/26 |
-| 5 `destruir-deshabilitadas` | Versión 1 destruida, tras comprobar el login. Dos intentos previos se cancelaron sin cambios por la frase (espacios y errata); desde `cc24d13` se ignoran los espacios al pegar |
+| 5 `destruir-deshabilitadas` (modo retirado; hoy `destruir-version`) | Versión 1 destruida, tras comprobar el login. Dos intentos previos se cancelaron sin cambios por la frase (espacios y errata); desde `cc24d13` se ignoran los espacios al pegar |
 | 7 `alinear-max-servicio` | Servicio 1, revisión 1, misma revisión activa |
 | 9 `excluir-callback-en-logs` | Exclusión activa |
 | Cierre | `smoke:remote` 26/26; `diagnostico`: A6 sin versiones sobrantes, servicio `maxScale` 1 |
 
 Pendiente: el paso 6, el máximo histórico de instancias en *Metrics Explorer*.
+
+Revisión R1 (ChatGPT, PR #24), aplicada después de la ejecución y sin repetir nada en GCP:
+
+- **R1-1:** el diagnóstico usa un vocabulario cerrado. Solo imprime nombres de log, categorías de la app y rutas de
+  listas fijas (o plantillas como `/proyectos/[id]`); lo demás sale como `[log-omitido]`, `[ruta-omitida]` o
+  `categoría no reconocida`.
+- **R1-2:** `destruir-deshabilitadas` se sustituyó por `destruir-version <secreto> <versión>`.
+- **R1-3:** la exclusión se verifica por nombre, filtro y estado; alcance solo `_Default`.
 
 Hallazgo de la herramienta: en Cloud Shell, `--format='value(name.basename(),state)'` dejó vacía la lista de versiones.
 El script se detuvo sin cambios. Desde `2282a05` se lee el JSON y se extrae el número en Python, y el plan usa
