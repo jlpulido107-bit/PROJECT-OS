@@ -377,7 +377,9 @@ describe('plan de inspección de solo lectura', () => {
     expect(de('A2')).toContain('URI de redireccionamiento autorizados')
     expect(de('A6')).toContain("python3 -c")
     expect(de('A6')).not.toContain('grep -B1')
-    expect(de('A6')).toContain("--format='value(name.basename(),state)'")
+    // Sin transformaciones de formato (en Cloud Shell, name.basename() dejó la salida vacía): ruta completa + estado.
+    expect(de('A6')).toContain("--format='value(name,state)'")
+    expect(de('A6')).not.toContain('basename')
     expect(de('A8')).toMatch(/gcloud builds log \S+ .*\| \{ grep -c 'Identidad de compilación verificada' \|\| true; \}\) && echo "conteo=\$n"/m)
     const plantilla = JSON.parse(node(PLAN, ['--plantilla-evidencia', '--control', 'A6']).stdout)
     expect(plantilla.controles).toHaveLength(3)

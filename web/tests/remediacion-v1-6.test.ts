@@ -24,7 +24,7 @@ case "$1 $2 $3" in
     if [[ "$*" == *"--format=json"* ]]; then
       echo '[{"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"WARNING","textPayload":"[project-os] Configuración inválida: SHEETS_CREDENTIALS"},
              {"logName":"projects/p/logs/run.googleapis.com%2Fstderr","severity":"WARNING","textPayload":"persona.ficticia@correo-falso.test texto libre"},
-             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","httpRequest":{"status":404,"requestUrl":"/wp-login.php?u=x"}}]'
+             {"logName":"projects/p/logs/run.googleapis.com%2Frequests","severity":"WARNING","timestamp":"2026-10-11T03:04:05Z","httpRequest":{"status":404,"requestUrl":"https://x.run.app/wp-login.php?u=x&code=SECRETO"}}]'
     elif [[ "$3" == *'"@"'* ]]; then
       for i in 1 2 3; do echo 'projects/project-os-511102/logs/cloudaudit.googleapis.com%2Factivity'; done
     elif [[ "$3" == *'"code="'* ]]; then
@@ -36,11 +36,15 @@ case "$1 $2 $3" in
     printf '{"metadata":{"annotations":{"run.googleapis.com/maxScale":"%s"}},"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/maxScale":"%s","autoscaling.knative.dev/minScale":"0"}},"spec":{"containers":[{"env":[{"name":"NEXTAUTH_URL","value":"VALOR-NO-DEBE-SALIR"},{"name":"NEXTAUTH_SECRET","valueFrom":{"secretKeyRef":{"name":"project-os-nextauth-secret","key":"1"}}},{"name":"GOOGLE_CLIENT_SECRET","valueFrom":{"secretKeyRef":{"key":"%s","name":"project-os-google-client-secret"}}},{"name":"AUTH_ALLOWED_EMAILS","valueFrom":{"secretKeyRef":{"name":"project-os-allowed-emails","key":"1"}}}]}]}}},"status":{"latestReadyRevisionName":"%s","traffic":[{"revisionName":"%s","percent":100}]}}\n' \
       "$MAX" "\${FAKE_REV_MAX:-1}" "\${FAKE_FIJADA_CLIENTE:-2}" "$REV" "$REV" ;;
   "secrets versions list")
-    if [[ "$4" == project-os-google-client-secret ]]; then
-      if hecho 'versions destroy 1 --secret=project-os-google-client-secret'; then printf '2\tENABLED\n1\tDESTROYED\n'
-      elif hecho 'versions disable 1 --secret=project-os-google-client-secret'; then printf '2\tENABLED\n1\tDISABLED\n'
-      else printf '2\tENABLED\n1\tENABLED\n'; fi
-    else printf '1\tENABLED\n'; fi ;;
+    # JSON real de Secret Manager: «name» es la ruta completa. FAKE_NOMBRE_RARO simula un nombre no reconocible.
+    V="projects/123/secrets/$4/versions"
+    if [[ -n "$FAKE_NOMBRE_RARO" ]]; then echo '[{"name":"desconocido","state":"ENABLED"}]'
+    elif [[ "$4" == project-os-google-client-secret ]]; then
+      if hecho 'versions destroy 1 --secret=project-os-google-client-secret'; then S1=DESTROYED
+      elif hecho 'versions disable 1 --secret=project-os-google-client-secret'; then S1=DISABLED
+      else S1=ENABLED; fi
+      printf '[{"name":"%s/2","state":"ENABLED"},{"name":"%s/1","state":"%s"}]\n' "$V" "$V" "$S1"
+    else printf '[{"name":"%s/1","state":"ENABLED"}]\n' "$V"; fi ;;
   "secrets versions disable"|"secrets versions destroy"|"run services update") ;;
   "logging sinks describe")
     if hecho 'logging sinks update'; then echo '{"name":"_Default","exclusions":[{"name":"project-os-callback-oauth"}]}'; else echo '{"name":"_Default"}'; fi ;;
@@ -94,14 +98,29 @@ describe('remediación V1.6: diagnóstico (solo lectura, gcloud falso)', () => {
 
   it('E2: agrupa por código sin mostrar texto libre, correos ni URLs', () => {
     expect(r.stdout).toContain('[project-os] Configuración inválida')
-    expect(r.stdout).toContain('petición HTTP 404')
+    // Peticiones: estado, RUTA sin query y día; nunca parámetros (code=, correos…).
+    expect(r.stdout).toContain('petición HTTP 404 /wp-login.php (2026-10-11)')
     expect(r.stdout).toContain('(otro; no se muestra)')
-    for (const prohibido of ['persona.ficticia', 'SHEETS_CREDENTIALS', 'wp-login', 'texto libre', 'VALOR-NO-DEBE-SALIR']) expect(r.salida).not.toContain(prohibido)
+    for (const prohibido of ['persona.ficticia', 'SHEETS_CREDENTIALS', 'u=x', 'SECRETO', 'texto libre', 'VALOR-NO-DEBE-SALIR']) expect(r.salida).not.toContain(prohibido)
   })
 
   it('A6: señala la versión ENABLED no fijada de google-client-secret', () => {
     expect(r.stdout).toContain('project-os-google-client-secret: fijada=2; ENABLED=[2 1]; ENABLED_no_fijadas=[1]')
     expect(r.stdout).toContain('project-os-nextauth-secret: fijada=1; ENABLED=[1]; ENABLED_no_fijadas=[]')
+  })
+
+  it('A6: lee el JSON real (ruta completa) sin depender de transformaciones de --format', () => {
+    expect(text).toContain("secrets versions list \"$1\" --project=\"$PROJECT_ID\" --format=json | py versiones")
+    expect(text).not.toMatch(/basename\(\),state\)'/)
+  })
+
+  it('A6: un nombre de versión no reconocible se declara ilegible, no como «sin versiones»', () => {
+    const x = run('', '', { FAKE_NOMBRE_RARO: '1' })
+    expect(x.stdout).toContain('project-os-nextauth-secret: VERSIONES_ILEGIBLES')
+    const y = run('deshabilitar-sobrantes', 'AUTORIZO DESHABILITAR VERSIONES\n', { FAKE_NOMBRE_RARO: '1' })
+    expect(y.status).toBe(1)
+    expect(y.stderr).toContain('versiones ilegibles')
+    expect(y.mutaciones).toEqual([])
   })
 
   it('A7: muestra los dos límites y la revisión activa', () => {

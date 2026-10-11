@@ -65,7 +65,7 @@ export const PASOS = [
   },
   ...P.secretos.map((s) => ({
     control: 'A6', titulo: `Acceso y versiones del secreto ${s} (nunca su valor)`, tipo: 'gcloud',
-    comando: `gcloud secrets get-iam-policy ${s} ${G} --flatten='bindings[].members' --format='value(bindings.role,bindings.members)' && gcloud secrets versions list ${s} ${G} --format='value(name.basename(),state)'`,
+    comando: `gcloud secrets get-iam-policy ${s} ${G} --flatten='bindings[].members' --format='value(bindings.role,bindings.members)' && gcloud secrets versions list ${s} ${G} --format='value(name,state)'`,
     esperado: `una sola fila: roles/secretmanager.secretAccessor ${RUNTIME}; exactamente una versión ENABLED`,
     evidencia: { secreto: s, miembros: null, versiones: null, version_fijada: '' },
   })),

@@ -58,8 +58,9 @@ elif mode == 'codigos':         # JSON de entradas → conteo por severidad y c�
         elif isinstance(txt, str) and (m := re.match(r'\[next-auth\]\[\w+\]\[[A-Z_]+\]', txt)):
             codigo = m.group(0)
         elif name == 'run.googleapis.com/requests':
-            st = (e.get('httpRequest') or {}).get('status')
-            codigo = f'petición HTTP {st}'
+            hr = e.get('httpRequest') or {}
+            ruta = urllib.parse.urlparse(str(hr.get('requestUrl', ''))).path or '?'   # sin query: nunca code= ni datos
+            codigo = f"petición HTTP {hr.get('status')} {ruta} ({str(e.get('timestamp', ''))[:10]})"
         else:
             codigo = '(otro; no se muestra)'
         c[(sev, name, codigo)] += 1
@@ -78,6 +79,10 @@ elif mode == 'escala':          # JSON del servicio → límites y revisión act
     print('revision_minScale', t.get('autoscaling.knative.dev/minScale', 'ninguno'))
     print('revision_activa', svc.get('status', {}).get('latestReadyRevisionName', '?'))
     print('trafico', ';'.join(f"{x.get('revisionName', 'latest')}={x.get('percent', 0)}" for x in svc.get('status', {}).get('traffic', [])))
+elif mode == 'versiones':       # JSON de «secrets versions list» → «N ESTADO» (N = número final de la ruta; ? si no hay)
+    for v in json.load(sys.stdin) or []:
+        m = re.search(r'/versions/(\d+)$', str(v.get('name', '')))
+        print(m.group(1) if m else '?', v.get('state', '?'))
 elif mode == 'exclusiones':     # JSON del sink → nombres de exclusión
     for x in json.load(sys.stdin).get('exclusions', []) or []: print(x.get('name', ''))
 else:
@@ -96,8 +101,9 @@ gcloud() { command gcloud "$@" 2> >(mask_emails >&2); }
 
 describe_service() { gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$REGION" --format=json; }
 
-# Versiones de un secreto como «N ESTADO», con el ID numérico (name.basename()).
-versions_of() { gcloud secrets versions list "$1" --project="$PROJECT_ID" --format='value(name.basename(),state)'; }
+# Versiones de un secreto como «N ESTADO». Se lee el JSON y se extrae el número final de la ruta en Python: no depende
+# de transformaciones de --format (en Cloud Shell, value(name.basename(),state) dejó la lista vacía, 2026-10-11).
+versions_of() { gcloud secrets versions list "$1" --project="$PROJECT_ID" --format=json | py versiones; }
 
 pinned_of() {   # $1 = salida de «fijadas», $2 = secreto → versión fijada (vacío si no hay)
   awk -v s="$2" '$1 == s { print $2 }' <<< "$1"
@@ -129,6 +135,7 @@ diagnostico() {
   for s in "${SECRETS[@]}"; do
     v="$(versions_of "$s")" || { echo "  $s: LECTURA_FALLIDA"; continue; }
     fij="$(pinned_of "$fijadas" "$s")"
+    if grep -q '^?' <<< "$v"; then echo "  $s: VERSIONES_ILEGIBLES (no se reconoce el número de versión)"; continue; fi
     enabled="$(awk '$2 == "ENABLED" { printf "%s ", $1 }' <<< "$v")"
     sobrantes="$(awk -v f="$fij" '$2 == "ENABLED" && $1 != f { printf "%s ", $1 }' <<< "$v")"
     echo "  $s: fijada=${fij:-?}; ENABLED=[${enabled% }]; ENABLED_no_fijadas=[${sobrantes% }]"
@@ -146,6 +153,7 @@ deshabilitar_sobrantes() {
   fijadas="$(py fijadas <<< "$svc")"
   for s in "${SECRETS[@]}"; do
     v="$(versions_of "$s")" || die "no se pudieron leer las versiones de $s."
+    ! grep -q '^?' <<< "$v" || die "$s: versiones ilegibles; detenido sin cambios."
     fij="$(pinned_of "$fijadas" "$s")"
     [[ "$fij" =~ ^[1-9][0-9]*$ ]] || die "$s: la revisión no fija una versión numérica (${fij:-ninguna}); detenido sin cambios."
     awk -v f="$fij" '$1 == f && $2 == "ENABLED" { ok=1 } END { exit !ok }' <<< "$v" \
@@ -173,6 +181,7 @@ destruir_deshabilitadas() {
   fijadas="$(py fijadas <<< "$svc")"
   for s in "${SECRETS[@]}"; do
     v="$(versions_of "$s")" || die "no se pudieron leer las versiones de $s."
+    ! grep -q '^?' <<< "$v" || die "$s: versiones ilegibles; detenido sin cambios."
     fij="$(pinned_of "$fijadas" "$s")"
     [[ "$fij" =~ ^[1-9][0-9]*$ ]] || die "$s: sin versión fijada numérica; detenido sin cambios."
     while read -r n; do [[ -n "$n" ]] && plan+=("$s $n"); done < <(awk -v f="$fij" '$2 == "DISABLED" && $1 != f { print $1 }' <<< "$v")
