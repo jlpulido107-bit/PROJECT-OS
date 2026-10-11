@@ -8,7 +8,8 @@
  * - Cada comando se valida contra una lista de verbos de lectura; si alguno no la cumple, el script falla (código 1)
  *   antes de imprimir nada. Nunca lee valores de secretos (`versions access`) ni datos de la hoja.
  * - Las salidas pedidas son mínimas y sin PII: digests, nombres de variables, roles, conteos.
- * - --plantilla-evidencia imprime un esqueleto JSON para evidencia.mjs, con los campos observados vacíos.
+ * - --plantilla-evidencia imprime un esqueleto JSON para evidencia.mjs. Los campos observados van vacíos o en null:
+ *   una lista vacía ([]) significa "ninguno" y solo debe escribirla quien lo haya comprobado.
  * - Código de salida: 0 plan impreso · 1 plan inseguro (no debería ocurrir) · 2 uso incorrecto.
  */
 import { PRODUCCION as P } from './produccion-v1-6.mjs'
@@ -27,23 +28,23 @@ export const PASOS = [
   {
     control: 'A2', titulo: 'URLs publicadas por Cloud Run', tipo: 'gcloud',
     comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='value(metadata.annotations."run.googleapis.com/urls")'`,
-    esperado: `incluye ${P.url}`, evidencia: { urls: [] },
+    esperado: `incluye ${P.url}`, evidencia: { urls: null },
   },
   {
     control: 'A4', titulo: 'Nombres de variables de la revisión (nunca valores)', tipo: 'gcloud',
     comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='value(spec.template.spec.containers[0].env[].name)'`,
-    esperado: `sin ${P.variablesEscritura.join(' ni ')}`, evidencia: { variables: [] },
+    esperado: `sin ${P.variablesEscritura.join(' ni ')}`, evidencia: { variables: null },
   },
   {
     control: 'A5', titulo: 'Identidad del servicio y sus roles de proyecto', tipo: 'gcloud',
     comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='value(spec.template.spec.serviceAccountName)' && gcloud projects get-iam-policy ${P.proyecto} --flatten='bindings[].members' --filter='bindings.members:${RUNTIME}' --format='value(bindings.role)'`,
-    esperado: `${P.cuentaRuntime}; roles de proyecto: ninguno`, evidencia: { cuenta: '', roles_proyecto: [] },
+    esperado: `${P.cuentaRuntime}; roles de proyecto: ninguno`, evidencia: { cuenta: '', roles_proyecto: null },
   },
   ...P.secretos.map((s) => ({
     control: 'A6', titulo: `Acceso y versiones del secreto ${s} (nunca su valor)`, tipo: 'gcloud',
     comando: `gcloud secrets get-iam-policy ${s} ${G} --flatten='bindings[].members' --format='value(bindings.role,bindings.members)' && gcloud secrets versions list ${s} ${G} --format='value(name,state)'`,
     esperado: `una sola fila: roles/secretmanager.secretAccessor ${RUNTIME}; la versión fijada en ENABLED`,
-    evidencia: { secreto: s, miembros: [], versiones: [] },
+    evidencia: { secreto: s, miembros: null, versiones: null },
   })),
   {
     control: 'A7', titulo: 'Límites de escala: revisión Y servicio (D-1)', tipo: 'gcloud',
@@ -75,7 +76,7 @@ export const PASOS = [
     control: 'F3', titulo: 'Imágenes y etiquetas del repositorio (sin borrar nada)', tipo: 'gcloud',
     comando: `gcloud artifacts docker images list ${P.imagenBase} ${G} --include-tags --format='value(version,tags,createTime)'`,
     esperado: 'con ≥ 5 imágenes y alguna de > 30 días: solo quedan produccion, produccion-anterior y las 3 más recientes',
-    evidencia: { imagenes: 0, mayores_30_dias_no_protegidas: 0 },
+    evidencia: { imagenes: null, mayores_30_dias_no_protegidas: null },
   },
   ...[
     ['correo', '@'], ['token', 'ya29.'], ['bearer', 'Bearer '], ['codigo_oauth', 'code='],
@@ -88,7 +89,7 @@ export const PASOS = [
   {
     control: 'G2', titulo: 'Revisiones disponibles para rollback', tipo: 'gcloud',
     comando: `gcloud run revisions list --service=${P.servicio} ${G} ${R} --format='value(metadata.name,status.conditions[0].status)'`,
-    esperado: 'hoy, solo la revisión 00001: G2 es NO_APLICA', evidencia: { revisiones: [] },
+    esperado: 'hoy, solo la revisión 00001: G2 es NO_APLICA', evidencia: { revisiones: null },
   },
 ]
 

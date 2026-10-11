@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "ejemplo_sintetico": true,
+  "fecha": "2000-01-01",
+  "commit_desplegado": "7f44216bdf85a9832e014f45c27ac643e00ceff9",
+  "revision": "project-os-dashboard-00001-gsk",
+  "controles": [
+    { "id": "A1", "fuente": "propietario", "observado": { "imagen": "northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard@sha256:f6e46596ef36522134096d97431f32036bb71298033f9694023137497d3d5c07" } },
+    { "id": "A4", "fuente": "propietario", "observado": { "variables": ["NEXTAUTH_URL", "GOOGLE_CLIENT_ID", "DASHBOARD_DATA_SOURCE", "SHEETS_CREDENTIALS"] } },
+    { "id": "A5", "fuente": "propietario", "observado": { "cuenta": "project-os-dashboard-run@project-os-511102.iam.gserviceaccount.com", "roles_proyecto": [] } },
+    { "id": "A6", "fuente": "propietario", "observado": { "secreto": "project-os-allowed-emails", "miembros": ["roles/secretmanager.secretAccessor serviceAccount:project-os-dashboard-run@project-os-511102.iam.gserviceaccount.com"], "versiones": ["1 ENABLED"] } },
+    { "id": "A7", "fuente": "propietario", "observado": { "revision_minScale": "0", "revision_maxScale": "1", "cpu_throttling": "true", "servicio_maxScale": "3" } },
+    { "id": "A9", "fuente": "propietario", "observado": { "digest_produccion": "NOT_FOUND" } },
+    { "id": "E1", "fuente": "propietario", "observado": { "patron": "correo", "coincidencias": 0 } },
+    { "id": "C2", "fuente": "propietario", "observado": { "resultado": "" } }
+  ]
+}
