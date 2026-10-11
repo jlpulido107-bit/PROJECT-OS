@@ -48,7 +48,7 @@ un OK.
 | A2 | Hay **las tres** partes: la URL estable está entre las publicadas, **`nextauth_url`** es esa URL y **`callback_oauth`** es `URL/api/auth/callback/google` | Alguna parte es distinta | Falta cualquiera de las tres |
 | A4 | Ninguna variable de escritura | `PROJECT_OS_WRITE_MODE` o `AUTH_WRITER_EMAILS` | Lista vacía o nula |
 | A5 | Cuenta runtime y `roles_proyecto: []` | Otra cuenta o algún rol | Falta la cuenta o los roles son `null` |
-| A6 | **Los 3 secretos**, cada uno con: una sola fila (`secretAccessor` para la runtime); **exactamente una** versión `ENABLED`; y `version_fijada` numérica, igual a la `ENABLED` | Otra fila; ninguna o varias `ENABLED`; versión fijada `latest` o distinta de la `ENABLED` | Faltan miembros o versiones (`null` o `[]`), la versión fijada o alguno de los 3 secretos |
+| A6 | **Los 3 secretos**, cada uno con: una sola fila (`secretAccessor` para la runtime); **exactamente una** versión `ENABLED`; y `version_fijada` numérica, igual a la `ENABLED`. El ID de versión se acepta como número (`1`) o como ruta completa del **mismo** secreto (`projects/…/secrets/<secreto>/versions/1`) | Otra fila; ninguna o varias `ENABLED`; versión fijada `latest` o distinta de la `ENABLED` | Faltan miembros o versiones (`null` o `[]`), la versión fijada o alguno de los 3 secretos; filas ilegibles; rutas de **otro** secreto |
 | A7 | **Configuración** de revisión `0` / `1` / `true` y de servicio `ninguno` o `1`; si hay métrica, ≤ 1 | Revisión distinta, o métrica > 1 | Sin configuración (**la métrica sola nunca aprueba**), servicio con otro valor (**D-1**) o datos faltantes |
 | A8 | Cuenta `project-os-build` **y** ≥ 1 línea *"Identidad de compilación verificada"* en el log | Otra cuenta, o 0 líneas | Falta cualquiera de las dos |
 | A9 | `digest_produccion` = digest desplegado | `NOT_FOUND` u otro digest | Falta el dato |
@@ -57,6 +57,12 @@ un OK.
 | G2 | ≥ 2 revisiones, la imagen anterior existe **y** `ensayo_rollback: OK` (ensayo **autorizado**) | La imagen anterior ya no existe, o el ensayo falló | Una sola revisión; imagen anterior sin comprobar; sin ensayo |
 | Humanos | `resultado: OK` | `resultado: FALLO` | Vacío |
 | Otro id | — | — | Siempre: sin regla |
+
+**Transcripción de A6** (revisión R3). La versión fijada se obtiene con una extracción **estructurada** del JSON de la
+revisión: un fragmento fijo de Python, validado literalmente por el plan, que imprime solo «VARIABLE secreto N» para
+cada variable que viene de Secret Manager, nunca valores. No depende del orden de serialización YAML. La regla de copia
+de las tres salidas (IAM, versiones y referencias) a los campos de A6 es `observadoA6()` en `evidencia.mjs`. Una prueba
+de extremo a extremo con un `gcloud` falso la ejecuta: salida simulada → campos → evaluador.
 
 **Conteos estrictos** (revisión R2). `coincidencias`, `ventana_dias`, `instancias_max_30d`, `imagenes`,
 `mayores_30_dias_no_protegidas` y `lineas_identidad_verificada` deben ser enteros finitos ≥ 0, como número o texto de

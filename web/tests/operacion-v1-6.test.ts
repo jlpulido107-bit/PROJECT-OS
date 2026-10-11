@@ -300,12 +300,82 @@ describe('plan de inspección de solo lectura', () => {
     })
   })
 
+  // ---- R3: A6 de extremo a extremo con un gcloud FALSO (salida simulada → campos → evaluador) ----
+  describe('R3 · A6 de extremo a extremo (gcloud FALSO, nunca GCP)', () => {
+    const RUNTIME_SA = 'project-os-dashboard-run@project-os-511102.iam.gserviceaccount.com'
+    const EVID = path.join(OPS, 'evidencia.mjs')
+    const BASE = { version: 1, fecha: '2026-10-12', commit_desplegado: '7f44216bdf85a9832e014f45c27ac643e00ceff9', revision: 'project-os-dashboard-00001-gsk' }
+    type Res = { id: string; estado: string; motivo: string }
+    const fake = tmp('gcloud-a6-')
+    // FAKE_RUTA=1 → versiones como ruta completa; FAKE_KEY → versión fijada (p. ej. latest); FAKE_FALLA_DESCRIBE=1 → error.
+    writeFileSync(path.join(fake, 'gcloud'), [
+      '#!/bin/sh',
+      'case "$1 $2 $3" in',
+      '  "secrets get-iam-policy "*) printf "roles/secretmanager.secretAccessor\\tserviceAccount:%s\\n" "$RUNTIME_SA" ;;',
+      '  "secrets versions list") if [ -n "$FAKE_RUTA" ]; then printf "projects/project-os-511102/secrets/%s/versions/1\\tENABLED\\n" "$4"; else printf "1\\tENABLED\\n"; fi ;;',
+      '  "run services describe")',
+      '    if [ -n "$FAKE_FALLA_DESCRIBE" ]; then echo "ERROR: PERMISSION_DENIED" >&2; exit 1; fi',
+      '    K="${FAKE_KEY:-1}"',
+      '    printf \'{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"NEXTAUTH_URL","value":"VALOR-NO-DEBE-SALIR"},{"name":"NEXTAUTH_SECRET","valueFrom":{"secretKeyRef":{"key":"%s","name":"project-os-nextauth-secret"}}},{"name":"GOOGLE_CLIENT_SECRET","valueFrom":{"secretKeyRef":{"name":"project-os-google-client-secret","key":"1"}}},{"name":"AUTH_ALLOWED_EMAILS","valueFrom":{"secretKeyRef":{"key":"1","name":"project-os-allowed-emails"}}}]}]}}}}\\n\' "$K" ;;',
+      '  *) echo "llamada no prevista: $*" >&2; exit 97 ;;',
+      'esac',
+    ].join('\n'))
+    chmodSync(path.join(fake, 'gcloud'), 0o755)
+    const ejecutar = (comando: string, extra: Record<string, string> = {}) =>
+      spawnSync('bash', ['-c', comando], { encoding: 'utf8', env: { PATH: `${fake}:/usr/bin:/bin`, RUNTIME_SA, ...extra } as unknown as NodeJS.ProcessEnv }).stdout
+    const flujo = async (extra: Record<string, string> = {}) => {
+      const { observadoA6, evaluar } = (await import(EVID)) as {
+        observadoA6: (s: string, o: { iam: string; versiones: string; referencias: string }) => Record<string, unknown>
+        evaluar: (e: unknown) => { controles: Res[] }
+      }
+      const pasos = plan().pasos.filter((p) => p.control === 'A6')
+      const referencias = ejecutar(pasos.find((p) => p.comando.includes('python3'))?.comando ?? '', extra)
+      const controles = pasos.filter((p) => p.comando.startsWith('gcloud secrets')).map((p) => {
+        const [iamCmd, versionesCmd] = p.comando.split(' && ')
+        const secreto = /get-iam-policy (\S+)/.exec(p.comando)?.[1] ?? ''
+        return { id: 'A6', observado: observadoA6(secreto, { iam: ejecutar(iamCmd ?? '', extra), versiones: ejecutar(versionesCmd ?? '', extra), referencias }) }
+      })
+      return { referencias, a6: evaluar({ ...BASE, controles }).controles.find((x) => x.id === 'A6') }
+    }
+
+    it('configuración correcta → A6 OK; la extracción no imprime valores de variables', async () => {
+      const { referencias, a6 } = await flujo()
+      expect(referencias.trim().split('\n')).toEqual(['NEXTAUTH_SECRET project-os-nextauth-secret 1', 'GOOGLE_CLIENT_SECRET project-os-google-client-secret 1', 'AUTH_ALLOWED_EMAILS project-os-allowed-emails 1'])
+      expect(referencias).not.toContain('VALOR-NO-DEBE-SALIR')
+      expect(a6?.estado).toBe('OK')
+    })
+
+    it('las versiones como ruta completa de Secret Manager también dan OK', async () => {
+      expect((await flujo({ FAKE_RUTA: '1' })).a6?.estado).toBe('OK')
+    })
+
+    it('una revisión con la versión latest → FALLO', async () => {
+      expect((await flujo({ FAKE_KEY: 'latest' })).a6?.estado).toBe('FALLO')
+    })
+
+    it('si la lectura de la revisión falla → LECTURA_FALLIDA y A6 NO_VERIFICADO (nunca OK)', async () => {
+      const { referencias, a6 } = await flujo({ FAKE_FALLA_DESCRIBE: '1' })
+      expect(referencias.trim()).toBe('LECTURA_FALLIDA')
+      expect(a6?.estado).toBe('NO_VERIFICADO')
+    })
+
+    it('la lista de lectura solo acepta el fragmento de Python exacto', async () => {
+      const { comandosInseguros, EXTRAER_VERSIONES } = (await import(PLAN)) as { comandosInseguros: (p: Paso[]) => string[]; EXTRAER_VERSIONES: string }
+      const paso = plan().pasos.find((p) => p.comando.includes('python3')) as Paso
+      expect(comandosInseguros([paso])).toEqual([])
+      const alterado = paso.comando.replace(EXTRAER_VERSIONES, 'import os; os.system("gcloud run services delete x")')
+      expect(comandosInseguros([{ ...paso, comando: alterado }])).toHaveLength(1)
+    })
+  })
+
   it('R1-4: A2, A6 y A8 piden todas sus partes; los conteos del log del build no imprimen contenido', () => {
     const { pasos } = plan()
     const de = (c: string) => pasos.filter((p) => p.control === c).map((p) => p.comando).join('\n')
     expect(de('A2')).toContain("grep -A1 'name: NEXTAUTH_URL$'")
     expect(de('A2')).toContain('URI de redireccionamiento autorizados')
-    expect(de('A6')).toContain("grep -B1 'name: project-os-'")
+    expect(de('A6')).toContain("python3 -c")
+    expect(de('A6')).not.toContain('grep -B1')
+    expect(de('A6')).toContain("--format='value(name.basename(),state)'")
     expect(de('A8')).toMatch(/gcloud builds log \S+ .*\| \{ grep -c 'Identidad de compilación verificada' \|\| true; \}\) && echo "conteo=\$n"/m)
     const plantilla = JSON.parse(node(PLAN, ['--plantilla-evidencia', '--control', 'A6']).stdout)
     expect(plantilla.controles).toHaveLength(3)
@@ -407,6 +477,25 @@ describe('evidencia saneada: validación y evaluación', () => {
   ])('R1-1 · A6 con %s → %s (los otros dos secretos, correctos)', (_n, cambio, esperado) => {
     const r = run([secretoOK(SECRETOS[0] ?? '', cambio), secretoOK(SECRETOS[1] ?? ''), secretoOK(SECRETOS[2] ?? '')])
     expect(r.por.A6).toBe(esperado)
+  })
+
+  // ---- R3: IDs de versión como número o ruta completa ----
+  it.each([
+    ['ruta completa del mismo secreto', { versiones: [`projects/project-os-511102/secrets/${SECRETOS[0]}/versions/1 ENABLED`] }, 'OK'],
+    ['ruta completa con tabulador', { versiones: [`projects/project-os-511102/secrets/${SECRETOS[0]}/versions/1\tENABLED`] }, 'OK'],
+    ['ruta de OTRO secreto', { versiones: [`projects/project-os-511102/secrets/${SECRETOS[1]}/versions/1 ENABLED`] }, 'NO_VERIFICADO'],
+    ['fila ilegible', { versiones: ['versión uno activa'] }, 'NO_VERIFICADO'],
+    ['ruta completa, fijada distinta de la ENABLED', { versiones: [`projects/project-os-511102/secrets/${SECRETOS[0]}/versions/2 ENABLED`, `projects/project-os-511102/secrets/${SECRETOS[0]}/versions/1 DESTROYED`] }, 'FALLO'],
+  ])('R3 · A6 con %s → %s', (_n, cambio, esperado) => {
+    expect(run([secretoOK(SECRETOS[0] ?? '', cambio), secretoOK(SECRETOS[1] ?? ''), secretoOK(SECRETOS[2] ?? '')]).por.A6).toBe(esperado)
+  })
+
+  it('R3 · versionId extrae el número solo de rutas del MISMO secreto', async () => {
+    const { versionId } = (await import(EVID)) as { versionId: (t: string, s: string) => { id: string | null; otroSecreto: boolean } }
+    expect(versionId('1', 'x')).toEqual({ id: '1', otroSecreto: false })
+    expect(versionId('projects/p/secrets/x/versions/12', 'x')).toEqual({ id: '12', otroSecreto: false })
+    expect(versionId('projects/p/secrets/y/versions/1', 'x')).toEqual({ id: null, otroSecreto: true })
+    expect(versionId('latest', 'x')).toEqual({ id: null, otroSecreto: false })
   })
 
   it('R1-1 · un solo secreto correcto no da A6 completo: faltan los otros dos → NO_VERIFICADO', () => {

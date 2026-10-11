@@ -90,6 +90,34 @@ function combinar(partes) {
   return [estado, partes.filter((p) => p[0] === estado).map((p) => p[1]).join('; ')]
 }
 
+/** ID numérico de una versión de Secret Manager: «1» o «projects/…/secrets/<secreto>/versions/1». */
+export function versionId(texto, secreto) {
+  const t = String(texto ?? '').trim()
+  if (/^[1-9]\d*$/.test(t)) return { id: t, otroSecreto: false }
+  const m = /^projects\/[^/]+\/secrets\/([^/]+)\/versions\/([1-9]\d*)$/.exec(t)
+  if (!m) return { id: null, otroSecreto: false }
+  return m[1] === secreto ? { id: m[2] ?? null, otroSecreto: false } : { id: null, otroSecreto: true }
+}
+
+/**
+ * Transcripción EXACTA de las salidas de los comandos A6 del plan a los campos de evidencia de un secreto: la regla que
+ * sigue el propietario al copiar, y la que usan las pruebas de extremo a extremo. Nunca recibe valores de secretos.
+ *   iam: salida de `secrets get-iam-policy … --format='value(bindings.role,bindings.members)'`
+ *   versiones: salida de `secrets versions list … --format='value(name.basename(),state)'` (o con la ruta completa)
+ *   referencias: salida de la extracción de versiones fijadas («VARIABLE secreto versión» por línea)
+ */
+export function observadoA6(secreto, { iam, versiones, referencias }) {
+  const lineas = (t) => (t == null ? null : String(t).split('\n').map((x) => x.trim()).filter(Boolean))
+  const ref = (lineas(referencias) ?? []).map((x) => x.split(/\s+/)).filter((c) => c[1] === secreto)
+  return {
+    secreto,
+    miembros: lineas(iam),
+    versiones: lineas(versiones),
+    // Sin referencia, o con dos referencias distintas al mismo secreto, la versión fijada queda sin dato.
+    version_fijada: new Set(ref.map((c) => c[2])).size === 1 ? (ref[0]?.[2] ?? '') : '',
+  }
+}
+
 const REGLAS = {
   A1: (o) => (vacio(o.imagen) ? ['NO_VERIFICADO', 'falta la imagen observada']
     : o.imagen === `${P.imagenBase}@${P.digest}` ? ['OK', 'la revisión sirve el digest desplegado']
@@ -129,11 +157,16 @@ const REGLAS = {
     if (o.versiones == null) versiones = ['NO_VERIFICADO', `${s}: faltan las versiones`]
     else {
       const filasV = (Array.isArray(o.versiones) ? o.versiones : [o.versiones]).map((x) => String(x).trim()).filter(Boolean)
-      habilitadas = filasV.filter((x) => /\bENABLED\b/.test(x)).map((x) => x.split(/\s+/)[0])
+      // Cada fila: «ID ESTADO». El ID puede venir como número o como ruta completa de Secret Manager
+      // (projects/…/secrets/<secreto>/versions/<n>); en ese caso, la ruta debe ser de ESTE secreto.
+      const leidas = filasV.map((x) => ({ ...versionId(x.split(/\s+/)[0] ?? '', s), estado: x.split(/\s+/)[1] ?? '' }))
+      habilitadas = leidas.filter((v) => v.estado === 'ENABLED' && v.id).map((v) => v.id)
       versiones = filasV.length === 0 ? ['NO_VERIFICADO', `${s}: lista de versiones vacía`]
-        : habilitadas.length === 0 ? ['FALLO', `${s}: ninguna versión ENABLED (la revisión no podría leerlo)`]
-          : habilitadas.length > 1 ? ['FALLO', `${s}: más de una versión ENABLED (facturación y rotación)`]
-            : ['OK', `${s}: una sola versión ENABLED`]
+        : leidas.some((v) => v.otroSecreto) ? ['NO_VERIFICADO', `${s}: hay versiones de OTRO secreto en la lectura (evidencia inconsistente)`]
+          : leidas.some((v) => !v.id || !['ENABLED', 'DISABLED', 'DESTROYED'].includes(v.estado)) ? ['NO_VERIFICADO', `${s}: filas de versiones ilegibles (se espera «ID ESTADO»)`]
+            : habilitadas.length === 0 ? ['FALLO', `${s}: ninguna versión ENABLED (la revisión no podría leerlo)`]
+              : habilitadas.length > 1 ? ['FALLO', `${s}: más de una versión ENABLED (facturación y rotación)`]
+                : ['OK', `${s}: una sola versión ENABLED`]
     }
     const fijada = String(o.version_fijada ?? '').trim()
     const referencia = fijada === '' ? ['NO_VERIFICADO', `${s}: falta la versión fijada en la revisión`]

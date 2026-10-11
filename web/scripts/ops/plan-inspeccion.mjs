@@ -16,10 +16,17 @@ import { PRODUCCION as P } from './produccion-v1-6.mjs'
 
 const G = `--project=${P.proyecto}`
 /**
+ * Extracción ESTRUCTURADA de las versiones fijadas (revisión R3): del JSON de la revisión solo imprime, por cada
+ * variable que viene de Secret Manager, «VARIABLE secreto versión». Nunca imprime valores de variables ni de secretos, y
+ * no depende del orden de serialización YAML. Fragmento fijo: la lista de lectura lo compara literalmente.
+ */
+export const EXTRAER_VERSIONES = 'import json,sys; [print(e["name"], e["valueFrom"]["secretKeyRef"]["name"], e["valueFrom"]["secretKeyRef"]["key"]) for e in json.load(sys.stdin)["spec"]["template"]["spec"]["containers"][0].get("env", []) if "secretKeyRef" in e.get("valueFrom", {})]'
+/**
  * Envuelve una tubería de CONTEO para que un fallo de gcloud no se convierta en "0" (revisión R2): con pipefail,
  * si cualquier comando falla se imprime `conteo=LECTURA_FALLIDA`; si no, `conteo=<n>`. Siempre una sola línea.
  */
 export const contar = (tuberia) => `( set -o pipefail; n=$(${tuberia}) && echo "conteo=$n" ) || echo "conteo=LECTURA_FALLIDA"`
+const ENVOLTURA_EXTRACCION = /^\( set -o pipefail; (gcloud run services describe \S+ --project=\S+ --region=\S+ --format=json) \| python3 -c '(.+)' \) \|\| echo LECTURA_FALLIDA$/
 const ENVOLTURA = /^\( set -o pipefail; n=\$\((.+)\) && echo "conteo=\$n" \) \|\| echo "conteo=LECTURA_FALLIDA"$/
 const R = `--region=${P.region}`
 const RUNTIME = `serviceAccount:${P.cuentaRuntime}`
@@ -58,14 +65,14 @@ export const PASOS = [
   },
   ...P.secretos.map((s) => ({
     control: 'A6', titulo: `Acceso y versiones del secreto ${s} (nunca su valor)`, tipo: 'gcloud',
-    comando: `gcloud secrets get-iam-policy ${s} ${G} --flatten='bindings[].members' --format='value(bindings.role,bindings.members)' && gcloud secrets versions list ${s} ${G} --format='value(name,state)'`,
+    comando: `gcloud secrets get-iam-policy ${s} ${G} --flatten='bindings[].members' --format='value(bindings.role,bindings.members)' && gcloud secrets versions list ${s} ${G} --format='value(name.basename(),state)'`,
     esperado: `una sola fila: roles/secretmanager.secretAccessor ${RUNTIME}; exactamente una versión ENABLED`,
     evidencia: { secreto: s, miembros: null, versiones: null, version_fijada: '' },
   })),
   {
     control: 'A6', titulo: 'Versión fijada de cada secreto en la revisión (número de versión, nunca el valor)', tipo: 'gcloud',
-    comando: `gcloud run services describe ${P.servicio} ${G} ${R} --format='yaml(spec.template.spec.containers[0].env)' | grep -B1 'name: project-os-'`,
-    esperado: 'para cada secreto, key: un número (nunca latest). Anótalo en version_fijada de su entrada A6',
+    comando: `( set -o pipefail; gcloud run services describe ${P.servicio} ${G} ${R} --format=json | python3 -c '${EXTRAER_VERSIONES}' ) || echo LECTURA_FALLIDA`,
+    esperado: 'una línea por secreto: «VARIABLE secreto N» (N numérico, nunca latest). Anota N en version_fijada de la entrada A6 de ese secreto. Si sale LECTURA_FALLIDA, anota error',
     evidencia: null,
   },
   {
@@ -134,7 +141,12 @@ const PROHIBIDO = /versions access|--apply|add-iam|remove-iam|set-iam|\s(update|
 
 export function comandosInseguros(pasos = PASOS) {
   // La envoltura de conteo es fija y se valida aparte; dentro solo puede haber una tubería de lectura permitida.
-  const nucleo = (c) => ENVOLTURA.exec(c)?.[1] ?? c
+  const nucleo = (c) => {
+    // La extracción estructurada solo se acepta con el fragmento de Python EXACTO; cualquier otro código se rechaza.
+    const ex = ENVOLTURA_EXTRACCION.exec(c)
+    if (ex) return ex[2] === EXTRAER_VERSIONES ? (ex[1] ?? c) : `python3 no permitido: ${c}`
+    return ENVOLTURA.exec(c)?.[1] ?? c
+  }
   return pasos.filter((p) => p.tipo !== 'consola').flatMap((p) => nucleo(p.comando).split(' && ')
     .filter((c) => !PERMITIDO.test(c) || PROHIBIDO.test(c)).map((c) => `${p.control}: ${c}`))
 }
