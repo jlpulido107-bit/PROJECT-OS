@@ -217,7 +217,7 @@ describe('preflight de CIERRE (Misión 014, D.1)', () => {
   it.each([
     ['una matriz con un falso aprobado', 'K8', (r: string) => {
       const f = path.join(r, 'docs/operacion-v1-6/matriz-aceptacion.md')
-      writeFileSync(f, read(f).replace(/^\| G3 \| (.*?) \| PENDIENTE \|/m, '| G3 | $1 | VERIFICADO |'))
+      writeFileSync(f, read(f).replace(/^\| G1 \| (.*?) \| PENDIENTE \|/m, '| G1 | $1 | VERIFICADO |'))
     }],
     ['el acta ausente', 'K5', (r: string) => rmSync(path.join(r, 'docs/operacion-v1-6/acta-cierre-v1-6.md'))],
     ['el acta sin la identidad completa', 'K1', (r: string) => {
@@ -361,20 +361,20 @@ describe('matriz de aceptación (reglas de scripts/ops/matriz.mjs, Misión 014)'
 
   it('el resumen coincide con todas las filas (y una fila cambiada sin actualizarlo se detecta)', () => {
     const resumen = resumenCalculado(matriz)
-    expect(resumen.VERIFICADO).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'B1', 'C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'D3', 'E2', 'F1', 'F2'])
+    expect(resumen.VERIFICADO).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'B1', 'C1', 'C2', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'D3', 'E2', 'F1', 'F2', 'G3'])
     expect(resumen.NO_APLICA).toEqual(['G2'])
     expect(validar(conFila('C4', { 2: 'PENDIENTE', 3: '—' }))).toEqual(expect.arrayContaining([expect.stringMatching(/^resumen: VERIFICADO/)]))
   })
 
   it('lo que aún no tiene evidencia completa no figura como verificado (estado tras EV-13 y EV-14)', () => {
-    for (const id of ['G1', 'G3', 'H']) expect(por[id], id).toBe('PENDIENTE')
+    for (const id of ['G1', 'H']) expect(por[id], id).toBe('PENDIENTE')
     for (const id of ['C3', 'E1', 'F3']) expect(por[id], id).toBe('PARCIAL')
     expect(por.G2).toBe('NO_APLICA')
   })
 
   it.each([
     ['solo un reporte (R)', 'C1', { 2: 'VERIFICADO', 3: '**R:** EV-04 (12/12 pestañas, dicho de palabra)', 6: '—' }],
-    ['solo una simulación (S), aunque mencione el procedimiento', 'G3', { 2: 'VERIFICADO', 6: '—' }],
+    ['solo una simulación (S), aunque mencione el procedimiento', 'G3', { 2: 'VERIFICADO', 3: '—', 6: '—' }],
     ['solo CI sin ser un control de código', 'C5', { 2: 'VERIFICADO', 3: '—', 4: '**CI:** E2E de planificación', 6: '—' }],
     ['evidencia real pero con algo pendiente', 'A2', { 2: 'VERIFICADO', 6: 'Falta comparar el origen' }],
     ['un requisito de tiempo sin cumplir', 'E1', { 2: 'VERIFICADO', 6: '—' }],
@@ -425,8 +425,8 @@ describe('matriz de aceptación (reglas de scripts/ops/matriz.mjs, Misión 014)'
 
   it.each([
     ['PARCIAL sin evidencia real', 'C3', { 3: '—' }, /C3: PARCIAL sin evidencia real/],
-    ['PENDIENTE con evidencia real', 'G3', { 3: '**P:** EV-12' }, /G3: PENDIENTE con evidencia real/],
-    ['PENDIENTE sin decir qué falta', 'G3', { 6: '—' }, /G3: PENDIENTE sin indicar qué falta/],
+    ['PENDIENTE con evidencia real', 'G1', { 3: '**P:** EV-12' }, /G1: PENDIENTE con evidencia real/],
+    ['PENDIENTE sin decir qué falta', 'G1', { 6: '—' }, /G1: PENDIENTE sin indicar qué falta/],
     ['NO_APLICA como sustituto de una prueba pendiente', 'G1', { 2: 'NO_APLICA hasta que haya ventana' }, /G1: NO_APLICA no justificado/],
     ['NO_APLICA sin la condición que lo hace aplicable', 'G2', { 2: 'NO_APLICA', 6: 'Revisión anterior', 7: 'Reevaluar' }, /G2: NO_APLICA sin la condición/],
     ['E1 sin su límite de tiempo (T)', 'E1', { 5: '—' }, /E1: debe reflejar su límite con la etiqueta T/],
@@ -447,11 +447,13 @@ describe('matriz de aceptación (reglas de scripts/ops/matriz.mjs, Misión 014)'
 
   it('H no puede aprobarse con bloqueadores; sí con evidencia o con excepciones expresas, fechadas y referenciadas', () => {
     // H aprobado exige además la aprobación real del propietario registrada como evidencia (acta firmada).
-    const hAprobado = conFila('H', { 2: 'VERIFICADO', 3: '**P:** EV-12 (aprobación del propietario en el acta)', 6: '—' })
-    expect(validar(conFila('H', { 2: 'VERIFICADO', 6: '—' })).join('\n')).toMatch(/H: VERIFICADO sin evidencia real/)
-    expect(validar(hAprobado).join('\n')).toMatch(/H: VERIFICADO con controles sin evidencia ni excepción del propietario: G3/)
-    const pendientes = leerMatriz(matriz).filas.filter((f) => !['VERIFICADO', 'NO_APLICA'].includes(f.estado) && f.id !== 'H').map((f) => f.id)
+    // Sin las excepciones ya registradas (§5), para que los controles abiertos bloqueen H.
     const tabla = '| ID | Excepción | Fecha | Referencia |\n| --- | --- | --- | --- |\n'
+    const sinExcepciones = matriz.replace(/(\| ID \| Excepción \| Fecha \| Referencia \|\n\| --- \| --- \| --- \| --- \|\n)(?:\|[^\n]*\n)*/, '$1')
+    const hAprobado = sinExcepciones.split('\n').map((l) => (l.startsWith('| H |') ? conFila('H', { 2: 'VERIFICADO', 3: '**P:** EV-12 (aprobación del propietario en el acta)', 6: '—' }).split('\n').find((x) => x.startsWith('| H |')) : l)).join('\n')
+    expect(validar(conFila('H', { 2: 'VERIFICADO', 6: '—' })).join('\n')).toMatch(/H: VERIFICADO sin evidencia real/)
+    expect(validar(hAprobado).join('\n')).toMatch(/H: VERIFICADO con controles sin evidencia ni excepción del propietario: C3, E1, F3, G1/)
+    const pendientes = leerMatriz(matriz).filas.filter((f) => !['VERIFICADO', 'NO_APLICA'].includes(f.estado) && f.id !== 'H').map((f) => f.id)
     const conExcepciones = (filas: string) => hAprobado.replace(`${tabla}`, `${tabla}${filas}`)
     const todas = pendientes.map((id) => `| ${id} | Aceptada | 2026-11-20 | https://github.com/jlpulido107-bit/PROJECT-OS/pull/24#issuecomment-1 |`).join('\n') + '\n'
     expect(validar(conExcepciones(todas)).filter((x) => x.startsWith('H:'))).toEqual([])
@@ -1161,8 +1163,8 @@ describe('documentos de operación (Entregas B y C)', () => {
     const { PRODUCCION } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { PRODUCCION: Record<string, string> }
     for (const v of [PRODUCCION.commit, PRODUCCION.digest, PRODUCCION.revision, PRODUCCION.url]) expect(base).toContain(v)
     const ev = [...base.matchAll(/^\| (EV-\d{2}) \| (\d{4}-\d{2}-\d{2}) \|.*\| (P|R) \| [^|]+ \|$/gm)]
-    expect(ev.map((m) => m[1])).toEqual(Array.from({ length: 14 }, (_, i) => `EV-${String(i + 1).padStart(2, '0')}`))
-    expect(ev.map((m) => m[2])).toEqual([...Array(12).fill('2026-10-11'), '2026-10-12', '2026-10-12'])
+    expect(ev.map((m) => m[1])).toEqual(Array.from({ length: 15 }, (_, i) => `EV-${String(i + 1).padStart(2, '0')}`))
+    expect(ev.map((m) => m[2])).toEqual([...Array(12).fill('2026-10-11'), '2026-10-12', '2026-10-12', '2026-10-12'])
     expect([...base.matchAll(/^\| (\d{1,2}) \| /gm)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect((base.slice(base.indexOf('## 7.'), base.indexOf('## 8.')).match(/^\d+\. \*\*/gm) ?? []).length).toBeGreaterThanOrEqual(10)
     expect(base).not.toContain('evidencia-ejemplo.json)**')
@@ -1174,12 +1176,16 @@ describe('documentos de operación (Entregas B y C)', () => {
     const { PRODUCCION } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { PRODUCCION: Record<string, string> }
     for (const v of [PRODUCCION.commit, PRODUCCION.digest, PRODUCCION.revision]) expect(acta).toContain(v)
     for (const e of ['LISTA PARA ACEPTACIÓN', 'ESTABLE CON EXCEPCIONES ACEPTADAS', 'ACEPTADA', 'BLOQUEADA']) expect(acta).toContain(`| \`${e}\` |`)
-    expect(acta).toMatch(/\*\*Estado propuesto hoy: `LISTA PARA ACEPTACIÓN`\.\*\*/)
-    expect(acta).not.toMatch(/Estado (propuesto|declarado)[^|\n]*`(ACEPTADA|ESTABLE CON EXCEPCIONES ACEPTADAS)`/)
+    // El estado lo declaró el propietario (2026-10-12); nunca `ACEPTADA` antes de E1 del 2026-11-11.
+    expect(acta).toMatch(/\*\*Estado declarado por el propietario el 2026-10-12: `ESTABLE CON EXCEPCIONES ACEPTADAS`\*\*/)
+    expect(acta).not.toMatch(/Estado (propuesto|declarado)[^|\n]*`ACEPTADA`/)
     // Firma y decisiones vacías: nada lo aprueba Claude.
     const aprobacion = acta.slice(acta.indexOf('## 13. Aprobación'))
     const valores = [...aprobacion.matchAll(/^\| [^|]+ \| ([^|]+) \|$/gm)].map((m) => (m[1] ?? '').trim()).filter((v) => v !== 'Valor' && v !== '---')
-    expect(valores).toEqual(['Pendiente', 'Pendiente', 'Pendiente', 'Pendiente', 'Pendiente'])
+    expect(valores).toHaveLength(5)
+    expect(valores[1]).toBe('`ESTABLE CON EXCEPCIONES ACEPTADAS`')
+    expect(valores[2]).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    for (const v of valores) expect(v).not.toBe('')
     const excepciones = acta.slice(acta.indexOf('## 8.'), acta.indexOf('## 9.')).split('\n').filter((l) => /^\| (C3|G1|X-2|X-8|E1|F3) \|/.test(l))
     expect(excepciones).toHaveLength(6)
     // Decisiones del propietario (2026-10-12): cada una con la decisión, la fecha y la referencia.

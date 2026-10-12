@@ -1,4 +1,4 @@
-# PROJECT-OS V1.6 — Acta de cierre (preparada; **sin aprobar**)
+# PROJECT-OS V1.6 — Acta de cierre (**estable con excepciones aceptadas**, declarado por el propietario el 2026-10-12)
 
 > **Qué es:** el acta que el propietario completa y firma **después** de:
 >
@@ -7,13 +7,14 @@
 >
 > La preparó Claude Code en la Misión 014.
 >
-> **Qué no es:** ninguna sección contiene una aprobación. Las casillas de decisión y la firma están vacías a propósito.
+> **Qué no es:** Claude Code no aprueba nada. Las decisiones de la §8 y la declaración de la §13 son del propietario, que
+> las comunicó en la sesión del 2026-10-12. La V1.6 **no** está `ACEPTADA` hasta cumplir los criterios de la §12.
 > Este documento **no aprueba ninguna funcionalidad de la V1.7**: la automatización futura está en una
 > [propuesta aparte](propuesta-arquitectura-v1-7.md), no aprobada.
 
-**Estado propuesto hoy: `LISTA PARA ACEPTACIÓN`.** Las comprobaciones humanas del 2026-10-12 (EV-13 y EV-14) no
-dieron ningún FALLO y el propietario decidió las excepciones de la §8. Cuando confirme G3 (hoja 5.5), puede declarar en
-la §13 el estado «estable con excepciones aceptadas». Esa declaración y la firma son suyas: esto no es una aprobación.
+**Estado declarado por el propietario el 2026-10-12: `ESTABLE CON EXCEPCIONES ACEPTADAS`** (§13). La hoja está
+completa sin ningún FALLO (EV-13 a EV-15; la fila 5.4, E1, depende de la fecha) y los controles no verificados tienen su
+excepción aceptada (§8 y matriz §5). `ACEPTADA` exige además E1 = 0 a partir del 2026-11-11 y la aprobación final.
 
 ## 1. Identificadores de la línea base
 
@@ -97,9 +98,9 @@ Estado de la [matriz](matriz-aceptacion.md) en el SHA final, sin violaciones de 
 
 | Estado | n | Controles |
 | --- | --- | --- |
-| VERIFICADO | 22 | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3, E2, F1, F2 (D3 por código, en la CI) |
+| VERIFICADO | 23 | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3, E2, F1, F2, G3 (D3 por código, en la CI) |
 | PARCIAL | 3 | C3, E1, F3 |
-| PENDIENTE | 3 | G1, G3, H |
+| PENDIENTE | 2 | G1, H |
 | NO_APLICA | 1 | G2 |
 
 Límites que el estado refleja con precisión:
@@ -119,7 +120,8 @@ Límites que el estado refleja con precisión:
   ([línea base §4](linea-base-v1-6.md)).
 - **2026-10-12:** EV-13 (hoja, bloques 1–4) y EV-14 (diagnóstico de solo lectura, bloque 5), aportadas por el
   propietario y transcritas por Claude Code sin datos. Ningún FALLO. Claude no tuvo acceso a GCP, OAuth ni Sheets.
-- **Lo que falta:** G3 (hoja 5.5, lectura de procedimientos) y E1 a partir del 2026-11-11 (hoja 5.4).
+- **2026-10-12:** EV-15 (G3 y la declaración de la §13).
+- **Lo que falta:** E1 a partir del 2026-11-11 (hoja 5.4).
 
 ## 7. Riesgos residuales
 
@@ -203,11 +205,11 @@ Cada uno es una autorización aparte (`AGENTS.md`).
 
 | Campo | Valor |
 | --- | --- |
-| Revisión independiente (ChatGPT): SHA revisado y resultado | Pendiente |
-| Estado declarado por el propietario | Pendiente |
-| Fecha | Pendiente |
-| Referencia (comentario o issue) | Pendiente |
-| Propietario | Pendiente |
+| Revisión independiente: SHA revisado y resultado | ChatGPT: R1–R4 hasta `8b239e9`, con R4-1 corregido en `4fe9b8a`. Revisión final independiente de `4fe9b8a` (Claude Code, otro agente): sin bloqueadores; hallazgos corregidos en `5742029` |
+| Estado declarado por el propietario | `ESTABLE CON EXCEPCIONES ACEPTADAS` |
+| Fecha | 2026-10-12 |
+| Referencia (comentario o issue) | Sesión del propietario con Claude Code del 2026-10-12, registrada en el PR #24 |
+| Propietario | jlpulido107-bit (declaración en la sesión; firma en el PR #24 al autorizar el merge) |
 
-Hasta que el propietario complete esta tabla, la V1.6 **no** está aceptada. El issue #22 sigue abierto y el PR #24 en
-Draft.
+La V1.6 queda **estable con excepciones aceptadas**, no `ACEPTADA`: falta E1 a partir del 2026-11-11. El issue #22 sigue
+abierto hasta entonces.

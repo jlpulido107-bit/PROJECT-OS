@@ -65,16 +65,16 @@ Etiquetas de evidencia. Cada una va en su columna: real, técnica, o tiempo y de
 | F3 | Retención de imágenes efectiva | PARCIAL | **P:** EV-06 (política activa `PERMITIDO`; 1 imagen) | **CI:** política revisada (P6); `limpieza-artifact-v1-6.sh --check` probado | **T:** el efecto solo es observable con ≥ 5 imágenes y alguna de más de 30 días | Lista de imágenes cuando se cumpla la condición (excepción aceptada, §5) | Runbook operativo §4, en el primer mantenimiento que la cumpla |
 | G1 | Cerrar el acceso sin borrar nada | PENDIENTE | — | **S:** procedimiento documentado (runbook histórico §6, runbook operativo §6); no ensayado | **DEC:** decidido el 2026-10-12: excepción aceptada (§5); el ensayo corta el servicio | Ensayo autorizado en un mantenimiento | Excepción §5 |
 | G2 | Volver a una revisión anterior | NO_APLICA hasta que exista una 2.ª revisión con su imagen | **P:** EV-06 y EV-12 (1 revisión con el 100 % del tráfico) | **CI:** el evaluador G2 exige un ensayo autorizado | — | Revisión anterior recuperable (`produccion-anterior`) y ensayo autorizado | Reevaluar tras el próximo despliegue; no se crea una revisión solo para cerrarlo |
-| G3 | El propietario sabe desmantelar | PENDIENTE | — | **S:** procedimiento en el runbook §7 | — | ✅ de lectura del procedimiento | [Hoja](hoja-propietario.md), bloque 5 |
-| H | Cierre de la aceptación | PENDIENTE | — | — | — | Los controles PARCIAL y PENDIENTE, con evidencia o con una excepción expresa del propietario (§5) | [Acta de cierre](acta-cierre-v1-6.md) |
+| G3 | El propietario sabe desmantelar | VERIFICADO | **P:** EV-15 (leyó el runbook operativo §6–§7: incidentes, cierre de acceso, recuperación y desmantelamiento; sabe qué hacer en cada caso) | **S:** procedimiento en el runbook §7 | — | — | Releer si cambia el runbook |
+| H | Cierre de la aceptación | PENDIENTE | — | — | — | Para `ACEPTADA`: E1 = 0 a partir del 2026-11-11 y la aprobación del propietario registrada. Hoy: `ESTABLE CON EXCEPCIONES ACEPTADAS`, declarado por el propietario el 2026-10-12 (acta §13; EV-15) | Repetir E1 el 2026-11-11 y decidir `ACEPTADA` en el acta |
 
-**Resumen (Misión 014; evidencia del propietario del 2026-10-11 y del 2026-10-12):**
+**Resumen (Misión 014; evidencia del propietario del 2026-10-11 y del 2026-10-12 (EV-13 a EV-15)):**
 
 | Estado | Controles |
 | --- | --- |
-| VERIFICADO (22) | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3 (código), E2, F1, F2 |
+| VERIFICADO (23) | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3 (código), E2, F1, F2, G3 |
 | PARCIAL (3) | C3, E1, F3 |
-| PENDIENTE (3) | G1, G3, H |
+| PENDIENTE (2) | G1, H |
 | NO_APLICA (1) | G2 |
 
 El resumen, las etiquetas, las referencias `EV-xx` y la identidad los comprueba `scripts/ops/matriz.mjs` en
@@ -111,7 +111,7 @@ checklist: A, B, D y E en ✅), y del **próximo despliegue**.
 | **Bloquea la puerta 4 por seguridad** | Ninguno | C2 verificado con una cuenta elegible rechazada por la app |
 | **Bloquea el próximo build o despliegue** | Ninguno | A9 y D-1 resueltos |
 | **Requiere decisión del propietario** | Ninguna pendiente | C3, G1, X-2 y X-8 decididos el 2026-10-12 (§5 y acta §8) |
-| **Pendiente del propietario** | G3, H | Lectura de procedimientos (hoja 5.5) y declaración del estado en el acta §13 |
+| **Pendiente del propietario** | H | `ACEPTADA` tras E1 del 2026-11-11. Estado declarado hoy: `ESTABLE CON EXCEPCIONES ACEPTADAS` (acta §13) |
 | **Deuda no bloqueante** | F3, G2, D-6 | Dependen del tiempo o de una segunda revisión |
 
 ## 5. Excepciones aceptadas por el propietario

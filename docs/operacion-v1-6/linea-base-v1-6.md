@@ -61,7 +61,7 @@
 
 ## 4. Registro de evidencia (fecha y procedencia)
 
-La evidencia real es del **2026-10-11** (EV-01 a EV-12) y del **2026-10-12** (EV-13 y EV-14), aportada por el propietario y saneada: solo conteos, estados y códigos.
+La evidencia real es del **2026-10-11** (EV-01 a EV-12) y del **2026-10-12** (EV-13 a EV-15), aportada por el propietario y saneada: solo conteos, estados y códigos.
 
 Tipos de evidencia:
 
@@ -84,6 +84,7 @@ Tipos de evidencia:
 | EV-12 | 2026-10-11 | `smoke:remote` y `diagnostico` finales | Smoke 26/26. A6: 1 `ENABLED` = fijada en los 3 secretos. A7: servicio 1, revisión 1, mínimo 0, `00001-gsk` con el 100 %. E1: `@` 6, todos en auditoría de Google; `code=` 1, la entrada anterior. E2, leído con `severity>=WARNING`: 0 avisos de la app y 29 de la plataforma (21 × 401, 7 × 403, 1 × 404; contexto en [remediación §5.1](remediacion-2026-10-11.md)) | P | [Remediación §5](remediacion-2026-10-11.md) |
 | EV-13 | 2026-10-12 | Hoja del propietario, bloques 1–4 (consola, navegador y hoja), resultados por fila contra el criterio exacto, transcritos por Claude Code sin datos | A2 callback exacto; C1 «Leído de Google Sheets», 12/12 pestañas, 3 totales iguales; C2 cuenta elegible (usuario de prueba temporal) rechazada por la app; C4 5/5; C5, C6 y C7 OK; D2 Restringido y runtime Lector (hay otra cuenta de servicio Editor: X-8); D1 sin cambios de la runtime; F1 USD 5 con alertas 50/75/90 %; F2 menos de USD 1; A7 métrica máx. 1 | P | [Matriz §2](matriz-aceptacion.md) |
 | EV-14 | 2026-10-12 | `remediacion-v1-6.sh diagnostico` (rama del PR #24, `5742029`), en Cloud Shell | Completo (sin LECTURA_FALLIDA). E1: `@` 6, solo auditoría; 0 `ya29.`/`Bearer`; `code=` 1 (la del 2026-10-11, sin aumentar tras los logins del 2026-10-12); exclusión `CORRECTA`. E2 en cualquier severidad: 0 líneas de la app; 401 solo en las 7 APIs y 403 solo del 2026-10-11. A6: versión 1 `DESTROYED`, una `ENABLED` = fijada. A7: servicio 1, revisión 1, tráfico único | P | [Matriz §2](matriz-aceptacion.md) |
+| EV-15 | 2026-10-12 | Hoja del propietario, fila 5.5, y declaración en el acta §13 | G3: el propietario leyó el runbook operativo §6–§7 (incidentes, cierre de acceso, recuperación y desmantelamiento) y sabe qué hacer en cada caso. Declaró la V1.6 «estable con excepciones aceptadas» | P | [Acta §13](acta-cierre-v1-6.md) |
 
 Ninguna de estas referencias es el [ejemplo sintético](evidencia-ejemplo.json): este nunca cuenta como producción.
 
@@ -102,9 +103,9 @@ El estado de cada control y su evidencia están en la [matriz](matriz-aceptacion
 
 | Estado | Controles | Nota |
 | --- | --- | --- |
-| VERIFICADO (22) | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3, E2, F1, F2 | D3 es de código (CI), no de producción |
+| VERIFICADO (23) | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3, E2, F1, F2, G3 | D3 es de código (CI), no de producción |
 | PARCIAL (3) | C3, E1, F3 | Excepciones aceptadas el 2026-10-12 (matriz §5); E1 y F3 dependen del tiempo |
-| PENDIENTE (3) | G1, G3, H | G1 con excepción aceptada; G3 y H esperan al propietario |
+| PENDIENTE (2) | G1, H | G1 con excepción aceptada; H hasta la aceptación completa (E1 a partir del 2026-11-11) |
 | NO_APLICA (1) | G2 | Hasta que exista una segunda revisión con su imagen |
 
 E2 pasa de VERIFICADO a PARCIAL en esta misión. Su evidencia se leyó con `severity>=WARNING`, pero las líneas que la app
