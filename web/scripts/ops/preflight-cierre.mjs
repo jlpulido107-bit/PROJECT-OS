@@ -58,8 +58,10 @@ export function preflightCierre(ROOT, { soloRepositorio = false } = {}) {
   const malos = plantilla.filter((r) => r.estado !== 'OK').map((r) => `${r.id ?? '?'}:${r.estado}`)
   add('K3', 'Plantilla, limpieza y contrato de seguridad', plantilla.some((r) => r.estado === 'FALLO') ? 'FALLO' : malos.length ? 'NO_VERIFICADO' : 'OK',
     malos.length ? `preflight de aceptación: ${malos.join(', ')}` : 'P1–P10 y P13 OK (preflight-aceptacion.mjs)', malos.length ? 'Ver preflight-aceptacion.mjs' : '—')
-  const wf = ['P11', 'P12'].map((id) => pa[id] ?? { id, estado: 'NO_VERIFICADO' })
-  add('K4', 'Workflows sin horarios ni credenciales de Google fuera del colector', wf.some((r) => r.estado === 'FALLO') ? 'FALLO' : wf.every((r) => r.estado === 'OK') ? 'OK' : 'NO_VERIFICADO', `P11 ${wf[0].estado}, P12 ${wf[1].estado}`)
+  // P15 NO_VERIFICADO (deuda de credenciales del colector manual) es una decisión del propietario (K16); su FALLO cuenta aquí.
+  const wf = ['P11', 'P12', 'P15'].map((id) => pa[id] ?? { id, estado: 'NO_VERIFICADO' })
+  add('K4', 'Workflows sin horarios; la CI automática sin credenciales de Google ni secretos', wf.some((r) => r.estado === 'FALLO') ? 'FALLO' : wf.slice(0, 2).every((r) => r.estado === 'OK') ? 'OK' : 'NO_VERIFICADO',
+    `P11 ${wf[0].estado}, P12 ${wf[1].estado}, P15 ${wf[2].estado}${wf[2].estado === 'NO_VERIFICADO' ? ' (colector manual con opción explícita: decisión X-8, K16)' : ''}`)
 
   // K5 — documentos y herramientas de cierre.
   const faltan = ARCHIVOS_DE_CIERRE.filter((rel) => !existsSync(path.join(ROOT, rel)))

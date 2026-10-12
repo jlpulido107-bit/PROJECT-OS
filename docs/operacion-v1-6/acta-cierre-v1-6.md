@@ -67,7 +67,7 @@ Fusionar el PR #24 **no despliega nada**.
 | --- | --- |
 | `npm ci` | OK: 426 paquetes del lockfile |
 | `npm run lint` · `npm run typecheck` | Sin errores · sin errores |
-| `npm test` (Vitest) | **919/919** en 28 archivos |
+| `npm test` (Vitest) | **942/942** en 28 archivos |
 | `npm run build` | Compilado correctamente |
 | `npm run audit:prod` · `npm run audit:critical` | 0 vulnerabilidades · 0 críticas (5 altas de desarrollo, X-2) |
 | `npm run check:client-secrets -- --min-values=4` (valores falsos de la CI) | 22 archivos, 4 valores comparados, sin fugas |
@@ -80,10 +80,11 @@ Fusionar el PR #24 **no despliega nada**.
 
 - La CI del SHA final (jobs `web`, `docker` y `validate`), con sus enlaces, está en el **comentario de entrega del
   PR #24**: un commit no puede contener los resultados de su propia CI.
-- Referencia anterior: `9118727` en verde, en los tres jobs:
-  - [validate](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180643601/job/114592288467);
-  - [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180643592/job/114592288585);
-  - [docker](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180643592/job/114592288395).
+- Referencia anterior: `8350f8b` en verde, en los tres jobs:
+  - [validate](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38181806031/job/114595768274);
+  - [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38181806054/job/114595768408);
+  - [docker](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38181806054/job/114595768599).
+- Desde R3-1, el job `validate` ya no recibe la clave de Google ni lee la hoja real: valida con una hoja en memoria.
 - `30f40b2` falló en [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180290994/job/114591212949):
   una prueba alcanzó el `gcloud` del runner, sin credenciales. Lo corrigió `9118727` con un `PATH` hermético; el
   detalle está en el comentario de entrega.
@@ -110,6 +111,7 @@ Límites que el estado refleja con precisión:
 | C3 | **Opcional** | El 403 real exige retirar un correo (nueva versión del secreto y redespliegue). El 401 real está cubierto (B1). No se simula como real |
 | G1 | **Opcional, con autorización** | El procedimiento está documentado; el ensayo cortaría el servicio. No se ensaya sin ventana ni autorización |
 | G2 | **De aplicabilidad** | NO_APLICA hasta que exista una segunda revisión con su imagen. No se crea una revisión solo para cerrarlo |
+| C2 | **De capa** (R3-2) | Solo cuenta el rechazo **de la app** a una cuenta elegible para el login de Google y fuera de la lista. Si Google rechaza la cuenta antes del callback (cliente en *Testing*), C2 queda NO_VERIFICADO; sin cuenta elegible, sigue PENDIENTE. No se crean usuarios de prueba sin autorización |
 
 ## 6. Evidencia humana incorporada
 
@@ -130,7 +132,7 @@ Límites que el estado refleja con precisión:
 | X-5 | G1 sin ensayo | Media en un incidente | Procedimiento documentado; ensayo solo con autorización |
 | X-6 | Sin rollback de tráfico (G2) | Media en un incidente | *Fix forward* o reaplicar el manifiesto con el mismo digest |
 | X-7 | 403 real sin probar (C3) | Baja | CI; excepción o prueba autorizada |
-| X-8 | La CI del colector lee la hoja en cada PR con una clave JSON de cuenta de servicio (según su guía, **Editor**; no verificado) | Media | Decisión D-CI; P15 lo declara siempre |
+| X-8 | El workflow manual del colector usa una clave JSON de cuenta de servicio (según su guía, **Editor**; no verificado), solo con la opción `sync_to_sheets`. La CI de los PR ya no la recibe (R3-1) | Media | Decisión D-CI; P15 lo declara siempre. Si una credencial vuelve a la CI automática, P12 da FALLO |
 | X-9 | Retención de 30 días de `_Default` supuesta | Baja | Confirmarla en la consola si E1 depende de ella |
 
 ## 8. Excepciones pendientes de decisión del propietario
@@ -143,7 +145,7 @@ Cada fila se decide aparte. Una excepción aceptada se registra **también** en 
 | C3 | Cerrar sin el 403 real | Aceptar: el riesgo lo cubren el código y la CI; la prueba exige un cambio de producción | | | |
 | G1 | Cerrar sin el ensayo de cierre de acceso | Aceptar mientras no haya ventana; ensayar en el próximo mantenimiento autorizado | | | |
 | X-2 | Mantener las 5 altas de desarrollo hasta que exista una corrección | Aceptar (D-DEP) | | | |
-| X-8 | Mantener la lectura dry-run de la hoja en la CI del colector | Decidir: mantener, restringir el paso o migrar a OIDC (D-CI) | | | |
+| X-8 | Mantener la clave JSON del colector **manual** (la CI de los PR ya no la usa desde R3-1) | Decidir: mantenerla con la opción explícita, retirarla o migrar a OIDC con una identidad propia (D-CI) | | | |
 | E1 | Aceptar con la entrada `code=` histórica hasta el 2026-11-11 | Aceptar **solo** si la exclusión sale `CORRECTA` y `code=` no aumenta tras el login | | | |
 | F3 | Aceptar sin el efecto real de la limpieza | Aceptar; repetir cuando haya ≥ 5 imágenes | | | |
 

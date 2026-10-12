@@ -48,7 +48,7 @@ Todas son **offline**: no invocan `gcloud`, `curl` ni la red, y nunca leen secre
 | Script | Uso | Códigos de salida |
 | --- | --- | --- |
 | `preflight-cierre.mjs` | **Tabla de cierre** `CONTROL \| ESTADO \| EVIDENCIA \| ACCIÓN PENDIENTE`. Reutiliza las demás herramientas; lo que exige GCP, personas, facturación, tiempo o decisiones queda **siempre** en NO_VERIFICADO. `--solo-repositorio` comprueba solo K1–K10 | 0 · 1 FALLO · 3 NO_VERIFICADO |
-| `preflight-aceptacion.mjs` | Controles estáticos del repositorio (plantilla, política de limpieza, contrato de seguridad, workflows, identidad de la versión). P15 declara la clave del colector V1.1, nunca como OK | 0 todo OK · 1 algún FALLO · 3 sin fallos pero con NO_VERIFICADO |
+| `preflight-aceptacion.mjs` | Controles estáticos del repositorio (plantilla, política de limpieza, contrato de seguridad, workflows, identidad de la versión). P12 da FALLO si un workflow automático (PR, push…) usa credenciales de Google o secretos; P15 declara la clave del colector **manual**, nunca como OK | 0 todo OK · 1 algún FALLO · 3 sin fallos pero con NO_VERIFICADO |
 | `matriz.mjs` | Reglas de la matriz: estados, resumen, `EV-xx`, identidad, H y excepciones | 0 sin violaciones · 1 con violaciones |
 | `plan-inspeccion.mjs` | **Imprime** los comandos de solo lectura que el propietario ejecuta con su cuenta | 0 · 2 uso incorrecto |
 | `evidencia.mjs` | Valida un archivo de evidencia saneada, rechaza PII y secretos, y evalúa cada control. Un ejemplo sintético, otra revisión o una cobertura incompleta nunca dan «todo OK» | 0 todo OK · 1 algún FALLO · 3 NO_VERIFICADO · 4 evidencia rechazada |

@@ -17,12 +17,52 @@ import path from 'node:path'
 import { codigoDeSalida, linea, PRODUCCION, RUTAS_DE_LA_IMAGEN } from './produccion-v1-6.mjs'
 
 /**
- * Workflows del COLECTOR V1.1 (Python), anteriores al dashboard: usan la clave de cuenta de servicio
- * PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON para leer Sheets en cada PR del mismo repositorio (dry-run) y, en el manual, para
- * añadir filas. No son del dashboard. Se declaran (P15) para decisión del propietario: nunca cuentan como OK.
+ * Workflow MANUAL del colector V1.1 (Python), anterior al dashboard: solo con la opción explícita `sync_to_sheets` añade
+ * filas a la hoja con la clave de cuenta de servicio PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON. Es la única excepción
+ * tolerada, y solo si se ejecuta exclusivamente a mano (workflow_dispatch) y cada paso con acceso a Google depende de esa
+ * opción. P15 la declara como deuda de credenciales pendiente de decisión del propietario: nunca cuenta como OK.
+ * Un workflow AUTOMÁTICO (PR, push o cualquier otro evento) ejecuta código que puede venir de un PR: nunca recibe
+ * credenciales de Google, otros secretos ni acceso a la API de Google. Si vuelve a tenerlos, P12 da FALLO (R3-1, PR #24).
  */
-export const WORKFLOWS_COLECTOR = Object.freeze(['pr-validation.yml', 'manual-github-evidence.yml'])
-const CREDENCIAL_GOOGLE = /google-github-actions\/auth|\bgcloud\b|GOOGLE_APPLICATION_CREDENTIALS|secrets\.[A-Z0-9_]*(GOOGLE|GCP|SERVICE_ACCOUNT)[A-Z0-9_]*/
+export const WORKFLOW_COLECTOR_MANUAL = 'manual-github-evidence.yml'
+const OPCION_COLECTOR = 'sync_to_sheets'
+/** Acceso real a Google: credenciales, gcloud, la API de Google (Sheets incluida) o el sincronizador real. */
+const ACCESO_GOOGLE = /google-github-actions\/auth|\bgcloud\b|GOOGLE_APPLICATION_CREDENTIALS|PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|googleapis\.com|\bsync_sheets\b|secrets\.[A-Z0-9_]*(GOOGLE|GCP|SERVICE_ACCOUNT)[A-Z0-9_]*/
+/** Cualquier secreto del repositorio salvo el token efímero de GitHub: `secrets.X`, `secrets[…]`, `toJSON(secrets)`, `secrets: inherit`. */
+const SECRETO_DEL_REPOSITORIO = /\bsecrets\s*(?:\.(?!GITHUB_TOKEN\b)|\[|\)|\}|:\s*inherit\b)/
+
+/** Eventos del bloque `on:` de un workflow, o null si no se pueden leer (entonces cuenta como automático: falla cerrado). */
+export function eventosDe(texto) {
+  const lineas = texto.split('\n')
+  const i = lineas.findIndex((l) => /^["']?on["']?\s*:/.test(l))
+  if (i < 0) return null
+  const enLinea = lineas[i].replace(/^["']?on["']?\s*:/, '').replace(/\s+#.*$/, '').trim()
+  if (enLinea) {
+    const lista = enLinea.replace(/^\[|\]$/g, '').split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+    return lista.length ? lista : null
+  }
+  const eventos = []
+  let sangria = null
+  for (const l of lineas.slice(i + 1)) {
+    if (!l.trim() || /^\s*#/.test(l)) continue
+    if (!/^\s/.test(l)) break // la siguiente clave de primer nivel cierra el bloque
+    const m = /^(\s+)(?:-\s+)?["']?([A-Za-z_][\w-]*)["']?/.exec(l)
+    if (!m) continue
+    sangria ??= m[1].length
+    if (m[1].length === sangria) eventos.push(m[2])
+  }
+  return eventos.length ? eventos : null
+}
+
+/** Opción explícita del colector manual: entrada booleana con `default: false` y cada fragmento con acceso a Google
+ *  condicionado a ella con un `if:` que no la debilite (sin `||`). Un acceso fuera de un paso (p. ej. el `env` del job)
+ *  no está condicionado y falla. */
+function conOpcionExplicita(texto) {
+  const entrada = new RegExp(`^(\\s+)${OPCION_COLECTOR}:\\s*\\n((?:\\1\\s+.*\\n?)+)`, 'm').exec(texto)
+  if (!entrada || !/^\s+type:\s*boolean\s*$/m.test(entrada[2]) || !/^\s+default:\s*false\s*$/m.test(entrada[2])) return false
+  const condicion = new RegExp(`^\\s*if:\\s*(?:\\$\\{\\{\\s*)?(?:github\\.event\\.)?inputs\\.${OPCION_COLECTOR}(?:\\s*==\\s*(?:true|'true'))?\\s*(?:\\}\\})?\\s*$`, 'm')
+  return texto.split(/\n(?=\s*-\s)/).filter((trozo) => ACCESO_GOOGLE.test(trozo)).every((trozo) => condicion.test(trozo))
+}
 
 export function preflightAceptacion(ROOT) {
   const resultados = []
@@ -103,22 +143,33 @@ export function preflightAceptacion(ROOT) {
     else fallo(id, `no se encontró el control esperado en ${rel}`)
   }
 
-  // ---- Workflows: sin horarios; sin credenciales de Google salvo las conocidas del colector (P15) ----
+  // ---- Workflows: sin horarios; la CI automática sin credenciales (P12); el colector manual, solo con opción (P15) ----
   const wfDir = path.join(ROOT, '.github', 'workflows')
   if (!existsSync(wfDir)) {
     noVerificado('P11', 'sin .github/workflows')
   } else {
     const textos = readdirSync(wfDir).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, readFileSync(path.join(wfDir, f), 'utf8')])
     const conHorario = textos.filter(([, t]) => /^\s*schedule\s*:/m.test(t)).map(([f]) => f)
-    const conGoogle = textos.filter(([, t]) => CREDENCIAL_GOOGLE.test(t)).map(([f]) => f)
-    const inesperados = conGoogle.filter((f) => !WORKFLOWS_COLECTOR.includes(f))
-    const colector = conGoogle.filter((f) => WORKFLOWS_COLECTOR.includes(f))
     if (conHorario.length) fallo('P11', `workflows con schedule: ${conHorario.join(', ')}`)
     else ok('P11', 'workflows sin schedule')
-    if (inesperados.length) fallo('P12', `workflows con credenciales o comandos de Google Cloud fuera del colector conocido: ${inesperados.join(', ')}`)
-    else ok('P12', 'el workflow del dashboard y cualquier otro fuera del colector V1.1 no usan credenciales ni comandos de Google Cloud')
-    if (colector.length) noVerificado('P15', `el colector V1.1 usa una clave de cuenta de servicio de Google en ${colector.join(', ')} (lee la hoja en cada PR del repositorio, en dry-run): riesgo pendiente de decisión del propietario, no del dashboard`)
-    else ok('P15', 'ningún workflow usa una clave de cuenta de servicio de Google')
+    const automaticos = [], manualesMal = []
+    let colectorManual = false
+    for (const [f, t] of textos) {
+      const eventos = eventosDe(t)
+      if (eventos === null || eventos.some((e) => e !== 'workflow_dispatch')) {
+        const motivos = [ACCESO_GOOGLE.test(t) && 'credenciales o API de Google', SECRETO_DEL_REPOSITORIO.test(t) && 'secretos del repositorio'].filter(Boolean)
+        if (motivos.length) automaticos.push(`${f} (${eventos ? eventos.join(', ') : 'eventos ilegibles'}: ${motivos.join(' y ')})`)
+      } else if (ACCESO_GOOGLE.test(t)) {
+        if (f !== WORKFLOW_COLECTOR_MANUAL) manualesMal.push(`${f}: credenciales de Google en un workflow manual distinto del colector`)
+        else if (!conOpcionExplicita(t)) manualesMal.push(`${f}: acceso a Google sin depender de la opción explícita ${OPCION_COLECTOR} (booleana, desactivada por defecto)`)
+        else colectorManual = true
+      }
+    }
+    if (automaticos.length) fallo('P12', `workflows automáticos con acceso a Google o a secretos (la CI de un PR nunca los recibe): ${automaticos.join('; ')}`)
+    else ok('P12', 'ningún workflow automático (PR, push u otro evento) recibe credenciales de Google, secretos del repositorio ni la API de Google; la CI de los PR valida Sheets con una hoja en memoria')
+    if (manualesMal.length) fallo('P15', manualesMal.join('; '))
+    else if (colectorManual) noVerificado('P15', `deuda de credenciales del colector V1.1: ${WORKFLOW_COLECTOR_MANUAL} usa una clave JSON de cuenta de servicio de Google (Editor de la hoja según su guía; sin verificar). Solo se ejecuta a mano y con la opción ${OPCION_COLECTOR}: pendiente de decisión del propietario (X-8), no del dashboard`)
+    else ok('P15', 'ningún workflow usa credenciales de Google')
   }
 
   // ---- Identidad de la versión: ¿el código de la imagen es el desplegado? ----

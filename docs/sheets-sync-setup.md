@@ -16,7 +16,26 @@ compartir la hoja y pasar una prueba manual; sin `schedule`.
 6. La alternativa recomendada para producción a largo plazo es **Workload Identity Federation
    (OIDC)** en lugar de claves JSON de larga duración.
 
-## Ejecución de prueba
+## Validación en la CI de los PR (sin credenciales)
+- El workflow `PROJECT-OS — PR validation` (`pr-validation.yml`) **nunca** recibe `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON`
+  ni lee la hoja real (revisión R3-1 del PR #24). En un PR se ejecuta el código del propio PR, y `--dry-run` es una opción
+  de ese código, no una barrera de permisos.
+- Valida la sincronización con una hoja **en memoria**: las pruebas unitarias (`tests/test_sync_sheets.py`: esquema,
+  idempotencia, dry-run sin escrituras, fallo cerrado) y `tests/sheets_fixture_dry_run.py`, que pasa el informe del smoke
+  test por `read_report()` y `synchronize(..., dry_run=True)` contra esa hoja falsa.
+- El preflight `web/scripts/ops/preflight-aceptacion.mjs` da **FALLO** (P12) si un workflow automático (PR, push u otro
+  evento) vuelve a usar credenciales de Google, otros secretos o la API de Google.
+
+## Validación con la hoja real (operación humana aparte)
+- Es **opcional y requiere autorización explícita del propietario** cada vez. No forma parte de la CI.
+- Opción sin credenciales: abrir la hoja y comparar los encabezados de `EVIDENCIAS` y `SYNC_RUNS` con `EVIDENCE_HEADER` y
+  `RUNS_HEADER` de `src/sync_sheets.py`.
+- Si se quiere automatizar, hacerlo con una identidad **de solo lectura** propia (Lector de la hoja y alcance
+  `spreadsheets.readonly`), nunca con la clave de escritura del colector. Es la decisión D-CI (riesgo X-8).
+
+## Ejecución de prueba (escritura; solo con autorización)
+- El workflow manual escribe en la hoja: ejecutarlo solo con autorización explícita y con su opción `sync_to_sheets`
+  (desactivada por defecto). El preflight da FALLO (P15) si pierde esa opción o se dispara de forma automática.
 - Tras revisión y merge del PR a `main`, abrir **Actions > PROJECT-OS — Manual GitHub evidence report**.
 - Elegir fecha `2026-10-07` y activar `sync_to_sheets=true` (desactivado por defecto).
 - Examinar el informe en el artefacto y verificar que `EVIDENCIAS` solo contiene nuevas filas,

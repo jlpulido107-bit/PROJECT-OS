@@ -30,21 +30,12 @@ jobs:
           GH_READ_TOKEN: ${{ github.token }}
           REPORT_PROJECT_IDS: POS
         run: python src/collect_activity.py
-      - name: Install Google Sheets authentication library
-        run: pip install -r requirements-sync.txt
-      - name: Verify Google Sheets credentials and schema (read-only)
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-        env:
-          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}
-          REPORT_DATE: ""
-        shell: bash
-        run: |
-          if [ -z "$PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
-            echo "::error::PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON secret not configured"
-            exit 1
-          fi
-          REPORT_DATE=$(TZ=America/Merida date +%F)
-          python src/sync_sheets.py --report "reports/${REPORT_DATE:0:7}/${REPORT_DATE}.json" --dry-run
+      # Un PR nunca recibe credenciales de Google ni lee la hoja real (revisión R3-1 del PR #24): aquí se ejecuta el
+      # código del propio PR, y un dry-run es una opción de ese código, no una barrera de permisos. El esquema y la
+      # sincronización se validan con una hoja EN MEMORIA; la validación con la hoja real es una operación humana aparte,
+      # opcional y autorizada (docs/sheets-sync-setup.md). El preflight P12 da FALLO si vuelve una credencial.
+      - name: Sheets sync dry-run against an in-memory sheet (no credentials, no network)
+        run: python tests/sheets_fixture_dry_run.py
       - name: Preserve smoke report for review
         if: always()
         uses: actions/upload-artifact@v4

@@ -33,9 +33,10 @@ export const NO_APLICA_PERMITIDO = Object.freeze({ G2: 'una sola revisión' })
 export const VERIFICABLE_POR_CODIGO = Object.freeze(['D3'])
 /** Límites que el estado debe reflejar mientras el control no esté VERIFICADO (Misión 014, §5 y §9). */
 export const ETIQUETA_OBLIGATORIA = Object.freeze({ E1: 'T', F3: 'T', C3: 'DEC', G1: 'DEC' })
-/** Lo que la evidencia real debe nombrar para que el control pueda pasar a VERIFICADO (condiciones de cierre). */
+/** Lo que la evidencia real debe nombrar para que el control pueda pasar a VERIFICADO (condiciones de cierre).
+ *  C2 (R3-2): una cuenta ELEGIBLE para el login de Google y el rechazo DE LA APP; un rechazo de Google no prueba la lista. */
 export const CONDICION_DE_CIERRE = Object.freeze({
-  A2: /callback/i, C1: /12\/12|12 pestañas/i, C2: /no autorizada/i, C3: /403/, D1: /historial/i, D2: /Compartir|Lector/i,
+  A2: /callback/i, C1: /12\/12|12 pestañas/i, C2: /^(?=[\s\S]*\belegible\b)(?=[\s\S]*rechazo de la app)/i, C3: /403/, D1: /historial/i, D2: /Compartir|Lector/i,
   E1: /caduc|30 días/i, F1: /presupuesto/i, F2: /gasto|costo/i, F3: /imágenes/i, G1: /ensayo/i, G3: /runbook|procedimiento/i,
   H: /aprobación del propietario/i,
 })

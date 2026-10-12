@@ -159,7 +159,7 @@ pruebas y documentos.
 | 12 | Respuesta ante errores de Sheets | `data.ts`: los errores se clasifican por código (`permission`, `quota`, `auth`, `not-found`, `timeout`, `unavailable`, `config`); la página muestra el error sin datos; las APIs dan 503 con `code`; el log solo lleva categorías | Correcto (CI) | — |
 | 13 | Escalado y costos | Revisión y servicio con `maxScale` 1 (A7 real), `minScale` 0, CPU por solicitud; presupuesto de USD 5 **solo alerta** | Correcto | F1 y F2 (consola); las solicitudes no tienen techo |
 | 14 | Logs de la app frente a logs de la plataforma | La app escribe 5 categorías fijas con `console.warn` y `console.error`; la plataforma registra las peticiones con su URL completa, de ahí el `code=` del callback y la exclusión en `_Default` | Corregido en las herramientas (D-12, D-13) | E2: falta leer las líneas `[project-os]` de cualquier severidad |
-| 15 | Deriva entre documentación y código | Se encontraron y corrigieron: P12 (falso OK; nuevo P15), recuento de E2 (28 → 29), E2 por severidad, exclusión verificada solo por nombre, defectos del diagnóstico. Sin deriva en `web/src` | Corregido | Ver matriz §3 (D-9 a D-13) |
+| 15 | Deriva entre documentación y código | Se encontraron y corrigieron: P12 (falso OK; nuevo P15; desde R3-1, FALLO para cualquier credencial en la CI automática), recuento de E2 (28 → 29), E2 por severidad, exclusión verificada solo por nombre, defectos del diagnóstico. Sin deriva en `web/src` | Corregido | Ver matriz §3 (D-9 a D-13) |
 
 ## 10. Seguimiento de los hallazgos (Misión 014)
 
@@ -170,7 +170,7 @@ pruebas y documentos.
 | S-3 | `check:client-secrets` sin control positivo | Resuelto en la Misión 013 |
 | S-4 | Login público y sin CSP | Aceptado en la preparación; excepción X-1 propuesta al propietario |
 | S-5 | C2 sin prueba real | Pendiente: [hoja](hoja-propietario.md), bloque 1 |
-| S-6 | La CI del colector V1.1 usa una clave JSON de cuenta de servicio de Google (`pr-validation.yml`: lectura de la hoja en dry-run en **cada PR** del repositorio; `manual-github-evidence.yml`: escritura opcional). Según las instrucciones de `docs/sheets-sync-setup.md`, esa cuenta se comparte como Editor de la hoja (no verificado) | Nuevo. Riesgo X-8: decisión del propietario. El preflight lo declara en P15, nunca como OK. No es del dashboard |
+| S-6 | La CI del colector V1.1 usaba una clave JSON de cuenta de servicio de Google: `pr-validation.yml` leía la hoja en dry-run en **cada PR** del repositorio, con el código del propio PR (un dry-run no es una barrera de permisos), y `manual-github-evidence.yml` escribe con opción. Según `docs/sheets-sync-setup.md`, esa cuenta se comparte como Editor de la hoja (no verificado) | **CI de los PR corregida (R3-1, PR #24):** sin la clave ni la hoja real; valida con una hoja en memoria, y P12 da FALLO si vuelve una credencial o un secreto a un workflow automático. **Pendiente:** la clave del workflow manual (X-8), decisión del propietario; P15 la declara siempre, nunca como OK |
 | S-7 | E2 se dio por verificado con una lectura que no veía las líneas de la app | Corregido en las herramientas; E2 → PARCIAL (D-12) |
 | S-8 | Una lectura fallida del diagnóstico mostraba un «0» | Corregido (D-13) |
 | S-9 | Exclusión del callback verificada solo por su nombre | Pendiente de leer como `CORRECTA` (hoja, bloque 5) |

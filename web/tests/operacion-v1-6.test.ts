@@ -73,19 +73,50 @@ describe('preflight de aceptación offline', () => {
     expect(out.codigo).toBe(3)
   })
 
-  it('M14 · P12 ya no es un falso OK: la clave del colector se declara en P15 (NO_VERIFICADO) y nunca como OK', () => {
+  it('R3-1 · la CI de los PR no recibe la clave de Google; el colector manual con opción explícita queda en P15 (NO_VERIFICADO), nunca OK', () => {
     const { por, out } = estados(fixtureRoot())
-    const p15 = out.resultados.find((r) => r.id === 'P15') as { motivo: string } | undefined
-    expect(p15?.motivo).toMatch(/pr-validation\.yml/)
-    expect(p15?.motivo).toMatch(/decisión del propietario/)
     expect(por.P12).toBe('OK')
-    const sinColector = estados(fixtureRoot((r) => {
-      for (const f of ['pr-validation.yml', 'manual-github-evidence.yml']) rmSync(path.join(r, '.github/workflows', f))
-    }))
+    expect(por.P15).toBe('NO_VERIFICADO')
+    const p15 = out.resultados.find((r) => r.id === 'P15') as { motivo: string } | undefined
+    expect(p15?.motivo).toMatch(/manual-github-evidence\.yml/)
+    expect(p15?.motivo).toMatch(/sync_to_sheets/)
+    expect(p15?.motivo).toMatch(/decisión del propietario/)
+    expect(p15?.motivo).not.toMatch(/pr-validation/)
+    // La CI de los PR valida la sincronización con la hoja EN MEMORIA, sin secretos ni el sincronizador real.
+    const pr = read(path.join(ROOT, '.github/workflows/pr-validation.yml'))
+    expect(pr).not.toMatch(/secrets|PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|sync_sheets\.py|requirements-sync/)
+    expect(pr).toContain('python tests/sheets_fixture_dry_run.py')
+    const sinColector = estados(fixtureRoot((r) => rmSync(path.join(r, '.github/workflows/manual-github-evidence.yml'))))
     expect(sinColector.por.P15).toBe('OK')
-    // Un workflow NUEVO con la misma clave no se blanquea como «colector»: FALLO en P12.
-    const nuevo = estados(fixtureRoot((r) => writeFileSync(path.join(r, '.github/workflows/nuevo.yml'), 'env:\n  K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n')))
-    expect(nuevo.por.P12).toBe('FALLO')
+  })
+
+  // El paso que la CI de los PR tenía antes de R3: clave de Google y dry-run con el código del propio PR.
+  const PASO_ANTERIOR = '      - name: Verify Google Sheets credentials and schema (read-only)\n        env:\n          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n        run: python src/sync_sheets.py --report r.json --dry-run\n'
+  const enLaCiDePr = (paso: string) => (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace('      - name: Preserve smoke report for review', `${paso}      - name: Preserve smoke report for review`))
+  const enElColector = (fn: (t: string) => string) => (r: string) => edit(r, '.github/workflows/manual-github-evidence.yml', fn)
+  it.each([
+    ['la CI de PR vuelve a inyectar la clave y el dry-run real (el workflow anterior a R3)', 'P12', enLaCiDePr(PASO_ANTERIOR)],
+    ['la CI de PR ejecuta el sincronizador real, aunque sea sin clave', 'P12', enLaCiDePr('      - run: python src/sync_sheets.py --report r.json --dry-run\n')],
+    ['la CI de PR con otro secreto del repositorio', 'P12', enLaCiDePr('      - run: echo ok\n        env:\n          K: ${{ secrets.OTRA_CLAVE }}\n')],
+    ['la CI de PR con secrets[…]', 'P12', enLaCiDePr("      - run: echo ok\n        env:\n          K: ${{ secrets['OTRA_CLAVE'] }}\n")],
+    ['la CI de PR con toJSON(secrets)', 'P12', enLaCiDePr('      - run: echo ok\n        env:\n          K: ${{ toJSON(secrets) }}\n')],
+    ['la CI de PR con google-github-actions/auth', 'P12', enLaCiDePr('      - uses: google-github-actions/auth@v2\n')],
+    ['la CI de PR con la API de Sheets', 'P12', enLaCiDePr('      - run: curl -s https://sheets.googleapis.com/v4/spreadsheets/x\n')],
+    ['el colector manual con un disparador automático', 'P12', enElColector((t) => t.replace('on:\n  workflow_dispatch:', 'on:\n  push:\n  workflow_dispatch:'))],
+    ['un workflow con la clave y sin bloque on: legible', 'P12', (r: string) => writeFileSync(path.join(r, '.github/workflows/nuevo.yml'), 'env:\n  K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n')],
+    ['el colector manual sin la condición de la opción', 'P15', enElColector((t) => t.replaceAll('        if: ${{ inputs.sync_to_sheets }}\n', ''))],
+    ['el colector manual con la opción activada por defecto', 'P15', enElColector((t) => t.replace(/(sync_to_sheets:[\s\S]*?default: )false/, '$1true'))],
+    ['el colector manual con la condición debilitada', 'P15', enElColector((t) => t.replace('if: ${{ inputs.sync_to_sheets }}\n        env:\n          PROJECT_OS_GOOGLE', 'if: ${{ inputs.sync_to_sheets || true }}\n        env:\n          PROJECT_OS_GOOGLE'))],
+    ['el colector manual con la clave en el env del job', 'P15', enElColector((t) => t.replace('    runs-on: ubuntu-latest', '    runs-on: ubuntu-latest\n    env:\n      K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}'))],
+    ['otro workflow manual con credenciales de Google', 'P15', (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: google-github-actions/auth@v2\n')],
+  ])('R3-1 · %s → FALLO en %s y código 1 (nunca un NO_VERIFICADO aceptable)', (_n, id, mutate) => {
+    const { status, por } = estados(fixtureRoot(mutate))
+    expect(por[id]).toBe('FALLO')
+    expect(status).toBe(1)
+  })
+
+  it('R3-1 · el token efímero de GitHub sí puede usarse en la CI de PR', () => {
+    expect(estados(fixtureRoot(enLaCiDePr('      - run: echo ok\n        env:\n          T: ${{ secrets.GITHUB_TOKEN }}\n')))).toMatchObject({ por: { P12: 'OK' } })
   })
 
   it.each([
@@ -207,6 +238,14 @@ describe('preflight de CIERRE (Misión 014, D.1)', () => {
     ['un ejemplo de evidencia que no se declara sintético', 'K7', (r: string) => {
       const f = path.join(r, 'docs/operacion-v1-6/evidencia-ejemplo.json')
       writeFileSync(f, read(f).replace('"ejemplo_sintetico": true', '"ejemplo_sintetico": false'))
+    }],
+    ['la CI de PR con la clave de Google (R3-1)', 'K4', (r: string) => {
+      const f = path.join(r, '.github/workflows/pr-validation.yml')
+      writeFileSync(f, read(f).replace('      - name: Preserve', '      - env:\n          K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n        run: python src/sync_sheets.py --dry-run\n      - name: Preserve'))
+    }],
+    ['el colector manual sin la opción explícita (R3-1)', 'K4', (r: string) => {
+      const f = path.join(r, '.github/workflows/manual-github-evidence.yml')
+      writeFileSync(f, read(f).replaceAll('        if: ${{ inputs.sync_to_sheets }}\n', ''))
     }],
   ])('%s → FALLO en %s y código 1', (_n, id, mutate) => {
     const { status, por } = ejecutar(repo(mutate))
@@ -364,6 +403,19 @@ describe('matriz de aceptación (reglas de scripts/ops/matriz.mjs, Misión 014)'
     const c5 = validar(conFila('C5', { 2: 'VERIFICADO (código)', 3: '—', 4: '**CI:** pruebas unitarias', 5: '—', 6: '—' }))
     expect(c5.join('\n')).toMatch(/C5: VERIFICADO sin evidencia real del propietario \(P\)/)
     expect(validar(matriz).filter((x) => x.startsWith('D3:'))).toEqual([]) // D3 sigue siendo válido solo con CI
+  })
+
+  it.each([
+    ['un rechazo de Google antes del callback', '**P:** EV-12 (Google bloqueó la cuenta no autorizada: «Acceso bloqueado»)'],
+    ['un AccessDenied sin saber qué capa rechazó', '**P:** EV-12 (AccessDenied con una cuenta no autorizada)'],
+    ['un rechazo de la app con una cuenta que no se sabe elegible', '**P:** EV-12 (rechazo de la app con otra cuenta)'],
+  ])('R3-2 · C2 no se aprueba con %s', (_n, real) => {
+    expect(validar(conFila('C2', { 2: 'VERIFICADO', 3: real, 6: '—' })).join('\n')).toMatch(/C2: VERIFICADO sin la evidencia real que exige su condición de cierre/)
+  })
+
+  it('R3-2 · C2 sí puede cerrarse con una cuenta elegible fuera de la lista y el rechazo de la app', () => {
+    const real = '**P:** EV-12 (cuenta elegible para el login de Google, fuera de la lista: rechazo de la app en el callback, sin datos)'
+    expect(validar(conFila('C2', { 2: 'VERIFICADO', 3: real, 6: '—' })).filter((x) => x.startsWith('C2:'))).toEqual([])
   })
 
   it.each([
@@ -981,6 +1033,30 @@ describe('evidencia saneada: validación y evaluación', () => {
 
 describe('documentos de operación (Entregas B y C)', () => {
   const doc = (n: string) => read(path.join(DOCS, n))
+
+  it('R3-2 · la hoja separa las dos capas de C2: un rechazo de Google es NO_VERIFICADO, solo el rechazo de la app es OK', () => {
+    const fila = doc('hoja-propietario.md').split('\n').find((l) => l.startsWith('| 1.3 · C2')) ?? ''
+    expect(fila).toMatch(/elegible/)
+    expect(fila).toMatch(/Google rechaza la cuenta[^|]*NO_VERIFICADO/)
+    expect(fila).toMatch(/vuelves a la app en `\/login`[^|]*`OK`/)
+    expect(fila).toMatch(/sin saber qué capa rechazó \*\*no\*\* es OK/)
+    expect(fila).toMatch(/`C2: OK \/ FALLO \/ NO_VERIFICADO`/)
+    expect(fila).toMatch(/\*\*No\*\* añadas usuarios de prueba/)
+    expect(doc('matriz-aceptacion.md').split('\n').find((l) => l.startsWith('| C2 |'))).toMatch(/elegible[\s\S]*por la app/)
+    expect(doc('acta-cierre-v1-6.md')).toMatch(/^\| C2 \| \*\*De capa\*\*/m)
+  })
+
+  it('R3-1 · la guía del colector y el riesgo X-8 distinguen la CI de los PR (hoja en memoria) del workflow manual con opción', () => {
+    const guia = read(path.join(ROOT, 'docs', 'sheets-sync-setup.md'))
+    expect(guia).toMatch(/\*\*nunca\*\* recibe `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON`/)
+    expect(guia).toMatch(/hoja \*\*en memoria\*\*/)
+    expect(guia).toMatch(/requiere autorización explícita del propietario/)
+    expect(guia).toMatch(/\*\*de solo lectura\*\*/)
+    const x8 = doc('linea-base-v1-6.md').split('\n').find((l) => l.startsWith('| X-8 |')) ?? ''
+    expect(x8).toMatch(/manual-github-evidence\.yml/)
+    expect(x8).toMatch(/ya \*\*no\*\* recibe esa clave/)
+    expect(x8).toMatch(/P12 da \*\*FALLO\*\*/)
+  })
 
   it('el índice enlaza todos los documentos de la carpeta', () => {
     const indice = doc('README.md')
