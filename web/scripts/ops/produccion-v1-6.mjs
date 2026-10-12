@@ -18,7 +18,15 @@ export const PRODUCCION = Object.freeze({
   secretos: Object.freeze(['project-os-nextauth-secret', 'project-os-google-client-secret', 'project-os-allowed-emails']),
   /** Variables cuya presencia en la revisión activaría la escritura de V1.4 (deben faltar en producción). */
   variablesEscritura: Object.freeze(['PROJECT_OS_WRITE_MODE', 'AUTH_WRITER_EMAILS']),
+  /** Día del registro de despliegue: una evidencia con fecha anterior no puede describir esta versión. */
+  fechaDespliegue: '2026-10-11',
 })
+
+/**
+ * Controles que se comprueban con LECTURAS remotas del propietario (plan-inspeccion.mjs). Sin todos ellos, una evidencia
+ * nunca da «todo OK» (evidencia.mjs, salvo --parcial). Una prueba comprueba que coincide con los pasos del plan.
+ */
+export const CONTROLES_LECTURA = Object.freeze(['A1', 'A2', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'E1', 'F3', 'G2'])
 
 /** Archivos que entran en la imagen (web/.dockerignore y web/.gcloudignore): definen el código desplegado. */
 export const RUTAS_DE_LA_IMAGEN = Object.freeze([

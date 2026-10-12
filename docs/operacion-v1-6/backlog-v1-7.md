@@ -3,6 +3,13 @@
 > Ninguna entrada de este documento es una funcionalidad aprobada ni autoriza trabajo. Son **hipótesis** para
 > priorizar con el propietario. Lo que exige mutaciones de producción, escritura real o automatizaciones requiere una
 > decisión explícita aparte.
+>
+> **Actualización (Misión 014):**
+>
+> - X1 (etiqueta `produccion`) y X2 (`maxScale` de servicio 1) **se hicieron** el 2026-10-11, como operaciones
+>   autorizadas del propietario (línea base, EV-06 y EV-11).
+> - La arquitectura de la automatización futura (R1–R4, X5, X6) está en la
+>   [propuesta V1.7](propuesta-arquitectura-v1-7.md), también **no aprobada**.
 
 **Escala:** valor y riesgo en A (alto), M (medio) o B (bajo). Costo en S (horas), M (días) o L (semanas).
 
@@ -15,6 +22,7 @@
 | Q3 | Reporte de calidad de datos: por pestaña, filas descartadas, columnas faltantes y fechas inválidas, sin valores. Ya existe el contador "12/12 pestañas válidas" | M | B | — | M | P2 |
 | Q4 | Que los PR solo de `docs/**` también ejecuten `npm test` en CI (hoy el filtro es `web/**`) | M | B | Cambio de workflow | S | P2 |
 | Q5 | Prueba que vincule el resumen de la matriz con el registro de producción al actualizar estados | B | B | — | S | P3 |
+| Q6 | Añadir `favicon.ico`: hoy responde 404 (visto en E2), sin efecto funcional | B | B | Cambio de código, desplegado en el próximo build autorizado | S | P3 |
 
 ## 2. Mejoras arquitectónicas (repositorio; exigen diseño y revisión)
 

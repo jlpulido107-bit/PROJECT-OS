@@ -3,6 +3,32 @@
 > **Fecha:** 2026-10-11. Datos tomados de `npm audit` y `npm view` contra el registro público de npm, desde `web/`
 > en el commit de este PR. **No** se ejecutó `npm audit fix` ni se cambió ninguna dependencia.
 
+## 0. Estado y decisión (Misión 014, 2026-10-11)
+
+Se repitió la consulta en el registro público de npm, con el lockfile del PR #24. **No** se ejecutó `npm audit fix` ni
+se cambió ninguna dependencia.
+
+| Comprobación | Resultado |
+| --- | --- |
+| `npm run audit:prod` (`--omit=dev`, falla con high) | **0 vulnerabilidades** |
+| `npm audit` (todas) | **5 altas, 0 críticas**: `braces`, `micromatch`, `fast-glob`, `@next/eslint-plugin-next` y `eslint-config-next`, por el mismo aviso [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) |
+| `npm ls --omit=dev braces` | Vacío: no es una dependencia de producción |
+| Versiones publicadas | `braces` 3.0.3 (dentro del rango afectado), `micromatch` 4.0.8, `fast-glob` 3.3.3. `@next/eslint-plugin-next` y `eslint-config-next` 16.4.0, que siguen fijando `fast-glob@3.3.1` |
+| Corrección que propone npm | `eslint-config-next@14.2.35`: una **versión mayor anterior**, incompatible con Next 16 y ESLint 9. **No** se aplica |
+
+**Conclusión:** no existe una actualización pequeña y segura. El riesgo persiste y se presenta como decisión.
+
+### Decisión D-DEP para el propietario
+
+| Aspecto | Detalle |
+| --- | --- |
+| Impacto | Denegación de servicio (agotamiento de pila) **de ESLint**, solo si procesa patrones de archivo muy anidados y maliciosos |
+| Exposición | Solo la máquina de desarrollo y la CI, al ejecutar `npm run lint`. No entra en la imagen (`.dockerignore` y salida `standalone`) ni en Cloud Run. Explotarlo exige modificar la configuración del propio repositorio, y quien puede hacerlo ya ejecuta código en la CI |
+| Compensaciones | `audit:prod` en CI falla con cualquier alta de producción; `audit:critical` falla con cualquier crítica; revisión mensual (runbook §2); las 5 altas siguen visibles, no se ocultan |
+| Opción recomendada | **Aceptar** la deuda (excepción X-2) hasta que exista una versión corregida, y actualizar entonces en un PR separado (§1, «Ruta de actualización segura») |
+| Alternativas | (a) Retirar `eslint-config-next` y perder las reglas de Next: cambio grande y fuera de alcance. (b) `overrides` hacia una versión que no existe: no aplicable. (c) Ejecutar el lint en un entorno aislado: no reduce un riesgo que ya es solo de desarrollo |
+| Quién decide | El propietario, en el [acta de cierre](acta-cierre-v1-6.md) |
+
 ## 1. Las 5 alertas altas
 
 | Paquete | Versión instalada | Cadena | Aviso |

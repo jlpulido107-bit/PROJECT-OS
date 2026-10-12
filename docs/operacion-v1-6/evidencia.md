@@ -21,11 +21,12 @@
 | `version` | número | `1` |
 | `fecha` | `AAAA-MM-DD` | Día de la lectura |
 | `commit_desplegado` | SHA de 40 caracteres | Debe ser `7f44216…`. Si es otro, **FALLO** y no se evalúa nada más |
-| `revision` | texto | Si difiere de `project-os-dashboard-00001-gsk`, NO_VERIFICADO: hubo otro despliegue |
-| `ejemplo_sintetico` | booleano, opcional | `true` solo en ejemplos; el evaluador lo anuncia |
+| `revision` | texto | Debe ser `project-os-dashboard-00001-gsk`. Si difiere o falta, hubo otro despliegue: **ningún control queda en OK** (requiere nueva validación) |
+| `ejemplo_sintetico` | booleano, opcional | `true` solo en ejemplos: **ningún control queda en OK ni en FALLO** (nunca cuenta como producción) |
 | `controles[]` | lista | `{ id, fuente, comando?, observado, nota? }` |
 | `observado.error` | texto, opcional | Si la lectura falló (p. ej. `PERMISSION_DENIED`): **NO_VERIFICADO** |
 | `observado.resultado` | `OK` / `FALLO` | Controles humanos (C, D, E2, F, G1, G3) |
+| `observado.oauth_elegible` · `observado.capa_rechazo` | booleano · `app` / `google` | Solo C2 (R4-1): si la cuenta de prueba podía completar el login de Google y qué capa la rechazó. **Nunca** el correo |
 
 Convención importante: `null` o `""` significa **sin dato** (NO_VERIFICADO). `[]` significa **"ninguno,
 comprobado"** y solo lo escribe quien lo comprobó. La plantilla usa `null` para que un campo olvidado nunca produzca
@@ -39,8 +40,23 @@ un OK.
   o patrón). Dos lecturas con valores distintos para el mismo campo dan NO_VERIFICADO: nunca gana la última.
 - Cada control se agrega con la **peor** evidencia (FALLO > NO_VERIFICADO > OK) y debe cumplir una **cobertura
   mínima**. Un control compuesto **nunca** queda en OK por una sola parte.
-- El código de salida se calcula sobre los controles agregados. `--json` devuelve `controles` (agregados) y
-  `lecturas` (por grupo).
+- El código de salida se calcula sobre los controles agregados. `--json` devuelve `controles` (agregados),
+  `lecturas` (por grupo), `cobertura` y `limite`.
+
+**Falla cerrado (Misión 014).** Además de las reglas por control:
+
+| Situación | Efecto | Motivo |
+| --- | --- | --- |
+| `ejemplo_sintetico: true` | Todos los controles NO_VERIFICADO (la tabla `Lecturas` muestra lo que diría la regla, rotulado) | Un ejemplo nunca se contabiliza como producción |
+| `fecha` anterior a 2026-10-11 | Todos NO_VERIFICADO | No puede describir esta versión |
+| `revision` distinta o ausente | Ningún OK; los FALLO se mantienen | Un cambio de revisión exige revalidar la línea base |
+| A1 en FALLO (otro digest o una etiqueta) | Ningún otro OK | Un cambio de digest exige revalidar la línea base |
+| Faltan controles del plan (`A1, A2, A4–A9, E1, F3, G2`) | Fila `COB` en NO_VERIFICADO: nunca «todo OK» | Una evidencia parcial no aprueba el conjunto. `--parcial` evalúa un subconjunto a propósito |
+| F3 solo con `--check` | NO_VERIFICADO (cobertura) | `--check` prueba la configuración; el efecto real exige el conteo de imágenes |
+
+Los motivos impresos nunca repiten texto libre de la evidencia: un `id` fuera del checklist se muestra como `??`, un
+patrón de E1 desconocido o un `servicio_maxScale` no numérico no se repiten, y una clave arbitraria aparece como
+`<clave>`.
 
 | Control | OK solo si | FALLO si | NO_VERIFICADO si |
 | --- | --- | --- | --- |
@@ -55,7 +71,8 @@ un OK.
 | E1 | **Los 4 patrones** (`correo`, `token`, `bearer`, `codigo_oauth`), cada uno con 0 coincidencias, `alcance: todos-los-campos` y `ventana_dias ≥ 30` | Cualquier conteo > 0 | Falta algún patrón, o el alcance es parcial (solo `textPayload`, menos de 30 días o sin declarar) |
 | F3 | `--check` `PERMITIDO`; si hay conteos, ≥ 5 imágenes y 0 no protegidas de más de 30 días | `BLOQUEADO`, o alguna no protegida de más de 30 días | Faltan datos, o hay menos de 5 imágenes |
 | G2 | ≥ 2 revisiones, la imagen anterior existe **y** `ensayo_rollback: OK` (ensayo **autorizado**) | La imagen anterior ya no existe, o el ensayo falló | Una sola revisión; imagen anterior sin comprobar; sin ensayo |
-| Humanos | `resultado: OK` | `resultado: FALLO` | Vacío |
+| C2 | `resultado: OK`, `oauth_elegible: true` **y** `capa_rechazo: app` (una cuenta elegible fuera de la lista, rechazada por la app sin datos) | `resultado: FALLO` (una cuenta no autorizada vio datos) | Cualquier otro caso: sin `oauth_elegible: true`, `capa_rechazo: google` (rechazo de Google antes del callback) o sin capa (un aviso de error sin saber quién rechazó) |
+| Humanos (salvo C2) | `resultado: OK` | `resultado: FALLO` | Vacío |
 | Otro id | — | — | Siempre: sin regla |
 
 **Transcripción de A6** (revisión R3). La versión fijada se obtiene con una extracción **estructurada** del JSON de la
@@ -89,14 +106,26 @@ El evaluador rechaza el archivo completo, y nunca imprime el valor, si encuentra
 - secretos de cliente OAuth;
 - IDs de cuenta de facturación;
 - `NOMBRE=valor` de variables;
-- claves de log (`textPayload`, `jsonPayload`, `protoPayload`, `httpRequest`).
+- claves de log (`textPayload`, `jsonPayload`, `protoPayload`, `httpRequest`, `insertId`, `logName`,
+  `receiveTimestamp`, `trace`);
+- desde la Misión 014:
+  - URLs con parámetros (`?…=`) y parámetros sensibles sueltos (`code=`, `state=`, `token=`, `client_secret=`…);
+  - códigos de autorización (`4/0…`) y *refresh tokens* (`1//0…`) de Google;
+  - IDs de cliente OAuth;
+  - tokens de GitHub;
+  - cookies de sesión de NextAuth;
+  - enlaces a la hoja de cálculo;
+  - direcciones IP;
+  - claves cuyo nombre indica un secreto (`token`, `password`, `client_secret`, `cookie`…).
 
-Muestra solo la ruta JSON (`$.controles[0].observado.nota`) y el tipo de hallazgo.
+Muestra solo la ruta JSON (`$.controles[0].observado.nota`) y el tipo de hallazgo. Una clave que no sea un
+identificador simple (p. ej. un correo usado como clave) aparece como `<clave>`.
 
 **El saneamiento automático es una red, no una garantía.** El propietario revisa el archivo antes de compartirlo.
 
 ## 5. Ejemplo
 
 [`evidencia-ejemplo.json`](evidencia-ejemplo.json) es **sintético**: tiene `ejemplo_sintetico: true` y
-`fecha: 2000-01-01`, y sus valores son inventados. Muestra un FALLO (A9 sin etiqueta), un NO_VERIFICADO por D-1 y un
-control humano sin rellenar. **No es evidencia de producción**, y ni la matriz ni el registro lo citan.
+`fecha: 2000-01-01`, y sus valores son inventados. En `Lecturas` muestra lo que dirían las reglas: un FALLO (A9 sin
+etiqueta), un NO_VERIFICADO por D-1 y un control humano sin rellenar. Los **controles** agregados quedan todos en
+NO_VERIFICADO y el código de salida es 3. **No es evidencia de producción**, y ni la matriz ni el registro lo citan.

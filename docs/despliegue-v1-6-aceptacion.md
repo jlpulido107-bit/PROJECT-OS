@@ -10,6 +10,11 @@
 Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVICE_NAME`, `SERVICE_URL`,
 `RUNTIME_SA`.
 
+> **Estado de cada fila (Misión 014):** [matriz de aceptación](operacion-v1-6/matriz-aceptacion.md), con evidencia
+> fechada en la [línea base](operacion-v1-6/linea-base-v1-6.md). Lo que falta lo comprueba el propietario con la
+> [hoja](operacion-v1-6/hoja-propietario.md). En E2, la búsqueda de `[project-os]` va **sin** filtro de severidad
+> ([runbook operativo §5.1](operacion-v1-6/runbook-operativo.md)).
+
 ## A. Configuración desplegada (antes de abrir el acceso)
 
 | # | Verificación | Cómo | Esperado |

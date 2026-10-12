@@ -6,6 +6,12 @@
 
 > Este documento actualiza el estado histórico de preparación de la [Puerta C](puerta-c-v1-6.md) y el [runbook](despliegue-privado-v1-3.md). No sustituye la [lista completa de aceptación](despliegue-v1-6-aceptacion.md), que conserva comprobaciones operativas pendientes.
 
+> **Estado vigente (Misión 014):** las §2 y §5 conservan lo observado **durante** el despliegue. Por ejemplo, la
+> etiqueta `produccion` sin confirmar y el `maxScale` de servicio en 3. Las operaciones posteriores están en la **§7**.
+> El estado congelado de la versión, con la fecha y la procedencia de cada evidencia, está en la
+> [línea base V1.6](operacion-v1-6/linea-base-v1-6.md), y el estado de cada control en la
+> [matriz](operacion-v1-6/matriz-aceptacion.md).
+
 ## 1. Identidad de la versión desplegada
 
 | Elemento | Valor / resultado |
@@ -78,3 +84,23 @@ La prueba remota fue **sin sesión**; no suplanta la prueba humana con OAuth ni 
 - **Estado operacional observado:** este registro fechado; las políticas y el estado actual de GCP deben verificarse de nuevo antes de cambios futuros.
 - **Comandos y rollback:** [runbook de despliegue](despliegue-privado-v1-3.md); [checklist posterior](despliegue-v1-6-aceptacion.md).
 - **Documentación y cambios en GitHub:** `main`, con revisión humana para futuras mutaciones de producción.
+
+## 7. Operaciones posteriores al despliegue (2026-10-11, Cloud Shell)
+
+Ejecutadas por el propietario tras la auditoría de solo lectura ([remediación](operacion-v1-6/remediacion-2026-10-11.md)).
+Cada mutación se hizo con confirmación expresa y se verificó de inmediato. **Ninguna cambió la imagen ni la revisión.**
+
+| Operación | Resultado verificado |
+| --- | --- |
+| C9: etiqueta `dashboard:produccion` → digest desplegado `sha256:f6e46596…5c07` | A9 = OK. Primer despliegue: no hay `produccion-anterior` |
+| Versión 1 de `project-os-google-client-secret`, no usada: deshabilitada, login comprobado y luego **destruida** | Cada secreto tiene exactamente 1 versión `ENABLED`, que es la fijada en la revisión |
+| Máximo de instancias del **servicio** 3 → 1 (`gcloud run services update --max=1`) | Servicio 1, revisión 1; sigue `project-os-dashboard-00001-gsk` con el 100 % del tráfico |
+| Exclusión `project-os-callback-oauth` en el sink `_Default` (peticiones al callback OAuth) | Exclusión activa. La entrada anterior con `code=` caduca en ≤ 30 días |
+| `npm run smoke:remote` posterior | **26/26** |
+
+Pendientes en navegador: callback en la consola OAuth (A2), 12 pestañas y totales (C1), cuenta no autorizada (C2),
+historial y permisos de la hoja (D1, D2), presupuesto y gasto (F1, F2) y máximo histórico de instancias (A7).
+
+**Nota (Misión 014):** la herramienta que añadió la exclusión solo comprobó que existiera **con ese nombre**. El filtro
+y `disabled=false` no se verificaron, y la exclusión solo cubre el sink `_Default`. Su estado (`CORRECTA` esperado) lo
+muestra `diagnostico` ([hoja del propietario](operacion-v1-6/hoja-propietario.md), bloque 5).

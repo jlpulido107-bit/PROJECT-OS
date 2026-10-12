@@ -12,6 +12,6 @@
     { "id": "A7", "fuente": "propietario", "observado": { "revision_minScale": "0", "revision_maxScale": "1", "cpu_throttling": "true", "servicio_maxScale": "3" } },
     { "id": "A9", "fuente": "propietario", "observado": { "digest_produccion": "NOT_FOUND" } },
     { "id": "E1", "fuente": "propietario", "observado": { "patron": "correo", "coincidencias": 0 } },
-    { "id": "C2", "fuente": "propietario", "observado": { "resultado": "" } }
+    { "id": "C2", "fuente": "propietario", "observado": { "resultado": "", "oauth_elegible": null, "capa_rechazo": "" } }
   ]
 }

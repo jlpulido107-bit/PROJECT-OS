@@ -1,5 +1,15 @@
 # PROJECT-OS V1.6 — Auditoría de seguridad y confiabilidad (sin producción real)
 
+> **Actualización (Misión 014):** §1–§8 conservan el análisis de la Misión 013, anterior a la auditoría en Cloud Shell
+> del 2026-10-11. Desde entonces:
+>
+> - A6 está inspeccionado (EV-06);
+> - la etiqueta `produccion` está aplicada (EV-06, S-1);
+> - el `maxScale` de servicio está en 1 (EV-11, S-2).
+>
+> La revisión final offline del contrato está en **§9**, y el seguimiento de los hallazgos en **§10**. Estado y
+> evidencia: [línea base](linea-base-v1-6.md).
+>
 > **Método:** revisión estática del código desplegado (`web/` de `7f44216`, idéntico a `main` `509458b`) y de las
 > pruebas que ya existen. **No** se accedió a GCP, OAuth, Secret Manager ni a la hoja. Cada afirmación indica su
 > evidencia: **[código]** archivo, **[prueba]** prueba automatizada en CI, **[registro]** el registro de producción
@@ -121,3 +131,46 @@ despliegue, no hay `produccion-anterior` que mover. Ninguna herramienta de este 
 | S-5 | C2 sin prueba real con una cuenta no autorizada | Media (falta evidencia; el código y la E2E lo cubren) | Puerta 4 | Hoja del propietario, paso 3 |
 
 **Ninguna falla crítica.** No se hizo ningún refactor de seguridad en este PR.
+
+## 9. Revisión final offline del contrato V1.6 (Misión 014)
+
+**Método:**
+
+- relectura del código **actual** de `web/src`, idéntico al desplegado según P14;
+- relectura de la plantilla, los scripts y los workflows;
+- sin acceso a GCP, OAuth ni Sheets.
+
+No se cambió `web/src`: no apareció ningún defecto bloqueante. Las correcciones de esta misión son de herramientas,
+pruebas y documentos.
+
+| # | Punto del contrato | Evidencia en el código y las pruebas | Estado | Riesgo residual |
+| --- | --- | --- | --- | --- |
+| 1 | OAuth y lista de correos | `auth.ts`: `signIn` exige `email_verified === true` y el correo en `AUTH_ALLOWED_EMAILS`; alcances `openid email profile`; sesión JWT de 8 h (`access.ts`). Lista vacía = nadie entra | Correcto (CI) | C2: falta la prueba real con una cuenta fuera de la lista |
+| 2 | Protección de páginas y APIs | `proxy.ts`: el matcher cubre todo salvo `_next/static`, `_next/image` y `favicon.ico`; `decide()` en cada petición; `(private)/layout.tsx` llama a `requireUser()`; cada API repite la comprobación | Correcto (CI y B1 real) | — |
+| 3 | Respuestas 401 y 403 | `authz.ts`: API sin sesión → 401 JSON sin datos; correo no permitido → 403; páginas → `/login` (`AccessDenied`); siempre `no-store` | 401 real (B1), 403 por CI | C3: 403 real opcional (X-7) |
+| 4 | Escritura bloqueada en Cloud Run | `deployment.ts`: con `K_SERVICE`, cualquier `PROJECT_OS_WRITE_MODE` distinto de `disabled` o un `AUTH_WRITER_EMAILS` → `write-mode` → `/api/health` 503: la revisión no recibe tráfico | Correcto (CI) y sin variables de escritura (A4 real) | — |
+| 5 | Alcance `spreadsheets.readonly` | `sheets-client.ts`: `SHEETS_READONLY_SCOPE` y solo `GET`; `credentials.ts` pide ese alcance en ambos modos | Correcto (CI, D3) | D1 y D2 (navegador) |
+| 6 | Sin claves ni secretos en el cliente | Ninguna `NEXT_PUBLIC_` (solo un comentario); `server-only` en los módulos con credenciales; `check:client-secrets --min-values=4` en CI con valores falsos | Correcto (CI) | Nunca se comparan valores reales: se inyectan en tiempo de ejecución (§5) |
+| 7 | Variables y credenciales de compilación | `Dockerfile`: la configuración llega en tiempo de ejecución; el único secreto del build es la CA opcional (`--mount=type=secret`), que no queda en ninguna capa. El build usa la cuenta `project-os-build` (A8 real) | Correcto | — |
+| 8 | Imagen por digest | `render.mjs` exige `@sha256:`; A1 real | Correcto | — |
+| 9 | Retención y limpieza | Política Keep `produccion*` y Keep 3, Delete > 30 días (P6); etiqueta `produccion` aplicada (A9 real) | Correcto | F3: efecto real no observable aún (X-4) |
+| 10 | `/login` público frente a páginas privadas | `isPublicPath`: `/login`, `/api/health`, `/robots.txt`, `/favicon.ico`, `/api/auth/*` y estáticos. `/api/health` no lee la sesión ni la hoja | Correcto (B1 real) | X-1: login alcanzable (bots, costo de solicitudes) |
+| 11 | Script reutilizable de remediación | Salvaguardas 1–5 ([remediación §4](remediacion-2026-10-11.md)); 90 pruebas con `gcloud` falso en un PATH hermético, sin acceso al `gcloud` real, y con control negativo | Correcto (S) | Supuesto: ningún otro consumidor con la misma cuenta |
+| 12 | Respuesta ante errores de Sheets | `data.ts`: los errores se clasifican por código (`permission`, `quota`, `auth`, `not-found`, `timeout`, `unavailable`, `config`); la página muestra el error sin datos; las APIs dan 503 con `code`; el log solo lleva categorías | Correcto (CI) | — |
+| 13 | Escalado y costos | Revisión y servicio con `maxScale` 1 (A7 real), `minScale` 0, CPU por solicitud; presupuesto de USD 5 **solo alerta** | Correcto | F1 y F2 (consola); las solicitudes no tienen techo |
+| 14 | Logs de la app frente a logs de la plataforma | La app escribe 5 categorías fijas con `console.warn` y `console.error`; la plataforma registra las peticiones con su URL completa, de ahí el `code=` del callback y la exclusión en `_Default` | Corregido en las herramientas (D-12, D-13) | E2: falta leer las líneas `[project-os]` de cualquier severidad |
+| 15 | Deriva entre documentación y código | Se encontraron y corrigieron: P12 (falso OK; nuevo P15; desde R3-1, FALLO para cualquier credencial en la CI automática), recuento de E2 (28 → 29), E2 por severidad, exclusión verificada solo por nombre, defectos del diagnóstico. Sin deriva en `web/src` | Corregido | Ver matriz §3 (D-9 a D-13) |
+
+## 10. Seguimiento de los hallazgos (Misión 014)
+
+| # | Hallazgo | Estado |
+| --- | --- | --- |
+| S-1 | Etiqueta `produccion` sin confirmar | **Resuelto** (EV-06, C9) |
+| S-2 | Límite de escalado ambiguo (D-1) | **Resuelto** (EV-11) |
+| S-3 | `check:client-secrets` sin control positivo | Resuelto en la Misión 013 |
+| S-4 | Login público y sin CSP | Aceptado en la preparación; excepción X-1 propuesta al propietario |
+| S-5 | C2 sin prueba real | Pendiente: [hoja](hoja-propietario.md), bloque 1 |
+| S-6 | La CI del colector V1.1 usaba una clave JSON de cuenta de servicio de Google: `pr-validation.yml` leía la hoja en dry-run en **cada PR** del repositorio, con el código del propio PR (un dry-run no es una barrera de permisos), y `manual-github-evidence.yml` escribe con opción. Según `docs/sheets-sync-setup.md`, esa cuenta se comparte como Editor de la hoja (no verificado) | **CI de los PR corregida (R3-1, PR #24):** sin la clave ni la hoja real; valida con una hoja en memoria, y P12 da FALLO si vuelve una credencial o un secreto a un workflow automático. **Pendiente:** la clave del workflow manual (X-8), decisión del propietario; P15 la declara siempre, nunca como OK |
+| S-7 | E2 se dio por verificado con una lectura que no veía las líneas de la app | Corregido en las herramientas; E2 → PARCIAL (D-12) |
+| S-8 | Una lectura fallida del diagnóstico mostraba un «0» | Corregido (D-13) |
+| S-9 | Exclusión del callback verificada solo por su nombre | Pendiente de leer como `CORRECTA` (hoja, bloque 5) |

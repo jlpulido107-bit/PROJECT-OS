@@ -2,21 +2,27 @@
 /**
  * Valida y evalúa un archivo de EVIDENCIA SANEADA de la V1.6 (docs/operacion-v1-6/evidencia.md).
  *
- *   node scripts/ops/evidencia.mjs <archivo.json> [--json]
+ *   node scripts/ops/evidencia.mjs <archivo.json> [--json] [--parcial]
  *
  * - Offline: solo lee el archivo indicado. No invoca gcloud ni la red.
  * - Primero RECHAZA (código 4) la evidencia con correos de personas, tokens, claves, IDs de facturación, valores de
- *   variables o contenido de logs. Nunca imprime el valor encontrado: solo la ruta JSON y el tipo.
+ *   variables, URLs con parámetros, cookies o contenido de logs. Nunca imprime el valor encontrado: solo la ruta JSON
+ *   (sin claves arbitrarias) y el tipo.
  * - Después evalúa cada control con reglas explícitas: OK / FALLO / NO_VERIFICADO. Un campo vacío, un error de
- *   permisos o un control sin regla es NO_VERIFICADO, nunca OK.
+ *   permisos o un control sin regla es NO_VERIFICADO, nunca OK. Los motivos nunca repiten texto libre de la evidencia.
+ * - Falla cerrado (Misión 014): un ejemplo sintético o una fecha anterior al despliegue nunca dan OK; otra revisión u
+ *   otro digest exigen revalidar (ningún OK); y sin TODOS los controles de lectura del plan (CONTROLES_LECTURA) el
+ *   resultado nunca es «todo OK», salvo con --parcial (evaluar un subconjunto a propósito).
  * - Código de salida: 0 todo OK · 1 algún FALLO · 3 sin fallos pero con NO_VERIFICADO · 4 evidencia rechazada ·
  *   2 uso incorrecto o archivo ilegible.
  */
 import { readFileSync } from 'node:fs'
-import { codigoDeSalida, linea, PRODUCCION as P } from './produccion-v1-6.mjs'
+import { codigoDeSalida, CONTROLES_LECTURA, linea, PRODUCCION as P } from './produccion-v1-6.mjs'
 
 // ---- Saneamiento: lo que nunca debe aparecer en una evidencia ----
-const CLAVES_DE_LOG = new Set(['textPayload', 'jsonPayload', 'protoPayload', 'httpRequest'])
+const CLAVES_DE_LOG = new Set(['textPayload', 'jsonPayload', 'protoPayload', 'httpRequest', 'insertId', 'logName', 'receiveTimestamp', 'trace'])
+/** Claves cuyo nombre ya indica un secreto: su presencia rechaza la evidencia aunque el valor parezca inocuo. */
+const CLAVE_DE_SECRETO = /^(password|passwd|secret|client_secret|token|access_token|refresh_token|id_token|api_key|apikey|private_key|cookie|set-cookie|authorization)$/i
 const CUENTA_DEL_PROYECTO = new RegExp(`^[a-z][a-z0-9-]*@${P.proyecto}\\.iam\\.gserviceaccount\\.com$`)
 const DETECTORES = [
   ['clave privada', /-----BEGIN [A-Z ]*PRIVATE KEY-----|"private_key"/],
@@ -27,8 +33,20 @@ const DETECTORES = [
   ['secreto de cliente OAuth', /GOCSPX-/],
   ['ID de cuenta de facturación', /\b[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}\b/],
   ['valor de variable de entorno', /\b[A-Z][A-Z0-9_]{2,}=\S/],
-  ['contenido de log', /"(textPayload|jsonPayload|protoPayload|httpRequest)"/],
+  ['contenido de log', /"(textPayload|jsonPayload|protoPayload|httpRequest|insertId)"/],
+  // Misión 014 (D.2): valores sensibles en URL, credenciales de OAuth y GitHub, cookies, la hoja y direcciones IP.
+  ['URL con parámetros (pueden llevar códigos o tokens)', /https?:\/\/[^\s"'<>]*\?[^\s"'<>]*=/i],
+  ['parámetro sensible de URL', /[?&#;](code|state|token|access_token|id_token|refresh_token|client_secret|api_key|key|password|sig|signature|session_state)=[^\s&"']+/i],
+  ['código de autorización OAuth', /\b4\/0[0-9A-Za-z_-]{20,}/],
+  ['refresh token de Google', /\b1\/\/0[0-9A-Za-z_-]{20,}/],
+  ['ID de cliente OAuth', /\b\d{6,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com/],
+  ['token de GitHub', /\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/],
+  ['cookie de sesión', /next-auth\.(session-token|csrf-token)|__(Secure|Host)-next-auth/i],
+  ['enlace a la hoja de cálculo', /docs\.google\.com\/spreadsheets\/d\//i],
+  ['dirección IP', /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/],
 ]
+/** Segmento de ruta JSON imprimible: una clave arbitraria (p. ej. un correo usado como clave) nunca se muestra. */
+const segmento = (k) => (/^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(k) ? k : '<clave>')
 const CORREO = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
 
 function correoPermitido(c) {
@@ -51,7 +69,8 @@ export function hallazgosSensibles(dato, ruta = '$') {
     for (const [k, v] of Object.entries(dato)) {
       revisar(k, `${ruta}.<clave>`)
       if (CLAVES_DE_LOG.has(k)) out.push([`${ruta}.${k}`, 'contenido de log'])
-      out.push(...hallazgosSensibles(v, `${ruta}.${k}`))
+      if (CLAVE_DE_SECRETO.test(k)) out.push([`${ruta}.${segmento(k)}`, 'campo con nombre de secreto'])
+      out.push(...hallazgosSensibles(v, `${ruta}.${segmento(k)}`))
     }
   }
   return out
@@ -139,7 +158,7 @@ const REGLAS = {
     return escritura.length ? ['FALLO', `variables de escritura presentes: ${escritura.join(', ')}`] : ['OK', 'sin variables de escritura']
   },
   A5: (o) => {
-    if (vacio(o.cuenta) || o.roles_proyecto == null) return ['NO_VERIFICADO', 'faltan la cuenta o los roles']
+    if (vacio(o.cuenta) || !Array.isArray(o.roles_proyecto)) return ['NO_VERIFICADO', 'faltan la cuenta o los roles (lista; [] = ninguno, comprobado)']
     if (o.cuenta !== P.cuentaRuntime) return ['FALLO', 'el servicio no corre con la cuenta runtime']
     return lista(o.roles_proyecto).length ? ['FALLO', 'la cuenta runtime tiene roles de proyecto'] : ['OK', 'cuenta runtime sin roles de proyecto']
   },
@@ -188,7 +207,7 @@ const REGLAS = {
       const sv = String(o.servicio_maxScale ?? '').trim().toLowerCase()
       if (sv === '') partes.push(['NO_VERIFICADO', 'falta el maxScale de servicio (anotar "ninguno" si no existe)'])
       else if (sv === 'ninguno' || sv === '1') partes.push(['OK', 'maxScale de servicio coherente (1 o ninguno)'])
-      else partes.push(['NO_VERIFICADO', `maxScale de servicio ${sv} frente a revisión 1: tope efectivo ambiguo (D-1); nunca se da por bueno`])
+      else partes.push(['NO_VERIFICADO', `maxScale de servicio ${/^\d{1,4}$/.test(sv) ? sv : '(valor no reconocido)'} frente a revisión 1: tope efectivo ambiguo (D-1); nunca se da por bueno`])
     }
     if ('instancias_max_30d' in o) {
       const n = conteo(o.instancias_max_30d)
@@ -234,6 +253,7 @@ const REGLAS = {
   },
   // E1: un conteo solo vale si cubre TODOS los campos del registro y la ventana completa de retención.
   E1: (o) => {
+    if (!PATRONES_E1.includes(o.patron)) return ['NO_VERIFICADO', `patrón no reconocido (se esperan: ${PATRONES_E1.join(', ')})`]
     const n = conteo(o.coincidencias)
     if (n === null) return ilegible(`coincidencias de «${o.patron ?? '?'}»`)
     if (n > 0) return ['FALLO', `${n} coincidencias de ${o.patron}: seguir el runbook operativo §5 sin copiar líneas`]
@@ -255,9 +275,21 @@ const REGLAS = {
     if (ensayo !== 'OK') return ['NO_VERIFICADO', 'precondiciones presentes, pero el rollback no se ha ensayado (requiere autorización)']
     return ['OK', 'rollback ensayado con autorización y con la imagen anterior disponible']
   },
+  // C2 (R3-2, R4-1): un rechazo de Google antes del callback no prueba la lista de la app. Solo cuenta una cuenta
+  // ELEGIBLE para el login de Google, fuera de la lista, rechazada POR LA APP. Sin correos: solo estos campos.
+  C2: (o) => {
+    const v = String(o.resultado ?? '').toUpperCase()
+    if (v === 'FALLO') return ['FALLO', 'una cuenta no autorizada vio datos: incidente']
+    if (v !== 'OK') return ['NO_VERIFICADO', 'falta el resultado (OK o FALLO) de la comprobación humana']
+    if (o.oauth_elegible !== true) return ['NO_VERIFICADO', 'sin una cuenta elegible para el login de Google (oauth_elegible: true) no se prueba la lista de la app']
+    const capa = String(o.capa_rechazo ?? '').toLowerCase()
+    if (capa === 'google') return ['NO_VERIFICADO', 'rechazo de Google antes del callback: no prueba la lista de la app']
+    if (capa !== 'app') return ['NO_VERIFICADO', 'falta la capa que rechazó (capa_rechazo: "app"); un aviso de error sin capa no basta']
+    return ['OK', 'cuenta elegible fuera de la lista rechazada por la app, sin datos']
+  },
 }
-/** Controles que solo puede comprobar una persona: el propietario anota OK o FALLO, sin datos. */
-const MANUALES = new Set(['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'E2', 'F1', 'F2', 'G1', 'G3'])
+/** Controles que solo puede comprobar una persona: el propietario anota OK o FALLO, sin datos. C2 tiene regla propia. */
+const MANUALES = new Set(['C1', 'C3', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'E2', 'F1', 'F2', 'G1', 'G3'])
 
 /** Cobertura mínima por control compuesto: si falta una parte, el control agregado es NO_VERIFICADO. */
 const COBERTURA = {
@@ -268,12 +300,18 @@ const COBERTURA = {
   },
   A7: (entradas) => (entradas.some((c) => ['revision_maxScale', 'servicio_maxScale'].some((k) => k in (c?.observado ?? {})))
     ? null : 'falta la configuración de escalado (la métrica sola no basta)'),
+  // F3: --check prueba la configuración; sin el conteo de imágenes no se ha visto el efecto real (matriz: PARCIAL).
+  F3: (entradas) => (entradas.some((c) => 'imagenes' in (c?.observado ?? {}))
+    ? null : 'falta el efecto real (conteo de imágenes); --check solo prueba la configuración'),
   E1: (entradas) => {
     const vistos = new Set(entradas.map((c) => c?.observado?.patron))
     const faltan = PATRONES_E1.filter((x) => !vistos.has(x))
     return faltan.length ? `faltan patrones: ${faltan.join(', ')}` : null
   },
 }
+
+/** Identificador imprimible: solo los del checklist (A1–H); cualquier otro texto se muestra como «??». */
+const idSeguro = (v) => (/^[A-H]\d{0,2}$/.test(String(v ?? '')) ? String(v) : '??')
 
 function evaluarEntrada(id, o) {
   if (typeof o.error === 'string' && o.error) {
@@ -291,22 +329,38 @@ function evaluarEntrada(id, o) {
   return r(id, 'NO_VERIFICADO', 'control sin regla de evaluación')
 }
 
-export function evaluar(evidencia) {
+/**
+ * Límite de lo que puede aprobar una evidencia (Misión 014): un ejemplo sintético o una fecha anterior al despliegue no
+ * aprueban nada (todo NO_VERIFICADO); otra revisión u otro digest exigen revalidar la línea base (ningún OK, los FALLO
+ * se mantienen). Devuelve null si no hay límite.
+ */
+function limite(evidencia, controles) {
+  if (evidencia.ejemplo_sintetico !== undefined && evidencia.ejemplo_sintetico !== false) return { todo: true, motivo: 'ejemplo sintético: nunca cuenta como evidencia de producción' }
+  const hoy = new Date().toISOString().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(evidencia.fecha)) || String(evidencia.fecha) > hoy) return { todo: true, motivo: 'fecha ilegible o futura: no describe una lectura real' }
+  if (String(evidencia.fecha) < P.fechaDespliegue) return { todo: true, motivo: `fecha anterior al despliegue (${P.fechaDespliegue}): no describe esta versión` }
+  if (evidencia.revision !== P.revision) return { todo: false, motivo: 'revisión distinta de la línea base o sin declarar: requiere nueva validación' }
+  if (controles.some((c) => c.id === 'A1' && c.estado === 'FALLO')) return { todo: false, motivo: 'la revisión sirve otro digest o una etiqueta: la línea base cambió; requiere nueva validación' }
+  return null
+}
+
+export function evaluar(evidencia, { parcial = false } = {}) {
   const errores = []
   if (evidencia?.version !== 1) errores.push('version debe ser 1')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(evidencia?.fecha ?? ''))) errores.push('fecha debe ser AAAA-MM-DD')
   if (!Array.isArray(evidencia?.controles) || evidencia.controles.length === 0) errores.push('controles debe ser una lista no vacía')
-  if (errores.length) return { errores, resultados: [], controles: [] }
+  const sinCobertura = { faltan: [...CONTROLES_LECTURA], completa: false }
+  if (errores.length) return { errores, resultados: [], controles: [], cobertura: sinCobertura, limite: null }
 
   if (evidencia.commit_desplegado !== P.commit) {
     const ver = [r('VER', 'FALLO', 'la evidencia corresponde a otro commit desplegado: no se evalúa contra esta versión')]
-    return { errores, resultados: ver, controles: ver }
+    return { errores, resultados: ver, controles: ver, cobertura: sinCobertura, limite: 'otro commit desplegado' }
   }
   // Las partes de un mismo control (y del mismo secreto o patrón) se FUSIONAN antes de evaluar: así A2, A7 y A8 pueden
   // llegar en varias lecturas. Dos lecturas que den valores distintos para el mismo campo son contradictorias.
   const grupos = new Map()
   for (const c of evidencia.controles) {
-    const id = String(c?.id ?? '?')
+    const id = idSeguro(c?.id)
     const o = c?.observado ?? {}
     const clave = `${id}|${o.secreto ?? ''}|${o.patron ?? ''}`
     const g = grupos.get(clave) ?? { id, observado: {}, conflicto: null }
@@ -318,15 +372,12 @@ export function evaluar(evidencia) {
     grupos.set(clave, g)
   }
   const resultados = [...grupos.values()].map((g) => (g.conflicto
-    ? r(g.id, 'NO_VERIFICADO', `lecturas contradictorias del campo ${g.conflicto}`)
+    ? r(g.id, 'NO_VERIFICADO', `lecturas contradictorias del campo ${segmento(g.conflicto)}`)
     : evaluarEntrada(g.id, g.observado)))
   const controles = []
-  if (evidencia.revision !== undefined && evidencia.revision !== P.revision) {
-    controles.push(r('VER', 'NO_VERIFICADO', 'revisión distinta de la registrada: revisar si hubo un despliegue posterior'))
-  }
   for (const id of [...new Set(resultados.map((x) => x.id))]) {
     const propios = resultados.filter((x) => x.id === id)
-    const entradas = evidencia.controles.filter((c) => String(c?.id ?? '?') === id)
+    const entradas = evidencia.controles.filter((c) => idSeguro(c?.id) === id)
     const falta = COBERTURA[id]?.(entradas) ?? null
     const estados = propios.map((x) => x.estado).concat(falta ? ['NO_VERIFICADO'] : [])
     const estado = peor(estados)
@@ -334,14 +385,23 @@ export function evaluar(evidencia) {
       : propios.length === 1 ? propios[0].motivo : `${propios.length} lecturas; peor: ${propios.find((x) => x.estado === estado)?.motivo ?? estado}`
     controles.push(r(id, estado, motivo))
   }
-  return { errores, resultados, controles }
+  // Límite de la evidencia: se aplica a los controles agregados (el código de salida sale de ellos).
+  const lim = limite(evidencia, controles)
+  const finales = lim
+    ? [r('VER', 'NO_VERIFICADO', lim.motivo),
+      ...controles.map((c) => (c.estado === 'OK' || (lim.todo && c.estado === 'FALLO') ? r(c.id, 'NO_VERIFICADO', `${lim.motivo} (la regla daba ${c.estado})`) : c))]
+    : controles
+  // Cobertura del plan: sin todos los controles de lectura, nunca «todo OK» (salvo --parcial).
+  const faltan = CONTROLES_LECTURA.filter((id) => !controles.some((c) => c.id === id))
+  if (!parcial && faltan.length) finales.push(r('COB', 'NO_VERIFICADO', `cobertura incompleta del plan: faltan ${faltan.join(', ')} (para evaluar un subconjunto a propósito, --parcial)`))
+  return { errores, resultados, controles: finales, cobertura: { faltan, completa: faltan.length === 0 }, limite: lim?.motivo ?? null }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2)
   const archivo = args.find((a) => !a.startsWith('--'))
-  if (!archivo || args.some((a) => a.startsWith('--') && a !== '--json')) {
-    console.error('Uso: node scripts/ops/evidencia.mjs <archivo.json> [--json]')
+  if (!archivo || args.some((a) => a.startsWith('--') && !['--json', '--parcial'].includes(a))) {
+    console.error('Uso: node scripts/ops/evidencia.mjs <archivo.json> [--json] [--parcial]')
     process.exit(2)
   }
   let evidencia
@@ -357,23 +417,25 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     for (const [ruta, tipo] of sensibles) console.error(` - ${ruta}: ${tipo}`)
     process.exit(4)
   }
-  const { errores, resultados, controles } = evaluar(evidencia)
+  const { errores, resultados, controles, cobertura, limite: lim } = evaluar(evidencia, { parcial: args.includes('--parcial') })
   if (errores.length) {
     console.error(`EVIDENCIA RECHAZADA: formato no válido (${errores.join('; ')})`)
     process.exit(4)
   }
   // El código de salida y el resumen se calculan sobre los CONTROLES agregados (peor evidencia + cobertura).
   const codigo = codigoDeSalida(controles)
-  if (args.includes('--json')) console.log(JSON.stringify({ version: 2, controles, lecturas: resultados, codigo }, null, 2))
+  if (args.includes('--json')) console.log(JSON.stringify({ version: 2, controles, lecturas: resultados, cobertura, limite: lim, codigo }, null, 2))
   else {
-    console.log(`PROJECT-OS V1.6 — evaluación de evidencia (${evidencia.fecha}, commit ${String(evidencia.commit_desplegado).slice(0, 7)})`)
-    if (evidencia.ejemplo_sintetico === true) console.log('EJEMPLO SINTÉTICO: los valores son inventados; esto NO es evidencia de producción.')
-    console.log('Lecturas:')
+    console.log(`PROJECT-OS V1.6 — evaluación de evidencia (${evidencia.fecha}, commit ${/^[0-9a-f]{7,40}$/.test(String(evidencia.commit_desplegado)) ? String(evidencia.commit_desplegado).slice(0, 7) : '??'})`)
+    if (evidencia.ejemplo_sintetico !== undefined && evidencia.ejemplo_sintetico !== false) console.log('EJEMPLO SINTÉTICO: los valores son inventados; esto NO es evidencia de producción.')
+    if (lim) console.log(`LÍMITE: ${lim}. Ningún control queda en OK.`)
+    console.log(lim ? 'Lecturas (lo que diría la regla; NO cuentan por el límite anterior):' : 'Lecturas:')
     for (const x of resultados) console.log('  ' + linea(x))
     console.log('Controles (peor evidencia y cobertura mínima):')
     for (const x of controles) console.log('  ' + linea(x))
     const n = (e) => controles.filter((x) => x.estado === e).length
     console.log(`\nControles: OK ${n('OK')} · FALLO ${n('FALLO')} · NO_VERIFICADO ${n('NO_VERIFICADO')} (no cuenta como OK)`)
+    console.log(`Cobertura del plan: ${cobertura.completa ? 'completa' : `faltan ${cobertura.faltan.join(', ')}`}. La aceptación la decide la matriz, no este código de salida.`)
   }
   process.exit(codigo)
 }

@@ -1,6 +1,6 @@
 # PROJECT-OS V1.6 — Puerta C: preparación segura del despliegue
 
-> **Actualización 2026-10-11:** este documento describe las precondiciones y operaciones planeadas **antes** del despliegue (Misión 012). El [registro de puesta en producción](estado-produccion-v1-6-2026-10-11.md) contiene las acciones efectivamente ejecutadas y verificadas; no interpretar los rótulos «pendiente» de esta preparación como estado actual de infraestructura. Las mutaciones futuras requieren aprobación específica.
+> **Actualización 2026-10-11:** este documento describe las precondiciones y operaciones planeadas **antes** del despliegue (Misión 012). El [registro de puesta en producción](estado-produccion-v1-6-2026-10-11.md) contiene las acciones efectivamente ejecutadas y verificadas; no interpretar los rótulos «pendiente» de esta preparación como estado actual de infraestructura. Las mutaciones futuras requieren aprobación específica. Estado congelado de la versión: [línea base V1.6](operacion-v1-6/linea-base-v1-6.md) (Misión 014).
 
 > **Misión 012.** Solo preparación: documentación, verificaciones y un script con modos de solo lectura.
 >
