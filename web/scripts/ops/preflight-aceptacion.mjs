@@ -30,6 +30,14 @@ const OPCION_COLECTOR = 'sync_to_sheets'
 const ACCESO_GOOGLE = /google-github-actions\/auth|\bgcloud\b|GOOGLE_APPLICATION_CREDENTIALS|PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|googleapis\.com|\bsync_sheets\b|secrets\.[A-Z0-9_]*(GOOGLE|GCP|SERVICE_ACCOUNT)[A-Z0-9_]*/
 /** Cualquier secreto del repositorio salvo el token efímero de GitHub: `secrets.X`, `secrets[…]`, `toJSON(secrets)`, `secrets: inherit`. */
 const SECRETO_DEL_REPOSITORIO = /\bsecrets\s*(?:\.(?!GITHUB_TOKEN\b)|\[|\)|\}|:\s*inherit\b)/
+/** Otras vías de un workflow automático hacia credenciales o hacia el colector (revisión final del PR #24). */
+const OTRAS_VIAS = [
+  [/\bid-token\s*:\s*write\b/, 'identidad OIDC (id-token: write)'],
+  [/\bvars\s*(?:\.|\[)/, 'variables del repositorio (vars)'],
+  [/\bactions\s*:\s*write\b/, 'puede lanzar otros workflows (actions: write)'],
+  [/manual-github-evidence|workflow\s+run\b/, 'invoca el colector manual u otro workflow'],
+  [/\bpull_request_target\b/, 'pull_request_target (recibe secretos del repositorio base)'],
+]
 
 /** Eventos del bloque `on:` de un workflow, o null si no se pueden leer (entonces cuenta como automático: falla cerrado). */
 export function eventosDe(texto) {
@@ -61,7 +69,8 @@ function conOpcionExplicita(texto) {
   const entrada = new RegExp(`^(\\s+)${OPCION_COLECTOR}:\\s*\\n((?:\\1\\s+.*\\n?)+)`, 'm').exec(texto)
   if (!entrada || !/^\s+type:\s*boolean\s*$/m.test(entrada[2]) || !/^\s+default:\s*false\s*$/m.test(entrada[2])) return false
   const condicion = new RegExp(`^\\s*if:\\s*(?:\\$\\{\\{\\s*)?(?:github\\.event\\.)?inputs\\.${OPCION_COLECTOR}(?:\\s*==\\s*(?:true|'true'))?\\s*(?:\\}\\})?\\s*$`, 'm')
-  return texto.split(/\n(?=\s*-\s)/).filter((trozo) => ACCESO_GOOGLE.test(trozo)).every((trozo) => condicion.test(trozo))
+  // Trozos: cada elemento de lista y cada clave con sangría ≤ 4 (jobs y su env); así el env de un job nunca hereda el if de un paso.
+  return texto.split(/\n(?=\s*-\s|\s{0,4}[A-Za-z_][\w-]*\s*:)/).filter((trozo) => ACCESO_GOOGLE.test(trozo)).every((trozo) => condicion.test(trozo))
 }
 
 export function preflightAceptacion(ROOT) {
@@ -157,7 +166,8 @@ export function preflightAceptacion(ROOT) {
     for (const [f, t] of textos) {
       const eventos = eventosDe(t)
       if (eventos === null || eventos.some((e) => e !== 'workflow_dispatch')) {
-        const motivos = [ACCESO_GOOGLE.test(t) && 'credenciales o API de Google', SECRETO_DEL_REPOSITORIO.test(t) && 'secretos del repositorio'].filter(Boolean)
+        const motivos = [ACCESO_GOOGLE.test(t) && 'credenciales o API de Google', SECRETO_DEL_REPOSITORIO.test(t) && 'secretos del repositorio',
+          ...OTRAS_VIAS.filter(([re]) => re.test(t)).map(([, m]) => m)].filter(Boolean)
         if (motivos.length) automaticos.push(`${f} (${eventos ? eventos.join(', ') : 'eventos ilegibles'}: ${motivos.join(' y ')})`)
       } else if (ACCESO_GOOGLE.test(t)) {
         if (f !== WORKFLOW_COLECTOR_MANUAL) manualesMal.push(`${f}: credenciales de Google en un workflow manual distinto del colector`)

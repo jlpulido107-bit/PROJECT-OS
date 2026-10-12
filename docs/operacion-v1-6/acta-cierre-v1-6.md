@@ -67,7 +67,7 @@ Fusionar el PR #24 **no despliega nada**.
 | --- | --- |
 | `npm ci` | OK: 426 paquetes del lockfile |
 | `npm run lint` · `npm run typecheck` | Sin errores · sin errores |
-| `npm test` (Vitest) | **950/950** en 28 archivos |
+| `npm test` (Vitest) | **960/960** en 28 archivos |
 | `npm run build` | Compilado correctamente |
 | `npm run audit:prod` · `npm run audit:critical` | 0 vulnerabilidades · 0 críticas (5 altas de desarrollo, X-2) |
 | `npm run check:client-secrets -- --min-values=4` (valores falsos de la CI) | 22 archivos, 4 valores comparados, sin fugas |

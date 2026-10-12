@@ -108,6 +108,11 @@ describe('preflight de aceptación offline', () => {
     ['el colector manual con la opción activada por defecto', 'P15', enElColector((t) => t.replace(/(sync_to_sheets:[\s\S]*?default: )false/, '$1true'))],
     ['el colector manual con la condición debilitada', 'P15', enElColector((t) => t.replace('if: ${{ inputs.sync_to_sheets }}\n        env:\n          PROJECT_OS_GOOGLE', 'if: ${{ inputs.sync_to_sheets || true }}\n        env:\n          PROJECT_OS_GOOGLE'))],
     ['el colector manual con la clave en el env del job', 'P15', enElColector((t) => t.replace('    runs-on: ubuntu-latest', '    runs-on: ubuntu-latest\n    env:\n      K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}'))],
+    ['la CI de PR con identidad OIDC (sin secreto)', 'P12', (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace('permissions:\n', 'permissions:\n  id-token: write\n'))],
+    ['la CI de PR con vars.*', 'P12', enLaCiDePr('      - run: echo ok\n        env:\n          K: ${{ vars.GCP_SA_KEY }}\n')],
+    ['un workflow con pull_request_target', 'P12', (r: string) => writeFileSync(path.join(r, '.github/workflows/prt.yml'), 'on:\n  pull_request_target:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
+    ['un workflow automático que lanza el colector manual', 'P12', (r: string) => writeFileSync(path.join(r, '.github/workflows/lanza.yml'), 'on:\n  push:\npermissions:\n  actions: write\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: gh workflow run manual-github-evidence.yml -f sync_to_sheets=true\n')],
+    ['el colector manual con un segundo job con la clave sin condición', 'P15', enElColector((t) => `${t}  otro:\n    runs-on: ubuntu-latest\n    env:\n      K: \${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n    steps:\n      - run: echo ok\n`)],
     ['otro workflow manual con credenciales de Google', 'P15', (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: google-github-actions/auth@v2\n')],
   ])('R3-1 · %s → FALLO en %s y código 1 (nunca un NO_VERIFICADO aceptable)', (_n, id, mutate) => {
     const { status, por } = estados(fixtureRoot(mutate))
@@ -841,6 +846,7 @@ describe('evidencia saneada: validación y evaluación', () => {
     ['F3 PERMITIDO pero imágenes no protegidas', 'F3', { check: 'PERMITIDO', imagenes: 6, mayores_30_dias_no_protegidas: 1 }, 'FALLO'],
     ['humano sin resultado', 'D1', { resultado: '' }, 'NO_VERIFICADO'],
     ['humano FALLO', 'C2', { resultado: 'fallo' }, 'FALLO'],
+    ['A5 roles vacíos como texto', 'A5', { cuenta: RUNTIME, roles_proyecto: '' }, 'NO_VERIFICADO'],
     ['control sin regla', 'H', { algo: 1 }, 'NO_VERIFICADO'],
   ])('%s → %s', (_n, id, observado, esperado) => {
     const r = uno(id, observado)
@@ -963,6 +969,17 @@ describe('evidencia saneada: validación y evaluación', () => {
     const { CONTROLES_LECTURA } = (await import(path.join(OPS, 'produccion-v1-6.mjs'))) as { CONTROLES_LECTURA: string[] }
     const pasos = JSON.parse(node(path.join(OPS, 'plan-inspeccion.mjs'), ['--json']).stdout).pasos as Array<{ control: string }>
     expect([...CONTROLES_LECTURA].sort()).toEqual([...new Set(pasos.map((p) => p.control))].sort())
+  })
+
+  it.each([
+    ['fecha futura', { fecha: '2099-01-01' }],
+    ['fecha ilegible', { fecha: 'ayer' }],
+    ['sintético como texto', { ejemplo_sintetico: 'true' }],
+    ['sintético como 1', { ejemplo_sintetico: 1 }],
+  ])('revisión final · %s → ningún OK', (_n, cambio) => {
+    const r = evaluarArchivo({ ...BASE, ...cambio, controles: COMPLETA })
+    expect(r.status).not.toBe(0)
+    expect(Object.values(r.por)).not.toContain('OK')
   })
 
   it('M14 · evidencia completa y correcta (con condiciones que hoy no existen: 2 revisiones, ensayo, 6 imágenes) → 0', () => {

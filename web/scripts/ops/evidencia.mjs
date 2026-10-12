@@ -158,7 +158,7 @@ const REGLAS = {
     return escritura.length ? ['FALLO', `variables de escritura presentes: ${escritura.join(', ')}`] : ['OK', 'sin variables de escritura']
   },
   A5: (o) => {
-    if (vacio(o.cuenta) || o.roles_proyecto == null) return ['NO_VERIFICADO', 'faltan la cuenta o los roles']
+    if (vacio(o.cuenta) || !Array.isArray(o.roles_proyecto)) return ['NO_VERIFICADO', 'faltan la cuenta o los roles (lista; [] = ninguno, comprobado)']
     if (o.cuenta !== P.cuentaRuntime) return ['FALLO', 'el servicio no corre con la cuenta runtime']
     return lista(o.roles_proyecto).length ? ['FALLO', 'la cuenta runtime tiene roles de proyecto'] : ['OK', 'cuenta runtime sin roles de proyecto']
   },
@@ -335,7 +335,9 @@ function evaluarEntrada(id, o) {
  * se mantienen). Devuelve null si no hay límite.
  */
 function limite(evidencia, controles) {
-  if (evidencia.ejemplo_sintetico === true) return { todo: true, motivo: 'ejemplo sintético: nunca cuenta como evidencia de producción' }
+  if (evidencia.ejemplo_sintetico !== undefined && evidencia.ejemplo_sintetico !== false) return { todo: true, motivo: 'ejemplo sintético: nunca cuenta como evidencia de producción' }
+  const hoy = new Date().toISOString().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(evidencia.fecha)) || String(evidencia.fecha) > hoy) return { todo: true, motivo: 'fecha ilegible o futura: no describe una lectura real' }
   if (String(evidencia.fecha) < P.fechaDespliegue) return { todo: true, motivo: `fecha anterior al despliegue (${P.fechaDespliegue}): no describe esta versión` }
   if (evidencia.revision !== P.revision) return { todo: false, motivo: 'revisión distinta de la línea base o sin declarar: requiere nueva validación' }
   if (controles.some((c) => c.id === 'A1' && c.estado === 'FALLO')) return { todo: false, motivo: 'la revisión sirve otro digest o una etiqueta: la línea base cambió; requiere nueva validación' }
@@ -424,8 +426,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const codigo = codigoDeSalida(controles)
   if (args.includes('--json')) console.log(JSON.stringify({ version: 2, controles, lecturas: resultados, cobertura, limite: lim, codigo }, null, 2))
   else {
-    console.log(`PROJECT-OS V1.6 — evaluación de evidencia (${evidencia.fecha}, commit ${String(evidencia.commit_desplegado).slice(0, 7)})`)
-    if (evidencia.ejemplo_sintetico === true) console.log('EJEMPLO SINTÉTICO: los valores son inventados; esto NO es evidencia de producción.')
+    console.log(`PROJECT-OS V1.6 — evaluación de evidencia (${evidencia.fecha}, commit ${/^[0-9a-f]{7,40}$/.test(String(evidencia.commit_desplegado)) ? String(evidencia.commit_desplegado).slice(0, 7) : '??'})`)
+    if (evidencia.ejemplo_sintetico !== undefined && evidencia.ejemplo_sintetico !== false) console.log('EJEMPLO SINTÉTICO: los valores son inventados; esto NO es evidencia de producción.')
     if (lim) console.log(`LÍMITE: ${lim}. Ningún control queda en OK.`)
     console.log(lim ? 'Lecturas (lo que diría la regla; NO cuentan por el límite anterior):' : 'Lecturas:')
     for (const x of resultados) console.log('  ' + linea(x))
