@@ -275,9 +275,21 @@ const REGLAS = {
     if (ensayo !== 'OK') return ['NO_VERIFICADO', 'precondiciones presentes, pero el rollback no se ha ensayado (requiere autorización)']
     return ['OK', 'rollback ensayado con autorización y con la imagen anterior disponible']
   },
+  // C2 (R3-2, R4-1): un rechazo de Google antes del callback no prueba la lista de la app. Solo cuenta una cuenta
+  // ELEGIBLE para el login de Google, fuera de la lista, rechazada POR LA APP. Sin correos: solo estos campos.
+  C2: (o) => {
+    const v = String(o.resultado ?? '').toUpperCase()
+    if (v === 'FALLO') return ['FALLO', 'una cuenta no autorizada vio datos: incidente']
+    if (v !== 'OK') return ['NO_VERIFICADO', 'falta el resultado (OK o FALLO) de la comprobación humana']
+    if (o.oauth_elegible !== true) return ['NO_VERIFICADO', 'sin una cuenta elegible para el login de Google (oauth_elegible: true) no se prueba la lista de la app']
+    const capa = String(o.capa_rechazo ?? '').toLowerCase()
+    if (capa === 'google') return ['NO_VERIFICADO', 'rechazo de Google antes del callback: no prueba la lista de la app']
+    if (capa !== 'app') return ['NO_VERIFICADO', 'falta la capa que rechazó (capa_rechazo: "app"); un aviso de error sin capa no basta']
+    return ['OK', 'cuenta elegible fuera de la lista rechazada por la app, sin datos']
+  },
 }
-/** Controles que solo puede comprobar una persona: el propietario anota OK o FALLO, sin datos. */
-const MANUALES = new Set(['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'E2', 'F1', 'F2', 'G1', 'G3'])
+/** Controles que solo puede comprobar una persona: el propietario anota OK o FALLO, sin datos. C2 tiene regla propia. */
+const MANUALES = new Set(['C1', 'C3', 'C4', 'C5', 'C6', 'C7', 'D1', 'D2', 'E2', 'F1', 'F2', 'G1', 'G3'])
 
 /** Cobertura mínima por control compuesto: si falta una parte, el control agregado es NO_VERIFICADO. */
 const COBERTURA = {

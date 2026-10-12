@@ -67,7 +67,7 @@ Fusionar el PR #24 **no despliega nada**.
 | --- | --- |
 | `npm ci` | OK: 426 paquetes del lockfile |
 | `npm run lint` · `npm run typecheck` | Sin errores · sin errores |
-| `npm test` (Vitest) | **942/942** en 28 archivos |
+| `npm test` (Vitest) | **950/950** en 28 archivos |
 | `npm run build` | Compilado correctamente |
 | `npm run audit:prod` · `npm run audit:critical` | 0 vulnerabilidades · 0 críticas (5 altas de desarrollo, X-2) |
 | `npm run check:client-secrets -- --min-values=4` (valores falsos de la CI) | 22 archivos, 4 valores comparados, sin fugas |
@@ -80,10 +80,10 @@ Fusionar el PR #24 **no despliega nada**.
 
 - La CI del SHA final (jobs `web`, `docker` y `validate`), con sus enlaces, está en el **comentario de entrega del
   PR #24**: un commit no puede contener los resultados de su propia CI.
-- Referencia anterior: `8350f8b` en verde, en los tres jobs:
-  - [validate](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38181806031/job/114595768274);
-  - [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38181806054/job/114595768408);
-  - [docker](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38181806054/job/114595768599).
+- Referencia anterior: `8b239e9` en verde, en los tres jobs:
+  - [validate](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38201579958/job/114655946282);
+  - [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38201579940/job/114655946593);
+  - [docker](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38201579940/job/114655946413).
 - Desde R3-1, el job `validate` ya no recibe la clave de Google ni lee la hoja real: valida con una hoja en memoria.
 - `30f40b2` falló en [web](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/38180290994/job/114591212949):
   una prueba alcanzó el `gcloud` del runner, sin credenciales. Lo corrigió `9118727` con un `PATH` hermético; el

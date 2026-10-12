@@ -699,7 +699,7 @@ describe('evidencia saneada: validación y evaluación', () => {
       { id: 'A8', observado: { lineas_identidad_verificada: 1 } },
       { id: 'A9', observado: { digest_produccion: DIGEST } },
       ...['correo', 'token', 'bearer', 'codigo_oauth'].map((p) => E1_OK(p)),
-      { id: 'C2', observado: { resultado: 'OK' } },
+      { id: 'C2', observado: { resultado: 'OK', oauth_elegible: true, capa_rechazo: 'app' } },
     ])
     expect(r.res.map((x) => `${x.id}:${x.estado}`)).toEqual(['A1:OK', 'A2:OK', 'A6:OK', 'A7:OK', 'A8:OK', 'A9:OK', 'E1:OK', 'C2:OK'])
     expect(r.status).toBe(0)
@@ -846,6 +846,26 @@ describe('evidencia saneada: validación y evaluación', () => {
     const r = uno(id, observado)
     expect(r.por[id]).toBe(esperado)
     expect(r.status).toBe(esperado === 'FALLO' ? 1 : esperado === 'OK' ? 0 : 3)
+  })
+
+  // ---- R4-1: C2 solo con la capa de la app y una cuenta elegible ----
+  it.each([
+    ['solo resultado OK', { resultado: 'OK' }],
+    ['rechazo de Google', { resultado: 'OK', oauth_elegible: true, capa_rechazo: 'google' }],
+    ['cuenta no elegible', { resultado: 'OK', oauth_elegible: false, capa_rechazo: 'app' }],
+    ['elegibilidad desconocida', { resultado: 'OK', oauth_elegible: null, capa_rechazo: 'app' }],
+    ['elegibilidad como texto', { resultado: 'OK', oauth_elegible: 'true', capa_rechazo: 'app' }],
+    ['AccessDenied sin capa', { resultado: 'OK', oauth_elegible: true, nota: 'AccessDenied' }],
+    ['capa vacía', { resultado: 'OK', oauth_elegible: true, capa_rechazo: '' }],
+  ])('R4-1 · C2 con %s → NO_VERIFICADO, nunca OK', (_n, observado) => {
+    const r = uno('C2', observado)
+    expect(r.por.C2).toBe('NO_VERIFICADO')
+    expect(r.status).toBe(3)
+  })
+
+  it('R4-1 · C2 OK solo con una cuenta elegible rechazada por la app; FALLO si vio datos', () => {
+    expect(uno('C2', { resultado: 'OK', oauth_elegible: true, capa_rechazo: 'app' })).toMatchObject({ por: { C2: 'OK' }, status: 0 })
+    expect(uno('C2', { resultado: 'FALLO', oauth_elegible: true, capa_rechazo: 'app' })).toMatchObject({ por: { C2: 'FALLO' }, status: 1 })
   })
 
   it('evidencia de otro commit desplegado → FALLO y no se evalúa nada más', () => {

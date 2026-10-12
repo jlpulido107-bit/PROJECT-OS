@@ -26,6 +26,7 @@
 | `controles[]` | lista | `{ id, fuente, comando?, observado, nota? }` |
 | `observado.error` | texto, opcional | Si la lectura falló (p. ej. `PERMISSION_DENIED`): **NO_VERIFICADO** |
 | `observado.resultado` | `OK` / `FALLO` | Controles humanos (C, D, E2, F, G1, G3) |
+| `observado.oauth_elegible` · `observado.capa_rechazo` | booleano · `app` / `google` | Solo C2 (R4-1): si la cuenta de prueba podía completar el login de Google y qué capa la rechazó. **Nunca** el correo |
 
 Convención importante: `null` o `""` significa **sin dato** (NO_VERIFICADO). `[]` significa **"ninguno,
 comprobado"** y solo lo escribe quien lo comprobó. La plantilla usa `null` para que un campo olvidado nunca produzca
@@ -70,7 +71,8 @@ patrón de E1 desconocido o un `servicio_maxScale` no numérico no se repiten, y
 | E1 | **Los 4 patrones** (`correo`, `token`, `bearer`, `codigo_oauth`), cada uno con 0 coincidencias, `alcance: todos-los-campos` y `ventana_dias ≥ 30` | Cualquier conteo > 0 | Falta algún patrón, o el alcance es parcial (solo `textPayload`, menos de 30 días o sin declarar) |
 | F3 | `--check` `PERMITIDO`; si hay conteos, ≥ 5 imágenes y 0 no protegidas de más de 30 días | `BLOQUEADO`, o alguna no protegida de más de 30 días | Faltan datos, o hay menos de 5 imágenes |
 | G2 | ≥ 2 revisiones, la imagen anterior existe **y** `ensayo_rollback: OK` (ensayo **autorizado**) | La imagen anterior ya no existe, o el ensayo falló | Una sola revisión; imagen anterior sin comprobar; sin ensayo |
-| Humanos | `resultado: OK` | `resultado: FALLO` | Vacío |
+| C2 | `resultado: OK`, `oauth_elegible: true` **y** `capa_rechazo: app` (una cuenta elegible fuera de la lista, rechazada por la app sin datos) | `resultado: FALLO` (una cuenta no autorizada vio datos) | Cualquier otro caso: sin `oauth_elegible: true`, `capa_rechazo: google` (rechazo de Google antes del callback) o sin capa (un aviso de error sin saber quién rechazó) |
+| Humanos (salvo C2) | `resultado: OK` | `resultado: FALLO` | Vacío |
 | Otro id | — | — | Siempre: sin regla |
 
 **Transcripción de A6** (revisión R3). La versión fijada se obtiene con una extracción **estructurada** del JSON de la
