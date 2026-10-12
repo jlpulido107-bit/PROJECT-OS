@@ -39,42 +39,42 @@ Etiquetas de evidencia. Cada una va en su columna: real, técnica, o tiempo y de
 | ID | Control | Estado | Real (propietario) | Técnica (CI / simulada) | Tiempo o decisión | Falta | Siguiente acción |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | A1 | La imagen servida es la revisada y está fijada por digest | VERIFICADO | **P:** EV-06 (la revisión activa sirve el digest `f6e46596…`) | **CI:** `render.mjs` exige `@sha256:` (`deploy-template.test.ts`) | — | — | Repetir tras cada despliegue (reabre la aceptación) |
-| A2 | URL real = `NEXTAUTH_URL` = callback OAuth | PARCIAL | **P:** EV-06 (`A2_URL_ESTABLE: REVISAR`, porque el callback solo se ve en la consola); EV-03 y EV-12 usan la URL estable. **R:** EV-05 (callback «confirmado» al desplegar, sin evidencia) | **CI:** el plan pide las 3 partes y el evaluador las exige todas | — | ✅ del callback exacto en la consola OAuth | [Hoja](hoja-propietario.md), bloque 1 |
+| A2 | URL real = `NEXTAUTH_URL` = callback OAuth | VERIFICADO | **P:** EV-13 (callback exacto `…run.app/api/auth/callback/google` y origen en la consola OAuth); EV-06, EV-03 y EV-12 (URL estable publicada y usada) | **CI:** el plan pide las 3 partes y el evaluador las exige todas | — | — | Repetir si cambia el cliente OAuth |
 | A3 | Sonda de arranque válida | VERIFICADO | **P:** EV-03 y EV-12 (`/api/health` 200 en `smoke:remote` 26/26); EV-01 (revisión `Ready=True`) | **CI:** sonda en `docker:smoke` | — | — | Repetir tras cada despliegue |
 | A4 | Sin modo de escritura en producción | VERIFICADO | **P:** EV-06 (sin variables de escritura en la revisión) | **CI:** `deploy-template.test.ts`, `integration-security.test.ts` (sonda 503 con escritura) | — | — | Repetir tras cada despliegue |
 | A5 | La identidad del servicio no tiene roles de proyecto | VERIFICADO | **P:** EV-06 (cuenta runtime con 0 roles de proyecto) | **CI:** `credentials.test.ts` (cuenta esperada) | — | — | Repetir tras cambios de IAM |
 | A6 | Solo la cuenta runtime lee los 3 secretos, con versión fijada | VERIFICADO | **P:** EV-06 (1 acceso directo por secreto); EV-12 (1 versión `ENABLED` por secreto, igual a la fijada) | **CI:** versiones numéricas en la plantilla (P4). **S:** salvaguardas de la remediación con `gcloud` falso | — | — | En cada rotación, destruir la versión sustituida. Confirmar con `estados=[…]` que la 1 de `google-client-secret` está `DESTROYED` (no cambia A6) |
-| A7 | Límites de costo aplicados | VERIFICADO (configuración) | **P:** EV-11 y EV-12 (servicio 1, revisión 1, `minScale` 0, CPU por solicitud, misma revisión) | **CI:** plantilla sin `maxScale` de servicio (P1, P2) | — | — | Opcional: el máximo histórico de instancias ([hoja](hoja-propietario.md), bloque 4). Si es > 1, A7 pasa a FALLO |
+| A7 | Límites de costo aplicados | VERIFICADO (configuración) | **P:** EV-13 (métrica: máximo 1 instancia en 30 días); EV-11 y EV-12 (servicio 1, revisión 1, `minScale` 0, CPU por solicitud, misma revisión) | **CI:** plantilla sin `maxScale` de servicio (P1, P2) | — | — | Repetir la métrica si cambia el escalado |
 | A8 | El build usó la cuenta dedicada | VERIFICADO | **P:** EV-06 (cuenta `project-os-build`, `SUCCESS`, 1 línea de identidad) | **CI:** `cloudbuild.test.ts` | — | — | Repetir en cada build |
 | A9 | La imagen desplegada está protegida frente a la limpieza | VERIFICADO | **P:** EV-06 (etiqueta `produccion` creada en C9 y verificada contra el digest) | **CI:** Keep `produccion*` en la política (P6) | — | — | Mover `produccion` y `produccion-anterior` en cada despliegue (runbook §5.7) |
 | B1 | Todo lo privado está cerrado sin sesión | VERIFICADO | **P:** EV-03, EV-08 y EV-12 (`smoke:remote` 26/26, tres ejecuciones) | **CI:** E2E de autenticación 63/63 | — | — | Repetir tras cada despliegue |
-| C1 | El usuario autorizado entra y ve datos reales correctos | PARCIAL | **R:** EV-04 (login y uso sin errores, sin comparar las 12 pestañas ni los totales) | **CI:** E2E con datos sintéticos | — | «Leído de Google Sheets», 12/12 pestañas válidas y totales iguales a la hoja (✅/❌, sin cifras) | [Hoja](hoja-propietario.md), bloque 2 |
-| C2 | Una cuenta no autorizada es rechazada | PENDIENTE | — | **CI:** `signIn` exige correo verificado y en la lista (`auth.ts`); E2E de auth con correos sintéticos | — | Intento real con una cuenta **elegible** para el login de Google (usuario de prueba mientras el cliente esté en *Testing*) y fuera de la lista de la app, rechazada **por la app** en su callback sin datos. Un rechazo de Google antes del callback no prueba la lista (D-14) | [Hoja](hoja-propietario.md), fila 1.3; sin cuenta elegible, sigue PENDIENTE (crear un usuario de prueba exige autorización) |
-| C3 | 401 sin sesión; 403 para una sesión ya no permitida | PARCIAL | **P:** EV-12 (401 en las 7 APIs privadas sin sesión; cubierto por B1) | **CI:** 403 en `authz.ts` y sus pruebas | **DEC:** el 403 real es opcional: exige retirar un correo (nueva versión del secreto y redespliegue), con autorización. No se simula como real | 403 real, o excepción expresa del propietario | Decidir en el [acta](acta-cierre-v1-6.md) |
-| C4 | Las páginas del dashboard cargan con datos reales | PARCIAL | **R:** EV-04 («uso sin errores», sin detalle por página) | **CI:** E2E de integración | — | ✅/❌ de Inicio, Proyectos, Tareas, Actividad y Capacidad | [Hoja](hoja-propietario.md), bloque 2 |
-| C5 | Planificación V1.5 simula sin escribir | PENDIENTE | — | **CI:** E2E de planificación; `planning-security.test.ts` | — | Recorrido real de `/planificacion`, con su aviso de simulación | [Hoja](hoja-propietario.md), bloque 2 |
-| C6 | Centro de control V1.6 con aviso de simulación | PENDIENTE | — | **CI:** E2E de control; `governance-security.test.ts` | — | Recorrido real de `/control`, con el aviso «no se guardaron cambios» | [Hoja](hoja-propietario.md), bloque 2 |
-| C7 | Operaciones V1.4 cerradas en producción | PARCIAL | **P:** EV-06 (sin variables de escritura: la escritura no puede activarse) | **CI:** sonda 503 con escritura; navegación sin Operaciones (`integration-security.test.ts`) | — | Menú sin Operaciones y formularios con el aviso de escritura deshabilitada | [Hoja](hoja-propietario.md), bloque 2 |
-| D1 | La cuenta de servicio no editó la hoja | PENDIENTE | — | **CI:** el cliente solo emite `GET` con alcance de solo lectura (`security.test.ts`) | — | Historial de versiones de la hoja sin ediciones de la cuenta runtime | [Hoja](hoja-propietario.md), bloque 3 |
-| D2 | Permiso mínimo en la hoja (Lector, acceso restringido) | PENDIENTE | — | — | — | Diálogo *Compartir*: la cuenta runtime solo como Lector y el acceso general Restringido | [Hoja](hoja-propietario.md), bloque 3 |
+| C1 | El usuario autorizado entra y ve datos reales correctos | VERIFICADO | **P:** EV-13 (login autorizado; «Leído de Google Sheets»; 12/12 pestañas válidas; 3 totales iguales a la hoja) | **CI:** E2E con datos sintéticos | — | — | Repetir tras cada despliegue |
+| C2 | Una cuenta no autorizada es rechazada | VERIFICADO | **P:** EV-13 (cuenta elegible —usuario de prueba temporal del cliente en *Testing*— fuera de la lista: Google la dejó pasar y hubo rechazo de la app en `/login` con «Esta cuenta no está autorizada…», sin datos) | **CI:** `signIn` exige correo verificado y en la lista (`auth.ts`); E2E de auth | — | — | El propietario retira el usuario de prueba temporal. Repetir si cambia la lista o el cliente OAuth |
+| C3 | 401 sin sesión; 403 para una sesión ya no permitida | PARCIAL | **P:** EV-12 (401 en las 7 APIs privadas sin sesión; cubierto por B1) | **CI:** 403 en `authz.ts` y sus pruebas | **DEC:** decidido el 2026-10-12: excepción aceptada (§5); el 403 real exige retirar un correo y redesplegar | 403 real (no se hará sin autorización) | Excepción §5 |
+| C4 | Las páginas del dashboard cargan con datos reales | VERIFICADO | **P:** EV-13 (Inicio, Proyectos y un proyecto, Tareas con filtro, Actividad y Capacidad: 5/5 sin error) | **CI:** E2E de integración | — | — | Repetir tras cada despliegue |
+| C5 | Planificación V1.5 simula sin escribir | VERIFICADO | **P:** EV-13 (`/planificacion` con aviso de simulación; no guarda nada) | **CI:** E2E de planificación; `planning-security.test.ts` | — | — | — |
+| C6 | Centro de control V1.6 con aviso de simulación | VERIFICADO | **P:** EV-13 (`/control`: hechos, inferencias e hipótesis separados y «Simulación — no se guardaron cambios») | **CI:** E2E de control; `governance-security.test.ts` | — | — | — |
+| C7 | Operaciones V1.4 cerradas en producción | VERIFICADO | **P:** EV-13 (sin enlace «Operaciones»; `/operaciones` y `/tareas/nueva` dicen que la escritura está deshabilitada); EV-06 (sin variables de escritura) | **CI:** sonda 503 con escritura; `integration-security.test.ts` | — | — | — |
+| D1 | La cuenta de servicio no editó la hoja | VERIFICADO | **P:** EV-13 (historial de versiones desde el 2026-10-11 sin cambios de la cuenta runtime) | **CI:** el cliente solo emite `GET` con alcance de solo lectura (`security.test.ts`) | — | — | Repetir si se activa la escritura (V1.7) |
+| D2 | Permiso mínimo en la hoja (Lector, acceso restringido) | VERIFICADO | **P:** EV-13 (*Compartir*: acceso general Restringido; cuenta runtime solo como Lector). Existe además otra cuenta de servicio como Editor: la del colector manual (X-8, aceptada) | — | — | — | Revisar X-8 en la V1.7 (OIDC o retirar) |
 | D3 | Alcance del token y solo `GET` | VERIFICADO (código) | — | **CI:** `security.test.ts` («el cliente de Sheets solo emite GET», «ningún código usa el alcance de escritura») | — | — | D1 y D2 son la prueba real |
-| E1 | Logs sin correos ni tokens | PARCIAL | **P:** EV-06 y EV-12 (`@` solo en auditoría de Google; 0 `ya29.` y 0 `Bearer`; 1 `code=` en el log de peticiones); EV-09 (exclusión añadida en `_Default`) | **CI:** el plan y el diagnóstico solo cuentan, sin contenido. **S:** diagnóstico con `gcloud` falso | **T:** la entrada `code=` del 2026-10-11 sale de la ventana de 30 días el 2026-11-11 | Estado `CORRECTA` de la exclusión (nunca se verificó); E1 = 0 a partir del 2026-11-11. La exclusión solo cubre `_Default`: no prueba nada sobre otros sinks, buckets o exportaciones | [Hoja](hoja-propietario.md), bloque 5 |
-| E2 | Solo códigos de la app en los logs | PARCIAL | **P:** EV-12 (con `severity>=WARNING`: 0 avisos de la app y 29 de la plataforma, en contexto en la [remediación §5.1](remediacion-2026-10-11.md)); EV-06 y EV-12 (ninguna línea de la app con `@`, `ya29.`, `Bearer` o `code=`) | **CI:** las líneas de la app solo llevan códigos (`security.test.ts`). **S:** vocabulario cerrado con `gcloud` falso | — | Líneas `[project-os]` de **cualquier** severidad, por código: la lectura anterior no las veía (§3, D-12) | [Hoja](hoja-propietario.md), bloque 5 |
-| F1 | Presupuesto y alertas existen | PARCIAL | **R:** EV-05 (presupuesto de USD 5 con alertas, reportado) | — | — | ✅ del presupuesto y de sus umbrales en la consola, sin el ID de facturación | [Hoja](hoja-propietario.md), bloque 4 |
-| F2 | El costo real es coherente con la estimación | PENDIENTE | — | — | **T:** informes a las 24–48 h del despliegue y después cada mes | Gasto aproximado por servicio, sin IDs | [Hoja](hoja-propietario.md), bloque 4 |
-| F3 | Retención de imágenes efectiva | PARCIAL | **P:** EV-06 (política activa `PERMITIDO`; 1 imagen) | **CI:** política revisada (P6); `limpieza-artifact-v1-6.sh --check` probado | **T:** el efecto solo es observable con ≥ 5 imágenes y alguna de más de 30 días | Lista de imágenes y etiquetas cuando se cumpla la condición | Runbook operativo §4, en el primer mantenimiento que la cumpla |
-| G1 | Cerrar el acceso sin borrar nada | PENDIENTE | — | **S:** procedimiento documentado (runbook histórico §6, runbook operativo §6); no ensayado | **DEC:** el ensayo corta el servicio: solo con autorización y en una ventana acordada | Ensayo autorizado, o excepción expresa del propietario | Decidir en el [acta](acta-cierre-v1-6.md) |
+| E1 | Logs sin correos ni tokens | PARCIAL | **P:** EV-14 (`@` solo en auditoría de Google; 0 `ya29.` y 0 `Bearer`; `code=` 1, la entrada del 2026-10-11, sin aumentar tras dos logins del 2026-10-12; exclusión `CORRECTA`); EV-06, EV-09 y EV-12 | **CI:** el plan y el diagnóstico solo cuentan, sin contenido. **S:** diagnóstico con `gcloud` falso | **T:** la entrada `code=` del 2026-10-11 sale de la ventana de 30 días el 2026-11-11 | E1 = 0 a partir del 2026-11-11 (excepción aceptada hasta entonces, §5). La exclusión solo cubre `_Default` | Repetir el diagnóstico (hoja 5.4) el 2026-11-11 o después |
+| E2 | Solo códigos de la app en los logs | VERIFICADO | **P:** EV-14 (lectura en **cualquier** severidad: 0 líneas `[project-os]`; 401 solo en las 7 APIs y ningún 403 posterior al 2026-10-11) | **CI:** las líneas de la app solo llevan códigos (`security.test.ts`). **S:** vocabulario cerrado con `gcloud` falso | — | — | Repetir con el diagnóstico tras cada despliegue |
+| F1 | Presupuesto y alertas existen | VERIFICADO | **P:** EV-13 (presupuesto de USD 5 con alertas al 50, 75 y 90 %; avisa, no corta) | — | — | — | — |
+| F2 | El costo real es coherente con la estimación | VERIFICADO | **P:** EV-13 (gasto desde el 2026-10-11: menos de USD 1, aprox. USD 0,01; sin servicios inesperados) | — | — | — | Revisar cada mes (runbook operativo) |
+| F3 | Retención de imágenes efectiva | PARCIAL | **P:** EV-06 (política activa `PERMITIDO`; 1 imagen) | **CI:** política revisada (P6); `limpieza-artifact-v1-6.sh --check` probado | **T:** el efecto solo es observable con ≥ 5 imágenes y alguna de más de 30 días | Lista de imágenes cuando se cumpla la condición (excepción aceptada, §5) | Runbook operativo §4, en el primer mantenimiento que la cumpla |
+| G1 | Cerrar el acceso sin borrar nada | PENDIENTE | — | **S:** procedimiento documentado (runbook histórico §6, runbook operativo §6); no ensayado | **DEC:** decidido el 2026-10-12: excepción aceptada (§5); el ensayo corta el servicio | Ensayo autorizado en un mantenimiento | Excepción §5 |
 | G2 | Volver a una revisión anterior | NO_APLICA hasta que exista una 2.ª revisión con su imagen | **P:** EV-06 y EV-12 (1 revisión con el 100 % del tráfico) | **CI:** el evaluador G2 exige un ensayo autorizado | — | Revisión anterior recuperable (`produccion-anterior`) y ensayo autorizado | Reevaluar tras el próximo despliegue; no se crea una revisión solo para cerrarlo |
 | G3 | El propietario sabe desmantelar | PENDIENTE | — | **S:** procedimiento en el runbook §7 | — | ✅ de lectura del procedimiento | [Hoja](hoja-propietario.md), bloque 5 |
 | H | Cierre de la aceptación | PENDIENTE | — | — | — | Los controles PARCIAL y PENDIENTE, con evidencia o con una excepción expresa del propietario (§5) | [Acta de cierre](acta-cierre-v1-6.md) |
 
-**Resumen (Misión 014, línea base del 2026-10-11):**
+**Resumen (Misión 014; evidencia del propietario del 2026-10-11 y del 2026-10-12):**
 
 | Estado | Controles |
 | --- | --- |
-| VERIFICADO (10) | A1, A3, A4, A5, A6, A7, A8, A9, B1, D3 (código) |
-| PARCIAL (9) | A2, C1, C3, C4, C7, E1, E2, F1, F3 |
-| PENDIENTE (9) | C2, C5, C6, D1, D2, F2, G1, G3, H |
+| VERIFICADO (22) | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3 (código), E2, F1, F2 |
+| PARCIAL (3) | C3, E1, F3 |
+| PENDIENTE (3) | G1, G3, H |
 | NO_APLICA (1) | G2 |
 
 El resumen, las etiquetas, las referencias `EV-xx` y la identidad los comprueba `scripts/ops/matriz.mjs` en
@@ -106,12 +106,13 @@ checklist: A, B, D y E en ✅), y del **próximo despliegue**.
 
 | Clase | Controles | Motivo |
 | --- | --- | --- |
-| **Bloquea la puerta 4** | A2, D1, D2, E2 | Solo faltan comprobaciones de navegador y de consola ([hoja](hoja-propietario.md)) |
-| **Bloquea la puerta 4 hasta una fecha** | E1 | Exclusión `CORRECTA` ahora; recuento E1 = 0 a partir del 2026-11-11 |
-| **Bloquea la puerta 4 por seguridad** | C2 | La barrera real es la lista de correos, y no se probó con una cuenta real fuera de ella |
+| **Bloquea la puerta 4** | Ninguno (2026-10-12) | A2, C2, D1, D2 y E2 quedaron VERIFICADOS con EV-13 y EV-14 |
+| **Bloquea la puerta 4 hasta una fecha** | E1 | Excepción aceptada; repetir E1 a partir del 2026-11-11 (hoja 5.4) |
+| **Bloquea la puerta 4 por seguridad** | Ninguno | C2 verificado con una cuenta elegible rechazada por la app |
 | **Bloquea el próximo build o despliegue** | Ninguno | A9 y D-1 resueltos |
-| **Requiere decisión del propietario** | C3 (403 real), G1 (ensayo), X-2 (dependencias), X-8 (clave del colector manual) | Excepción expresa o prueba autorizada ([acta](acta-cierre-v1-6.md)) |
-| **Deuda no bloqueante** | C1, C4–C7, F1–F3, G2, G3, D-6 | Comprobaciones funcionales, de costo o de procedimiento sin exposición de datos |
+| **Requiere decisión del propietario** | Ninguna pendiente | C3, G1, X-2 y X-8 decididos el 2026-10-12 (§5 y acta §8) |
+| **Pendiente del propietario** | G3, H | Lectura de procedimientos (hoja 5.5) y declaración del estado en el acta §13 |
+| **Deuda no bloqueante** | F3, G2, D-6 | Dependen del tiempo o de una segunda revisión |
 
 ## 5. Excepciones aceptadas por el propietario
 
@@ -120,9 +121,12 @@ permite cerrar H con ese control sin evidencia; nunca convierte el control en VE
 
 | ID | Excepción | Fecha | Referencia |
 | --- | --- | --- | --- |
+| C3 | Cerrar sin el 403 real: lo cubren el código y la CI; la prueba exige un cambio de producción | 2026-10-12 | Decisión del propietario en la sesión con Claude Code del 2026-10-12, registrada en el PR #24 |
+| E1 | Aceptar la entrada `code=` histórica hasta el 2026-11-11; repetir E1 ese día | 2026-10-12 | Decisión del propietario en la sesión con Claude Code del 2026-10-12, registrada en el PR #24 |
+| F3 | Aceptar sin el efecto real de la limpieza; repetir cuando haya ≥ 5 imágenes | 2026-10-12 | Decisión del propietario en la sesión con Claude Code del 2026-10-12, registrada en el PR #24 |
+| G1 | Cerrar sin el ensayo de cierre de acceso; ensayar en el próximo mantenimiento autorizado | 2026-10-12 | Decisión del propietario en la sesión con Claude Code del 2026-10-12, registrada en el PR #24 |
 
-**Ninguna registrada** a fecha de esta versión. Las propuestas están en la [línea base §6](linea-base-v1-6.md) y en el
-[acta](acta-cierre-v1-6.md).
+El propietario aceptó además X-2 (dependencias de desarrollo) y X-8 (clave del colector manual, con su opción explícita), que no son controles de la matriz ([acta §8](acta-cierre-v1-6.md)).
 
 ## 6. Mutaciones que esta matriz **no** realiza
 

@@ -11,9 +11,9 @@
 > Este documento **no aprueba ninguna funcionalidad de la V1.7**: la automatización futura está en una
 > [propuesta aparte](propuesta-arquitectura-v1-7.md), no aprobada.
 
-**Estado propuesto hoy: `LISTA PARA ACEPTACIÓN`.** El repositorio y las pruebas están terminados; faltan las
-comprobaciones humanas. Queda sujeto a la revisión de ChatGPT del HEAD final y a la CI en verde de ese SHA. No es una
-aprobación.
+**Estado propuesto hoy: `LISTA PARA ACEPTACIÓN`.** Las comprobaciones humanas del 2026-10-12 (EV-13 y EV-14) no
+dieron ningún FALLO y el propietario decidió las excepciones de la §8. Cuando confirme G3 (hoja 5.5), puede declarar en
+la §13 el estado «estable con excepciones aceptadas». Esa declaración y la firma son suyas: esto no es una aprobación.
 
 ## 1. Identificadores de la línea base
 
@@ -97,9 +97,9 @@ Estado de la [matriz](matriz-aceptacion.md) en el SHA final, sin violaciones de 
 
 | Estado | n | Controles |
 | --- | --- | --- |
-| VERIFICADO | 10 | A1, A3, A4, A5, A6, A7, A8, A9, B1, D3 (código) |
-| PARCIAL | 9 | A2, C1, C3, C4, C7, E1, E2, F1, F3 |
-| PENDIENTE | 9 | C2, C5, C6, D1, D2, F2, G1, G3, H |
+| VERIFICADO | 22 | A1, A2, A3, A4, A5, A6, A7, A8, A9, B1, C1, C2, C4, C5, C6, C7, D1, D2, D3, E2, F1, F2 (D3 por código, en la CI) |
+| PARCIAL | 3 | C3, E1, F3 |
+| PENDIENTE | 3 | G1, G3, H |
 | NO_APLICA | 1 | G2 |
 
 Límites que el estado refleja con precisión:
@@ -117,9 +117,9 @@ Límites que el estado refleja con precisión:
 
 - **Hasta hoy:** EV-01 a EV-12, todas del **2026-10-11**, aportadas por el propietario y saneadas
   ([línea base §4](linea-base-v1-6.md)).
-- **En esta misión:** ninguna. La Misión 014 no tuvo acceso a GCP, OAuth ni Sheets.
-- **Lo que falta:** las respuestas de la [hoja](hoja-propietario.md), bloques 1–5. Se incorporarán como EV-13 y
-  siguientes, con su fecha.
+- **2026-10-12:** EV-13 (hoja, bloques 1–4) y EV-14 (diagnóstico de solo lectura, bloque 5), aportadas por el
+  propietario y transcritas por Claude Code sin datos. Ningún FALLO. Claude no tuvo acceso a GCP, OAuth ni Sheets.
+- **Lo que falta:** G3 (hoja 5.5, lectura de procedimientos) y E1 a partir del 2026-11-11 (hoja 5.4).
 
 ## 7. Riesgos residuales
 
@@ -135,19 +135,19 @@ Límites que el estado refleja con precisión:
 | X-8 | El workflow manual del colector usa una clave JSON de cuenta de servicio (según su guía, **Editor**; no verificado), solo con la opción `sync_to_sheets`. La CI de los PR ya no la recibe (R3-1) | Media | Decisión D-CI; P15 lo declara siempre. Si una credencial vuelve a la CI automática, P12 da FALLO |
 | X-9 | Retención de 30 días de `_Default` supuesta | Baja | Confirmarla en la consola si E1 depende de ella |
 
-## 8. Excepciones pendientes de decisión del propietario
+## 8. Excepciones decididas por el propietario
 
 Cada fila se decide aparte. Una excepción aceptada se registra **también** en la
 [matriz §5](matriz-aceptacion.md), con la fecha y la referencia. Solo así cuenta para cerrar H.
 
 | # | Excepción propuesta | Recomendación | Decisión (Aceptar / Rechazar) | Fecha | Referencia |
 | --- | --- | --- | --- | --- | --- |
-| C3 | Cerrar sin el 403 real | Aceptar: el riesgo lo cubren el código y la CI; la prueba exige un cambio de producción | | | |
-| G1 | Cerrar sin el ensayo de cierre de acceso | Aceptar mientras no haya ventana; ensayar en el próximo mantenimiento autorizado | | | |
-| X-2 | Mantener las 5 altas de desarrollo hasta que exista una corrección | Aceptar (D-DEP) | | | |
-| X-8 | Mantener la clave JSON del colector **manual** (la CI de los PR ya no la usa desde R3-1) | Decidir: mantenerla con la opción explícita, retirarla o migrar a OIDC con una identidad propia (D-CI) | | | |
-| E1 | Aceptar con la entrada `code=` histórica hasta el 2026-11-11 | Aceptar **solo** si la exclusión sale `CORRECTA` y `code=` no aumenta tras el login | | | |
-| F3 | Aceptar sin el efecto real de la limpieza | Aceptar; repetir cuando haya ≥ 5 imágenes | | | |
+| C3 | Cerrar sin el 403 real | Aceptar: el riesgo lo cubren el código y la CI; la prueba exige un cambio de producción | Aceptar | 2026-10-12 | Sesión del propietario con Claude Code, 2026-10-12 (PR #24) |
+| G1 | Cerrar sin el ensayo de cierre de acceso | Aceptar mientras no haya ventana; ensayar en el próximo mantenimiento autorizado | Aceptar | 2026-10-12 | Sesión del propietario con Claude Code, 2026-10-12 (PR #24) |
+| X-2 | Mantener las 5 altas de desarrollo hasta que exista una corrección | Aceptar (D-DEP) | Aceptar | 2026-10-12 | Sesión del propietario con Claude Code, 2026-10-12 (PR #24) |
+| X-8 | Mantener la clave JSON del colector **manual** (la CI de los PR ya no la usa desde R3-1) | Decidir: mantenerla con la opción explícita, retirarla o migrar a OIDC con una identidad propia (D-CI) | Aceptar: mantenerla con la opción explícita `sync_to_sheets` | 2026-10-12 | Sesión del propietario con Claude Code, 2026-10-12 (PR #24) |
+| E1 | Aceptar con la entrada `code=` histórica hasta el 2026-11-11 | Aceptar **solo** si la exclusión sale `CORRECTA` y `code=` no aumenta tras el login | Aceptar (exclusión `CORRECTA` y `code=` sin aumentar: EV-14) | 2026-10-12 | Sesión del propietario con Claude Code, 2026-10-12 (PR #24) |
+| F3 | Aceptar sin el efecto real de la limpieza | Aceptar; repetir cuando haya ≥ 5 imágenes | Aceptar | 2026-10-12 | Sesión del propietario con Claude Code, 2026-10-12 (PR #24) |
 
 ## 9. Dependencias y seguridad
 
