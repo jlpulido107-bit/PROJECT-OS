@@ -59,6 +59,11 @@ describe('comprobaciones de despliegue', () => {
     expect(deploymentProblems(env({ ...CLOUD_RUN, PROJECT_OS_WRITE_MODE: 'mock' }))).toEqual(['write-mode'])
     expect(deploymentProblems(env({ ...CLOUD_RUN, PROJECT_OS_WRITE_MODE: 'sheets' }))).toEqual(['write-mode'])
     expect(deploymentProblems(env({ ...CLOUD_RUN, AUTH_WRITER_EMAILS: 'escritor@example.com' }))).toEqual(['write-mode'])
+    // V1.8: sheets solo con cuenta de escritura dedicada y al menos un escritor que también sea lector.
+    const WRITE = { PROJECT_OS_WRITE_MODE: 'sheets', PROJECT_OS_WRITE_SERVICE_ACCOUNT: 'project-os-writer@project-os-511102.iam.gserviceaccount.com' }
+    expect(deploymentProblems(env({ ...CLOUD_RUN, ...WRITE }))).toEqual(['write-mode'])
+    expect(deploymentProblems(env({ ...CLOUD_RUN, ...WRITE, AUTH_WRITER_EMAILS: 'otro@example.com' }))).toEqual(['write-mode'])
+    expect(deploymentProblems(env({ ...CLOUD_RUN, ...WRITE, AUTH_WRITER_EMAILS: 'revisor@example.com' }))).toEqual([])
     // Fuera de Cloud Run no aplica (desarrollo local con escritura simulada).
     expect(deploymentProblems(env({ ...AUTH, NODE_ENV: 'production', NEXTAUTH_URL: 'http://127.0.0.1:3000', DASHBOARD_DATA_SOURCE: 'fixtures', PROJECT_OS_WRITE_MODE: 'mock' }))).toEqual([])
   })

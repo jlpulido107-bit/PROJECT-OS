@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { WriteGate } from '@/components/operations/write-access'
 import { Badge, Empty, Section } from '@/components/ui'
 import { WRITE_HEADERS } from '@/lib/operations/constants'
-import { mockAuditTable, operationsService } from '@/lib/operations/runtime'
+import { auditTable, operationsService } from '@/lib/operations/runtime'
 import { parseAudit } from '@/lib/operations/service'
 import { InMemoryTableStore, readView } from '@/lib/operations/table-store'
 import { privateData } from '@/lib/page-data'
@@ -39,7 +39,7 @@ export default async function OperationsPage() {
 
 async function Operations() {
   const service = operationsService()
-  const auditRows = mockAuditTable()
+  const auditRows = await auditTable()
   if (!service || !auditRows) return <Empty>La escritura no está activa.</Empty>
   const audit = await readView(new InMemoryTableStore({ AUDITORIA: auditRows.length ? auditRows : [[...WRITE_HEADERS.AUDITORIA]] }), 'AUDITORIA')
   const ops = parseAudit(audit).sort((a, b) => b.order - a.order).slice(0, 30)
@@ -67,7 +67,7 @@ async function Operations() {
         )}
       </Section>
 
-      <Section title="Auditoría reciente (simulada)" id="auditoria">
+      <Section title="Auditoría reciente" id="auditoria">
         {ops.length === 0 ? <Empty>Aún no hay operaciones registradas.</Empty> : (
           <ul className="stack plain">
             {ops.map((op) => (

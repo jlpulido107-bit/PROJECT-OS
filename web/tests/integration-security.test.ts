@@ -58,7 +58,7 @@ describe('árbol integrado V1.3–V1.6', () => {
     expect(layout).toMatch(/showOperations=\{/)
   })
 
-  it('producción: la sonda de Cloud Run rechaza cualquier modo de escritura y el mock exige fixtures fuera de Cloud Run', () => {
+  it('producción: la sonda de Cloud Run solo acepta escritura sheets bien configurada y el mock exige fixtures fuera de Cloud Run', () => {
     expect(read(path.join('lib', 'deployment.ts'))).toContain("problems.push('write-mode')")
     const config = read(path.join('lib', 'operations', 'config.ts'))
     expect(config).toMatch(/K_SERVICE/)

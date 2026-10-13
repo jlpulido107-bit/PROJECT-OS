@@ -74,6 +74,7 @@ spec:
                 secretKeyRef:
                   name: project-os-allowed-emails
                   key: '${SECRET_VERSION_ALLOWLIST}'
+            # __ESCRITURA__ (V1.8): render.mjs inserta aquí la escritura real SOLO si WRITE_MODE=sheets; si no, nada.
           # Una revisión mal configurada (p. ej. sin HTTPS, con clave JSON o sin cuenta esperada)
           # no supera la sonda y no recibe tráfico: la revisión anterior sigue sirviendo.
           startupProbe:

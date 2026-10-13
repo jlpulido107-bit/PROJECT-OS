@@ -19,9 +19,22 @@ export function MockBanner() {
   )
 }
 
+export function RealWriteBanner() {
+  return (
+    <div className="alert alert-info" role="note">
+      <p>
+        <strong>Escritura real.</strong> Lo que guardes se escribe en la hoja de Google y queda en AUDITORIA.
+      </p>
+    </div>
+  )
+}
+
 const REASONS: Record<string, string> = {
   deshabilitada: 'La escritura está deshabilitada en este servidor (PROJECT_OS_WRITE_MODE=disabled).',
   'sheets-no-habilitado': 'La escritura real en Google Sheets aún no está habilitada: requiere aprobación.',
+  'sheets-requiere-datos-reales': 'La escritura real solo funciona con datos de Google Sheets; la escritura está deshabilitada.',
+  'sheets-sin-cuenta-escritura': 'Falta la cuenta de servicio de escritura; la escritura está deshabilitada.',
+  'sheets-misma-cuenta': 'La cuenta de escritura no puede ser la lectora; la escritura está deshabilitada.',
   'modo-invalido': 'La configuración del modo de escritura no es válida; la escritura está deshabilitada.',
   'mock-requiere-fixtures': 'El modo simulado solo funciona con datos sintéticos; la escritura está deshabilitada.',
   'mock-no-permitido-en-cloud-run': 'El modo simulado no está permitido en Cloud Run; la escritura está deshabilitada.',
@@ -48,7 +61,7 @@ export function WriteGate({ email, children }: { email: string; children: ReactN
   }
   return (
     <>
-      <MockBanner />
+      {access.status.mode === 'mock' ? <MockBanner /> : <RealWriteBanner />}
       {children}
     </>
   )

@@ -1,21 +1,25 @@
 import 'server-only'
 
+import { spreadsheetId } from '../config'
 import { todayInMerida } from '../dates'
 import { buildFixtureTabs } from '../fixtures'
 import type { RawTabs } from '../types'
 import { WRITE_HEADERS } from './constants'
-import { writeModeStatus } from './config'
+import { writeModeStatus, writeServiceAccount } from './config'
 import { RateLimiter } from './rate-limit'
 import { OperationsService } from './service'
-import { InMemoryTableStore } from './table-store'
+import { SheetsTableStore } from './sheets-table-store'
+import { InMemoryTableStore, type TableStore } from './table-store'
+import { createWriteTokenProvider } from './write-credentials'
 
 /**
- * Estado del motor de operaciones en este proceso. En V1.4 solo existe el repositorio SIMULADO:
- * el adaptador de Sheets (sheets-table-store.ts) no se importa aquí, de modo que ningún camino de la app
- * puede escribir en Google Sheets (verificado por tests/security.test.ts).
+ * Estado del motor de operaciones en este proceso:
+ * - `mock`: repositorio en memoria con datos sintéticos (V1.4).
+ * - `sheets` (V1.8): adaptador de escritura real, con token de la cuenta de escritura dedicada (suplantación).
+ *   Este es el ÚNICO módulo que importa sheets-table-store.ts (verificado por tests/security.test.ts).
  */
 interface Runtime {
-  store: InMemoryTableStore
+  store: TableStore
   service: OperationsService
 }
 
@@ -25,6 +29,7 @@ interface Runtime {
  */
 interface ProcessState {
   runtime: Runtime | null
+  sheetsRuntime: Runtime | null
   limiter: RateLimiter
   generation: number
 }
@@ -32,14 +37,25 @@ const KEY = Symbol.for('project-os.operations.v1-4')
 
 function processState(): ProcessState {
   const g = globalThis as unknown as Record<symbol, ProcessState | undefined>
-  g[KEY] ??= { runtime: null, limiter: new RateLimiter(), generation: 0 }
+  g[KEY] ??= { runtime: null, sheetsRuntime: null, limiter: new RateLimiter(), generation: 0 }
   return g[KEY]
 }
 
-function mockRuntime(): Runtime {
+function mockRuntime(): Runtime & { store: InMemoryTableStore } {
   const state = processState()
   state.runtime ??= createMockRuntime()
-  return state.runtime
+  return state.runtime as Runtime & { store: InMemoryTableStore }
+}
+
+function sheetsRuntime(): Runtime {
+  const state = processState()
+  if (!state.sheetsRuntime) {
+    const account = writeServiceAccount()
+    if (!account) throw new Error('sin cuenta de escritura')
+    const store = new SheetsTableStore({ spreadsheetId: spreadsheetId(), getWriteToken: createWriteTokenProvider(account) })
+    state.sheetsRuntime = { store, service: new OperationsService(store, { mode: 'sheets' }) }
+  }
+  return state.sheetsRuntime
 }
 
 function createMockRuntime(): Runtime {
@@ -51,8 +67,18 @@ function createMockRuntime(): Runtime {
 
 /** Servicio de operaciones, o null si la escritura está deshabilitada. */
 export function operationsService(): OperationsService | null {
-  if (writeModeStatus().mode !== 'mock') return null
-  return mockRuntime().service
+  const mode = writeModeStatus().mode
+  if (mode === 'mock') return mockRuntime().service
+  if (mode === 'sheets') return sheetsRuntime().service
+  return null
+}
+
+/** Filas de AUDITORIA del almacén de escritura activo (contienen correos de actores: solo para escritores). */
+export async function auditTable(): Promise<string[][] | null> {
+  const mode = writeModeStatus().mode
+  if (mode === 'mock') return mockRuntime().store.snapshot().AUDITORIA ?? null
+  if (mode === 'sheets') return sheetsRuntime().store.readTable('AUDITORIA')
+  return null
 }
 
 /**
@@ -62,12 +88,6 @@ export function operationsService(): OperationsService | null {
 export function mockWriteTabs(): RawTabs | null {
   if (writeModeStatus().mode !== 'mock') return null
   return mockRuntime().store.snapshot() as RawTabs
-}
-
-/** Filas de AUDITORIA del repositorio simulado (solo modo mock; contienen correos de actores: solo para escritores). */
-export function mockAuditTable(): string[][] | null {
-  if (writeModeStatus().mode !== 'mock') return null
-  return mockRuntime().store.snapshot().AUDITORIA ?? null
 }
 
 export function writeRateLimiter(): RateLimiter {
