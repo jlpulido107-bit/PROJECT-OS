@@ -1,5 +1,9 @@
 # PROJECT-OS V1.4 — Contrato de escritura (motor de operaciones)
 
+> **V1.8:** el modo `sheets` ya se puede activar, con una cuenta de escritura dedicada y solo para los escritores de la
+> lista. Política y activación: [`escritura-v1-8.md`](escritura-v1-8.md). Lo que sigue describe el contrato de V1.4,
+> que se mantiene salvo en ese punto.
+
 **Estado:** diseño implementado en modo **simulado** (`mock`) para revisión (Misión 006, issue #7).
 **No hay escritura real:** por defecto `PROJECT_OS_WRITE_MODE=disabled` y `AUTH_WRITER_EMAILS` vacío ⇒ ningún
 endpoint permite mutaciones. El modo `sheets` está **reconocido pero bloqueado** en esta versión. Activarlo requiere

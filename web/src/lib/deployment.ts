@@ -3,6 +3,7 @@ import 'server-only'
 import { parseAllowedEmails } from './access'
 import { ConfigError, dataSource, spreadsheetId } from './config'
 import { isCloudRun, validateCredentialConfig } from './credentials'
+import { writeModeStatus, writerEmails } from './operations/config'
 
 /**
  * Comprobaciones de configuración del servidor, sin red ni lectura de Sheets.
@@ -57,10 +58,16 @@ export function deploymentProblems(env: NodeJS.ProcessEnv = process.env): Deploy
     if (!(error instanceof ConfigError)) throw error
     problems.push('data-config')
   }
-  // Producción solo lectura: en Cloud Run cualquier modo de escritura (V1.4) o lista de escritores impide arrancar.
+  // Escritura en Cloud Run (V1.8): solo `disabled` o `sheets` bien configurado (cuenta de escritura dedicada y al menos un
+  // escritor). Cualquier otro modo, o escritores sin modo `sheets` activo, impide arrancar.
   if (isCloudRun(env)) {
-    const mode = env.PROJECT_OS_WRITE_MODE?.trim().toLowerCase() ?? ''
-    if ((mode !== '' && mode !== 'disabled') || (env.AUTH_WRITER_EMAILS?.trim() ?? '') !== '') problems.push('write-mode')
+    const requested = env.PROJECT_OS_WRITE_MODE?.trim().toLowerCase() ?? ''
+    const writers = (env.AUTH_WRITER_EMAILS?.trim() ?? '') !== ''
+    if (requested === '' || requested === 'disabled') {
+      if (writers) problems.push('write-mode')
+    } else if (requested !== 'sheets' || writeModeStatus(env).mode !== 'sheets' || writerEmails(env).size === 0) {
+      problems.push('write-mode')
+    }
   }
   return problems
 }

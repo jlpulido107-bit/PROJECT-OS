@@ -37,8 +37,18 @@ describe('modo de escritura (por defecto nadie escribe)', () => {
     expect(canWrite('escritor@example.com', env({ AUTH_ALLOWED_EMAILS: 'escritor@example.com', AUTH_WRITER_EMAILS: 'escritor@example.com' }))).toBe(false)
   })
 
-  it('sheets está reconocido pero bloqueado en V1.4', () => {
-    expect(writeModeStatus(env({ ...BASE, PROJECT_OS_WRITE_MODE: 'sheets', DASHBOARD_DATA_SOURCE: 'sheets' }))).toMatchObject({ mode: 'disabled', reason: 'sheets-no-habilitado' })
+  it('sheets (V1.8) exige datos reales y una cuenta de escritura dedicada, distinta de la lectora', () => {
+    const SHEETS = { ...BASE, PROJECT_OS_WRITE_MODE: 'sheets', DASHBOARD_DATA_SOURCE: 'sheets' }
+    const WRITE_SA = 'project-os-writer@project-os-511102.iam.gserviceaccount.com'
+    expect(writeModeStatus(env(SHEETS))).toMatchObject({ mode: 'disabled', reason: 'sheets-sin-cuenta-escritura' })
+    expect(writeModeStatus(env({ ...SHEETS, PROJECT_OS_WRITE_SERVICE_ACCOUNT: 'no-es-cuenta' }))).toMatchObject({ mode: 'disabled', reason: 'sheets-sin-cuenta-escritura' })
+    expect(writeModeStatus(env({ ...SHEETS, PROJECT_OS_WRITE_SERVICE_ACCOUNT: 'alguien@gmail.com' }))).toMatchObject({ mode: 'disabled', reason: 'sheets-sin-cuenta-escritura' })
+    expect(writeModeStatus(env({ ...SHEETS, DASHBOARD_DATA_SOURCE: 'fixtures', PROJECT_OS_WRITE_SERVICE_ACCOUNT: WRITE_SA }))).toMatchObject({ mode: 'disabled', reason: 'sheets-requiere-datos-reales' })
+    expect(writeModeStatus(env({ ...SHEETS, PROJECT_OS_WRITE_SERVICE_ACCOUNT: WRITE_SA, SHEETS_EXPECTED_SERVICE_ACCOUNT: WRITE_SA }))).toMatchObject({ mode: 'disabled', reason: 'sheets-misma-cuenta' })
+    expect(writeModeStatus(env({ ...SHEETS, PROJECT_OS_WRITE_SERVICE_ACCOUNT: WRITE_SA }))).toEqual({ mode: 'sheets', requested: 'sheets', reason: null })
+    // Aun con sheets activo, solo escribe quien está en ambas listas.
+    expect(canWrite('lector@example.com', env({ ...SHEETS, PROJECT_OS_WRITE_SERVICE_ACCOUNT: WRITE_SA }))).toBe(false)
+    expect(canWrite('escritor@example.com', env({ ...SHEETS, PROJECT_OS_WRITE_SERVICE_ACCOUNT: WRITE_SA }))).toBe(true)
   })
 
   it('mock solo con fixtures y fuera de Cloud Run; valores desconocidos deshabilitan', () => {

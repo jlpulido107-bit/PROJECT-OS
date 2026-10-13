@@ -8,13 +8,15 @@ export const dynamic = 'force-dynamic'
 
 export default async function PrivateLayout({ children }: { children: ReactNode }) {
   const user = await requireUser()
-  const writes = writeAccess(user.email).allowed
+  const access = writeAccess(user.email)
+  const writes = access.allowed
+  const real = writes && access.status.mode === 'sheets'
   return (
     <>
       <a className="skip-link" href="#contenido">Saltar al contenido</a>
       <header className="topbar">
         <div className="topbar-inner">
-          <p className="brand">PROJECT-OS <span className="brand-sub">Centro de dirección · {writes ? 'escritura simulada' : 'solo lectura'}</span></p>
+          <p className="brand">PROJECT-OS <span className="brand-sub">Centro de dirección · {real ? 'escritura real' : writes ? 'escritura simulada' : 'solo lectura'}</span></p>
           <nav aria-label="Principal">
             <NavLinks showOperations={writes} />
           </nav>
@@ -30,7 +32,7 @@ export default async function PrivateLayout({ children }: { children: ReactNode 
       <footer className="footer container">
         <p>
           Fuente operativa: Google Sheets.{' '}
-          {writes ? 'Las operaciones de este panel son simuladas y no escriben en Google Sheets.' : 'Este panel no escribe datos.'}{' '}
+          {real ? 'Las operaciones de este panel escriben en Google Sheets y quedan en AUDITORIA.' : writes ? 'Las operaciones de este panel son simuladas y no escriben en Google Sheets.' : 'Este panel no escribe datos.'}{' '}
           No cierra tareas; los commits son actividad observada, no avance.
         </p>
       </footer>

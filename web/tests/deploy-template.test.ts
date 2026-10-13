@@ -139,6 +139,28 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     expect(out).toMatch(/name: project-os-google-client-secret\s+key: '2'/)
   })
 
+  it('sin WRITE_MODE la salida es de solo lectura (igual que V1.6)', () => {
+    const out = render(template, VARS)
+    expect(out).not.toMatch(/PROJECT_OS_WRITE_MODE|AUTH_WRITER_EMAILS|__ESCRITURA__/)
+  })
+
+  it('con WRITE_MODE=sheets agrega la cuenta de escritura y el secreto de escritores por versión fijada', () => {
+    const WRITE = { WRITE_MODE: 'sheets', WRITE_SERVICE_ACCOUNT: 'project-os-writer@proyecto-ejemplo.iam.gserviceaccount.com', SECRET_VERSION_WRITERS: '1' }
+    const out = render(template, { ...VARS, ...WRITE })
+    expect(out).toMatch(/- name: PROJECT_OS_WRITE_MODE\n\s+value: sheets/)
+    expect(out).toContain('value: project-os-writer@proyecto-ejemplo.iam.gserviceaccount.com')
+    expect(out).toMatch(/name: project-os-writer-emails\n\s+key: '1'/)
+    expect(out).toMatch(/maxScale: '1'/)
+    for (const [k, v, msg] of ([
+      ['WRITE_MODE', 'mock', 'WRITE_MODE'],
+      ['WRITE_SERVICE_ACCOUNT', VARS.RUNTIME_SA, 'cuenta runtime'],
+      ['WRITE_SERVICE_ACCOUNT', 'project-os-writer@otro-proyecto.iam.gserviceaccount.com', 'PROJECT_ID'],
+      ['SECRET_VERSION_WRITERS', 'latest', 'SECRET_VERSION_WRITERS'],
+    ] as Array<[string, string, string]>)) expect(() => render(template, { ...VARS, ...WRITE, [k]: v }), `${k}=${v}`).toThrow(msg)
+    // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
+    expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
+  })
+
   it.each([
     ['SERVICE_URL', 'http://inseguro.example'],
     ['IMAGE', 'us-central1-docker.pkg.dev/proyecto-ejemplo/project-os/dashboard:latest'],

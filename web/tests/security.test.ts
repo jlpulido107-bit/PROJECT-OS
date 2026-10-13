@@ -18,8 +18,11 @@ const sources = files(SRC).map((file) => ({ file: path.relative(SRC, file), text
 const SERVER_ONLY_MODULES = ['lib/config', 'lib/data', 'lib/sheets-client', 'lib/auth', 'lib/page-data', 'lib/credentials', 'lib/deployment']
 
 describe('garantías de seguridad del código', () => {
-  // V1.4: el único archivo con endpoints de escritura es el adaptador PREPARADO, que nadie importa.
+  // V1.8: el único archivo con endpoints de escritura es el adaptador; solo runtime.ts lo importa, y solo
+  // write-credentials.ts pide el alcance de escritura (suplantando la cuenta de escritura dedicada).
   const WRITE_ADAPTER = path.join('lib', 'operations', 'sheets-table-store.ts')
+  const WRITE_RUNTIME = path.join('lib', 'operations', 'runtime.ts')
+  const WRITE_CREDENTIALS = path.join('lib', 'operations', 'write-credentials.ts')
   // Módulos de V1.4 que solo pueden ejecutarse en el servidor (estado simulado y manejo de escrituras).
   SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http')
 
@@ -27,18 +30,19 @@ describe('garantías de seguridad del código', () => {
     for (const { file, text } of sources) {
       if (file !== WRITE_ADAPTER) {
         expect(text, file).not.toMatch(/:append|:batchUpdate|:clear|values:update|batchUpdateByDataFilter/)
-        // Quien hable con las APIs de Google solo puede leer.
-        if (/googleapis\.com/.test(text)) expect(text, file).not.toMatch(/method:\s*'(PUT|POST|PATCH|DELETE)'/)
+        // Quien hable con las APIs de Google solo puede leer (salvo pedir el token de escritura a IAM Credentials).
+        if (/googleapis\.com/.test(text) && file !== WRITE_CREDENTIALS) expect(text, file).not.toMatch(/method:\s*'(PUT|POST|PATCH|DELETE)'/)
       }
-      expect(text, file).not.toMatch(/auth\/spreadsheets['"]/)
+      if (file !== WRITE_CREDENTIALS) expect(text, file).not.toMatch(/auth\/spreadsheets['"]/)
       expect(text, file).not.toMatch(/auth\/drive/)
       expect(text, file).not.toMatch(/USER_ENTERED/)
     }
   })
 
-  it('el adaptador de escritura a Sheets no se importa desde la app (V1.4 solo simula)', () => {
+  it('el adaptador de escritura y el token de escritura solo se usan desde runtime.ts', () => {
     for (const { file, text } of sources) {
-      if (file === WRITE_ADAPTER) continue
+      if (file === WRITE_ADAPTER || file === WRITE_RUNTIME) continue
+      expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
       expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*sheets-table-store['"]/)
       expect(text, file).not.toMatch(/new SheetsTableStore/)
     }
@@ -58,9 +62,12 @@ describe('garantías de seguridad del código', () => {
     expect(http.indexOf('evaluateWriteRequest(')).toBeLessThan(http.indexOf('await run('))
   })
 
-  it('el modo sheets no habilita escritura en esta versión', () => {
+  it('el modo sheets exige datos reales y una cuenta de escritura distinta de la lectora', () => {
     const config = sources.find((s) => s.file === path.join('lib', 'operations', 'config.ts'))!.text
-    expect(config).toMatch(/requested === 'sheets'[\s\S]*?mode: 'disabled'/)
+    expect(config).toMatch(/requested === 'sheets'[\s\S]*?sheets-requiere-datos-reales[\s\S]*?sheets-sin-cuenta-escritura[\s\S]*?sheets-misma-cuenta/)
+    const credentials = sources.find((s) => s.file === WRITE_CREDENTIALS)!.text
+    expect(credentials).toMatch(/generateAccessToken/)
+    expect(credentials).not.toMatch(/auth\/drive|private_key|readFileSync|JWT/)
   })
 
   it('el cliente de Sheets solo emite GET', () => {
