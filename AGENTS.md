@@ -16,3 +16,11 @@
 - Validar tests y diff antes de pedir revisión.
 - No habilitar `schedule` hasta que el usuario apruebe una prueba real.
 - El colector solo lee; no cierra tareas ni toma decisiones de negocio.
+
+## Delegación a Codex
+- Protocolo completo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md).
+- Una tarea = un issue con la plantilla «Tarea para Codex» y un PR pequeño con `[PRJ-NNN]` en el título.
+- Trabajar en una rama propia (`codex/PRJ-NNN-…`); nunca en `main`. No fusionar ni desplegar.
+- No cambiar `.github/workflows`, secretos, permisos ni configuración de GCP.
+- Ejecutar `python -m unittest discover -s tests` y, si se toca `web/`, `npm test` en `web/`; pegar la salida en el PR.
+- Si la tarea es ambigua o se sale del alcance: parar y explicarlo en el PR.
