@@ -55,6 +55,30 @@ gcloud secrets add-iam-policy-binding project-os-writer-emails --project="$PROJE
 export SECRET_VERSION_WRITERS=1
 ```
 
+## 2b. Token de GitHub para enviar órdenes a Codex (F4, opcional)
+
+Con este token, al pulsar **Aprobar** el dashboard abre el issue en el repositorio del proyecto y menciona a `@codex`.
+Sin él, la orden queda aprobada y se envía a mano.
+
+1. En GitHub abre Settings → Developer settings → **Fine-grained tokens** → *Generate new token*.
+   - **Nombre:** `project-os-dashboard-codex`. **Caducidad:** 90 días.
+   - **Repository access:** *Only select repositories* → PROJECT-OS, SIGSAH y RADAROS.
+   - **Permisos:** Issues = **Read and write**; Pull requests = **Read-only**; Metadata = Read-only (se marca solo). Nada
+     más.
+2. Copia el token y guárdalo como secreto, sin mostrarlo:
+
+```bash
+read -rs -p "Token de GitHub: " T && printf '%s' "$T" | gcloud secrets create project-os-github-token \
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=- && unset T; echo
+gcloud secrets add-iam-policy-binding project-os-github-token --project="$PROJECT_ID" \
+  --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor
+export SECRET_VERSION_GITHUB=1
+```
+
+Cuando el token caduque, crea uno nuevo, agrégalo como versión nueva
+(`gcloud secrets versions add project-os-github-token --data-file=-`), sube `SECRET_VERSION_GITHUB` y vuelve a
+desplegar.
+
 ## 3. Desplegar con escritura
 
 Usa la imagen del commit fusionado de F2 y repite el despliegue de V1.7 (compilar, fijar `IMAGE` y reutilizar la
@@ -82,7 +106,12 @@ gcloud run revisions list --service "$SERVICE_NAME" --region "$REGION" --limit 2
 3. Edítala (por ejemplo, la prioridad) y comprueba que la versión pasa a 2.
 4. Registra un tiempo y una decisión de prueba.
 5. En **Operaciones**, la conciliación debe decir **«Sin pendientes»**.
-6. Corre `node scripts/smoke-remote.mjs --url "$SERVICE_URL"`: deben salir todas las comprobaciones en OK.
+6. Si configuraste el token, crea una orden de prueba en **Órdenes → Nueva orden** y pulsa **Aprobar y enviar a
+   Codex**. Comprueba tres cosas:
+   - aparece el issue `[ORD-…]` con la mención a `@codex`;
+   - la orden pasa a **Enviada**, con su issue;
+   - Codex responde en el issue.
+7. Corre `node scripts/smoke-remote.mjs --url "$SERVICE_URL"`: deben salir todas las comprobaciones en OK.
 
 **Si la primera escritura falla** («lectura fallida» o «escritura fallida»), lo normal es que falte un permiso. La sonda de
 arranque no puede verificarlo, porque no usa la red. Revisa dos cosas:

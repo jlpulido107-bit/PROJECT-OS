@@ -1,3 +1,4 @@
+import { transitionWithDispatch } from '@/lib/operations/dispatch'
 import { OperationError } from '@/lib/operations/errors'
 import { handleWrite } from '@/lib/operations/http'
 import { operationsService } from '@/lib/operations/runtime'
@@ -5,12 +6,12 @@ import { parseOrderTransition } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
-/** Aprobar (BORRADOR → APROBADA) o cancelar una orden a Codex, con el estado esperado (V1.8 F3). */
+/** Transiciones de una orden a Codex con el estado esperado (V1.8 F3). Aprobar también la envía a GitHub/Codex (F4). */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   return handleWrite(request, (body, ctx) => {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
-    return service.transitionOrder(parseOrderTransition(decodeURIComponent(id), body), ctx)
+    return transitionWithDispatch(service, parseOrderTransition(decodeURIComponent(id), body), ctx)
   }, 200)
 }

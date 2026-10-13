@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
 import { OrderActions } from '@/components/operations/forms'
+import { githubClient } from '@/lib/operations/dispatch'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
@@ -18,7 +19,7 @@ const GRUPOS: Array<{ id: GrupoOrden; titulo: string; vacio: string }> = [
 
 const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 
-function OrdenCard({ v, canWrite }: { v: OrdenVista; canWrite: boolean }) {
+function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string } }) {
   const o = v.orden
   const tone = RIESGO_TONE[o.riesgo as keyof typeof RIESGO_TONE] ?? 'neutral'
   return (
@@ -36,7 +37,7 @@ function OrdenCard({ v, canWrite }: { v: OrdenVista; canWrite: boolean }) {
         <div><dt>Siguiente paso</dt><dd>{v.siguiente ? v.siguiente.texto : <span className="muted">—</span>}</dd></div>
         <div><dt>Actualizada</dt><dd><DateText value={o.actualizadoEn} /></dd></div>
         <div><dt>Issue</dt><dd>{o.issueUrl ? <ExternalLink href={o.issueUrl}>{o.issueUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin issue</span>}</dd></div>
-        <div><dt>PR</dt><dd>{o.prUrl ? <ExternalLink href={o.prUrl}>{o.prUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin PR</span>}</dd></div>
+        <div><dt>PR</dt><dd>{!o.prUrl && prDetectado ? <><ExternalLink href={prDetectado.url}>{prDetectado.url.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> <Badge tone="info">Detectado: {prDetectado.estado}</Badge></> : o.prUrl ? <ExternalLink href={o.prUrl}>{o.prUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin PR</span>}</dd></div>
       </dl>
       <details>
         <summary>Detalle de la orden</summary>
@@ -50,7 +51,7 @@ function OrdenCard({ v, canWrite }: { v: OrdenVista; canWrite: boolean }) {
         </dl>
       </details>
       {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
-        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} />
+        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} />
       ) : null}
       {v.problemas.length > 0 ? (
         <ul className="list" aria-label={`Problemas de ${o.id}`}>
@@ -68,6 +69,19 @@ export default async function OrdenesPage() {
   const r = resumenOrdenes(data)
   const total = data.ordenes.length
   const canWrite = writeAccess(user.email).allowed
+  // PRs de Codex para las órdenes ENVIADA (solo lectura en GitHub; si falla, simplemente no se muestran).
+  const client = canWrite ? githubClient() : null
+  const prs = new Map<string, { url: string; estado: string }>()
+  if (client) {
+    await Promise.all(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId).map(async (o) => {
+      try {
+        const pr = await client.prDeOrden(o.proyectoId!, o.id)
+        if (pr) prs.set(o.id, pr)
+      } catch {
+        // Sin detalles: el panel sigue funcionando sin la detección.
+      }
+    }))
+  }
 
   return (
     <>
@@ -88,7 +102,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} />)}</div>}
           </Section>
         )
       })}

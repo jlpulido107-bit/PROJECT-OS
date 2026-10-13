@@ -53,7 +53,7 @@ export const ORIGIN_PREFIX = 'dashboard-v1.4'
 
 export type OperationName =
   | 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'
-  | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar'
+  | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
 
 /** Órdenes a Codex (V1.8 F3, docs/migracion-ordenes-codex.md). Desde el dashboard no se crean órdenes de riesgo ALTO. */
 export const ORDER_RISKS = ['BAJO', 'MEDIO'] as const

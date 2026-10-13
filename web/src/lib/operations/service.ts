@@ -6,6 +6,7 @@ import {
   WRITE_HEADERS, type EntityTab, type OperationName,
 } from './constants'
 import { OperationError } from './errors'
+import { REPOSITORIOS, repoDeUrl } from './github'
 import {
   cell, findById, readView, toRecord, toRow, type TableStore, type TableView,
 } from './table-store'
@@ -77,6 +78,10 @@ const ID_COLUMN: Record<EntityTab, string> = {
 const ORDER_TRANSITIONS: Record<OrderTransitionCommand['accion'], { from: readonly string[]; to: string; op: OperationName }> = {
   aprobar: { from: ['BORRADOR'], to: 'APROBADA', op: 'orden.aprobar' },
   cancelar: { from: ['BORRADOR', 'APROBADA', 'ENVIADA', 'PR_ABIERTO', 'REVISADA'], to: 'CANCELADA', op: 'orden.cancelar' },
+  enviar: { from: ['APROBADA'], to: 'ENVIADA', op: 'orden.enviar' },
+  registrar_pr: { from: ['ENVIADA'], to: 'PR_ABIERTO', op: 'orden.registrar_pr' },
+  revisar: { from: ['PR_ABIERTO'], to: 'REVISADA', op: 'orden.revisar' },
+  cerrar: { from: ['REVISADA'], to: 'CERRADA', op: 'orden.cerrar' },
 }
 
 interface AuditedOperation {
@@ -92,7 +97,7 @@ interface AuditedOperation {
   integridad: 'completa' | 'parcial' | 'inconsistente'
 }
 
-const ORIGIN_PATTERN = /^dashboard-v1\.4;modo=(mock|sheets);op=([a-z.]+);req=([0-9a-f-]{36});h=([0-9a-f]{16})$/
+const ORIGIN_PATTERN = /^dashboard-v1\.4;modo=(mock|sheets);op=([a-z._]+);req=([0-9a-f-]{36});h=([0-9a-f]{16})$/
 
 export class OperationsService {
   private queue: Promise<unknown> = Promise.resolve()
@@ -311,6 +316,9 @@ export class OperationsService {
     return this.exclusive(async () => {
       const rule = ORDER_TRANSITIONS[cmd.accion]
       const op = rule.op
+      if ((cmd.accion === 'enviar' || cmd.accion === 'registrar_pr') && !cmd.url) {
+        throw new OperationError('validacion', { fields: { url: 'Requerido' } })
+      }
       const hash = payloadHash(op, cmd)
       const [tareas, ordenes, audit] = await this.views('TAREAS', 'ORDENES_CODEX', 'AUDITORIA')
       const matches = findById(ordenes, 'ORDEN_ID', cmd.ordenId)
@@ -357,12 +365,21 @@ export class OperationsService {
 
       const now = this.clock()
       const next: Record<string, string> = { ...current, ESTADO: rule.to, ACTUALIZADO_EN: todayInMerida(now) }
+      if (cmd.url) {
+        // La URL debe ser del repositorio del proyecto de la orden, no de otro de los permitidos.
+        const repo = repoDeUrl(cmd.url, cmd.accion === 'enviar' ? 'issues' : 'pull')
+        if (!repo || repo !== REPOSITORIOS[current.PROYECTO_ID ?? '']) {
+          throw new OperationError('validacion', { fields: { url: 'Debe ser del repositorio del proyecto de la orden' } })
+        }
+      }
+      if (cmd.accion === 'enviar' && cmd.url) next.ISSUE_URL = cmd.url
+      if (cmd.accion === 'registrar_pr' && cmd.url) next.PR_URL = cmd.url
       if (cmd.accion === 'cancelar' && cmd.motivo) {
         const nota = `Cancelada: ${cmd.motivo}`
         next.NOTAS = current.NOTAS ? `${current.NOTAS} | ${nota}` : nota
       }
       const diff = new Map<string, { antes: string; despues: string }>()
-      for (const column of ['ESTADO', 'NOTAS', 'ACTUALIZADO_EN']) {
+      for (const column of ['ESTADO', 'ISSUE_URL', 'PR_URL', 'NOTAS', 'ACTUALIZADO_EN']) {
         if ((next[column] ?? '') !== (current[column] ?? '')) diff.set(column, { antes: current[column] ?? '', despues: next[column] ?? '' })
       }
       await this.auditFirst(op, hash, cmd.requestId, ctx, 'ORDENES_CODEX', cmd.ordenId, diff, now, audit)
@@ -370,6 +387,13 @@ export class OperationsService {
       await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, [...diff.keys()]))
       return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false }
     })
+  }
+
+  /** Fila actual de una orden (para enviarla a GitHub), o null si no existe. */
+  async readOrder(ordenId: string): Promise<Record<string, string> | null> {
+    const view = await readView(this.store, 'ORDENES_CODEX')
+    const rows = findById(view, 'ORDEN_ID', ordenId)
+    return rows.length === 1 ? toRecord(view, rows[0]!.cells) : null
   }
 
   /**
@@ -623,9 +647,13 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'orden.crear': ['ORDEN_ID', 'ESTADO'],
   'orden.aprobar': ['ESTADO'],
   'orden.cancelar': ['ESTADO'],
+  'orden.enviar': ['ESTADO'],
+  'orden.registrar_pr': ['ESTADO'],
+  'orden.revisar': ['ESTADO'],
+  'orden.cerrar': ['ESTADO'],
 }
 /** Operaciones que modifican un registro existente (no reescriben su ID). */
-const TRANSITION_OPS = new Set(['tarea.editar', 'orden.aprobar', 'orden.cancelar'])
+const TRANSITION_OPS = new Set(['tarea.editar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar'])
 const AUDIT_ID_PATTERN = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})(?:-(\d{2}))?$/
 
 /**

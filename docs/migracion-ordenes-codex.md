@@ -55,6 +55,15 @@ también puede:
   no es `ALTO`;
 - **cancelar** cualquier orden no terminada, con un motivo que se guarda en `NOTAS`.
 
+Con el token de GitHub configurado (F4), **aprobar también envía**:
+- crea el issue `[ORDEN_ID]` en el repositorio del proyecto, o reutiliza el que ya exista;
+- menciona a `@codex` una sola vez;
+- pasa la orden a `ENVIADA` con su `ISSUE_URL`.
+
+Si GitHub falla, la orden queda `APROBADA` y el botón **Enviar a Codex** reintenta sin duplicar. Después, el dashboard
+detecta el PR `[ORDEN_ID]` y permite **registrar el PR** (`PR_ABIERTO`), **marcar revisada** (`REVISADA`) y **cerrar**
+(`CERRADA`).
+
 Cada cambio queda en `AUDITORIA`. Como la pestaña no tiene `VERSION`, el dashboard envía el `ESTADO` que vio el
 propietario: si cambió entretanto, se rechaza y hay que recargar.
 
