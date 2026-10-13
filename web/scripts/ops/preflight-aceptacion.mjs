@@ -14,7 +14,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { codigoDeSalida, linea, PRODUCCION, RUTAS_DE_LA_IMAGEN } from './produccion-v1-6.mjs'
+import { codigoDeSalida, DESPLEGADO, linea, PRODUCCION, RUTAS_DE_LA_IMAGEN } from './produccion-v1-6.mjs'
 
 /**
  * Workflow MANUAL del colector V1.1 (Python), anterior al dashboard: solo con la opción explícita `sync_to_sheets` añade
@@ -183,21 +183,21 @@ export function preflightAceptacion(ROOT) {
   }
 
   // ---- Identidad de la versión: ¿el código de la imagen es el desplegado? ----
-  const registro = leer('docs/estado-produccion-v1-6-2026-10-11.md')
+  const registro = leer(DESPLEGADO.registro)
   if (registro === null) noVerificado('P13', 'registro de producción ausente')
-  else if (registro.includes(PRODUCCION.commit) && registro.includes(PRODUCCION.digest) && registro.includes(PRODUCCION.revision)) ok('P13', 'registro de producción coincide con commit, digest y revisión esperados')
-  else fallo('P13', 'el registro de producción no coincide con el estado esperado (produccion-v1-6.mjs)')
+  else if (registro.includes(DESPLEGADO.commit) && registro.includes(DESPLEGADO.digest) && registro.includes(DESPLEGADO.revision)) ok('P13', 'registro de producción coincide con commit, digest y revisión esperados')
+  else fallo('P13', 'el registro de producción no coincide con el estado esperado (DESPLEGADO en produccion-v1-6.mjs)')
 
   try {
-    execFileSync('git', ['-C', ROOT, 'cat-file', '-e', `${PRODUCCION.commit}^{commit}`], { stdio: 'ignore' })
+    execFileSync('git', ['-C', ROOT, 'cat-file', '-e', `${DESPLEGADO.commit}^{commit}`], { stdio: 'ignore' })
     try {
-      execFileSync('git', ['-C', ROOT, 'diff', '--quiet', PRODUCCION.commit, 'HEAD', '--', ...RUTAS_DE_LA_IMAGEN], { stdio: 'ignore' })
-      ok('P14', `el código que entra en la imagen es idéntico al desplegado (${PRODUCCION.commit.slice(0, 7)})`)
+      execFileSync('git', ['-C', ROOT, 'diff', '--quiet', DESPLEGADO.commit, 'HEAD', '--', ...RUTAS_DE_LA_IMAGEN], { stdio: 'ignore' })
+      ok('P14', `el código que entra en la imagen es idéntico al desplegado (${DESPLEGADO.commit.slice(0, 7)})`)
     } catch {
-      fallo('P14', `el código de la imagen difiere de ${PRODUCCION.commit.slice(0, 7)}: este árbol NO es lo desplegado`)
+      fallo('P14', `el código de la imagen difiere de ${DESPLEGADO.commit.slice(0, 7)}: este árbol NO es lo desplegado`)
     }
   } catch {
-    noVerificado('P14', `git o el commit ${PRODUCCION.commit.slice(0, 7)} no disponibles (p. ej. clon superficial)`)
+    noVerificado('P14', `git o el commit ${DESPLEGADO.commit.slice(0, 7)} no disponibles (p. ej. clon superficial)`)
   }
   return resultados
 }

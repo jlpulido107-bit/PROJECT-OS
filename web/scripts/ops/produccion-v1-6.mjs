@@ -23,6 +23,18 @@ export const PRODUCCION = Object.freeze({
 })
 
 /**
+ * Versión DESPLEGADA HOY (puede ser posterior a la línea base V1.6 de arriba). La usan P13 y P14 del preflight para
+ * comprobar que el árbol coincide con lo que sirve producción. Cada despliegue autorizado la actualiza junto con su
+ * registro fechado en docs/. PRODUCCION sigue describiendo la V1.6 congelada (línea base, matriz y acta).
+ */
+export const DESPLEGADO = Object.freeze({
+  revision: 'project-os-dashboard-00002-58z',
+  commit: '77a79705017139c99ac977c96602b0b0b5c19b1a',
+  digest: 'sha256:cde104f0cec42810d6175fd521686a9b43dff1416cf259fa1bf8068d3a2745fe',
+  registro: 'docs/estado-produccion-v1-7-2026-10-13.md',
+})
+
+/**
  * Controles que se comprueban con LECTURAS remotas del propietario (plan-inspeccion.mjs). Sin todos ellos, una evidencia
  * nunca da «todo OK» (evidencia.mjs, salvo --parcial). Una prueba comprueba que coincide con los pasos del plan.
  */
