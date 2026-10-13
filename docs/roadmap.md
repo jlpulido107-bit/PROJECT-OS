@@ -41,11 +41,11 @@
 
 ## V1.7 — Estado de proyectos y delegación a Codex
 - [x] Primera revisión de estado (hoja + 3 repositorios), 2026-10-13.
-- [ ] ECO enlazado al repositorio RADAROS en `config/projects.json`.
-- [ ] Protocolo de [delegación a Codex](delegacion-codex.md), `AGENTS.md` y plantilla «Tarea para Codex» en los 3 repositorios.
+- [x] ECO enlazado al repositorio RADAROS en `config/projects.json`.
+- [x] Protocolo de [delegación a Codex](delegacion-codex.md), `AGENTS.md` y plantilla «Tarea para Codex» en los 3 repositorios.
 - [ ] Configuración de Codex por el propietario y primera tarea de prueba supervisada.
 - [ ] Enlace de evidencias con TAREAS por el ID `PRJ-NNN` (propuesta; el colector sigue sin cerrar tareas).
-- [ ] Página «Estado» en el dashboard.
+- [ ] Página «Estado» en el dashboard (`/estado`): metas con riesgo, plan vs real de la semana y alertas (POS-007).
 - [ ] Ejecución nocturna programada, solo tras aprobar una prueba real.
 
 ## V1.4 — Informes y planificación (antes V1.3)
