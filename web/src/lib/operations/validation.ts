@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { addDays, parseCivilDate } from '../dates'
 import { parseSafeUrl } from '../parse'
 import {
-  CLOSING_TASK_STATES, LIMITS, TASK_PRIORITIES, WRITABLE_TASK_STATES,
+  CLOSING_TASK_STATES, LIMITS, ORDER_RISKS, TASK_PRIORITIES, WRITABLE_TASK_STATES,
 } from './constants'
 import { OperationError } from './errors'
 import { safeCellText } from './sanitize'
@@ -69,6 +69,30 @@ export interface CreateDecisionCommand {
   justificacion: string
   responsable: string
   evidenciaUrl: string | null
+}
+
+export interface CreateOrderCommand {
+  requestId: string
+  proyectoId: string
+  tareaId: string
+  titulo: string
+  objetivo: string
+  contexto: string | null
+  criterios: string
+  fueraDeAlcance: string
+  comoProbar: string
+  riesgo: string
+}
+
+export type OrderAction = 'aprobar' | 'cancelar'
+
+export interface OrderTransitionCommand {
+  requestId: string
+  ordenId: string
+  accion: OrderAction
+  /** Estado que el propietario vio al decidir (control de concurrencia: ORDENES_CODEX no tiene VERSION). */
+  expectedEstado: string
+  motivo: string | null
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -317,6 +341,50 @@ export function parseCreateDecision(body: unknown, today: string): CreateDecisio
     evidenciaUrl: c.url('evidenciaUrl'),
   }
   checkPastDate(c, 'fecha', cmd.fecha, today)
+  c.done()
+  return cmd
+}
+
+const ORDER_ID = /^ORD-[A-Z][A-Z0-9]{1,9}-\d{3,6}$/
+const ORDER_STATES = ['BORRADOR', 'APROBADA', 'ENVIADA', 'PR_ABIERTO', 'REVISADA', 'CERRADA', 'CANCELADA'] as const
+
+export function parseCreateOrder(body: unknown): CreateOrderCommand {
+  const input = asObject(body)
+  const c = new Checker(input, [
+    'requestId', 'proyectoId', 'tareaId', 'titulo', 'objetivo', 'contexto', 'criterios', 'fueraDeAlcance', 'comoProbar', 'riesgo',
+  ])
+  if (c.has('estado')) c.setError('estado', 'Las órdenes se crean en BORRADOR')
+  const long = { required: true, min: 3, max: LIMITS.ordenTexto, multiline: true }
+  const cmd: CreateOrderCommand = {
+    requestId: c.requestId(),
+    proyectoId: c.pattern('proyectoId', PROJECT_ID, true, 'ID de proyecto no válido', (s) => s.trim().toUpperCase()) ?? '',
+    tareaId: c.pattern('tareaId', ENTITY_ID, true, 'ID de tarea no válido', (s) => s.trim().toUpperCase()) ?? '',
+    titulo: c.text('titulo', { required: true, min: 3, max: LIMITS.titulo }) ?? '',
+    objetivo: c.text('objetivo', long) ?? '',
+    contexto: c.text('contexto', { required: false, max: LIMITS.ordenTexto, multiline: true }),
+    criterios: c.text('criterios', long) ?? '',
+    fueraDeAlcance: c.text('fueraDeAlcance', long) ?? '',
+    comoProbar: c.text('comoProbar', long) ?? '',
+    riesgo: c.oneOf('riesgo', ORDER_RISKS, true) ?? '',
+  }
+  c.done()
+  return cmd
+}
+
+export function parseOrderTransition(ordenId: string, body: unknown): OrderTransitionCommand {
+  const input = asObject(body)
+  const c = new Checker(input, ['requestId', 'accion', 'expectedEstado', 'motivo'])
+  const id = ordenId.trim().toUpperCase()
+  if (!ORDER_ID.test(id)) c.setError('ordenId', 'ID de orden no válido')
+  const accion = c.oneOf('accion', ['APROBAR', 'CANCELAR'], true)
+  const cmd: OrderTransitionCommand = {
+    requestId: c.requestId(),
+    ordenId: id,
+    accion: (accion?.toLowerCase() ?? 'aprobar') as OrderAction,
+    expectedEstado: c.oneOf('expectedEstado', ORDER_STATES, true) ?? '',
+    motivo: c.text('motivo', { required: accion === 'CANCELAR', min: 3, max: LIMITS.motivo }),
+  }
+  if (accion === 'APROBAR' && cmd.motivo) c.setError('motivo', 'Solo se usa al cancelar')
   c.done()
   return cmd
 }

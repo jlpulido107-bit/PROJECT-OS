@@ -14,12 +14,12 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 const read = (rel: string) => readFileSync(path.join(SRC, rel), 'utf8')
 
 const PAGES = [
-  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'estado', 'operaciones', 'ordenes', 'planificacion', 'proyectos', 'proyectos/[id]',
+  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'estado', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
   'tareas', 'tareas/[id]/editar', 'tareas/nueva', 'tiempos/nuevo',
 ]
 
 describe('árbol integrado V1.3–V1.6', () => {
-  it('las 15 páginas privadas existen y verifican la sesión antes de leer datos', () => {
+  it('las 16 páginas privadas existen y verifican la sesión antes de leer datos', () => {
     const found = files(path.join(SRC, 'app', '(private)')).filter((f) => f.endsWith('page.tsx'))
       .map((f) => path.relative(path.join(SRC, 'app', '(private)'), path.dirname(f)).split(path.sep).join('/')).sort()
     expect(found).toEqual([...PAGES].sort())
@@ -30,7 +30,7 @@ describe('árbol integrado V1.3–V1.6', () => {
     const apiDir = path.join(SRC, 'app', 'api')
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts')).map((f) => path.relative(apiDir, f).split(path.sep).join('/')).sort()
     expect(routes).toEqual([
-      'auth/[...nextauth]/route.ts', 'control/route.ts', 'health/route.ts', 'operaciones/decisiones/route.ts',
+      'auth/[...nextauth]/route.ts', 'control/route.ts', 'health/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/route.ts',
       'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/route.ts', 'resumen/route.ts',
     ])
     for (const route of routes) {

@@ -474,3 +474,116 @@ export function DecisionForm({ projects, defaultProject, today }: { projects: Op
     </form>
   )
 }
+
+/* ------------------------------ Órdenes a Codex (V1.8 F3) ------------------------------ */
+
+export function OrderForm({ projects, tasks, defaultProject }: {
+  projects: Option[]
+  /** Tareas abiertas con su proyecto (value = TAREA_ID). */
+  tasks: Array<Option & { proyectoId: string }>
+  defaultProject?: string
+}) {
+  const op = useOperation('/api/operaciones/ordenes', 'POST')
+  const [project, setProject] = useState(defaultProject ?? projects[0]?.value ?? '')
+  const projectTasks = tasks.filter((t) => t.proyectoId === project)
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await op.submit(compact(formValues(event.currentTarget), ['contexto']))
+  }
+
+  return (
+    <form className="op-form" onSubmit={onSubmit} noValidate>
+      <div className="form-grid">
+        <Field name="proyectoId" label="Proyecto" state={op.state}>
+          {(p) => (
+            <select {...p} name="proyectoId" value={project} onChange={(e) => setProject(e.target.value)} required>
+              {projects.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
+        </Field>
+        <Field name="tareaId" label="Tarea que avanza" state={op.state} hint={projectTasks.length ? undefined : 'Este proyecto no tiene tareas abiertas'}>
+          {(p) => (
+            <select {...p} name="tareaId" key={project} defaultValue={projectTasks[0]?.value} required>
+              {projectTasks.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
+        </Field>
+        <Field name="titulo" label="Título" state={op.state} wide>
+          {(p) => <input {...p} name="titulo" required maxLength={160} />}
+        </Field>
+        <Field name="objetivo" label="Objetivo" state={op.state} wide hint="Qué debe quedar hecho, en una o dos frases.">
+          {(p) => <textarea {...p} name="objetivo" required rows={2} maxLength={2000} />}
+        </Field>
+        <Field name="contexto" label="Contexto y archivos (opcional)" state={op.state} wide>
+          {(p) => <textarea {...p} name="contexto" rows={2} maxLength={2000} />}
+        </Field>
+        <Field name="criterios" label="Criterios de aceptación" state={op.state} wide hint="Verificables con una prueba o un comando.">
+          {(p) => <textarea {...p} name="criterios" required rows={3} maxLength={2000} />}
+        </Field>
+        <Field name="fueraDeAlcance" label="Fuera de alcance" state={op.state} wide>
+          {(p) => <textarea {...p} name="fueraDeAlcance" required rows={2} maxLength={2000} defaultValue="No desplegar, no fusionar, no cambiar workflows, secretos ni permisos, no escribir en Google Sheets." />}
+        </Field>
+        <Field name="comoProbar" label="Cómo probar" state={op.state} wide>
+          {(p) => <textarea {...p} name="comoProbar" required rows={2} maxLength={2000} />}
+        </Field>
+        <Field name="riesgo" label="Riesgo" state={op.state} hint="El riesgo ALTO no se delega.">
+          {(p) => (
+            <select {...p} name="riesgo" defaultValue="BAJO" required>
+              <option value="BAJO">Bajo</option>
+              <option value="MEDIO">Medio (con supervisión)</option>
+            </select>
+          )}
+        </Field>
+      </div>
+      <p className="muted small">La orden se crea en <strong>Borrador</strong>. Después la apruebas en Órdenes; nada se envía a Codex sin tu aprobación.</p>
+      <div className="form-actions">
+        <Submit state={op.state} label="Crear orden" />
+        <Link href="/ordenes" className="button button-ghost">Cancelar</Link>
+      </div>
+      <Status state={op.state}>
+        {op.state.status === 'done' ? <p className="small"><Link href="/ordenes">Ver órdenes</Link></p> : null}
+      </Status>
+    </form>
+  )
+}
+
+/** Aprobar o cancelar una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
+export function OrderActions({ ordenId, estado, canApprove }: { ordenId: string; estado: string; canApprove: boolean }) {
+  const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
+  const [cancelling, setCancelling] = useState(false)
+
+  async function approve() {
+    await op.submit({ accion: 'APROBAR', expectedEstado: estado })
+  }
+  async function cancel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await op.submit({ accion: 'CANCELAR', expectedEstado: estado, motivo: formValues(event.currentTarget).motivo ?? '' })
+  }
+
+  if (op.state.status === 'done') return <Status state={op.state} />
+  const sending = op.state.status === 'sending'
+  return (
+    <div className="card-actions">
+      {canApprove && !cancelling ? (
+        <button type="button" className="button button-primary" onClick={approve} disabled={sending} aria-busy={sending}>
+          {sending ? 'Aprobando…' : 'Aprobar'}
+        </button>
+      ) : null}
+      {cancelling ? (
+        <form className="op-form" onSubmit={cancel} noValidate>
+          <Field name="motivo" label="Motivo de la cancelación" state={op.state} wide>
+            {(p) => <input {...p} name="motivo" required minLength={3} maxLength={500} />}
+          </Field>
+          <div className="form-actions">
+            <Submit state={op.state} label="Cancelar orden" />
+            <button type="button" className="button button-ghost" onClick={() => { setCancelling(false); op.reset() }}>Volver</button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" className="button" onClick={() => setCancelling(true)} disabled={sending}>Cancelar…</button>
+      )}
+      <Status state={op.state} />
+    </div>
+  )
+}

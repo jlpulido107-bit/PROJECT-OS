@@ -48,6 +48,16 @@ ORDEN_ID	PROYECTO_ID	TAREA_ID	TITULO	OBJETIVO	CONTEXTO	CRITERIOS_ACEPTACION	FUER
 | `REVISADA` | `CERRADA` | Propietario | PR fusionado o cerrado con decisión |
 | Cualquiera | `CANCELADA` | Propietario | Con motivo en `NOTAS` |
 
+**Desde el dashboard (V1.8 F3)**, con la escritura activa ([escritura-v1-8.md](escritura-v1-8.md)), el propietario
+también puede:
+- crear órdenes en `BORRADOR`;
+- **aprobar** (`BORRADOR` → `APROBADA`), solo si la orden está completa, su tarea existe en el mismo proyecto y el riesgo
+  no es `ALTO`;
+- **cancelar** cualquier orden no terminada, con un motivo que se guarda en `NOTAS`.
+
+Cada cambio queda en `AUDITORIA`. Como la pestaña no tiene `VERSION`, el dashboard envía el `ESTADO` que vio el
+propietario: si cambió entretanto, se rechaza y hay que recargar.
+
 **Reglas:**
 - Claude nunca cambia un estado: solo propone el cambio.
 - Una orden `CERRADA` no cierra su tarea. La tarea la cierra el propietario en TAREAS.

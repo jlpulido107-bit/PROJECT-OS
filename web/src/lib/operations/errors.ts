@@ -13,6 +13,10 @@ export type OperationErrorCode =
   | 'proyecto-inexistente'
   | 'hito-inexistente'
   | 'tarea-inexistente'
+  | 'orden-inexistente'
+  | 'orden-cerrada'
+  | 'orden-incompleta'
+  | 'transicion-no-permitida'
   | 'tarea-cerrada'
   | 'cierre-no-permitido'
   | 'sin-cambios'
@@ -41,6 +45,10 @@ const STATUS: Record<OperationErrorCode, number> = {
   'proyecto-inexistente': 422,
   'hito-inexistente': 422,
   'tarea-inexistente': 404,
+  'orden-inexistente': 404,
+  'orden-cerrada': 422,
+  'orden-incompleta': 422,
+  'transicion-no-permitida': 422,
   'tarea-cerrada': 422,
   'cierre-no-permitido': 422,
   'sin-cambios': 422,
@@ -70,6 +78,10 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'proyecto-inexistente': 'El proyecto no existe.',
   'hito-inexistente': 'El hito no existe o no pertenece al proyecto.',
   'tarea-inexistente': 'La tarea no existe.',
+  'orden-inexistente': 'La orden no existe.',
+  'orden-cerrada': 'La orden ya está cerrada o cancelada.',
+  'orden-incompleta': 'La orden no se puede aprobar: le faltan datos, su tarea no existe o su riesgo es ALTO.',
+  'transicion-no-permitida': 'Ese cambio de estado no está permitido desde el estado actual.',
   'tarea-cerrada': 'La tarea está cerrada y no se puede modificar desde el dashboard.',
   'cierre-no-permitido': 'Cerrar una tarea (COMPLETADO/CANCELADO) requiere aprobación humana y no está disponible.',
   'sin-cambios': 'No hay cambios que guardar.',

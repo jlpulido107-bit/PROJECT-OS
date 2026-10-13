@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto'
 import { todayInMerida } from '../dates'
 import { CLOSED_TASK_STATES } from '../schema'
 import {
-  INITIAL_DECISION_STATE, INITIAL_TASK_STATE, ORIGIN_PREFIX, WRITE_HEADERS, type EntityTab, type OperationName,
+  INITIAL_DECISION_STATE, INITIAL_ORDER_STATE, INITIAL_TASK_STATE, ORDER_RISKS, ORDER_TERMINAL_STATES, ORIGIN_PREFIX,
+  WRITE_HEADERS, type EntityTab, type OperationName,
 } from './constants'
 import { OperationError } from './errors'
 import {
@@ -10,8 +11,8 @@ import {
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
-  payloadHash, type CreateDecisionCommand, type CreateTaskCommand, type LogTimeCommand, type TaskChanges,
-  type UpdateTaskCommand,
+  payloadHash, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
+  type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
 
 /**
@@ -68,7 +69,15 @@ const TASK_FIELD_COLUMNS: Record<keyof TaskChanges, string> = {
   bloqueo: 'BLOQUEO',
 }
 
-const ID_COLUMN: Record<EntityTab, string> = { TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID' }
+const ID_COLUMN: Record<EntityTab, string> = {
+  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID',
+}
+
+/** Transiciones de orden permitidas desde el dashboard (docs/migracion-ordenes-codex.md). */
+const ORDER_TRANSITIONS: Record<OrderTransitionCommand['accion'], { from: readonly string[]; to: string; op: OperationName }> = {
+  aprobar: { from: ['BORRADOR'], to: 'APROBADA', op: 'orden.aprobar' },
+  cancelar: { from: ['BORRADOR', 'APROBADA', 'ENVIADA', 'PR_ABIERTO', 'REVISADA'], to: 'CANCELADA', op: 'orden.cancelar' },
+}
 
 interface AuditedOperation {
   requestId: string
@@ -189,7 +198,7 @@ export class OperationsService {
       diff.set('ACTUALIZADO_EN', { antes: current.ACTUALIZADO_EN ?? '', despues: next.ACTUALIZADO_EN })
 
       await this.auditFirst(op, hash, cmd.requestId, ctx, 'TAREAS', cmd.tareaId, diff, now, audit)
-      await this.writeGuarded(tareas, row.sheetRow, row.cells, cmd.tareaId, current.VERSION ?? '', next)
+      await this.writeGuarded(tareas, row.sheetRow, row.cells, { column: 'TAREA_ID', value: cmd.tareaId }, { column: 'VERSION', value: current.VERSION ?? '' }, next)
       await this.verifyUpdated(cmd.tareaId, next)
       return { operacion: op, entidad: 'TAREAS', id: cmd.tareaId, version: newVersion, repetida: false }
     })
@@ -256,13 +265,125 @@ export class OperationsService {
     })
   }
 
+  /** Crea una orden a Codex en BORRADOR (V1.8 F3). Solo el propietario la aprueba después. */
+  createOrder(cmd: CreateOrderCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'orden.crear'
+      const hash = payloadHash(op, cmd)
+      const [proyectos, tareas, ordenes, audit] = await this.views('PROYECTOS', 'TAREAS', 'ORDENES_CODEX', 'AUDITORIA')
+      const replay = await this.replayCreate(op, hash, cmd.requestId, audit, ordenes)
+      if (replay) return replay
+      if (findById(proyectos, 'PROYECTO_ID', cmd.proyectoId).length === 0) throw new OperationError('proyecto-inexistente')
+      const tarea = findById(tareas, 'TAREA_ID', cmd.tareaId)
+      if (tarea.length !== 1 || cell(tareas, tarea[0]!.cells, 'PROYECTO_ID') !== cmd.proyectoId) throw new OperationError('tarea-inexistente')
+
+      const id = this.nextSequentialId(ordenes, 'ORDEN_ID', `ORD-${cmd.proyectoId}-`)
+      const now = this.clock()
+      const record: Record<string, string> = {
+        ORDEN_ID: id,
+        PROYECTO_ID: cmd.proyectoId,
+        TAREA_ID: cmd.tareaId,
+        TITULO: cmd.titulo,
+        OBJETIVO: cmd.objetivo,
+        CONTEXTO: cmd.contexto ?? '',
+        CRITERIOS_ACEPTACION: cmd.criterios,
+        FUERA_DE_ALCANCE: cmd.fueraDeAlcance,
+        COMO_PROBAR: cmd.comoProbar,
+        RIESGO: cmd.riesgo,
+        ESTADO: INITIAL_ORDER_STATE,
+        ISSUE_URL: '',
+        PR_URL: '',
+        NOTAS: '',
+        ACTUALIZADO_EN: todayInMerida(now),
+      }
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ORDENES_CODEX', id, creationDiff(record), now, audit)
+      await this.appendEntity('ORDENES_CODEX', ordenes, record)
+      await this.verifyCreated('ORDENES_CODEX', id, record)
+      return { operacion: op, entidad: 'ORDENES_CODEX', id, repetida: false }
+    })
+  }
+
+  /**
+   * Aprobar (BORRADOR → APROBADA) o cancelar una orden. ORDENES_CODEX no tiene VERSION: la concurrencia se controla
+   * con el ESTADO que vio el propietario (`expectedEstado`) y se relee justo antes de escribir.
+   */
+  transitionOrder(cmd: OrderTransitionCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const rule = ORDER_TRANSITIONS[cmd.accion]
+      const op = rule.op
+      const hash = payloadHash(op, cmd)
+      const [tareas, ordenes, audit] = await this.views('TAREAS', 'ORDENES_CODEX', 'AUDITORIA')
+      const matches = findById(ordenes, 'ORDEN_ID', cmd.ordenId)
+      if (matches.length === 0) throw new OperationError('orden-inexistente')
+      if (matches.length > 1) throw new OperationError('conflicto-concurrente')
+      const row = matches[0]!
+      const current = toRecord(ordenes, row.cells)
+      const estado = (current.ESTADO ?? '').toUpperCase()
+
+      // Idempotencia: la misma solicitud ya auditada se repite o se completa, nunca se duplica.
+      const found = this.findAudited(audit, cmd.requestId)
+      if (found) {
+        const audited = found.op
+        if (audited.operacion !== op || audited.hash !== hash || audited.id !== cmd.ordenId) throw new OperationError('conflicto-idempotencia')
+        const change = audited.fields.get('ESTADO')
+        if (!change) throw new OperationError('conflicto-idempotencia')
+        if (estado === change.despues || found.later.length > 0) {
+          return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: true }
+        }
+        if (estado !== change.antes) throw new OperationError('estado-divergente')
+        const next = { ...current }
+        for (const [column, { despues }] of audited.fields) next[column] = despues
+        await this.writeGuarded(ordenes, row.sheetRow, row.cells, { column: 'ORDEN_ID', value: cmd.ordenId }, { column: 'ESTADO', value: current.ESTADO ?? '' }, next)
+        await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, [...audited.fields.keys()]))
+        return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: true }
+      }
+
+      if ((ORDER_TERMINAL_STATES as readonly string[]).includes(estado)) throw new OperationError('orden-cerrada')
+      if (estado !== cmd.expectedEstado) {
+        throw new OperationError('conflicto-version', { detail: { estadoActual: estado || 'SIN ESTADO' } })
+      }
+      if (!rule.from.includes(estado)) throw new OperationError('transicion-no-permitida')
+      if (cmd.accion === 'aprobar') {
+        const tarea = findById(tareas, 'TAREA_ID', current.TAREA_ID ?? '')
+        const complete = ['TITULO', 'OBJETIVO', 'CRITERIOS_ACEPTACION', 'FUERA_DE_ALCANCE', 'COMO_PROBAR'].every((c) => (current[c] ?? '').trim() !== '')
+        const prefix = /^ORD-([A-Z0-9]+)-/.exec(cmd.ordenId)?.[1]
+        if (
+          !complete || tarea.length !== 1 || cell(tareas, tarea[0]!.cells, 'PROYECTO_ID') !== current.PROYECTO_ID ||
+          prefix !== current.PROYECTO_ID || !(ORDER_RISKS as readonly string[]).includes((current.RIESGO ?? '').toUpperCase())
+        ) {
+          throw new OperationError('orden-incompleta')
+        }
+      }
+
+      const now = this.clock()
+      const next: Record<string, string> = { ...current, ESTADO: rule.to, ACTUALIZADO_EN: todayInMerida(now) }
+      if (cmd.accion === 'cancelar' && cmd.motivo) {
+        const nota = `Cancelada: ${cmd.motivo}`
+        next.NOTAS = current.NOTAS ? `${current.NOTAS} | ${nota}` : nota
+      }
+      const diff = new Map<string, { antes: string; despues: string }>()
+      for (const column of ['ESTADO', 'NOTAS', 'ACTUALIZADO_EN']) {
+        if ((next[column] ?? '') !== (current[column] ?? '')) diff.set(column, { antes: current[column] ?? '', despues: next[column] ?? '' })
+      }
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ORDENES_CODEX', cmd.ordenId, diff, now, audit)
+      await this.writeGuarded(ordenes, row.sheetRow, row.cells, { column: 'ORDEN_ID', value: cmd.ordenId }, { column: 'ESTADO', value: current.ESTADO ?? '' }, next)
+      await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, [...diff.keys()]))
+      return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false }
+    })
+  }
+
   /**
    * Conciliación verificable (contrato §7): la última operación auditada de cada registro debe reflejarse en la
    * entidad. Lista intenciones sin efecto (p. ej. escritura fallida tras auditoría) o divergentes.
    */
   async reconcile(): Promise<ReconcileReport> {
     const [audit, tareas, tiempos, decisiones] = await this.views('AUDITORIA', 'TAREAS', 'TIEMPOS', 'DECISIONES')
-    const views: Record<EntityTab, TableView> = { TAREAS: tareas, TIEMPOS: tiempos, DECISIONES: decisiones }
+    // ORDENES_CODEX es una pestaña añadida por migración (V1.7): si aún no existe, no hay órdenes que conciliar.
+    const ordenes = await readView(this.store, 'ORDENES_CODEX').catch((error: unknown) => {
+      if (error instanceof OperationError && error.code === 'esquema-invalido') return null
+      throw error
+    })
+    const views: Partial<Record<EntityTab, TableView>> = { TAREAS: tareas, TIEMPOS: tiempos, DECISIONES: decisiones, ...(ordenes ? { ORDENES_CODEX: ordenes } : {}) }
     const ops = parseAudit(audit)
     const pendientes: ReconcileItem[] = []
     const item = (op: AuditedOperation, motivo: ReconcileItem['motivo']) =>
@@ -297,8 +418,9 @@ export class OperationsService {
       const record = toRecord(view, rows[0]!.cells)
       const matches = [...op.fields.entries()].every(([column, { despues }]) => (record[column] ?? '') === despues)
       if (!matches) {
-        const versionBefore = op.fields.get('VERSION')?.antes
-        const noEffect = versionBefore !== undefined && record.VERSION === versionBefore
+        const guardColumn = op.entidad === 'ORDENES_CODEX' ? 'ESTADO' : 'VERSION'
+        const before = op.fields.get(guardColumn)?.antes
+        const noEffect = before !== undefined && op.operacion !== 'orden.crear' && record[guardColumn] === before
         pendientes.push({
           requestId: op.requestId, operacion: op.operacion, entidad: op.entidad, id: op.id,
           motivo: noEffect ? 'sin-efecto' : 'divergente',
@@ -380,15 +502,16 @@ export class OperationsService {
    * Preserva columnas ajenas al contrato.
    */
   private async writeGuarded(
-    view: TableView, sheetRow: number, originalCells: string[], id: string, expectedVersion: string,
-    next: Record<string, string>,
+    view: TableView, sheetRow: number, originalCells: string[], id: { column: string; value: string },
+    guard: { column: string; value: string }, next: Record<string, string>,
   ) {
     const fresh = await readView(this.store, view.tab)
     const row = fresh.rows.find((r) => r.sheetRow === sheetRow)
-    if (!row || cell(fresh, row.cells, 'TAREA_ID') !== id || cell(fresh, row.cells, 'VERSION') !== expectedVersion) {
+    if (!row || cell(fresh, row.cells, id.column) !== id.value || cell(fresh, row.cells, guard.column) !== guard.value) {
       throw new OperationError('conflicto-concurrente')
     }
-    const cells = fresh.header.map((name, i) => (WRITE_HEADERS.TAREAS as readonly string[]).includes(name) ? next[name] ?? '' : row.cells[i] ?? originalCells[i] ?? '')
+    const contract = WRITE_HEADERS[view.tab] as readonly string[]
+    const cells = fresh.header.map((name, i) => contract.includes(name) ? next[name] ?? '' : row.cells[i] ?? originalCells[i] ?? '')
     try {
       await this.store.writeRow(view.tab, sheetRow, cells)
     } catch (error) {
@@ -469,7 +592,7 @@ export class OperationsService {
       const next = { ...current }
       for (const [column, { despues }] of audited.fields) next[column] = despues
       const row = tareas.rows.find((r) => r.sheetRow === sheetRow)!
-      await this.writeGuarded(tareas, sheetRow, row.cells, audited.id, versionChange.antes, next)
+      await this.writeGuarded(tareas, sheetRow, row.cells, { column: 'TAREA_ID', value: audited.id }, { column: 'VERSION', value: versionChange.antes }, next)
       await this.verifyUpdated(audited.id, next)
     }
     return { operacion: op, entidad: 'TAREAS', id: audited.id, version: Number(versionChange.despues), repetida: true }
@@ -480,6 +603,10 @@ function creationDiff(record: Record<string, string>) {
   const diff = new Map<string, { antes: string; despues: string }>()
   for (const [column, value] of Object.entries(record)) if (value !== '') diff.set(column, { antes: '', despues: value })
   return diff
+}
+
+function pick(record: Record<string, string>, columns: string[]): Record<string, string> {
+  return Object.fromEntries(columns.map((c) => [c, record[c] ?? '']))
 }
 
 function parseVersion(raw: string): number {
@@ -493,7 +620,12 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'tarea.editar': ['VERSION'],
   'tiempo.registrar': ['SESION_ID'],
   'decision.crear': ['DECISION_ID'],
+  'orden.crear': ['ORDEN_ID', 'ESTADO'],
+  'orden.aprobar': ['ESTADO'],
+  'orden.cancelar': ['ESTADO'],
 }
+/** Operaciones que modifican un registro existente (no reescriben su ID). */
+const TRANSITION_OPS = new Set(['tarea.editar', 'orden.aprobar', 'orden.cancelar'])
 const AUDIT_ID_PATTERN = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})(?:-(\d{2}))?$/
 
 /**
@@ -539,7 +671,7 @@ export function parseAudit(audit: TableView): AuditedOperation[] {
       const required = REQUIRED_AUDIT_FIELDS[op.operacion] ?? []
       const missingField = required.some((f) => !op.fields.has(f))
       const idField = Object.entries(ID_COLUMN).find(([tab]) => tab === op.entidad)?.[1]
-      const idMismatch = idField !== undefined && op.operacion !== 'tarea.editar' && op.fields.get(idField)?.despues !== op.id
+      const idMismatch = idField !== undefined && !TRANSITION_OPS.has(op.operacion) && op.fields.get(idField)?.despues !== op.id
       if (idMismatch && op.fields.has(idField)) op.integridad = 'inconsistente'
       else if (missingIndex || missingField) op.integridad = 'parcial'
     }
