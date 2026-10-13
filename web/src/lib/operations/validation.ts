@@ -5,6 +5,7 @@ import {
   CLOSING_TASK_STATES, LIMITS, ORDER_RISKS, TASK_PRIORITIES, WRITABLE_TASK_STATES,
 } from './constants'
 import { OperationError } from './errors'
+import { urlGitHubPermitida } from './github'
 import { safeCellText } from './sanitize'
 
 /**
@@ -84,7 +85,7 @@ export interface CreateOrderCommand {
   riesgo: string
 }
 
-export type OrderAction = 'aprobar' | 'cancelar'
+export type OrderAction = 'aprobar' | 'cancelar' | 'enviar' | 'registrar_pr' | 'revisar' | 'cerrar'
 
 export interface OrderTransitionCommand {
   requestId: string
@@ -93,6 +94,8 @@ export interface OrderTransitionCommand {
   /** Estado que el propietario vio al decidir (control de concurrencia: ORDENES_CODEX no tiene VERSION). */
   expectedEstado: string
   motivo: string | null
+  /** ISSUE_URL (enviar) o PR_URL (registrar_pr): solo de los repositorios permitidos. */
+  url: string | null
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -371,20 +374,31 @@ export function parseCreateOrder(body: unknown): CreateOrderCommand {
   return cmd
 }
 
+const ACCIONES = ['APROBAR', 'CANCELAR', 'ENVIAR', 'REGISTRAR_PR', 'REVISAR', 'CERRAR'] as const
+
 export function parseOrderTransition(ordenId: string, body: unknown): OrderTransitionCommand {
   const input = asObject(body)
-  const c = new Checker(input, ['requestId', 'accion', 'expectedEstado', 'motivo'])
+  const c = new Checker(input, ['requestId', 'accion', 'expectedEstado', 'motivo', 'url'])
   const id = ordenId.trim().toUpperCase()
   if (!ORDER_ID.test(id)) c.setError('ordenId', 'ID de orden no válido')
-  const accion = c.oneOf('accion', ['APROBAR', 'CANCELAR'], true)
+  const accion = c.oneOf('accion', ACCIONES, true)
+  // ENVIAR sin URL: el servidor crea el issue en GitHub (F4). Con URL: registro manual de un issue existente.
+  const needsUrl = accion === 'ENVIAR' || accion === 'REGISTRAR_PR'
+  const rawUrl = c.has('url') ? c.url('url') : null
+  if (accion === 'REGISTRAR_PR' && !rawUrl && !c.errors.url) c.setError('url', 'Requerido')
+  if (rawUrl && !needsUrl) c.setError('url', 'Solo se usa al enviar o al registrar el PR')
+  if (rawUrl && needsUrl && !urlGitHubPermitida(rawUrl, accion === 'ENVIAR' ? 'issues' : 'pull')) {
+    c.setError('url', accion === 'ENVIAR' ? 'Debe ser un issue de PROJECT-OS, SIGSAH o RADAROS' : 'Debe ser un PR de PROJECT-OS, SIGSAH o RADAROS')
+  }
   const cmd: OrderTransitionCommand = {
     requestId: c.requestId(),
     ordenId: id,
     accion: (accion?.toLowerCase() ?? 'aprobar') as OrderAction,
     expectedEstado: c.oneOf('expectedEstado', ORDER_STATES, true) ?? '',
     motivo: c.text('motivo', { required: accion === 'CANCELAR', min: 3, max: LIMITS.motivo }),
+    url: needsUrl ? rawUrl : null,
   }
-  if (accion === 'APROBAR' && cmd.motivo) c.setError('motivo', 'Solo se usa al cancelar')
+  if (accion !== 'CANCELAR' && cmd.motivo) c.setError('motivo', 'Solo se usa al cancelar')
   c.done()
   return cmd
 }

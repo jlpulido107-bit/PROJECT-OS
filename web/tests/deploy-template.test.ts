@@ -157,6 +157,11 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
       ['WRITE_SERVICE_ACCOUNT', 'project-os-writer@otro-proyecto.iam.gserviceaccount.com', 'PROJECT_ID'],
       ['SECRET_VERSION_WRITERS', 'latest', 'SECRET_VERSION_WRITERS'],
     ] as Array<[string, string, string]>)) expect(() => render(template, { ...VARS, ...WRITE, [k]: v }), `${k}=${v}`).toThrow(msg)
+    // F4: token de GitHub opcional, solo por versión fijada.
+    expect(out).not.toContain('GITHUB_DISPATCH_TOKEN')
+    const withGithub = render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: '1' })
+    expect(withGithub).toMatch(/- name: GITHUB_DISPATCH_TOKEN\n\s+valueFrom:\n\s+secretKeyRef:\n\s+name: project-os-github-token\n\s+key: '1'/)
+    expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: 'latest' })).toThrow('SECRET_VERSION_GITHUB')
     // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
     expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })

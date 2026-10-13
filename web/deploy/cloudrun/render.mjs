@@ -49,6 +49,7 @@ export function render(template, env) {
  * queda de solo lectura, igual que V1.6. Con `sheets` exige:
  * - WRITE_SERVICE_ACCOUNT: cuenta dedicada del mismo proyecto, distinta de la runtime;
  * - SECRET_VERSION_WRITERS: versión fijada del secreto project-os-writer-emails (lista de escritores).
+ * Opcional (F4): SECRET_VERSION_GITHUB, versión fijada del secreto project-os-github-token (envío de órdenes a Codex).
  */
 const WRITE_SA = /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/
 
@@ -65,6 +66,15 @@ function escritura(env, problems) {
   else if (account === (env.RUNTIME_SA ?? '').trim()) problems.push('WRITE_SERVICE_ACCOUNT no puede ser la cuenta runtime')
   else if (account.split('@')[1] !== `${(env.PROJECT_ID ?? '').trim()}.iam.gserviceaccount.com`) problems.push('WRITE_SERVICE_ACCOUNT debe pertenecer a PROJECT_ID')
   if (!/^[1-9][0-9]*$/.test(version)) problems.push('SECRET_VERSION_WRITERS no tiene el formato esperado')
+  const github = (env.SECRET_VERSION_GITHUB ?? '').trim()
+  if (github && !/^[1-9][0-9]*$/.test(github)) problems.push('SECRET_VERSION_GITHUB no tiene el formato esperado')
+  const githubLines = github ? [
+    '            - name: GITHUB_DISPATCH_TOKEN',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-github-token',
+    `                  key: '${github}'`,
+  ] : []
   return [
     '            - name: PROJECT_OS_WRITE_MODE',
     '              value: sheets',
@@ -75,6 +85,7 @@ function escritura(env, problems) {
     '                secretKeyRef:',
     '                  name: project-os-writer-emails',
     `                  key: '${version}'`,
+    ...githubLines,
     '',
   ].join('\n')
 }

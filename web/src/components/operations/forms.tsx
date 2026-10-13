@@ -548,41 +548,95 @@ export function OrderForm({ projects, tasks, defaultProject }: {
   )
 }
 
-/** Aprobar o cancelar una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
-export function OrderActions({ ordenId, estado, canApprove }: { ordenId: string; estado: string; canApprove: boolean }) {
-  const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
-  const [cancelling, setCancelling] = useState(false)
+const ENVIO_TEXTO: Record<string, string> = {
+  'sin-token': 'El envío automático a GitHub no está configurado: la orden quedó aprobada. Envíala a mano o configura el token.',
+  'repo-no-permitido': 'Este proyecto no tiene repositorio permitido para Codex.',
+  red: 'No hubo conexión con GitHub. La orden quedó aprobada: pulsa «Enviar a Codex» para reintentar sin duplicar.',
+}
 
-  async function approve() {
-    await op.submit({ accion: 'APROBAR', expectedEstado: estado })
+function EnvioStatus({ result }: { result: OpSuccess & { envio?: { ok: boolean; issueUrl?: string; creado?: boolean; codigo?: string } } }) {
+  const envio = result.envio
+  if (!envio) return null
+  if (envio.ok && envio.issueUrl) {
+    return (
+      <p className="small">
+        {envio.creado ? 'Enviada a Codex: ' : 'Ya estaba enviada: '}
+        <a href={envio.issueUrl} target="_blank" rel="noopener noreferrer nofollow">ver el issue</a>.
+      </p>
+    )
   }
+  const texto = ENVIO_TEXTO[envio.codigo ?? ''] ?? `No se pudo enviar a GitHub (${envio.codigo ?? 'error'}). La orden quedó aprobada: pulsa «Enviar a Codex» para reintentar sin duplicar.`
+  return <p className="small"><strong>Atención:</strong> {texto}</p>
+}
+
+/** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
+export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
+  ordenId: string
+  estado: string
+  canApprove: boolean
+  /** URL del PR de Codex detectado en GitHub (solo en ENVIADA). */
+  prDetectado?: string
+}) {
+  const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
+  const [mode, setMode] = useState<'idle' | 'cancel' | 'pr'>('idle')
+
+  const send = (accion: string, extra: Record<string, string> = {}) => op.submit({ accion, expectedEstado: estado, ...extra })
   async function cancel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await op.submit({ accion: 'CANCELAR', expectedEstado: estado, motivo: formValues(event.currentTarget).motivo ?? '' })
+    await send('CANCELAR', { motivo: formValues(event.currentTarget).motivo ?? '' })
+  }
+  async function registerPr(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await send('REGISTRAR_PR', { url: formValues(event.currentTarget).url ?? '' })
   }
 
-  if (op.state.status === 'done') return <Status state={op.state} />
+  if (op.state.status === 'done') {
+    return <Status state={op.state}><EnvioStatus result={op.state.result} /></Status>
+  }
   const sending = op.state.status === 'sending'
+  const primary = (label: string, busy: string, onClick: () => void) => (
+    <button type="button" className="button button-primary" onClick={onClick} disabled={sending} aria-busy={sending}>
+      {sending ? busy : label}
+    </button>
+  )
   return (
     <div className="card-actions">
-      {canApprove && !cancelling ? (
-        <button type="button" className="button button-primary" onClick={approve} disabled={sending} aria-busy={sending}>
-          {sending ? 'Aprobando…' : 'Aprobar'}
-        </button>
+      {mode === 'idle' ? (
+        <>
+          {estado === 'BORRADOR' && canApprove ? primary('Aprobar y enviar a Codex', 'Aprobando…', () => send('APROBAR')) : null}
+          {estado === 'APROBADA' ? primary('Enviar a Codex', 'Enviando…', () => send('ENVIAR')) : null}
+          {estado === 'ENVIADA' ? (
+            prDetectado
+              ? primary('Registrar el PR detectado', 'Guardando…', () => send('REGISTRAR_PR', { url: prDetectado }))
+              : <button type="button" className="button" onClick={() => setMode('pr')} disabled={sending}>Registrar PR…</button>
+          ) : null}
+          {estado === 'PR_ABIERTO' ? primary('Marcar revisada', 'Guardando…', () => send('REVISAR')) : null}
+          {estado === 'REVISADA' ? primary('Cerrar orden', 'Guardando…', () => send('CERRAR')) : null}
+          <button type="button" className="button" onClick={() => setMode('cancel')} disabled={sending}>Cancelar…</button>
+        </>
       ) : null}
-      {cancelling ? (
+      {mode === 'cancel' ? (
         <form className="op-form" onSubmit={cancel} noValidate>
           <Field name="motivo" label="Motivo de la cancelación" state={op.state} wide>
             {(p) => <input {...p} name="motivo" required minLength={3} maxLength={500} />}
           </Field>
           <div className="form-actions">
             <Submit state={op.state} label="Cancelar orden" />
-            <button type="button" className="button button-ghost" onClick={() => { setCancelling(false); op.reset() }}>Volver</button>
+            <button type="button" className="button button-ghost" onClick={() => { setMode('idle'); op.reset() }}>Volver</button>
           </div>
         </form>
-      ) : (
-        <button type="button" className="button" onClick={() => setCancelling(true)} disabled={sending}>Cancelar…</button>
-      )}
+      ) : null}
+      {mode === 'pr' ? (
+        <form className="op-form" onSubmit={registerPr} noValidate>
+          <Field name="url" label="URL del PR de Codex" state={op.state} wide hint="https://github.com/…/pull/N">
+            {(p) => <input {...p} name="url" type="url" inputMode="url" required maxLength={500} placeholder="https://github.com/" />}
+          </Field>
+          <div className="form-actions">
+            <Submit state={op.state} label="Registrar PR" />
+            <button type="button" className="button button-ghost" onClick={() => { setMode('idle'); op.reset() }}>Volver</button>
+          </div>
+        </form>
+      ) : null}
       <Status state={op.state} />
     </div>
   )
