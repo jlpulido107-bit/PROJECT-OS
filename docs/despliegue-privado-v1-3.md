@@ -582,7 +582,7 @@ más antiguas, solo si su imagen sigue en el repositorio.
 La lista completa y verificable está en el [checklist de aceptación](despliegue-v1-6-aceptacion.md). Resumen:
 
 1. **Sin sesión:** desde `web/`, ejecuta `npm run smoke:remote -- --url "$SERVICE_URL"`. Solo usa `GET` e
-   imprime códigos HTTP. Esperado (26/26): `/api/health` 200, las 13 páginas privadas con 307 a `/login`, las 7
+   imprime códigos HTTP. Esperado (27/27): `/api/health` 200, las 14 páginas privadas con 307 a `/login`, las 7
    APIs privadas con 401 y cabeceras HSTS, `no-store` y `DENY`.
 2. **Navegador:** inicia sesión con el correo permitido y verifica el origen "Leído de Google Sheets",
    12/12 pestañas válidas y que los totales coinciden con la hoja.

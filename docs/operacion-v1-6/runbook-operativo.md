@@ -21,7 +21,7 @@
 
 | Cuándo | Señal | Origen | Acción | Responsable | Umbral o motivo |
 | --- | --- | --- | --- | --- | --- |
-| Tras cada despliegue | Rutas privadas cerradas | `npm run smoke:remote -- --url URL` [L] | Si no da 26/26: §6, incidente "fallo de sonda" o "exposición" | Propietario | 26/26 obligatorio |
+| Tras cada despliegue | Rutas privadas cerradas | `npm run smoke:remote -- --url URL` [L] | Si no da 27/27: §6, incidente "fallo de sonda" o "exposición" | Propietario | 27/27 obligatorio |
 | Tras cada despliegue | Login real y datos | Navegador [L] | Checklist C1 y C2 | Propietario | ✅ |
 | Tras cada despliegue | Imagen protegida | Lectura A9 [L]; si falta, C9 [M] | Etiquetar `produccion` y mover `produccion-anterior` | Propietario | A9 = OK |
 | Tras cada despliegue | Límites de escala | Lectura A7 [L] | Si el `maxScale` de servicio ≠ 1: decisión D-1 | Propietario | Revisión 1; servicio `ninguno` o 1 |
@@ -120,24 +120,24 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
 | **403 de un usuario permitido** | `/login?error=AccessDenied` o 403 | ¿El correo está en la versión **desplegada** del secreto? (nombres de variables y versión fijada, A4 y A6; **nunca** leer el valor). ¿Google lo reporta verificado? ¿Mayúsculas o espacios? (se normalizan) | Nueva versión del secreto con la lista correcta, `SECRET_VERSION_ALLOWLIST` y redespliegue [M] | Checklist C1 |
 | **Callback OAuth** | `redirect_uri_mismatch` o `error=Callback` | ¿Se entró por la URL estable? URLs publicadas (A2) frente a las registradas en el cliente OAuth. ¿Cambió el estado *Testing* o los usuarios de prueba? | Corregir el cliente OAuth en la consola [M]; esperar de 5 min a horas de propagación | Login real |
 | **Lectura de Sheets 503** | La página muestra el error y las APIs devuelven 503 con un `code` | Por código: `permission` → el diálogo *Compartir* (D2); `quota` → cuota (§2); `auth` → identidad (A5); `not-found` → ID de hoja en la plantilla; `timeout`/`unavailable` → estado de Google | `permission`: volver a compartir como Lector [M]. `quota`: esperar; si se repite, V1.7. El resto: según la causa | La página vuelve a "Leído de Google Sheets" |
-| **Fallo de sonda** | Una revisión nueva no recibe tráfico (`Ready=False`) | El log `[project-os] Configuración incompleta o insegura` trae solo **códigos** (`nextauth-url`, `write-mode`…) | Corregir la configuración y redesplegar [M]. **La revisión anterior sigue sirviendo**: no hay corte | `smoke:remote` 26/26 |
+| **Fallo de sonda** | Una revisión nueva no recibe tráfico (`Ready=False`) | El log `[project-os] Configuración incompleta o insegura` trae solo **códigos** (`nextauth-url`, `write-mode`…) | Corregir la configuración y redesplegar [M]. **La revisión anterior sigue sirviendo**: no hay corte | `smoke:remote` 27/27 |
 | **Costo inesperado** | Alerta de presupuesto o cargo raro en *Informes* | *Informes* por servicio; solicitudes por código (bots); instancias (A7); imágenes (F3); versiones de secretos (A6) | Por causa: bots → evaluar IAP o cerrar el acceso [M]; imágenes → `--check`; secretos → destruir versiones [M]. Último recurso: cerrar el acceso o desmantelar (runbook §6–§7) [M] | Gasto diario de vuelta a la línea base |
-| **Posible exposición de datos** | Una ruta privada responde sin sesión, o un token o dato aparece donde no debe | `smoke:remote` (B1); conteos E1 | **1)** Cerrar el acceso de inmediato: quitar `allUsers` [M] (runbook §6). **2)** Si hay un secreto implicado: rotarlo [M]. **3)** Issue sin datos. **4)** Reabrir solo con autorización | B1 26/26 antes de reabrir |
+| **Posible exposición de datos** | Una ruta privada responde sin sesión, o un token o dato aparece donde no debe | `smoke:remote` (B1); conteos E1 | **1)** Cerrar el acceso de inmediato: quitar `allUsers` [M] (runbook §6). **2)** Si hay un secreto implicado: rotarlo [M]. **3)** Issue sin datos. **4)** Reabrir solo con autorización | B1 27/27 antes de reabrir |
 | **Bloqueo de acceso** | Hay que cerrar el servicio a todos ya | — | Quitar `allUsers` [M]. Sin borrar nada; reversible volviendo a añadirlo | La URL devuelve un error de Google sin llegar a la app |
-| **Errores 5xx del dashboard** | Páginas o APIs con 500/502/503 para usuarios con sesión | *Cloud Run → Métricas*, por código de respuesta. Líneas `[project-os]` por código (§5.1). `/api/health`: 503 indica configuración. ¿Arranques fallidos? Si la imagen no existe, falla el arranque en frío (A9: ¿sigue `produccion` en el digest?) | Configuración: corregir y redesplegar [M]. Sheets: fila «Lectura de Sheets 503». Imagen borrada: volver a etiquetar el digest, si aún existe, o reconstruirla desde `7f44216` [M]. Mientras tanto, cerrar el acceso si hay riesgo [M] | `smoke:remote` 26/26 y login real |
+| **Errores 5xx del dashboard** | Páginas o APIs con 500/502/503 para usuarios con sesión | *Cloud Run → Métricas*, por código de respuesta. Líneas `[project-os]` por código (§5.1). `/api/health`: 503 indica configuración. ¿Arranques fallidos? Si la imagen no existe, falla el arranque en frío (A9: ¿sigue `produccion` en el digest?) | Configuración: corregir y redesplegar [M]. Sheets: fila «Lectura de Sheets 503». Imagen borrada: volver a etiquetar el digest, si aún existe, o reconstruirla desde el commit desplegado (registro vigente) [M]. Mientras tanto, cerrar el acceso si hay riesgo [M] | `smoke:remote` 27/27 y login real |
 | **Pérdida de acceso a la aplicación** | Ningún usuario autorizado entra (incluido el propietario) | ¿Responde la URL? ¿`/api/health` 200? ¿El cliente OAuth existe, con el callback (A2)? ¿Sigue la versión fijada del secreto de la lista (A6)? ¿Cambió el estado *Testing* o los usuarios de prueba? | Según la causa: restaurar el cliente OAuth o su callback [M]; nueva versión de la lista y redespliegue [M]. **Nunca** se abre el acceso a más correos para «probar» | Login real (hoja, bloque 1) |
 
 ## 7. Recuperación y rollback
 
-- **Estado actual: una sola revisión** (`…-00001-gsk`). Un rollback de **tráfico** a una revisión anterior **no es
-  posible ni está ensayado** (G2 = NO_APLICA). Se habilita tras el próximo despliegue, siempre que la imagen anterior
-  se conserve (`produccion-anterior`, A9).
+- **Estado actual (2026-10-13): dos revisiones**; hasta V1.6 había una sola revisión. `…-00002-58z` (V1.7, imagen `produccion`) sirve el 100 %; `…-00001-gsk`
+  (V1.6, imagen `produccion-anterior`) queda disponible. El rollback de tráfico ya es posible, pero **no está
+  ensayado** (G2). Registro: [estado de producción V1.7](../estado-produccion-v1-7-2026-10-13.md).
 - **Recuperación sin revisión anterior** (hoy). Las opciones son:
   1. *Fix forward:* corregir y redesplegar [M].
   2. Volver a aplicar el mismo manifiesto con la **misma imagen por digest** [M], si el problema fue de configuración.
   3. Cerrar el acceso mientras tanto [M].
 - **Recuperación futura con dos o más revisiones:** `gcloud run services update-traffic … --to-revisions=REVISION=100`
-  [M], solo si su imagen sigue en el repositorio (lectura A9 o F3 antes). Después, `smoke:remote` 26/26 y login. Tras
+  [M], solo si su imagen sigue en el repositorio (lectura A9 o F3 antes). Después, `smoke:remote` 27/27 y login. Tras
   cualquier cambio de tráfico, la línea base cambia y hay que revalidar (línea base §7). El primer uso real es el ensayo
   autorizado de G2.
 - **Sesiones:** rotar `project-os-nextauth-secret` invalida todas [M]. Quitar un correo de la lista lo bloquea en la
@@ -197,7 +197,7 @@ autorización expresa (G1, G2).
 
 ### 10.2 Checklist después del cambio
 
-- [ ] `smoke:remote` 26/26.
+- [ ] `smoke:remote` 27/27.
 - [ ] Lecturas A1, A2, A4 y A7 con `evidencia.mjs` sin FALLO.
 - [ ] Si hubo una imagen nueva: C9 (`produccion` y `produccion-anterior`) y A9 = OK.
 - [ ] Login real (C1).
