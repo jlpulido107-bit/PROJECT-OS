@@ -39,7 +39,13 @@ export default async function OperationsPage() {
 
 async function Operations() {
   const service = operationsService()
-  const auditRows = await auditTable()
+  let auditRows: string[][] | null
+  try {
+    auditRows = await auditTable()
+  } catch {
+    // Sin detalles: lo habitual es un permiso faltante de la cuenta de escritura (docs/escritura-v1-8.md).
+    return <Empty>No se pudo leer AUDITORIA con la cuenta de escritura. Revisa sus permisos (docs/escritura-v1-8.md).</Empty>
+  }
   if (!service || !auditRows) return <Empty>La escritura no está activa.</Empty>
   const audit = await readView(new InMemoryTableStore({ AUDITORIA: auditRows.length ? auditRows : [[...WRITE_HEADERS.AUDITORIA]] }), 'AUDITORIA')
   const ops = parseAudit(audit).sort((a, b) => b.order - a.order).slice(0, 30)

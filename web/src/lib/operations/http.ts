@@ -3,6 +3,7 @@ import 'server-only'
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '../auth'
+import { writeModeStatus } from './config'
 import { evaluateWriteRequest } from './guard'
 import { OperationError } from './errors'
 import { bumpWriteGeneration, writeRateLimiter } from './runtime'
@@ -51,7 +52,7 @@ export async function handleWrite(
     const result = await run(body, { actor })
     bumpWriteGeneration()
     return NextResponse.json(
-      { ok: true, ...result, modo: 'mock', requestId },
+      { ok: true, ...result, modo: writeModeStatus().mode, requestId },
       { status: result.repetida ? 200 : successStatus, headers: HEADERS },
     )
   } catch (error) {

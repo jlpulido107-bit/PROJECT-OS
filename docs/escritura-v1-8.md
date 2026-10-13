@@ -84,6 +84,13 @@ gcloud run revisions list --service "$SERVICE_NAME" --region "$REGION" --limit 2
 5. En **Operaciones**, la conciliación debe decir **«Sin pendientes»**.
 6. Corre `node scripts/smoke-remote.mjs --url "$SERVICE_URL"`: deben salir todas las comprobaciones en OK.
 
+**Si la primera escritura falla** («lectura fallida» o «escritura fallida»), lo normal es que falte un permiso. La sonda de
+arranque no puede verificarlo, porque no usa la red. Revisa dos cosas:
+- que la cuenta del dashboard tenga `TokenCreator` sobre `project-os-writer`;
+- que `project-os-writer` sea Editor de la hoja.
+
+Si acabas de quitar un permiso, el token anterior puede seguir en uso hasta 10 minutos.
+
 ## 5. Reversión (en cualquier momento)
 
 1. Para cortar la escritura: vuelve a desplegar **sin** `WRITE_MODE`. La lectura sigue igual.

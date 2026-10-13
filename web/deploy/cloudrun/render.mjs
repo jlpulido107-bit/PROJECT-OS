@@ -39,7 +39,9 @@ export function render(template, env) {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
-  return output.replace(/^ *# __ESCRITURA__.*\n/m, writeBlock)
+  const marker = /^ *# __ESCRITURA__.*\n/m
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura')
+  return output.replace(marker, writeBlock)
 }
 
 /**
