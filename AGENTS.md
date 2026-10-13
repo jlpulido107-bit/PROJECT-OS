@@ -24,3 +24,4 @@
 - No cambiar `.github/workflows`, secretos, permisos ni configuración de GCP.
 - Ejecutar `python -m unittest discover -s tests` y, si se toca `web/`, `npm test` en `web/`; pegar la salida en el PR.
 - Si la tarea es ambigua o se sale del alcance: parar y explicarlo en el PR.
+- Las órdenes se aprueban en la pestaña ORDENES_CODEX de la hoja ([migración](docs/migracion-ordenes-codex.md)); planeación por proyecto: [mano derecha](docs/mano-derecha.md).
