@@ -25,7 +25,7 @@ ni permisos.
 | `smoke:remote` sin sesión | **27/27**: health 200, 14 páginas privadas → `/login` (incluye `/estado`), 7 APIs 401, cabeceras | Salida pegada por el propietario |
 | Revisiones | `00002-58z` activa; `00001-gsk` inactiva | `gcloud run revisions list` |
 | Login real y página «Estado» | El propietario entra y ve la página con datos de la hoja | Propietario |
-| Etiquetas `produccion` → `cde104f0…` y `produccion-anterior` → `f6e46596…` | Comandos ejecutados por el propietario; **lectura de verificación pendiente** | — |
+| Etiquetas | `produccion` y `77a7970` → `cde104f0…`; `produccion-anterior` y `7f44216` → `f6e46596…` | `gcloud artifacts docker images list` (propietario) |
 
 ## 3. Incidencia durante el despliegue (sin impacto)
 
@@ -43,5 +43,4 @@ termina en `@sha256:…` antes de `render.mjs`, y validar la imagen del YAML con
 
 ## 4. Pendiente
 
-- Leer las etiquetas de Artifact Registry y confirmar el punto 4 de §2.
 - Rollback de tráfico a `00001-gsk`: ya es posible, pero no está ensayado (G2).
