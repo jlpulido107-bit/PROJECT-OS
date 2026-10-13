@@ -39,6 +39,15 @@
 - [ ] Operación V1.6 (Misión 013): evidencia de solo lectura y [hoja del propietario](operacion-v1-6/hoja-propietario.md). Las hipótesis V1.7 están en el [backlog](operacion-v1-6/backlog-v1-7.md), **no aprobadas**.
 - [ ] Cierre V1.6 (Misión 014): [línea base](operacion-v1-6/linea-base-v1-6.md), [matriz](operacion-v1-6/matriz-aceptacion.md) sin falsos aprobados y [acta](operacion-v1-6/acta-cierre-v1-6.md). Falta la aceptación del propietario.
 
+## V1.7 — Estado de proyectos y delegación a Codex
+- [x] Primera revisión de estado (hoja + 3 repositorios), 2026-10-13.
+- [ ] ECO enlazado al repositorio RADAROS en `config/projects.json`.
+- [ ] Protocolo de [delegación a Codex](delegacion-codex.md), `AGENTS.md` y plantilla «Tarea para Codex» en los 3 repositorios.
+- [ ] Configuración de Codex por el propietario y primera tarea de prueba supervisada.
+- [ ] Enlace de evidencias con TAREAS por el ID `PRJ-NNN` (propuesta; el colector sigue sin cerrar tareas).
+- [ ] Página «Estado» en el dashboard.
+- [ ] Ejecución nocturna programada, solo tras aprobar una prueba real.
+
 ## V1.4 — Informes y planificación (antes V1.3)
 - [ ] Captura de avances no técnicos.
 - [ ] Cierre diario completo (no solo GitHub).

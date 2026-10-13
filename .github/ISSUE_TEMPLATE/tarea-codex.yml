@@ -1,0 +1,69 @@
+name: Tarea para Codex
+description: Tarea acotada para delegar a Codex (por ejemplo, de noche). Codex abre un PR; nadie fusiona sin revisión.
+title: "[POS-000] "
+labels: ["codex"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reglas: [`docs/delegacion-codex.md`](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/delegacion-codex.md). Una tarea = un PR pequeño.
+        Solo riesgo **bajo** se delega sin supervisión. Nada de secretos, datos personales ni datos clínicos aquí.
+  - type: input
+    id: tarea_id
+    attributes:
+      label: ID de la tarea
+      description: El mismo ID que en la pestaña TAREAS de la hoja (PRJ-NNN). Va también en el título del issue y del PR.
+      placeholder: POS-007
+    validations:
+      required: true
+  - type: textarea
+    id: objetivo
+    attributes:
+      label: Objetivo
+      description: Qué debe quedar hecho, en una o dos frases.
+    validations:
+      required: true
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto y archivos
+      description: Archivos o documentos que debe leer primero.
+    validations:
+      required: true
+  - type: textarea
+    id: aceptacion
+    attributes:
+      label: Criterios de aceptación
+      description: Lista verificable. Cada punto se comprueba con una prueba o un comando.
+      placeholder: |
+        - [ ] ...
+        - [ ] Las pruebas existentes siguen pasando.
+    validations:
+      required: true
+  - type: textarea
+    id: fuera_de_alcance
+    attributes:
+      label: Fuera de alcance
+      description: Lo que NO debe tocar.
+      value: |
+        - Desplegar, fusionar o cambiar workflows, secretos o permisos.
+        - Escribir en Google Sheets u otros sistemas reales.
+    validations:
+      required: true
+  - type: textarea
+    id: pruebas
+    attributes:
+      label: Cómo probar
+      description: Comandos que Codex debe ejecutar y cuyo resultado debe pegar en el PR.
+    validations:
+      required: true
+  - type: dropdown
+    id: riesgo
+    attributes:
+      label: Riesgo
+      options:
+        - Bajo (se puede delegar de noche)
+        - Medio (solo con supervisión)
+        - Alto (no se delega)
+    validations:
+      required: true
