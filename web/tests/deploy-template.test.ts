@@ -157,6 +157,8 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
       ['WRITE_SERVICE_ACCOUNT', 'project-os-writer@otro-proyecto.iam.gserviceaccount.com', 'PROJECT_ID'],
       ['SECRET_VERSION_WRITERS', 'latest', 'SECRET_VERSION_WRITERS'],
     ] as Array<[string, string, string]>)) expect(() => render(template, { ...VARS, ...WRITE, [k]: v }), `${k}=${v}`).toThrow(msg)
+    // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
+    expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })
 
   it.each([
