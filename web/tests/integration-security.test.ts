@@ -14,12 +14,12 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 const read = (rel: string) => readFileSync(path.join(SRC, rel), 'utf8')
 
 const PAGES = [
-  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'operaciones', 'planificacion', 'proyectos', 'proyectos/[id]',
+  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'estado', 'operaciones', 'planificacion', 'proyectos', 'proyectos/[id]',
   'tareas', 'tareas/[id]/editar', 'tareas/nueva', 'tiempos/nuevo',
 ]
 
 describe('árbol integrado V1.3–V1.6', () => {
-  it('las 13 páginas privadas existen y verifican la sesión antes de leer datos', () => {
+  it('las 14 páginas privadas existen y verifican la sesión antes de leer datos', () => {
     const found = files(path.join(SRC, 'app', '(private)')).filter((f) => f.endsWith('page.tsx'))
       .map((f) => path.relative(path.join(SRC, 'app', '(private)'), path.dirname(f)).split(path.sep).join('/')).sort()
     expect(found).toEqual([...PAGES].sort())

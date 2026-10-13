@@ -86,7 +86,7 @@ async function waitForServer() {
   throw new Error('El servidor no respondió a tiempo')
 }
 
-const PRIVATE_PAGES = ['/', '/proyectos', '/proyectos/POS', '/tareas', '/tareas?bloqueo=si', '/actividad', '/capacidad']
+const PRIVATE_PAGES = ['/', '/estado', '/proyectos', '/proyectos/POS', '/tareas', '/tareas?bloqueo=si', '/actividad', '/capacidad']
 // Marcadores que solo aparecen en datos (sintéticos): nunca deben verse sin sesión.
 const DATA_MARKERS = ['DEMO-', 'Objetivo de demostración', 'Persona demo']
 
