@@ -32,11 +32,29 @@ export function derivedRequestId(requestId: string, salt: string): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16]!, 16) % 4]}${h.slice(17, 20)}-${h.slice(20, 32)}`
 }
 
-async function enviar(
+/**
+ * Un solo envío en curso por orden en este proceso (maxScale 1 ⇒ escritor único): un reintento o una segunda pestaña
+ * esperan al envío en curso en vez de crear otro issue.
+ */
+const enCurso = new Map<string, Promise<EnvioInfo>>()
+
+function enviar(
+  service: OperationsService, client: GitHubClient, ordenId: string, requestId: string, ctx: OperationContext,
+): Promise<EnvioInfo> {
+  const running = enCurso.get(ordenId)
+  if (running) return running
+  const p = enviarUnaVez(service, client, ordenId, requestId, ctx).finally(() => enCurso.delete(ordenId))
+  enCurso.set(ordenId, p)
+  return p
+}
+
+async function enviarUnaVez(
   service: OperationsService, client: GitHubClient, ordenId: string, requestId: string, ctx: OperationContext,
 ): Promise<EnvioInfo> {
   const o = await service.readOrder(ordenId)
   if (!o) return { ok: false, codigo: 'orden-inexistente' }
+  // Reintento de una aprobación que ya se envió: informar el envío existente, no un fallo.
+  if (o.ESTADO === 'ENVIADA' && o.ISSUE_URL) return { ok: true, issueUrl: o.ISSUE_URL, creado: false }
   if (o.ESTADO !== 'APROBADA') return { ok: false, codigo: 'orden-no-aprobada' }
   try {
     const r = await client.enviar({

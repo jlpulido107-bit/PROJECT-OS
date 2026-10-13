@@ -6,6 +6,7 @@ import {
   WRITE_HEADERS, type EntityTab, type OperationName,
 } from './constants'
 import { OperationError } from './errors'
+import { REPOSITORIOS, repoDeUrl } from './github'
 import {
   cell, findById, readView, toRecord, toRow, type TableStore, type TableView,
 } from './table-store'
@@ -364,6 +365,13 @@ export class OperationsService {
 
       const now = this.clock()
       const next: Record<string, string> = { ...current, ESTADO: rule.to, ACTUALIZADO_EN: todayInMerida(now) }
+      if (cmd.url) {
+        // La URL debe ser del repositorio del proyecto de la orden, no de otro de los permitidos.
+        const repo = repoDeUrl(cmd.url, cmd.accion === 'enviar' ? 'issues' : 'pull')
+        if (!repo || repo !== REPOSITORIOS[current.PROYECTO_ID ?? '']) {
+          throw new OperationError('validacion', { fields: { url: 'Debe ser del repositorio del proyecto de la orden' } })
+        }
+      }
       if (cmd.accion === 'enviar' && cmd.url) next.ISSUE_URL = cmd.url
       if (cmd.accion === 'registrar_pr' && cmd.url) next.PR_URL = cmd.url
       if (cmd.accion === 'cancelar' && cmd.motivo) {
@@ -639,8 +647,8 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'orden.crear': ['ORDEN_ID', 'ESTADO'],
   'orden.aprobar': ['ESTADO'],
   'orden.cancelar': ['ESTADO'],
-  'orden.enviar': ['ESTADO', 'ISSUE_URL'],
-  'orden.registrar_pr': ['ESTADO', 'PR_URL'],
+  'orden.enviar': ['ESTADO'],
+  'orden.registrar_pr': ['ESTADO'],
   'orden.revisar': ['ESTADO'],
   'orden.cerrar': ['ESTADO'],
 }
