@@ -37,11 +37,11 @@ check('/api/health → 200 {"status":"ok"}', health.status === 200 && healthBody
 
 const PRIVATE_PAGES = [
   '/', '/estado', '/ordenes', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones',
-  '/tareas/nueva', '/tareas/POS-001/editar', '/tiempos/nuevo', '/decisiones/nueva',
+  '/tareas/nueva', '/tareas/POS-001/editar', '/tiempos/nuevo', '/decisiones/nueva', '/ordenes/nueva',
 ]
 const PRIVATE_APIS = [
   '/api/resumen', '/api/planificacion', '/api/control', '/api/operaciones/tareas', '/api/operaciones/tareas/POS-001',
-  '/api/operaciones/tiempos', '/api/operaciones/decisiones',
+  '/api/operaciones/tiempos', '/api/operaciones/decisiones', '/api/operaciones/ordenes', '/api/operaciones/ordenes/ORD-POS-001',
 ]
 
 for (const path of PRIVATE_PAGES) {

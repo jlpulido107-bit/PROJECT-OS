@@ -10,13 +10,14 @@ export const WRITE_HEADERS = {
   DECISIONES: TAB_HEADERS.DECISIONES,
   PROYECTOS: TAB_HEADERS.PROYECTOS,
   HITOS: TAB_HEADERS.HITOS,
+  ORDENES_CODEX: TAB_HEADERS.ORDENES_CODEX,
   AUDITORIA: [
     'AUDIT_ID', 'FECHA_HORA', 'ACTOR', 'ENTIDAD', 'REGISTRO_ID', 'CAMPO', 'VALOR_ANTES', 'VALOR_DESPUES', 'ORIGEN',
   ],
 } as const
 
 export type WriteTab = keyof typeof WRITE_HEADERS
-export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES'
+export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX'
 
 /** Estados de tarea que el dashboard puede asignar. COMPLETADO/CANCELADO requieren aprobación humana (bloqueados). */
 export const WRITABLE_TASK_STATES = ['PENDIENTE', 'EN_PROGRESO', 'BLOQUEADO'] as const
@@ -44,8 +45,17 @@ export const LIMITS = {
   horasMax: 1000,
   minutosMax: 960,
   diasAtras: 365,
+  ordenTexto: 2000,
+  motivo: 500,
 } as const
 
 export const ORIGIN_PREFIX = 'dashboard-v1.4'
 
-export type OperationName = 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'
+export type OperationName =
+  | 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'
+  | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar'
+
+/** Órdenes a Codex (V1.8 F3, docs/migracion-ordenes-codex.md). Desde el dashboard no se crean órdenes de riesgo ALTO. */
+export const ORDER_RISKS = ['BAJO', 'MEDIO'] as const
+export const INITIAL_ORDER_STATE = 'BORRADOR'
+export const ORDER_TERMINAL_STATES = ['CERRADA', 'CANCELADA'] as const

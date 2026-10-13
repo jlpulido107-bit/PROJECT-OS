@@ -50,8 +50,8 @@
 - [ ] Ejecución nocturna programada, solo tras aprobar una prueba real.
 
 ## V1.8 — Todo desde el dashboard ([plan](plan-v1-8-automatizacion.md))
-- [ ] F1 Página `/ordenes` (lectura de ORDENES_CODEX).
-- [ ] F2 Escritura real limitada para el propietario.
+- [x] F1 Página `/ordenes` (lectura de ORDENES_CODEX). Fusionada; pendiente de desplegar.
+- [x] F2 Escritura real limitada para el propietario. Fusionada; se activa con [escritura-v1-8.md](escritura-v1-8.md).
 - [ ] F3 Crear, aprobar y cancelar órdenes desde el dashboard.
 - [ ] F4 Envío a GitHub y `@codex` al aprobar.
 - [ ] F5 Revisión matutina programada de los PRs de Codex.

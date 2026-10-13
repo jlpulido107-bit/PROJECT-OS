@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
+import { OrderActions } from '@/components/operations/forms'
+import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
 
@@ -16,7 +18,7 @@ const GRUPOS: Array<{ id: GrupoOrden; titulo: string; vacio: string }> = [
 
 const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 
-function OrdenCard({ v }: { v: OrdenVista }) {
+function OrdenCard({ v, canWrite }: { v: OrdenVista; canWrite: boolean }) {
   const o = v.orden
   const tone = RIESGO_TONE[o.riesgo as keyof typeof RIESGO_TONE] ?? 'neutral'
   return (
@@ -47,6 +49,9 @@ function OrdenCard({ v }: { v: OrdenVista }) {
           <div><dt>Notas</dt><dd><Text value={o.notas} empty="Sin notas" /></dd></div>
         </dl>
       </details>
+      {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
+        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} />
+      ) : null}
       {v.problemas.length > 0 ? (
         <ul className="list" aria-label={`Problemas de ${o.id}`}>
           {v.problemas.map((p) => <li key={p}><Badge tone="warn">Revisar</Badge> {p}</li>)}
@@ -57,17 +62,19 @@ function OrdenCard({ v }: { v: OrdenVista }) {
 }
 
 export default async function OrdenesPage() {
-  const { result } = await privateData('/ordenes')
+  const { user, result } = await privateData('/ordenes')
   if (!result.ok) return <><h1>Órdenes a Codex</h1><LoadError result={result} /></>
   const data = result.data
   const r = resumenOrdenes(data)
   const total = data.ordenes.length
+  const canWrite = writeAccess(user.email).allowed
 
   return (
     <>
       <h1>Órdenes a Codex</h1>
       <Freshness data={data} />
       <TabWarnings data={data} tabs={['ORDENES_CODEX', 'TAREAS']} />
+      {canWrite ? <p><a className="button button-primary" href="/ordenes/nueva">Nueva orden</a></p> : null}
       <p className="muted small">
         Lectura de la pestaña ORDENES_CODEX. Solo el propietario aprueba; una orden cerrada no cierra su tarea.
       </p>
@@ -81,7 +88,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} />)}</div>}
           </Section>
         )
       })}
