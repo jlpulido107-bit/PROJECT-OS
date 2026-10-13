@@ -14,15 +14,21 @@ técnico.
 
 ## Ciclo
 
-1. **Elegir.** En la revisión de estado se elige una tarea de la pestaña TAREAS con riesgo bajo.
-2. **Redactar.** Se abre un issue con la plantilla «Tarea para Codex» en el repositorio del proyecto. Título:
-   `[PRJ-NNN] descripción`, con el mismo ID de la hoja.
-3. **Delegar.** El propietario lanza la tarea en Codex (nube, conectado a GitHub) desde el issue.
-4. **Entregar.** Codex trabaja en una rama `codex/PRJ-NNN-…` y abre un PR con `[PRJ-NNN]` en el título,
-   `Closes #<issue>` en la descripción y la salida de las pruebas.
-5. **Revisar.** Por la mañana, Claude Code revisa el PR contra los criterios de aceptación y deja su evaluación.
-6. **Decidir.** El propietario fusiona, pide cambios o cierra. El estado en la hoja lo cambia el propietario;
-   un PR fusionado no cierra la tarea solo.
+Desde V1.7, las órdenes se aprueban en la pestaña ORDENES_CODEX de la hoja
+([migración](migracion-ordenes-codex.md), [modelo de trabajo](mano-derecha.md)).
+
+1. **Redactar.** En la sesión del proyecto, `/planear-proyecto` propone la orden como una fila en estado `BORRADOR`, ligada a
+   una tarea de TAREAS.
+2. **Aprobar.** El propietario la pega en la hoja y la pasa a `APROBADA`.
+3. **Enviar.** `/orden-codex` valida la orden y abre el issue «Tarea para Codex». El título es
+   `[ORD-PRJ-NNN][PRJ-NNN] descripción`, y si ya hay un issue con ese ID no se crea otro.
+4. **Delegar.** El propietario lanza la tarea en Codex desde el issue. Si se puede lanzar mencionando a Codex en el
+   issue, se confirma en la primera prueba (POS-009).
+5. **Entregar.** Codex trabaja en una rama `codex/…` y abre un PR con el `ORDEN_ID` en el título, `Closes #<issue>` y la
+   salida de las pruebas.
+6. **Revisar.** Por la mañana, `/orden-codex` revisa el PR contra los criterios y deja su evaluación.
+7. **Decidir.** El propietario fusiona, pide cambios o cierra, y actualiza la orden y la tarea en la hoja. Un PR
+   fusionado no cierra la tarea por sí solo.
 
 ## Qué se puede delegar
 
