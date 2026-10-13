@@ -16,6 +16,7 @@ const STATE_TONES: Record<string, Tone> = {
   COMPLETADO: 'ok', EXITOSA: 'ok', CONFIRMADO: 'ok', APROBADA: 'ok', ACTIVA: 'info',
   EN_PROGRESO: 'info', EN_CURSO: 'info',
   PENDIENTE: 'neutral', BORRADOR: 'neutral', POR_DIAGNOSTICAR: 'neutral', POR_VERIFICAR: 'neutral',
+  ENVIADA: 'info', PR_ABIERTO: 'info', REVISADA: 'warn', CERRADA: 'ok',
   BLOQUEADO: 'danger', FALLIDA: 'danger', ERROR: 'danger', PARCIAL: 'warn', CANCELADO: 'muted',
   ALTA: 'warn', CRITICA: 'danger', MEDIA: 'neutral', BAJA: 'muted',
 }

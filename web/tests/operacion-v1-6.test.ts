@@ -54,7 +54,7 @@ describe('preflight de aceptación offline', () => {
     const src = read(PREFLIGHT)
     expect(src).not.toMatch(/fetch\(|https?:\/\/|process\.env\.|\bspawn|\bexecSync|(?<![.\w])exec\(/)
     // El único proceso externo es `git` (lectura local); nunca gcloud ni curl.
-    expect([...src.matchAll(/execFileSync\(\s*'([^']+)'/g)].map((m) => m[1])).toEqual(['git', 'git'])
+    expect([...src.matchAll(/execFileSync\(\s*'([^']+)'/g)].map((m) => m[1])).toEqual(['git', 'git', 'git'])
   })
 
   it('sobre el repositorio real nunca da FALLO (0, o 3 si el commit desplegado no está en un clon superficial)', () => {

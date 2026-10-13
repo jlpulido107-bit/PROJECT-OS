@@ -194,7 +194,14 @@ export function preflightAceptacion(ROOT) {
       execFileSync('git', ['-C', ROOT, 'diff', '--quiet', DESPLEGADO.commit, 'HEAD', '--', ...RUTAS_DE_LA_IMAGEN], { stdio: 'ignore' })
       ok('P14', `el código que entra en la imagen es idéntico al desplegado (${DESPLEGADO.commit.slice(0, 7)})`)
     } catch {
-      fallo('P14', `el código de la imagen difiere de ${DESPLEGADO.commit.slice(0, 7)}: este árbol NO es lo desplegado`)
+      // Código posterior a lo desplegado (HEAD desciende del commit desplegado): pendiente de desplegar, no un fallo.
+      // Si las historias divergieron, este árbol no corresponde a producción: FALLO.
+      try {
+        execFileSync('git', ['-C', ROOT, 'merge-base', '--is-ancestor', DESPLEGADO.commit, 'HEAD'], { stdio: 'ignore' })
+        noVerificado('P14', `el código de la imagen es posterior a lo desplegado (${DESPLEGADO.commit.slice(0, 7)}): pendiente de desplegar`)
+      } catch {
+        fallo('P14', `el código de la imagen difiere de ${DESPLEGADO.commit.slice(0, 7)} y no desciende de él: este árbol NO es lo desplegado`)
+      }
     }
   } catch {
     noVerificado('P14', `git o el commit ${DESPLEGADO.commit.slice(0, 7)} no disponibles (p. ej. clon superficial)`)

@@ -33,7 +33,7 @@ Variables usadas (las mismas del runbook, §5.0): `PROJECT_ID`, `REGION`, `SERVI
 
 | # | Verificación | Cómo | Esperado |
 | --- | --- | --- | --- |
-| B1 | Todo lo privado está cerrado | desde `web/`: `npm run smoke:remote -- --url "$SERVICE_URL"` | `27/27` (26/26 hasta V1.6): 14 páginas con redirección a `/login`, 7 APIs con `401` sin datos, sonda `200`, `/login` `200`, HSTS, `no-store`, `DENY`, sesión vacía. Solo usa `GET` |
+| B1 | Todo lo privado está cerrado | desde `web/`: `npm run smoke:remote -- --url "$SERVICE_URL"` | `28/28` (26/26 hasta V1.6; 27/27 en V1.7): 15 páginas con redirección a `/login`, 7 APIs con `401` sin datos, sonda `200`, `/login` `200`, HSTS, `no-store`, `DENY`, sesión vacía. Solo usa `GET` |
 
 ## C. Navegador (personas)
 

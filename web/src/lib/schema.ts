@@ -48,6 +48,11 @@ export const TAB_HEADERS = {
   SYNC_RUNS: [
     'RUN_ID', 'FUENTE', 'INICIO', 'FIN', 'ESTADO', 'REGISTROS_PROCESADOS', 'ERROR_RESUMEN',
   ],
+  /** V1.7: órdenes a Codex aprobadas por el propietario (docs/migracion-ordenes-codex.md). */
+  ORDENES_CODEX: [
+    'ORDEN_ID', 'PROYECTO_ID', 'TAREA_ID', 'TITULO', 'OBJETIVO', 'CONTEXTO', 'CRITERIOS_ACEPTACION',
+    'FUERA_DE_ALCANCE', 'COMO_PROBAR', 'RIESGO', 'ESTADO', 'ISSUE_URL', 'PR_URL', 'NOTAS', 'ACTUALIZADO_EN',
+  ],
 } as const
 
 export type TabName = keyof typeof TAB_HEADERS

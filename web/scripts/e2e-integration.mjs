@@ -112,7 +112,7 @@ try {
   const writer = await client(M, WRITER)
 
   // 1) Sesión bloqueada y permitida en todas las páginas.
-  const PAGES = ['/', '/estado', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones', '/tareas/nueva']
+  const PAGES = ['/', '/estado', '/ordenes', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones', '/tareas/nueva']
   for (const p of PAGES) {
     const a = await anon.page(p)
     check(`sin sesión ${p} → /login`, [302, 307].includes(a.status) && (a.headers.get('location') ?? '').includes('/login'), a.status)
