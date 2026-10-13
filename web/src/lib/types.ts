@@ -139,6 +139,24 @@ export interface SyncRun {
   errorResumen: string | null
 }
 
+export interface Orden {
+  id: string
+  proyectoId: string | null
+  tareaId: string | null
+  titulo: string | null
+  objetivo: string | null
+  contexto: string | null
+  criterios: string | null
+  fueraDeAlcance: string | null
+  comoProbar: string | null
+  riesgo: string | null
+  estado: string | null
+  issueUrl: string | null
+  prUrl: string | null
+  notas: string | null
+  actualizadoEn: string | null
+}
+
 export type TabProblem = 'pestana-ausente' | 'encabezados-faltantes' | 'encabezados-duplicados' | 'sin-encabezados'
 
 export interface TabStatus {
@@ -182,6 +200,7 @@ export interface Dataset {
   dependencias: Dependencia[]
   decisiones: Decision[]
   syncRuns: SyncRun[]
+  ordenes: Orden[]
   issues: DataIssue[]
   /** Hay más incidencias de las que se conservaron. */
   issuesTruncated: boolean

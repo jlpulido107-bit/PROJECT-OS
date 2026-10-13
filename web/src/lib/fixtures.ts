@@ -88,5 +88,11 @@ export function buildFixtureTabs(today: string): RawTabs {
       ['DEMO-RUN-2', 'GitHub Actions', `${d(-1)}T03:23:39+00:00`, `${d(-1)}T03:23:41+00:00`, 'EXITOSA', '0', ''],
       ['DEMO-RUN-1', 'GitHub Actions', `${d(-1)}T03:21:25+00:00`, `${d(-1)}T03:21:27+00:00`, 'EXITOSA', '7', ''],
     ],
+    ORDENES_CODEX: [
+      ['ORDEN_ID', 'PROYECTO_ID', 'TAREA_ID', 'TITULO', 'OBJETIVO', 'CONTEXTO', 'CRITERIOS_ACEPTACION', 'FUERA_DE_ALCANCE', 'COMO_PROBAR', 'RIESGO', 'ESTADO', 'ISSUE_URL', 'PR_URL', 'NOTAS', 'ACTUALIZADO_EN'],
+      ['ORD-POS-901', 'POS', 'DEMO-002', 'Orden demo por aprobar', 'Objetivo demo', 'Contexto demo', 'Criterio demo', 'Fuera demo', 'npm test', 'BAJO', 'BORRADOR', '', '', '', d(0)],
+      ['ORD-POS-902', 'POS', 'DEMO-002', 'Orden demo con PR', 'Objetivo demo', 'Contexto demo', 'Criterio demo', 'Fuera demo', 'npm test', 'BAJO', 'PR_ABIERTO', 'https://github.com/example/demo/issues/1', 'https://github.com/example/demo/pull/2', '', d(-1)],
+      ['ORD-ECO-901', 'ECO', 'DEMO-005', 'Orden demo cerrada', 'Objetivo demo', 'Contexto demo', 'Criterio demo', 'Fuera demo', 'npm test', 'MEDIO', 'CERRADA', 'https://github.com/example/demo/issues/3', '', '', d(-3)],
+    ],
   }
 }

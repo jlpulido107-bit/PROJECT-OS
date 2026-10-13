@@ -36,7 +36,7 @@ const healthBody = await health.json().catch(() => ({}))
 check('/api/health → 200 {"status":"ok"}', health.status === 200 && healthBody.status === 'ok', health.status)
 
 const PRIVATE_PAGES = [
-  '/', '/estado', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones',
+  '/', '/estado', '/ordenes', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones',
   '/tareas/nueva', '/tareas/POS-001/editar', '/tiempos/nuevo', '/decisiones/nueva',
 ]
 const PRIVATE_APIS = [

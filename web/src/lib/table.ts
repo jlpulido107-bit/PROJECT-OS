@@ -276,12 +276,30 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     errorResumen: r.text('ERROR_RESUMEN'),
   }))
 
+  const ordenes = mapTab('ORDENES_CODEX', raw, tabs, log, (r, id) => ({
+    id,
+    proyectoId: r.text('PROYECTO_ID'),
+    tareaId: r.text('TAREA_ID'),
+    titulo: r.text('TITULO'),
+    objetivo: r.text('OBJETIVO'),
+    contexto: r.text('CONTEXTO'),
+    criterios: r.text('CRITERIOS_ACEPTACION'),
+    fueraDeAlcance: r.text('FUERA_DE_ALCANCE'),
+    comoProbar: r.text('COMO_PROBAR'),
+    riesgo: r.code('RIESGO'),
+    estado: r.code('ESTADO'),
+    issueUrl: r.url('ISSUE_URL'),
+    prUrl: r.url('PR_URL'),
+    notas: r.text('NOTAS'),
+    actualizadoEn: r.date('ACTUALIZADO_EN'),
+  }))
+
   return {
     source: meta.source,
     fetchedAt: meta.fetchedAt,
     tabs: tabs as Record<TabName, TabStatus>,
     proyectos, hitos, tareas, capacidad, asignaciones, planes, planItems, tiempos,
-    evidencias, dependencias, decisiones, syncRuns,
+    evidencias, dependencias, decisiones, syncRuns, ordenes,
     issues: log.issues,
     issuesTruncated: log.truncated,
   }

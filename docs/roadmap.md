@@ -49,6 +49,13 @@
 - [ ] [Mano derecha por proyecto](mano-derecha.md): una sesión por repositorio, skills `/planear-proyecto` y `/orden-codex`, y la pestaña [ORDENES_CODEX](migracion-ordenes-codex.md), que aplica el propietario.
 - [ ] Ejecución nocturna programada, solo tras aprobar una prueba real.
 
+## V1.8 — Todo desde el dashboard ([plan](plan-v1-8-automatizacion.md))
+- [ ] F1 Página `/ordenes` (lectura de ORDENES_CODEX).
+- [ ] F2 Escritura real limitada para el propietario.
+- [ ] F3 Crear, aprobar y cancelar órdenes desde el dashboard.
+- [ ] F4 Envío a GitHub y `@codex` al aprobar.
+- [ ] F5 Revisión matutina programada de los PRs de Codex.
+
 ## V1.4 — Informes y planificación (antes V1.3)
 - [ ] Captura de avances no técnicos.
 - [ ] Cierre diario completo (no solo GitHub).
