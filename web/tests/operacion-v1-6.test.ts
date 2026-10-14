@@ -165,7 +165,7 @@ describe('preflight de aceptación offline', () => {
   })
 
   it('un registro de producción con otro digest → FALLO', () => {
-    const { por } = estados(fixtureRoot((r) => edit(r, 'docs/estado-produccion-v1-8-2026-10-14.md', (t) => t.replaceAll('60d3feb7', '00000000'))))
+    const { por } = estados(fixtureRoot((r) => edit(r, 'docs/estado-produccion-v1-8-2026-10-14.md', (t) => t.replaceAll('7ef79fc0', '00000000'))))
     expect(por.P13).toBe('FALLO')
   })
 

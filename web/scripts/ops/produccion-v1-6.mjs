@@ -28,9 +28,9 @@ export const PRODUCCION = Object.freeze({
  * registro fechado en docs/. PRODUCCION sigue describiendo la V1.6 congelada (línea base, matriz y acta).
  */
 export const DESPLEGADO = Object.freeze({
-  revision: 'project-os-dashboard-00005-f6w',
-  commit: 'c06790ee6e1e41ec261d55184639b570b4935b69',
-  digest: 'sha256:60d3feb798dc1802fd990e7a256713758d45a5e519cc440bd1c40e3706d89dd5',
+  revision: 'project-os-dashboard-00006-gl5',
+  commit: 'cb7a2648d2e297f04318230c2d5d46a12b49c25a',
+  digest: 'sha256:7ef79fc0625ed819c2020df15b1fdeec126cd2f85a70c432565011ea6c698256',
   registro: 'docs/estado-produccion-v1-8-2026-10-14.md',
 })
 

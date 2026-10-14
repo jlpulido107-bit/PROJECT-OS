@@ -129,8 +129,8 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
 
 ## 7. Recuperación y rollback
 
-- **Estado actual (2026-10-14):** hasta V1.6 había una sola revisión; hoy `…-00005-f6w` (V1.8 F4b, imagen `produccion`) sirve el 100 %; `…-00004-l5g`
-  (V1.8 F4, imagen `produccion-anterior`) queda disponible. El rollback de tráfico es posible, pero **no está
+- **Estado actual (2026-10-14):** hasta V1.6 había una sola revisión; hoy `…-00006-gl5` (V1.8 F5a, imagen `produccion`) sirve el 100 %; `…-00005-f6w`
+  (V1.8 F4b, imagen `produccion-anterior`) queda disponible. El rollback de tráfico es posible, pero **no está
   ensayado** (G2). Registro: [estado de producción V1.8](../estado-produccion-v1-8-2026-10-14.md).
 - **Recuperación sin revisión anterior** (hoy). Las opciones son:
   1. *Fix forward:* corregir y redesplegar [M].
