@@ -2,8 +2,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
-import { OrderActions } from '@/components/operations/forms'
+import { CopiarParaCodex, OrderActions } from '@/components/operations/forms'
 import { githubClient } from '@/lib/operations/dispatch'
+import { textoParaCodexDeOrden } from '@/lib/operations/github'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
@@ -22,6 +23,8 @@ const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string } }) {
   const o = v.orden
   const tone = RIESGO_TONE[o.riesgo as keyof typeof RIESGO_TONE] ?? 'neutral'
+  // Mientras Codex no tenga el PR, el propietario lanza la tarea con este texto (el @codex en issues no la inicia).
+  const textoCodex = canWrite && !prDetectado ? textoParaCodexDeOrden(o) : null
   return (
     <article className="card" aria-labelledby={`orden-${o.id}`}>
       <header className="card-head">
@@ -50,6 +53,7 @@ function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: bool
           <div><dt>Notas</dt><dd><Text value={o.notas} empty="Sin notas" /></dd></div>
         </dl>
       </details>
+      {textoCodex ? <CopiarParaCodex ordenId={o.id} texto={textoCodex} /> : null}
       {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
         <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} />
       ) : null}

@@ -239,6 +239,11 @@ tbody th { font-weight: 500; }
 /* ------------------------------ Operaciones (V1.4) ------------------------------ */
 .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 1rem; }
 .card-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.6rem; }
+.codex-copy > p, .codex-copy > details { flex-basis: 100%; margin: 0; }
+.codex-copy textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; color: var(--text); background: var(--bg);
+  width: 100%; margin-top: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical;
+}
 .section-links { display: inline-flex; flex-wrap: wrap; gap: 12px; }
 .op-form {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);

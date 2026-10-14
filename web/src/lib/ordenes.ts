@@ -12,7 +12,7 @@ export type EstadoOrden = (typeof ESTADOS_ORDEN)[number]
 export const SIGUIENTE_PASO: Record<EstadoOrden, { quien: 'propietario' | 'claude' | 'codex' | 'nadie'; texto: string }> = {
   BORRADOR: { quien: 'propietario', texto: 'Revisar y aprobar' },
   APROBADA: { quien: 'claude', texto: 'Enviar a Codex (abrir el issue)' },
-  ENVIADA: { quien: 'codex', texto: 'Codex trabaja y abre un PR' },
+  ENVIADA: { quien: 'codex', texto: 'Lanzar en Codex («Copiar para Codex»); Codex trabaja y abre un PR' },
   PR_ABIERTO: { quien: 'claude', texto: 'Revisar el PR contra los criterios' },
   REVISADA: { quien: 'propietario', texto: 'Fusionar o cerrar el PR' },
   CERRADA: { quien: 'nadie', texto: 'Terminada' },

@@ -57,8 +57,11 @@ también puede:
 
 Con el token de GitHub configurado (F4), **aprobar también envía**:
 - crea el issue `[ORDEN_ID]` en el repositorio del proyecto, o reutiliza el que ya exista;
-- menciona a `@codex` una sola vez;
 - pasa la orden a `ENVIADA` con su `ISSUE_URL`.
+
+El dashboard no menciona a `@codex`: ese comentario no inicia tareas desde issues. En `ENVIADA`, la orden muestra
+**«Copiar para Codex»**: copia el texto de la orden (repositorio, issue, rama `codex/…`, título `[ORDEN_ID]` y
+`Closes #N`) para pegarlo en chatgpt.com/codex y lanzar la tarea.
 
 Si GitHub falla, la orden queda `APROBADA` y el botón **Enviar a Codex** reintenta sin duplicar. Después, el dashboard
 detecta el PR `[ORDEN_ID]` y permite **registrar el PR** (`PR_ABIERTO`), **marcar revisada** (`REVISADA`) y **cerrar**

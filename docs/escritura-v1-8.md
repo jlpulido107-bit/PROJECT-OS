@@ -57,8 +57,9 @@ export SECRET_VERSION_WRITERS=1
 
 ## 2b. Token de GitHub para enviar órdenes a Codex (F4, opcional)
 
-Con este token, al pulsar **Aprobar** el dashboard abre el issue en el repositorio del proyecto y menciona a `@codex`.
-Sin él, la orden queda aprobada y se envía a mano.
+Con este token, al pulsar **Aprobar** el dashboard abre el issue en el repositorio del proyecto. La tarea se lanza en
+Codex con el botón **«Copiar para Codex»** (el `@codex` en issues no la inicia). Sin el token, la orden queda aprobada
+y se envía a mano.
 
 1. En GitHub abre Settings → Developer settings → **Fine-grained tokens** → *Generate new token*.
    - **Nombre:** `project-os-dashboard-codex`. **Caducidad:** 90 días.
@@ -108,9 +109,9 @@ gcloud run revisions list --service "$SERVICE_NAME" --region "$REGION" --limit 2
 5. En **Operaciones**, la conciliación debe decir **«Sin pendientes»**.
 6. Si configuraste el token, crea una orden de prueba en **Órdenes → Nueva orden** y pulsa **Aprobar y enviar a
    Codex**. Comprueba tres cosas:
-   - aparece el issue `[ORD-…]` con la mención a `@codex`;
-   - la orden pasa a **Enviada**, con su issue;
-   - Codex responde en el issue.
+   - aparece el issue `[ORD-…]`;
+   - la orden pasa a **Enviada**, con su issue y el botón **«Copiar para Codex»**;
+   - al pegar ese texto en chatgpt.com/codex, Codex abre un PR `[ORD-…]` que el dashboard detecta.
 7. Corre `node scripts/smoke-remote.mjs --url "$SERVICE_URL"`: deben salir todas las comprobaciones en OK.
 
 **Si la primera escritura falla** («lectura fallida» o «escritura fallida»), lo normal es que falte un permiso. La sonda de

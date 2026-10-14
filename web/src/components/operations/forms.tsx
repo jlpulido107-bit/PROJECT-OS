@@ -560,13 +560,50 @@ function EnvioStatus({ result }: { result: OpSuccess & { envio?: { ok: boolean; 
   if (envio.ok && envio.issueUrl) {
     return (
       <p className="small">
-        {envio.creado ? 'Enviada a Codex: ' : 'Ya estaba enviada: '}
-        <a href={envio.issueUrl} target="_blank" rel="noopener noreferrer nofollow">ver el issue</a>.
+        {envio.creado ? 'Issue creado: ' : 'El issue ya existía: '}
+        <a href={envio.issueUrl} target="_blank" rel="noopener noreferrer nofollow">ver el issue</a>. Recarga la página y usa
+        «Copiar para Codex» para lanzar la tarea.
       </p>
     )
   }
   const texto = ENVIO_TEXTO[envio.codigo ?? ''] ?? `No se pudo enviar a GitHub (${envio.codigo ?? 'error'}). La orden quedó aprobada: pulsa «Enviar a Codex» para reintentar sin duplicar.`
   return <p className="small"><strong>Atención:</strong> {texto}</p>
+}
+
+/**
+ * Copia al portapapeles el texto con el que el propietario lanza la orden en Codex (chatgpt.com/codex). Si el navegador
+ * no permite copiar, el texto queda visible para seleccionarlo a mano.
+ */
+export function CopiarParaCodex({ ordenId, texto }: { ordenId: string; texto: string }) {
+  const [estado, setEstado] = useState<'idle' | 'copiado' | 'manual'>('idle')
+  const id = useId()
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(texto)
+      setEstado('copiado')
+    } catch {
+      setEstado('manual')
+    }
+  }
+  return (
+    <div className="card-actions codex-copy">
+      <button type="button" className="button button-primary" onClick={copiar} aria-describedby={`${id}-ayuda`}>
+        {estado === 'copiado' ? 'Copiado ✓' : 'Copiar para Codex'}
+      </button>
+      <a className="button" href="https://chatgpt.com/codex" target="_blank" rel="noopener noreferrer">Abrir Codex</a>
+      <p id={`${id}-ayuda`} className="muted small" role="status">
+        {estado === 'copiado'
+          ? `Pega el texto en Codex, elige el entorno del repositorio y lanza la tarea. Cuando Codex abra el PR [${ordenId}], aparecerá aquí.`
+          : estado === 'manual'
+            ? 'No se pudo copiar automáticamente: selecciona el texto de abajo y cópialo.'
+            : 'Copia la orden y lánzala en Codex: el comentario @codex en el issue no inicia tareas.'}
+      </p>
+      <details open={estado === 'manual'}>
+        <summary>Ver el texto para Codex</summary>
+        <textarea readOnly value={texto} rows={12} aria-label={`Texto para Codex de ${ordenId}`} onFocus={(e) => e.currentTarget.select()} />
+      </details>
+    </div>
+  )
 }
 
 /** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */

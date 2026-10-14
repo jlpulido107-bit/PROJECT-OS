@@ -53,7 +53,8 @@
 - [x] F1 Página `/ordenes` (lectura de ORDENES_CODEX). Fusionada; pendiente de desplegar.
 - [x] F2 Escritura real limitada para el propietario. Fusionada; se activa con [escritura-v1-8.md](escritura-v1-8.md).
 - [x] F3 Crear, aprobar y cancelar órdenes desde el dashboard. Fusionada.
-- [ ] F4 Envío a GitHub y `@codex` al aprobar.
+- [x] F4 Envío a GitHub al aprobar. Fusionada y desplegada (revisión `00004`).
+- [x] F4b Sin `@codex` (no inicia tareas desde issues): la tarea se lanza con «Copiar para Codex».
 - [ ] F5 Revisión matutina programada de los PRs de Codex.
 
 ## V1.4 — Informes y planificación (antes V1.3)
