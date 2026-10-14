@@ -21,6 +21,8 @@ const MAX_PAGES = 5
 const CODEX_MENTION = '@codex'
 /** Cuenta con la que el conector de Codex comenta y puede abrir PRs. */
 const CODEX_BOT = 'chatgpt-codex-connector[bot]'
+/** El PR también puede ser creado por el workflow seguro de Codex Action. */
+const ACTIONS_BOT = 'github-actions[bot]'
 
 export interface OrdenParaEnviar {
   ordenId: string
@@ -202,7 +204,7 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       // Solo PRs de la cuenta del propietario o del conector de Codex, desde el mismo repositorio (nunca de un fork).
       const pr = prs.find((p) =>
         p.title.startsWith(`[${ordenId}]`) &&
-        (esPropio(p.user, login) || (p.user?.login ?? '').toLowerCase() === CODEX_BOT) &&
+        (esPropio(p.user, login) || [CODEX_BOT, ACTIONS_BOT].includes((p.user?.login ?? '').toLowerCase())) &&
         (p.head?.repo?.full_name ?? '').toLowerCase() === repo.toLowerCase())
       if (!pr) return null
       return { url: pr.html_url, number: pr.number, estado: pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado' }
