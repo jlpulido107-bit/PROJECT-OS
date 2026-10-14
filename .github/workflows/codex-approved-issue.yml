@@ -53,11 +53,11 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'order_id=' + id + '\n');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'branch=codex/' + id.toLowerCase() + '\n');
           NODE
-          branch="codex/$(echo "${{ steps.gate.outputs.order_id }}" | tr '[:upper:]' '[:lower:]')"
+          branch="$(grep '^branch=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)"
           if [[ "$(gh pr list --state all --head "$branch" --json number --jq 'length')" != "0" ]]; then
             echo "PR already exists for $branch. No API run."
             echo 'proceed=false' >> "$GITHUB_OUTPUT"
-          elif git ls-remote --exit-code "https://github.com/$GH_REPO.git" "refs/heads/$branch" >/dev/null 2>&1; then
+          elif gh api "repos/$GH_REPO/branches/${branch//\//%2F}" --silent >/dev/null 2>&1; then
             echo "A branch already exists for $branch. Resolve it manually before retrying."
             echo 'proceed=false' >> "$GITHUB_OUTPUT"
           else
