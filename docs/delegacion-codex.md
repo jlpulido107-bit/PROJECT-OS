@@ -22,8 +22,9 @@ Desde ahora el flujo va al revés: **el propietario decide con Codex/ChatGPT y C
    (`/planear-proyecto`) redacta los campos de la orden.
 2. **Aprobar.** En el dashboard: *Órdenes → Nueva orden* y **Aprobar y crear el issue**. El issue lleva el título
    `[ORD-PRJ-NNN][PRJ-NNN] descripción`; si ya existe uno con ese ID, no se crea otro.
-3. **Pedir.** **«Copiar para Claude»** en `/ordenes` y pegarlo en la sesión de Claude del repositorio, o decir
-   «ejecuta ORD-PRJ-NNN».
+3. **Llamar.** Con la [rutina de Claude](rutina-claude.md) configurada, aprobar ya llama a Claude: no hay que hacer
+   nada más. Si no está configurada o la llamada falla: **Ejecutar con Claude** en `/ordenes`, o **«Copiar para
+   Claude»** y pegarlo en la sesión del repositorio («ejecuta ORD-PRJ-NNN»).
 4. **Ejecutar.** Claude (`/ejecutar-orden`) valida la orden y la ejecuta en su rama: código, pruebas y PR con el
    `ORDEN_ID` en el título, `Closes #<issue>`, cada criterio con su evidencia y la salida de las pruebas. Lleva la CI a
    verde.

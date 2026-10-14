@@ -55,7 +55,8 @@
 - [x] F3 Crear, aprobar y cancelar órdenes desde el dashboard. Fusionada.
 - [x] F4 Envío a GitHub al aprobar. Fusionada y desplegada (revisión `00004`).
 - [x] F4b Sin `@codex` (no inicia tareas desde issues): la tarea se lanza con «Copiar para Codex». Desplegada (revisión `00005`, [registro](estado-produccion-v1-8-2026-10-14.md)).
-- [ ] F4c Flujo invertido: el propietario decide con Codex/ChatGPT y Claude ejecuta las órdenes (`/ejecutar-orden`, «Copiar para Claude»). Pendiente de desplegar.
+- [x] F4c Flujo invertido: el propietario decide con Codex/ChatGPT y Claude ejecuta las órdenes (`/ejecutar-orden`, «Copiar para Claude»). Fusionada; pendiente de desplegar.
+- [ ] F5a El dashboard llama a Claude al aprobar (rutina con disparador de API; [guía](rutina-claude.md)). Pendiente: crear la rutina, guardar su token y desplegar.
 - [ ] F5 Revisión matutina programada de los PRs de órdenes.
 
 ## V1.4 — Informes y planificación (antes V1.3)

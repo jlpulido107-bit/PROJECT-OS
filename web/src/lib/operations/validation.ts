@@ -403,6 +403,17 @@ export function parseOrderTransition(ordenId: string, body: unknown): OrderTrans
   return cmd
 }
 
+/** «Ejecutar con Claude» (F5a): solo el ID de la orden y, para volver a lanzar, forzar = 'SI'. */
+export function parseEjecutarOrden(ordenId: string, body: unknown): { ordenId: string; forzar: boolean } {
+  const c = new Checker(asObject(body), ['requestId', 'forzar'])
+  const id = ordenId.trim().toUpperCase()
+  if (!ORDER_ID.test(id)) c.setError('ordenId', 'ID de orden no válido')
+  c.requestId()
+  const forzar = c.oneOf('forzar', ['SI', 'NO'], false) === 'SI'
+  c.done()
+  return { ordenId: id, forzar }
+}
+
 /** Hash estable del comando validado (sin requestId) para detectar reutilización con otro payload. */
 export function payloadHash(operation: string, command: object): string {
   const { requestId: _ignored, ...rest } = command as Record<string, unknown>

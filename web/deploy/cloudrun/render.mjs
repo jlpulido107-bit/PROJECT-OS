@@ -49,8 +49,11 @@ export function render(template, env) {
  * queda de solo lectura, igual que V1.6. Con `sheets` exige:
  * - WRITE_SERVICE_ACCOUNT: cuenta dedicada del mismo proyecto, distinta de la runtime;
  * - SECRET_VERSION_WRITERS: versión fijada del secreto project-os-writer-emails (lista de escritores).
- * Opcional (F4): SECRET_VERSION_GITHUB, versión fijada del secreto project-os-github-token (envío de órdenes a Codex).
+ * Opcional (F4): SECRET_VERSION_GITHUB, versión fijada del secreto project-os-github-token (issue de cada orden).
+ * Opcional (F5a, docs/rutina-claude.md): CLAUDE_ROUTINE_ID (no secreto) y SECRET_VERSION_CLAUDE_ROUTINE, versión fijada del
+ * secreto project-os-claude-routine-token. Van juntos y exigen SECRET_VERSION_GITHUB (la ejecución se registra en el issue).
  */
+const ROUTINE_ID = /^[A-Za-z0-9_-]{8,80}$/
 const WRITE_SA = /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/
 
 function escritura(env, problems) {
@@ -75,6 +78,21 @@ function escritura(env, problems) {
     '                  name: project-os-github-token',
     `                  key: '${github}'`,
   ] : []
+  const routineId = (env.CLAUDE_ROUTINE_ID ?? '').trim()
+  const routine = (env.SECRET_VERSION_CLAUDE_ROUTINE ?? '').trim()
+  if (Boolean(routineId) !== Boolean(routine)) problems.push('CLAUDE_ROUTINE_ID y SECRET_VERSION_CLAUDE_ROUTINE van juntos')
+  else if (routine && !github) problems.push('la rutina de Claude exige SECRET_VERSION_GITHUB')
+  if (routineId && !ROUTINE_ID.test(routineId)) problems.push('CLAUDE_ROUTINE_ID no tiene el formato esperado')
+  if (routine && !/^[1-9][0-9]*$/.test(routine)) problems.push('SECRET_VERSION_CLAUDE_ROUTINE no tiene el formato esperado')
+  const routineLines = routineId && routine ? [
+    '            - name: CLAUDE_ROUTINE_ID',
+    `              value: ${routineId}`,
+    '            - name: CLAUDE_ROUTINE_TOKEN',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-claude-routine-token',
+    `                  key: '${routine}'`,
+  ] : []
   return [
     '            - name: PROJECT_OS_WRITE_MODE',
     '              value: sheets',
@@ -86,6 +104,7 @@ function escritura(env, problems) {
     '                  name: project-os-writer-emails',
     `                  key: '${version}'`,
     ...githubLines,
+    ...routineLines,
     '',
   ].join('\n')
 }

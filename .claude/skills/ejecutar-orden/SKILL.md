@@ -10,6 +10,9 @@ dashboard; Claude la ejecuta. Reglas: https://github.com/jlpulido107-bit/PROJECT
 
 ## A. Ejecutar una orden
 
+Si te llama la rutina del dashboard (bloque `routine-fire-payload`), sigue sus instrucciones y estos pasos sin esperar
+respuesta: no hay nadie para preguntar. Si falta algo o la orden es ambigua, coméntalo en el issue y termina sin PR.
+
 1. **Proyecto.** Identifica el proyecto por `git remote get-url origin`: PROJECT-OS → POS, SIGSAH → SIG, RADAROS → ECO.
 2. **Orden.** Busca el issue cuyo título empiece por `[ORDEN_ID]` en este repositorio, creado por la cuenta del
    propietario. Si hace falta, lee la pestaña ORDENES_CODEX de la hoja `16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic`

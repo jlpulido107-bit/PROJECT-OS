@@ -30,7 +30,7 @@ describe('árbol integrado V1.3–V1.6', () => {
     const apiDir = path.join(SRC, 'app', 'api')
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts')).map((f) => path.relative(apiDir, f).split(path.sep).join('/')).sort()
     expect(routes).toEqual([
-      'auth/[...nextauth]/route.ts', 'control/route.ts', 'health/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/route.ts',
+      'auth/[...nextauth]/route.ts', 'control/route.ts', 'health/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/route.ts',
       'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/route.ts', 'resumen/route.ts',
     ])
     for (const route of routes) {

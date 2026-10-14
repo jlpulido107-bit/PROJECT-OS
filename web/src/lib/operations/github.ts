@@ -22,6 +22,9 @@ const TIMEOUT_MS = 15_000
 const MAX_PAGES = 5
 /** Cuenta con la que el conector de Codex comenta y puede abrir PRs. */
 const CODEX_BOT = 'chatgpt-codex-connector[bot]'
+/** Primera línea del comentario con el que el dashboard deja constancia de que lanzó a Claude (F5a). */
+export const MARCA_CLAUDE = 'Claude · ejecución lanzada desde el dashboard'
+const SESION_CLAUDE = /https:\/\/claude\.ai\/code\/[A-Za-z0-9_/-]{1,200}/
 
 export interface OrdenParaEnviar {
   ordenId: string
@@ -144,6 +147,14 @@ export function textoParaEjecutarDeOrden(o: {
   }, o.issueUrl)
 }
 
+/** Repositorio y número de un issue que debe ser del repositorio del proyecto. */
+function issueDeProyecto(proyectoId: string, issueUrl: string): { repo: string; number: number } {
+  const repo = repoDe(proyectoId)
+  const n = /\/issues\/(\d{1,7})$/.exec(issueUrl)?.[1]
+  if (repoDeUrl(issueUrl, 'issues') !== repo || !n) throw new GitHubError('repo-no-permitido')
+  return { repo, number: Number(n) }
+}
+
 export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetch) {
   async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
     let response: Response
@@ -208,6 +219,24 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
         body: cuerpoIssue(o),
       })
       return { issueUrl: issue.html_url, issueNumber: issue.number, creado: !existente }
+    },
+
+    /** Sesión de Claude ya lanzada para el issue de la orden (comentario propio con MARCA_CLAUDE), o null. */
+    async lanzamientoPrevio(proyectoId: string, issueUrl: string): Promise<string | null> {
+      const { repo, number } = issueDeProyecto(proyectoId, issueUrl)
+      const login = await cuentaPropia()
+      const comentarios = await call<Array<{ body?: string; user?: User }>>('GET', `/repos/${repo}/issues/${number}/comments?per_page=100`)
+      const propio = comentarios.filter((c) => esPropio(c.user, login) && (c.body ?? '').startsWith(MARCA_CLAUDE)).pop()
+      return propio ? (SESION_CLAUDE.exec(propio.body ?? '')?.[0] ?? null) : null
+    },
+
+    /** Deja constancia en el issue de la sesión de Claude lanzada (sin menciones). */
+    async registrarLanzamiento(proyectoId: string, issueUrl: string, sessionUrl: string): Promise<void> {
+      const { repo, number } = issueDeProyecto(proyectoId, issueUrl)
+      if (!SESION_CLAUDE.test(sessionUrl)) throw new GitHubError('respuesta-invalida')
+      await call('POST', `/repos/${repo}/issues/${number}/comments`, {
+        body: `${MARCA_CLAUDE}\n\nSesión: ${sessionUrl}\n\nClaude abrirá un PR con el ID de la orden en el título y \`Closes\` este issue. No fusiona ni despliega.`,
+      })
     },
 
     /** PR cuyo título empieza por `[ORDEN_ID]` (el más reciente), o null. Solo lectura. */

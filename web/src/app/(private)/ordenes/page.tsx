@@ -4,6 +4,7 @@ import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
 import { CopiarParaClaude, OrderActions } from '@/components/operations/forms'
 import { githubClient } from '@/lib/operations/dispatch'
+import { routineClient } from '@/lib/operations/claude-routine'
 import { textoParaEjecutarDeOrden } from '@/lib/operations/github'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
@@ -20,7 +21,10 @@ const GRUPOS: Array<{ id: GrupoOrden; titulo: string; vacio: string }> = [
 
 const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 
-function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string } }) {
+function OrdenCard({ v, canWrite, prDetectado, claude }: {
+  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }
+  claude?: { configurada: boolean; sesion?: string | null }
+}) {
   const o = v.orden
   const tone = RIESGO_TONE[o.riesgo as keyof typeof RIESGO_TONE] ?? 'neutral'
   // Mientras no haya PR, el propietario pide a Claude que ejecute la orden con este texto.
@@ -55,7 +59,7 @@ function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: bool
       </details>
       {textoOrden ? <CopiarParaClaude ordenId={o.id} texto={textoOrden} /> : null}
       {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
-        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} />
+        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} claude={claude} />
       ) : null}
       {v.problemas.length > 0 ? (
         <ul className="list" aria-label={`Problemas de ${o.id}`}>
@@ -76,11 +80,15 @@ export default async function OrdenesPage() {
   // PRs de las órdenes ENVIADA (solo lectura en GitHub; si falla, simplemente no se muestran).
   const client = canWrite ? githubClient() : null
   const prs = new Map<string, { url: string; estado: string }>()
+  // Ejecución automática con Claude (F5a): solo si la rutina está configurada; la sesión ya lanzada se lee del issue.
+  const rutina = canWrite && routineClient() !== null
+  const sesiones = new Map<string, string | null>()
   if (client) {
     await Promise.all(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId).map(async (o) => {
       try {
         const pr = await client.prDeOrden(o.proyectoId!, o.id)
         if (pr) prs.set(o.id, pr)
+        else if (rutina && o.issueUrl) sesiones.set(o.id, await client.lanzamientoPrevio(o.proyectoId!, o.issueUrl))
       } catch {
         // Sin detalles: el panel sigue funcionando sin la detección.
       }
@@ -106,7 +114,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}
