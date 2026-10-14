@@ -554,16 +554,44 @@ const ENVIO_TEXTO: Record<string, string> = {
   red: 'No hubo conexión con GitHub. La orden quedó aprobada: pulsa «Crear el issue» para reintentar sin duplicar.',
 }
 
-function EnvioStatus({ result }: { result: OpSuccess & { envio?: { ok: boolean; issueUrl?: string; creado?: boolean; codigo?: string } } }) {
+interface EjecucionResult { ok: boolean; sessionUrl?: string; nueva?: boolean; codigo?: string }
+
+const EJECUCION_TEXTO: Record<string, string> = {
+  'sin-rutina': 'La ejecución automática con Claude no está configurada (docs/rutina-claude.md).',
+  'sin-token': 'Falta el token de GitHub del dashboard: no se puede comprobar ni registrar la ejecución.',
+  'orden-no-enviada': 'La orden debe estar Enviada, con su issue, para ejecutarla.',
+  'http-429': 'Se alcanzó el límite de ejecuciones de la rutina. Espera unos minutos y vuelve a intentarlo.',
+  red: 'No hubo conexión con Claude. Puedes volver a intentarlo.',
+}
+
+/** Resultado de lanzar a Claude (F5a). */
+export function EjecucionStatus({ ejecucion }: { ejecucion?: EjecucionResult }) {
+  if (!ejecucion) return null
+  if (ejecucion.ok && ejecucion.sessionUrl) {
+    return (
+      <p className="small">
+        {ejecucion.nueva ? 'Claude está ejecutando la orden: ' : 'Claude ya estaba ejecutando esta orden: '}
+        <a href={ejecucion.sessionUrl} target="_blank" rel="noopener noreferrer nofollow">ver la sesión</a>. El PR aparecerá aquí cuando lo abra.
+      </p>
+    )
+  }
+  const texto = EJECUCION_TEXTO[ejecucion.codigo ?? ''] ?? `No se pudo lanzar a Claude (${ejecucion.codigo ?? 'error'}). Puedes volver a intentarlo.`
+  return <p className="small"><strong>Atención:</strong> {texto}</p>
+}
+
+function EnvioStatus({ result }: { result: OpSuccess & { envio?: { ok: boolean; issueUrl?: string; creado?: boolean; codigo?: string }; ejecucion?: EjecucionResult } }) {
   const envio = result.envio
   if (!envio) return null
   if (envio.ok && envio.issueUrl) {
     return (
-      <p className="small">
-        {envio.creado ? 'Issue creado: ' : 'El issue ya existía: '}
-        <a href={envio.issueUrl} target="_blank" rel="noopener noreferrer nofollow">ver el issue</a>. Recarga la página y usa
-        «Copiar para Claude» para lanzar la ejecución.
-      </p>
+      <>
+        <p className="small">
+          {envio.creado ? 'Issue creado: ' : 'El issue ya existía: '}
+          <a href={envio.issueUrl} target="_blank" rel="noopener noreferrer nofollow">ver el issue</a>.
+          {result.ejecucion ? null : ' Recarga la página y usa «Ejecutar con Claude» o «Copiar para Claude».'}
+        </p>
+        <EjecucionStatus ejecucion={result.ejecucion} />
+      </>
     )
   }
   const texto = ENVIO_TEXTO[envio.codigo ?? ''] ?? `No se pudo enviar a GitHub (${envio.codigo ?? 'error'}). La orden quedó aprobada: pulsa «Crear el issue» para reintentar sin duplicar.`
@@ -608,14 +636,17 @@ export function CopiarParaClaude({ ordenId, texto }: { ordenId: string; texto: s
 }
 
 /** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
-export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
+export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude }: {
   ordenId: string
   estado: string
   canApprove: boolean
+  /** Ejecución automática (F5a): si la rutina está configurada y la sesión ya lanzada para el issue, si existe. */
+  claude?: { configurada: boolean; sesion?: string | null }
   /** URL del PR de la orden detectado en GitHub (solo en ENVIADA). */
   prDetectado?: string
 }) {
   const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
+  const run = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}/ejecutar`, 'POST')
   const [mode, setMode] = useState<'idle' | 'cancel' | 'pr'>('idle')
 
   const send = (accion: string, extra: Record<string, string> = {}) => op.submit({ accion, expectedEstado: estado, ...extra })
@@ -631,7 +662,13 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
   if (op.state.status === 'done') {
     return <Status state={op.state}><EnvioStatus result={op.state.result} /></Status>
   }
-  const sending = op.state.status === 'sending'
+  if (run.state.status === 'done') {
+    return <div className="card-actions"><EjecucionStatus ejecucion={(run.state.result as OpSuccess & { ejecucion?: EjecucionResult }).ejecucion} /></div>
+  }
+  function relanzar() {
+    if (window.confirm('Claude ya tiene una sesión para esta orden. ¿Lanzar otra ejecución?')) void run.submit({ forzar: 'SI' })
+  }
+  const sending = op.state.status === 'sending' || run.state.status === 'sending'
   const primary = (label: string, busy: string, onClick: () => void) => (
     <button type="button" className="button button-primary" onClick={onClick} disabled={sending} aria-busy={sending}>
       {sending ? busy : label}
@@ -643,6 +680,14 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
         <>
           {estado === 'BORRADOR' && canApprove ? primary('Aprobar y crear el issue', 'Aprobando…', () => send('APROBAR')) : null}
           {estado === 'APROBADA' ? primary('Crear el issue', 'Creando…', () => send('ENVIAR')) : null}
+          {estado === 'ENVIADA' && !prDetectado && claude?.configurada ? (
+            claude.sesion
+              ? <>
+                  <a className="button" href={claude.sesion} target="_blank" rel="noopener noreferrer nofollow">Claude trabajando: ver sesión</a>
+                  <button type="button" className="button" onClick={relanzar} disabled={sending}>Volver a lanzar…</button>
+                </>
+              : primary('Ejecutar con Claude', 'Lanzando…', () => void run.submit({}))
+          ) : null}
           {estado === 'ENVIADA' ? (
             prDetectado
               ? primary('Registrar el PR detectado', 'Guardando…', () => send('REGISTRAR_PR', { url: prDetectado }))
@@ -676,6 +721,7 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
         </form>
       ) : null}
       <Status state={op.state} />
+      <Status state={run.state} />
     </div>
   )
 }

@@ -162,6 +162,18 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     const withGithub = render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: '1' })
     expect(withGithub).toMatch(/- name: GITHUB_DISPATCH_TOKEN\n\s+valueFrom:\n\s+secretKeyRef:\n\s+name: project-os-github-token\n\s+key: '1'/)
     expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: 'latest' })).toThrow('SECRET_VERSION_GITHUB')
+    // F5a: rutina de Claude opcional; ID y versión del token van juntos y exigen el token de GitHub.
+    expect(withGithub).not.toContain('CLAUDE_ROUTINE')
+    const RUTINA = { SECRET_VERSION_GITHUB: '1', CLAUDE_ROUTINE_ID: 'trig_01ABCdef234', SECRET_VERSION_CLAUDE_ROUTINE: '2' }
+    const withRoutine = render(template, { ...VARS, ...WRITE, ...RUTINA })
+    expect(withRoutine).toMatch(/- name: CLAUDE_ROUTINE_ID\n\s+value: trig_01ABCdef234/)
+    expect(withRoutine).toMatch(/- name: CLAUDE_ROUTINE_TOKEN\n\s+valueFrom:\n\s+secretKeyRef:\n\s+name: project-os-claude-routine-token\n\s+key: '2'/)
+    expect(() => render(template, { ...VARS, ...WRITE, ...RUTINA, SECRET_VERSION_CLAUDE_ROUTINE: '' })).toThrow('van juntos')
+    expect(() => render(template, { ...VARS, ...WRITE, ...RUTINA, SECRET_VERSION_GITHUB: '' })).toThrow('exige SECRET_VERSION_GITHUB')
+    expect(() => render(template, { ...VARS, ...WRITE, ...RUTINA, CLAUDE_ROUTINE_ID: '../x y' })).toThrow('CLAUDE_ROUTINE_ID')
+    expect(() => render(template, { ...VARS, ...WRITE, ...RUTINA, SECRET_VERSION_CLAUDE_ROUTINE: 'latest' })).toThrow('SECRET_VERSION_CLAUDE_ROUTINE')
+    // Sin escritura real no se inyecta nada de la rutina (va dentro del bloque de escritura).
+    expect(render(template, { ...VARS, ...RUTINA })).not.toContain('CLAUDE_ROUTINE')
     // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
     expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })

@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createHash } from 'node:crypto'
 import { OperationError } from './errors'
+import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
 import { createGitHubClient, GitHubError, type GitHubClient } from './github'
 import type { OperationContext, OperationResult, OperationsService } from './service'
 import type { OrderTransitionCommand } from './validation'
@@ -19,7 +20,17 @@ export interface EnvioInfo {
   codigo?: string
 }
 
-export type ResultadoConEnvio = OperationResult & { envio?: EnvioInfo }
+/** Resultado de lanzar a Claude (F5a). Sin datos sensibles: la URL de la sesión es privada de la cuenta del propietario. */
+export interface EjecucionInfo {
+  ok: boolean
+  sessionUrl?: string
+  /** true si se lanzó ahora; false si ya había una sesión lanzada para el issue. */
+  nueva?: boolean
+  /** 'sin-rutina', 'sin-token', 'orden-no-enviada', 'orden-inexistente', 'http-429', 'red'… */
+  codigo?: string
+}
+
+export type ResultadoConEnvio = OperationResult & { envio?: EnvioInfo; ejecucion?: EjecucionInfo }
 
 export function githubClient(env: NodeJS.ProcessEnv = process.env): GitHubClient | null {
   const token = env.GITHUB_DISPATCH_TOKEN?.trim()
@@ -76,20 +87,80 @@ async function enviarUnaVez(
   }
 }
 
+const ejecutando = new Map<string, Promise<EjecucionInfo>>()
+
+/**
+ * Lanza a Claude sobre una orden ENVIADA (F5a). Sin `forzar`, si el issue ya tiene una sesión lanzada por el dashboard,
+ * la devuelve en vez de lanzar otra. Una sola ejecución en curso por orden en este proceso (escritor único).
+ */
+export function ejecutarConClaude(
+  service: OperationsService, ordenId: string,
+  { github = githubClient(), rutina = routineClient(), forzar = false }: { github?: GitHubClient | null; rutina?: RoutineClient | null; forzar?: boolean } = {},
+): Promise<EjecucionInfo> {
+  const running = ejecutando.get(ordenId)
+  if (running) return running
+  const p = ejecutarUnaVez(service, ordenId, github, rutina, forzar).finally(() => ejecutando.delete(ordenId))
+  ejecutando.set(ordenId, p)
+  return p
+}
+
+async function ejecutarUnaVez(
+  service: OperationsService, ordenId: string, github: GitHubClient | null, rutina: RoutineClient | null, forzar: boolean,
+): Promise<EjecucionInfo> {
+  if (!rutina) return { ok: false, codigo: 'sin-rutina' }
+  if (!github) return { ok: false, codigo: 'sin-token' }
+  const o = await service.readOrder(ordenId)
+  if (!o) return { ok: false, codigo: 'orden-inexistente' }
+  const proyectoId = o.PROYECTO_ID ?? ''
+  const issueUrl = o.ISSUE_URL ?? ''
+  if (o.ESTADO !== 'ENVIADA' || !issueUrl) return { ok: false, codigo: 'orden-no-enviada' }
+  try {
+    if (!forzar) {
+      const previa = await github.lanzamientoPrevio(proyectoId, issueUrl)
+      if (previa) return { ok: true, sessionUrl: previa, nueva: false }
+    }
+    const { sessionUrl } = await rutina.ejecutar({ ordenId, proyectoId, issueUrl })
+    try {
+      await github.registrarLanzamiento(proyectoId, issueUrl, sessionUrl)
+    } catch {
+      // La sesión ya corre; si no queda constancia en el issue, solo se pierde la detección de duplicados.
+      console.warn('[project-os] no se pudo registrar el lanzamiento de Claude en el issue')
+    }
+    return { ok: true, sessionUrl, nueva: true }
+  } catch (error) {
+    if (error instanceof RoutineError || error instanceof GitHubError) {
+      const codigo = typeof error.status === 'number' ? `http-${error.status}` : error.status
+      console.warn(`[project-os] lanzamiento de Claude fallido: ${codigo}`)
+      return { ok: false, codigo }
+    }
+    throw error
+  }
+}
+
 /** Ejecuta la transición pedida y, si corresponde, el envío a GitHub. */
 export async function transitionWithDispatch(
   service: OperationsService, cmd: OrderTransitionCommand, ctx: OperationContext,
   client: GitHubClient | null = githubClient(),
+  rutina: RoutineClient | null = routineClient(),
 ): Promise<ResultadoConEnvio> {
   if (cmd.accion === 'enviar' && !cmd.url) {
     // Reintento manual del envío: la orden debe estar APROBADA.
     if (!client) return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio: { ok: false, codigo: 'sin-token' } }
     const envio = await enviar(service, client, cmd.ordenId, cmd.requestId, ctx)
     if (!envio.ok && envio.codigo === 'orden-no-aprobada') throw new OperationError('transicion-no-permitida')
-    return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio }
+    return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
   }
   const result = await service.transitionOrder(cmd, ctx)
   if (cmd.accion !== 'aprobar') return result
   if (!client) return { ...result, envio: { ok: false, codigo: 'sin-token' } }
-  return { ...result, envio: await enviar(service, client, cmd.ordenId, cmd.requestId, ctx) }
+  const envio = await enviar(service, client, cmd.ordenId, cmd.requestId, ctx)
+  return { ...result, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
+}
+
+/** Con la rutina configurada, una orden recién enviada se ejecuta sola: aprobar = llamar a Claude (F5a). */
+async function alEnviar(
+  service: OperationsService, ordenId: string, envio: EnvioInfo, github: GitHubClient, rutina: RoutineClient | null,
+): Promise<{ ejecucion?: EjecucionInfo }> {
+  if (!envio.ok || !rutina) return {}
+  return { ejecucion: await ejecutarConClaude(service, ordenId, { github, rutina }) }
 }
