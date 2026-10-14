@@ -6,6 +6,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+# Plantillas que se copian a la raíz de OTROS repositorios (SIGSAH, RADAROS): sus enlaces relativos apuntan a archivos
+# de ese repositorio (README.md, CLAUDE.md) y solo son válidos allá. Se excluyen las subcarpetas, no su README.
+TEMPLATE_DIRS = ("delegacion-codex",)
 # Primero reconoce código inline para no interpretar sus ejemplos como enlaces.
 TOKENS = re.compile(
     r"(?P<code>`+)(?:(?!(?P=code)).)*?(?P=code)"
@@ -41,9 +44,20 @@ def broken_links(document):
     return broken
 
 
+def docs_documents(docs):
+    """Documentos de docs/ a revisar: todos menos los que viven en subcarpetas de TEMPLATE_DIRS."""
+    documents = []
+    for document in sorted(docs.rglob("*.md")):
+        parts = document.relative_to(docs).parts
+        if len(parts) > 2 and parts[0] in TEMPLATE_DIRS:
+            continue
+        documents.append(document)
+    return documents
+
+
 class TestDocsLinks(unittest.TestCase):
     def test_docs_links(self):
-        documents = sorted((ROOT / "docs").rglob("*.md"))
+        documents = docs_documents(ROOT / "docs")
         self.assertTrue(documents, "No se encontraron documentos en docs/")
         broken = [
             f"{doc.relative_to(ROOT).as_posix()}:{line}: {destination}"
@@ -51,6 +65,17 @@ class TestDocsLinks(unittest.TestCase):
             for line, destination in broken_links(doc)
         ]
         self.assertEqual(broken, [], "Enlaces relativos rotos:\n" + "\n".join(broken))
+
+    def test_template_exclusion_only_skips_template_subfolders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docs = Path(directory) / "docs"
+            (docs / "delegacion-codex" / "radaros").mkdir(parents=True)
+            (docs / "delegacion-codex" / "radaros" / "AGENTS.md").write_text("[R](README.md)\n", encoding="utf-8")
+            (docs / "delegacion-codex" / "README.md").write_text("[Roto](falta.md)\n", encoding="utf-8")
+            (docs / "guia.md").write_text("[Roto](falta.md)\n", encoding="utf-8")
+            revisados = [d.relative_to(docs).as_posix() for d in docs_documents(docs)]
+            self.assertEqual(revisados, ["delegacion-codex/README.md", "guia.md"])
+            self.assertEqual([broken_links(d) for d in docs_documents(docs)], [[(1, "falta.md")], [(1, "falta.md")]])
 
     def test_detects_missing_files_with_and_without_anchor(self):
         with tempfile.TemporaryDirectory() as directory:
