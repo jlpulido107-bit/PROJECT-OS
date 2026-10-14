@@ -47,5 +47,5 @@ Verify live pricing and billing **before** enabling. ChatGPT plan usage does not
 
 - GitHub workflows on an issues.opened event require that the dashboard token be a PAT/app token that can trigger workflows; GITHUB_TOKEN-generated events usually do not trigger new workflows.
 - The workflow does not mutate ORDENES_CODEX directly: existing PR discovery in the dashboard should register the draft PR using its [ORD-...] title. A PR existing does not automatically mean the order is completed or merged.
-- The GitHub bot's PR may not trigger other pull_request workflows when created with GITHUB_TOKEN. The independent verify job always runs existing test commands before publishing.
+- Pull requests created by GITHUB_TOKEN may have pull_request checks in an **approval-required** state under current GitHub rules. The owner must approve those workflows if shown; the independent verify job runs existing tests before publishing.
 - Approval/review/merge remains the owner's decision.
