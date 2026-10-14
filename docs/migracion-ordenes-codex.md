@@ -43,8 +43,8 @@ ORDEN_ID	PROYECTO_ID	TAREA_ID	TITULO	OBJETIVO	CONTEXTO	CRITERIOS_ACEPTACION	FUER
 | — | `BORRADOR` | Propietario (pega la fila que redactó Claude) | Campos completos |
 | `BORRADOR` | `APROBADA` | **Solo el propietario** | Revisó alcance y riesgo |
 | `APROBADA` | `ENVIADA` | Propietario, con el `ISSUE_URL` que informa `/orden-codex` | El issue existe |
-| `ENVIADA` | `PR_ABIERTO` | Propietario, con el `PR_URL` | Codex abrió el PR |
-| `PR_ABIERTO` | `REVISADA` | Propietario, tras la evaluación de Claude en el PR | Hay evaluación contra los criterios |
+| `ENVIADA` | `PR_ABIERTO` | Propietario, con el `PR_URL` | Claude abrió el PR |
+| `PR_ABIERTO` | `REVISADA` | Propietario, tras revisar el PR contra los criterios | Cada criterio tiene evidencia en el PR |
 | `REVISADA` | `CERRADA` | Propietario | PR fusionado o cerrado con decisión |
 | Cualquiera | `CANCELADA` | Propietario | Con motivo en `NOTAS` |
 
@@ -59,9 +59,9 @@ Con el token de GitHub configurado (F4), **aprobar también envía**:
 - crea el issue `[ORDEN_ID]` en el repositorio del proyecto, o reutiliza el que ya exista;
 - pasa la orden a `ENVIADA` con su `ISSUE_URL`.
 
-El dashboard no menciona a `@codex`: ese comentario no inicia tareas desde issues. En `ENVIADA`, la orden muestra
-**«Copiar para Codex»**: copia el texto de la orden (repositorio, issue, rama `codex/…`, título `[ORDEN_ID]` y
-`Closes #N`) para pegarlo en chatgpt.com/codex y lanzar la tarea.
+Desde el 2026-10-14 las órdenes las ejecuta Claude ([órdenes](delegacion-codex.md)). En `ENVIADA`, la orden muestra
+**«Copiar para Claude»**: copia el texto de la orden (repositorio, issue, título `[ORDEN_ID]` y `Closes #N`) para
+pegarlo en la sesión de Claude del repositorio, que la ejecuta con `/ejecutar-orden`.
 
 Si GitHub falla, la orden queda `APROBADA` y el botón **Enviar a Codex** reintenta sin duplicar. Después, el dashboard
 detecta el PR `[ORDEN_ID]` y permite **registrar el PR** (`PR_ABIERTO`), **marcar revisada** (`REVISADA`) y **cerrar**

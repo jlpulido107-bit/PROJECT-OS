@@ -475,7 +475,7 @@ export function DecisionForm({ projects, defaultProject, today }: { projects: Op
   )
 }
 
-/* ------------------------------ Órdenes a Codex (V1.8 F3) ------------------------------ */
+/* ------------------------------ Órdenes (V1.8 F3; las ejecuta Claude desde 2026-10-14) ------------------------------ */
 
 export function OrderForm({ projects, tasks, defaultProject }: {
   projects: Option[]
@@ -536,7 +536,7 @@ export function OrderForm({ projects, tasks, defaultProject }: {
           )}
         </Field>
       </div>
-      <p className="muted small">La orden se crea en <strong>Borrador</strong>. Después la apruebas en Órdenes; nada se envía a Codex sin tu aprobación.</p>
+      <p className="muted small">La orden se crea en <strong>Borrador</strong>. Después la apruebas en Órdenes; nada se ejecuta sin tu aprobación.</p>
       <div className="form-actions">
         <Submit state={op.state} label="Crear orden" />
         <Link href="/ordenes" className="button button-ghost">Cancelar</Link>
@@ -550,8 +550,8 @@ export function OrderForm({ projects, tasks, defaultProject }: {
 
 const ENVIO_TEXTO: Record<string, string> = {
   'sin-token': 'El envío automático a GitHub no está configurado: la orden quedó aprobada. Envíala a mano o configura el token.',
-  'repo-no-permitido': 'Este proyecto no tiene repositorio permitido para Codex.',
-  red: 'No hubo conexión con GitHub. La orden quedó aprobada: pulsa «Enviar a Codex» para reintentar sin duplicar.',
+  'repo-no-permitido': 'Este proyecto no tiene repositorio permitido para órdenes.',
+  red: 'No hubo conexión con GitHub. La orden quedó aprobada: pulsa «Crear el issue» para reintentar sin duplicar.',
 }
 
 function EnvioStatus({ result }: { result: OpSuccess & { envio?: { ok: boolean; issueUrl?: string; creado?: boolean; codigo?: string } } }) {
@@ -562,19 +562,20 @@ function EnvioStatus({ result }: { result: OpSuccess & { envio?: { ok: boolean; 
       <p className="small">
         {envio.creado ? 'Issue creado: ' : 'El issue ya existía: '}
         <a href={envio.issueUrl} target="_blank" rel="noopener noreferrer nofollow">ver el issue</a>. Recarga la página y usa
-        «Copiar para Codex» para lanzar la tarea.
+        «Copiar para Claude» para lanzar la ejecución.
       </p>
     )
   }
-  const texto = ENVIO_TEXTO[envio.codigo ?? ''] ?? `No se pudo enviar a GitHub (${envio.codigo ?? 'error'}). La orden quedó aprobada: pulsa «Enviar a Codex» para reintentar sin duplicar.`
+  const texto = ENVIO_TEXTO[envio.codigo ?? ''] ?? `No se pudo enviar a GitHub (${envio.codigo ?? 'error'}). La orden quedó aprobada: pulsa «Crear el issue» para reintentar sin duplicar.`
   return <p className="small"><strong>Atención:</strong> {texto}</p>
 }
 
 /**
- * Copia al portapapeles el texto con el que el propietario lanza la orden en Codex (chatgpt.com/codex). Si el navegador
+ * Copia al portapapeles el texto con el que el propietario pide a Claude (sesión del repositorio en claude.ai/code) que
+ * ejecute la orden. Si el navegador
  * no permite copiar, el texto queda visible para seleccionarlo a mano.
  */
-export function CopiarParaCodex({ ordenId, texto }: { ordenId: string; texto: string }) {
+export function CopiarParaClaude({ ordenId, texto }: { ordenId: string; texto: string }) {
   const [estado, setEstado] = useState<'idle' | 'copiado' | 'manual'>('idle')
   const id = useId()
   async function copiar() {
@@ -586,21 +587,21 @@ export function CopiarParaCodex({ ordenId, texto }: { ordenId: string; texto: st
     }
   }
   return (
-    <div className="card-actions codex-copy">
+    <div className="card-actions orden-copy">
       <button type="button" className="button button-primary" onClick={copiar} aria-describedby={`${id}-ayuda`}>
-        {estado === 'copiado' ? 'Copiado ✓' : 'Copiar para Codex'}
+        {estado === 'copiado' ? 'Copiado ✓' : 'Copiar para Claude'}
       </button>
-      <a className="button" href="https://chatgpt.com/codex" target="_blank" rel="noopener noreferrer">Abrir Codex</a>
+      <a className="button" href="https://claude.ai/code" target="_blank" rel="noopener noreferrer">Abrir Claude</a>
       <p id={`${id}-ayuda`} className="muted small" role="status">
         {estado === 'copiado'
-          ? `Pega el texto en Codex, elige el entorno del repositorio y lanza la tarea. Cuando Codex abra el PR [${ordenId}], aparecerá aquí.`
+          ? `Pega el texto en la sesión de Claude del repositorio. Cuando Claude abra el PR [${ordenId}], aparecerá aquí.`
           : estado === 'manual'
             ? 'No se pudo copiar automáticamente: selecciona el texto de abajo y cópialo.'
-            : 'Copia la orden y lánzala en Codex: el comentario @codex en el issue no inicia tareas.'}
+            : 'Copia la orden y pégala en la sesión de Claude del repositorio: Claude la ejecuta y abre el PR.'}
       </p>
       <details open={estado === 'manual'}>
-        <summary>Ver el texto para Codex</summary>
-        <textarea readOnly value={texto} rows={12} aria-label={`Texto para Codex de ${ordenId}`} onFocus={(e) => e.currentTarget.select()} />
+        <summary>Ver el texto para Claude</summary>
+        <textarea readOnly value={texto} rows={12} aria-label={`Texto para Claude de ${ordenId}`} onFocus={(e) => e.currentTarget.select()} />
       </details>
     </div>
   )
@@ -611,7 +612,7 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
   ordenId: string
   estado: string
   canApprove: boolean
-  /** URL del PR de Codex detectado en GitHub (solo en ENVIADA). */
+  /** URL del PR de la orden detectado en GitHub (solo en ENVIADA). */
   prDetectado?: string
 }) {
   const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
@@ -640,8 +641,8 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
     <div className="card-actions">
       {mode === 'idle' ? (
         <>
-          {estado === 'BORRADOR' && canApprove ? primary('Aprobar y enviar a Codex', 'Aprobando…', () => send('APROBAR')) : null}
-          {estado === 'APROBADA' ? primary('Enviar a Codex', 'Enviando…', () => send('ENVIAR')) : null}
+          {estado === 'BORRADOR' && canApprove ? primary('Aprobar y crear el issue', 'Aprobando…', () => send('APROBAR')) : null}
+          {estado === 'APROBADA' ? primary('Crear el issue', 'Creando…', () => send('ENVIAR')) : null}
           {estado === 'ENVIADA' ? (
             prDetectado
               ? primary('Registrar el PR detectado', 'Guardando…', () => send('REGISTRAR_PR', { url: prDetectado }))
@@ -665,7 +666,7 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado }: {
       ) : null}
       {mode === 'pr' ? (
         <form className="op-form" onSubmit={registerPr} noValidate>
-          <Field name="url" label="URL del PR de Codex" state={op.state} wide hint="https://github.com/…/pull/N">
+          <Field name="url" label="URL del PR de la orden" state={op.state} wide hint="https://github.com/…/pull/N">
             {(p) => <input {...p} name="url" type="url" inputMode="url" required maxLength={500} placeholder="https://github.com/" />}
           </Field>
           <div className="form-actions">

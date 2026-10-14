@@ -5,7 +5,7 @@ import { parseCreateOrder } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
-/** Crear una orden a Codex en BORRADOR (V1.8 F3). */
+/** Crear una orden en BORRADOR (V1.8 F3). */
 export async function POST(request: Request) {
   return handleWrite(request, (body, ctx) => {
     const service = operationsService()

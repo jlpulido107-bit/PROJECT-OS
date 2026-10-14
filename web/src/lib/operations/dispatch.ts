@@ -7,8 +7,8 @@ import type { OperationContext, OperationResult, OperationsService } from './ser
 import type { OrderTransitionCommand } from './validation'
 
 /**
- * Aprobar y enviar a Codex en un paso (V1.8 F4). La aprobación se guarda primero; si el envío a GitHub falla, la orden
- * queda APROBADA y el dashboard ofrece «Enviar a Codex» para reintentar (el envío es idempotente por ORDEN_ID).
+ * Aprobar y crear el issue en un paso (V1.8 F4). La aprobación se guarda primero; si el envío a GitHub falla, la orden
+ * queda APROBADA y el dashboard ofrece «Crear el issue» para reintentar (el envío es idempotente por ORDEN_ID).
  */
 
 export interface EnvioInfo {

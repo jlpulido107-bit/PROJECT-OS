@@ -17,11 +17,11 @@
 - No habilitar `schedule` hasta que el usuario apruebe una prueba real.
 - El colector solo lee; no cierra tareas ni toma decisiones de negocio.
 
-## Delegación a Codex
-- Protocolo completo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md).
-- Una tarea = un issue con la plantilla «Tarea para Codex» y un PR pequeño con `[PRJ-NNN]` en el título.
-- Trabajar en una rama propia (`codex/PRJ-NNN-…`); nunca en `main`. No fusionar ni desplegar.
+## Órdenes (desde 2026-10-14: el propietario decide, Claude ejecuta)
+- Protocolo completo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md). Rutina: `/ejecutar-orden`.
+- Solo se ejecutan órdenes aprobadas en el dashboard (estado `ENVIADA`, con issue `[ORD-PRJ-NNN]`).
+- Una orden = un PR pequeño con `[ORD-PRJ-NNN]` en el título y `Closes #N`; rama propia, nunca `main`. No fusionar ni desplegar.
 - No cambiar `.github/workflows`, secretos, permisos ni configuración de GCP.
 - Ejecutar `python -m unittest discover -s tests` y, si se toca `web/`, `npm test` en `web/`; pegar la salida en el PR.
-- Si la tarea es ambigua o se sale del alcance: parar y explicarlo en el PR.
-- Las órdenes se aprueban en la pestaña ORDENES_CODEX de la hoja ([migración](docs/migracion-ordenes-codex.md)); planeación por proyecto: [mano derecha](docs/mano-derecha.md).
+- Si la tarea es ambigua o se sale del alcance: parar y explicarlo al propietario.
+- Estados y reglas de las órdenes: [migración](docs/migracion-ordenes-codex.md); planeación por proyecto: [mano derecha](docs/mano-derecha.md).

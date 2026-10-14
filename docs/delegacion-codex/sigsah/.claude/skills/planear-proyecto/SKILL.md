@@ -41,7 +41,7 @@ Responde en este orden, con frases cortas. Omite el rol que no tenga nada que ap
    - Estado en 3 líneas.
    - Las 3 prioridades de la semana, ligadas a una meta (HITO_ID).
    - Las decisiones que necesitas del propietario, formuladas como preguntas cerradas.
-2. **Ingeniero.** PRs e issues que requieren acción, riesgos técnicos, deuda, y qué tarea conviene delegar a Codex.
+2. **Ingeniero.** PRs e issues que requieren acción, riesgos técnicos, deuda, y qué trabajo conviene convertir en orden (la ejecuta Claude con `/ejecutar-orden`).
 3. **Analista.**
    - Horas reales contra asignadas en la semana.
    - Para cada meta: tareas abiertas, horas estimadas pendientes y si caben antes de la fecha.
@@ -56,7 +56,8 @@ Responde en este orden, con frases cortas. Omite el rol que no tenga nada que ap
 - **Tareas nuevas.** Dalas como filas TSV listas para pegar en TAREAS, con las 16 columnas en su orden. Usa IDs nuevos
   sin reutilizar ninguno, enlázalas a una meta y ponles `HORAS_ESTIMADAS`. La suma de horas de la semana no debe pasar de
   la asignación del proyecto.
-- **Trabajo delegable.** Dalo como filas TSV para ORDENES_CODEX, con `ESTADO` = `BORRADOR`; formato en
+- **Trabajo para una orden.** Dalo con los campos listos para *Órdenes → Nueva orden* del dashboard (quedan en
+  `BORRADOR` hasta que el propietario apruebe); formato en
   https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-codex.md. Solo riesgo `BAJO` o `MEDIO`.
 - **Decisiones tomadas en la conversación.** Dalas como filas para DECISIONES.
 - **Estados.** Nunca cambies uno. Si algo parece hecho, dilo y deja que el propietario lo marque.
