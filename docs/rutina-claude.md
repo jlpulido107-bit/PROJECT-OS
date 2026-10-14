@@ -118,3 +118,31 @@ fallido: …`), sin el token ni el cuerpo de la respuesta.
 
 Redesplegar sin `CLAUDE_ROUTINE_ID` ni `SECRET_VERSION_CLAUDE_ROUTINE`. El dashboard vuelve a «Copiar para Claude» y la
 rutina deja de recibir llamadas.
+
+## Preguntas frecuentes
+
+### ¿Cuánto cuesta cada ejecución?
+
+El dashboard no cobra nada por llamar a la rutina: solo hace un `POST` con tres datos. Cada ejecución es una sesión de
+Claude Code en la nube y **consume el uso de tu plan de Claude**, dentro de los límites de rutinas de tu cuenta. El
+costo exacto depende del plan y del tamaño de la orden; consulta los límites vigentes en la documentación oficial de
+rutinas (`code.claude.com/docs/en/routines`). Por eso conviene empezar con órdenes pequeñas de riesgo bajo.
+
+### ¿Cómo cancelo una ejecución?
+
+- **Una ejecución en curso:** abre la sesión desde el enlace del comentario «Claude · ejecución lanzada desde el
+  dashboard» en el issue (o desde claude.ai/code) y detenla ahí. Si ya abrió un PR, ciérralo sin fusionar.
+- **La orden misma:** cancélala en `/ordenes` (estado `CANCELADA`) y cierra el issue.
+- **Todas las ejecuciones automáticas:** revoca el token de la rutina o redespliega sin `CLAUDE_ROUTINE_ID`
+  (ver [Seguridad](#seguridad) y [Reversión](#reversión)).
+
+### ¿Qué hago si no aparece el PR?
+
+1. Revisa el issue de la orden: Claude comenta ahí el enlace al PR o, si la orden era ambigua o se bloqueó, qué falta.
+   En ese caso no abre PR a propósito; corrige la orden y vuelve a enviarla.
+2. Si no hay comentario de lanzamiento, el dashboard no pudo llamar a la rutina: mira el código en la tarjeta de la
+   orden y los logs (`[project-os] lanzamiento de Claude fallido: …`).
+3. Si hay comentario de lanzamiento pero no PR, abre la sesión desde su enlace para ver en qué paso quedó.
+4. Busca en el repositorio un PR con `[ORD-…]` en el título: si existe, pulsa **Registrar el PR detectado** en
+   `/ordenes`.
+5. Si nada de lo anterior aplica, usa **Copiar para Claude** y ejecuta la orden a mano con `/ejecutar-orden`.
