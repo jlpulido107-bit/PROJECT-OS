@@ -57,7 +57,7 @@
 - [x] F4b Sin `@codex` (no inicia tareas desde issues): la tarea se lanza con «Copiar para Codex». Desplegada (revisión `00005`, [registro](estado-produccion-v1-8-2026-10-14.md)).
 - [x] F4c Flujo invertido: el propietario decide con Codex/ChatGPT y Claude ejecuta las órdenes (`/ejecutar-orden`, «Copiar para Claude»). Desplegada (revisión `00006`).
 - [x] F5a El dashboard llama a Claude al aprobar (rutina con disparador de API; [guía](rutina-claude.md)). Desplegada (revisión `00007`). Prueba real superada: ORD-POS-006 → PR #45.
-- [x] F5 Revisión matutina programada de los PRs de órdenes: rutina «PROJECT-OS · revisión matutina de órdenes», diaria a las 6:52 (hora de Mérida). Activada el 2026-10-14 con autorización del propietario, después de la prueba real de F5a.
+- [x] F5 Revisión matutina programada de los PRs de órdenes: rutina «PROJECT-OS · revisión matutina» (creada en claude.ai/code con los 3 repositorios; sin conectores), diaria a las 6:52 (hora de Mérida). Activada el 2026-10-14 con autorización del propietario, después de la prueba real de F5a.
 
 ## V1.4 — Informes y planificación (antes V1.3)
 - [ ] Captura de avances no técnicos.
