@@ -2,8 +2,9 @@
  * Envío de órdenes aprobadas a Codex vía GitHub (V1.8 F4, docs/plan-v1-8-automatizacion.md).
  *
  * - Solo los 3 repositorios del propietario (lista fija en código: nunca se toma el repositorio de la hoja).
- * - Idempotente: antes de crear, busca un issue cuyo título empiece por `[ORDEN_ID]`; si existe, lo reutiliza. La
- *   mención a `@codex` tampoco se repite si ya está.
+ * - Idempotente: antes de crear, busca un issue cuyo título empiece por `[ORDEN_ID]`; si existe, lo reutiliza.
+ * - No menciona a `@codex`: ese disparador no inicia tareas desde issues. El propietario lanza la tarea en Codex con el
+ *   texto de `textoParaCodex` (botón «Copiar para Codex» del dashboard).
  * - Token de GitHub de grano fino (Issues: lectura/escritura; Pull requests: lectura) solo para esos repositorios, leído de
  *   GITHUB_DISPATCH_TOKEN (Secret Manager). Errores sin cuerpo: solo el estado HTTP.
  * - Nunca fusiona, nunca toca código ni ramas.
@@ -18,7 +19,6 @@ export const REPOSITORIOS: Readonly<Record<string, string>> = Object.freeze({
 const API = 'https://api.github.com'
 const TIMEOUT_MS = 15_000
 const MAX_PAGES = 5
-const CODEX_MENTION = '@codex'
 /** Cuenta con la que el conector de Codex comenta y puede abrir PRs. */
 const CODEX_BOT = 'chatgpt-codex-connector[bot]'
 
@@ -40,8 +40,6 @@ export interface ResultadoEnvio {
   issueNumber: number
   /** true si el issue se creó ahora; false si ya existía. */
   creado: boolean
-  /** true si se publicó la mención a Codex ahora; false si ya estaba. */
-  mencionado: boolean
 }
 
 export interface PrDeOrden {
@@ -111,8 +109,38 @@ export function cuerpoIssue(orden: OrdenParaEnviar): string {
   ].join('\n')
 }
 
-export function comentarioCodex(o: OrdenParaEnviar): string {
-  return `${CODEX_MENTION} resuelve este issue. Sigue \`AGENTS.md\` y abre un PR con \`[${o.ordenId}]\` en el título y \`Closes\` este issue. Pega en el PR la salida de las pruebas. No fusiones ni despliegues.`
+/**
+ * Texto que el propietario pega en Codex (chatgpt.com/codex) para lanzar la orden. Es el mismo contenido del issue,
+ * más las instrucciones de entrega: rama `codex/…`, PR con `[ORDEN_ID]` en el título y `Closes` el issue.
+ */
+export function textoParaCodex(o: OrdenParaEnviar, issueUrl: string): string {
+  const repo = repoDe(o.proyectoId)
+  const n = /\/issues\/(\d+)$/.exec(issueUrl)?.[1]
+  return [
+    `Repositorio: ${repo} (rama base: main). Orden ${o.ordenId}, issue ${issueUrl}.`,
+    'Sigue AGENTS.md. Trabaja en una rama nueva `codex/' + o.ordenId.toLowerCase() + '`; nunca en main.',
+    `Abre un PR con \`[${o.ordenId}]\` al inicio del título y \`Closes #${n ?? '?'}\` en la descripción.`,
+    'Pega en el PR la salida de las pruebas. No fusiones ni despliegues.',
+    '',
+    `# [${o.ordenId}][${o.tareaId}] ${textoSeguro(o.titulo)}`,
+    '',
+    cuerpoIssue(o),
+  ].join('\n')
+}
+
+/** Texto para Codex de una orden ENVIADA con issue de su repositorio; null si no aplica. */
+export function textoParaCodexDeOrden(o: {
+  id: string; proyectoId: string | null; tareaId: string | null; titulo: string | null; objetivo: string | null
+  contexto: string | null; criterios: string | null; fueraDeAlcance: string | null; comoProbar: string | null
+  riesgo: string | null; estado: string | null; issueUrl: string | null
+}): string | null {
+  if (o.estado !== 'ENVIADA' || !o.issueUrl || !o.proyectoId || !REPOSITORIOS[o.proyectoId]) return null
+  if (repoDeUrl(o.issueUrl, 'issues') !== REPOSITORIOS[o.proyectoId]) return null
+  return textoParaCodex({
+    ordenId: o.id, proyectoId: o.proyectoId, tareaId: o.tareaId ?? '', titulo: o.titulo ?? '', objetivo: o.objetivo ?? '',
+    contexto: o.contexto ?? '', criterios: o.criterios ?? '', fueraDeAlcance: o.fueraDeAlcance ?? '',
+    comoProbar: o.comoProbar ?? '', riesgo: o.riesgo ?? 'BAJO',
+  }, o.issueUrl)
 }
 
 export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetch) {
@@ -170,25 +198,15 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
   }
 
   return {
-    /** Crea (o reutiliza) el issue de la orden y menciona a Codex una sola vez. */
+    /** Crea (o reutiliza) el issue de la orden. No menciona a Codex. */
     async enviar(o: OrdenParaEnviar): Promise<ResultadoEnvio> {
       const repo = repoDe(o.proyectoId)
-      let issue = await buscarIssue(repo, o.ordenId)
-      const creado = !issue
-      if (!issue) {
-        issue = await call<IssueApi>('POST', `/repos/${repo}/issues`, {
-          title: `[${o.ordenId}][${o.tareaId}] ${textoSeguro(o.titulo)}`,
-          body: cuerpoIssue(o),
-        })
-      }
-      const login = await cuentaPropia()
-      const comentarios = creado
-        ? []
-        : await call<Array<{ body?: string; user?: User }>>('GET', `/repos/${repo}/issues/${issue.number}/comments?per_page=100`)
-      // Solo una mención NUESTRA cuenta como enviada.
-      const yaMencionado = comentarios.some((c) => esPropio(c.user, login) && (c.body ?? '').startsWith(`${CODEX_MENTION} `))
-      if (!yaMencionado) await call('POST', `/repos/${repo}/issues/${issue.number}/comments`, { body: comentarioCodex(o) })
-      return { issueUrl: issue.html_url, issueNumber: issue.number, creado, mencionado: !yaMencionado }
+      const existente = await buscarIssue(repo, o.ordenId)
+      const issue = existente ?? await call<IssueApi>('POST', `/repos/${repo}/issues`, {
+        title: `[${o.ordenId}][${o.tareaId}] ${textoSeguro(o.titulo)}`,
+        body: cuerpoIssue(o),
+      })
+      return { issueUrl: issue.html_url, issueNumber: issue.number, creado: !existente }
     },
 
     /** PR cuyo título empieza por `[ORDEN_ID]` (el más reciente), o null. Solo lectura. */

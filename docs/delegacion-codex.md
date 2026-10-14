@@ -22,8 +22,10 @@ Desde V1.7, las órdenes se aprueban en la pestaña ORDENES_CODEX de la hoja
 2. **Aprobar.** El propietario la pega en la hoja y la pasa a `APROBADA`.
 3. **Enviar.** `/orden-codex` valida la orden y abre el issue «Tarea para Codex». El título es
    `[ORD-PRJ-NNN][PRJ-NNN] descripción`, y si ya hay un issue con ese ID no se crea otro.
-4. **Delegar.** El propietario lanza la tarea en Codex desde el issue. Si se puede lanzar mencionando a Codex en el
-   issue, se confirma en la primera prueba (POS-009).
+4. **Delegar.** El propietario lanza la tarea en Codex Cloud (chatgpt.com/codex) con el texto del botón
+   **«Copiar para Codex»** de `/ordenes`. Mencionar a `@codex` en el issue **no** inicia la tarea: la prueba de
+   2026-10-14 lo descartó (el conector responde «create an environment» aunque el entorno exista y las tareas directas
+   funcionen). Automatizar este paso (workflow con la API de OpenAI) queda como opción futura, con aprobación aparte.
 5. **Entregar.** Codex trabaja en una rama `codex/…` y abre un PR con el `ORDEN_ID` en el título, `Closes #<issue>` y la
    salida de las pruebas.
 6. **Revisar.** Por la mañana, `/orden-codex` revisa el PR contra los criterios y deja su evaluación.
