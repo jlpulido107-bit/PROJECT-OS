@@ -42,12 +42,12 @@
 ## V1.7 — Estado de proyectos y delegación a Codex
 - [x] Primera revisión de estado (hoja + 3 repositorios), 2026-10-13.
 - [x] ECO enlazado al repositorio RADAROS en `config/projects.json`.
-- [x] Protocolo de [delegación a Codex](delegacion-codex.md), `AGENTS.md` y plantilla «Tarea para Codex» en los 3 repositorios.
-- [ ] Configuración de Codex por el propietario y primera tarea de prueba supervisada.
+- [x] Protocolo de [delegación](delegacion-codex.md) y `AGENTS.md` en los 3 repositorios. La plantilla «Tarea para Codex» se retiró el 2026-10-14.
+- [x] ~~Configuración de Codex y primera tarea supervisada.~~ Descartado el 2026-10-14: `@codex` no inicia tareas desde issues. Las órdenes las ejecuta Claude (V1.8 F4c y F5a).
 - [ ] Enlace de evidencias con TAREAS por el ID `PRJ-NNN` (propuesta; el colector sigue sin cerrar tareas).
 - [x] Página «Estado» en el dashboard (`/estado`): metas con riesgo, plan vs real de la semana y alertas (POS-007). Desplegada el 2026-10-13 ([registro](estado-produccion-v1-7-2026-10-13.md)).
-- [ ] [Mano derecha por proyecto](mano-derecha.md): una sesión por repositorio, skills `/planear-proyecto` y `/orden-codex`, y la pestaña [ORDENES_CODEX](migracion-ordenes-codex.md), que aplica el propietario.
-- [ ] Ejecución nocturna programada, solo tras aprobar una prueba real.
+- [x] [Mano derecha por proyecto](mano-derecha.md): una sesión por repositorio, skills `/planear-proyecto` y `/ejecutar-orden` (antes `/orden-codex`), y la pestaña [ORDENES_CODEX](migracion-ordenes-codex.md).
+- [x] Ejecución automática: cubierta por V1.8 F5a (el dashboard llama a Claude) y F5 (revisión matutina), tras la prueba real del 2026-10-14.
 
 ## V1.8 — Todo desde el dashboard ([plan](plan-v1-8-automatizacion.md))
 - [x] F1 Página `/ordenes` (lectura de ORDENES_CODEX). Fusionada; pendiente de desplegar.

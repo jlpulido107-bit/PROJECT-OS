@@ -9,7 +9,7 @@ export const ESTADOS_ORDEN = ['BORRADOR', 'APROBADA', 'ENVIADA', 'PR_ABIERTO', '
 export type EstadoOrden = (typeof ESTADOS_ORDEN)[number]
 
 /** Qué se espera y de quién en cada estado. */
-export const SIGUIENTE_PASO: Record<EstadoOrden, { quien: 'propietario' | 'claude' | 'codex' | 'nadie'; texto: string }> = {
+export const SIGUIENTE_PASO: Record<EstadoOrden, { quien: 'propietario' | 'claude' | 'nadie'; texto: string }> = {
   BORRADOR: { quien: 'propietario', texto: 'Revisar y aprobar' },
   APROBADA: { quien: 'propietario', texto: 'Crear el issue (reintentar el envío a GitHub)' },
   ENVIADA: { quien: 'claude', texto: 'Claude ejecuta la orden y abre el PR («Copiar para Claude»)' },
