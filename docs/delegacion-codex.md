@@ -1,36 +1,37 @@
-# Delegación a Codex (V1.7, fase 2)
+# Órdenes: el propietario decide, Claude ejecuta (V1.8)
 
-Cómo el propietario, Claude Code y Codex comparten trabajo sin perder el control. Aplica a PROJECT-OS (POS),
+Cómo el propietario, Codex/ChatGPT y Claude Code comparten trabajo sin perder el control. Aplica a PROJECT-OS (POS),
 SIGSAH (SIG) y RADAROS (ECO). La hoja de Google sigue siendo la fuente operativa; GitHub es donde vive el trabajo
 técnico.
+
+**Cambio del 2026-10-14 (decisión del propietario).** Hasta V1.8 F4b, Codex ejecutaba las órdenes. Su conexión con
+GitHub falló de forma repetida: `@codex` en issues no inicia tareas y las tareas lanzadas a mano abrían PRs incompletos.
+Desde ahora el flujo va al revés: **el propietario decide con Codex/ChatGPT y Claude ejecuta.**
 
 ## Roles
 
 | Quién | Hace | No hace |
 | --- | --- | --- |
-| Propietario | Decide metas y prioridades, aprueba tareas para Codex, revisa y fusiona PRs. | — |
-| Claude Code | Revisa el estado, redacta tareas para Codex, revisa los PRs de Codex por la mañana. | Fusionar o desplegar sin autorización. |
-| Codex | Ejecuta una tarea acotada y abre un PR con evidencia de pruebas. | Fusionar, desplegar, tocar secretos, escribir en sistemas reales. |
+| Propietario | Decide metas y prioridades (con apoyo de Codex/ChatGPT), aprueba las órdenes en el dashboard, revisa y fusiona PRs, despliega. | — |
+| Codex / ChatGPT | Asesora al propietario: ideas, alcance, priorización. | Tocar los repositorios. |
+| Claude Code | Una sesión por repositorio: redacta órdenes cuando se le pide, **ejecuta las aprobadas** (rama → PR con la CI en verde) y revisa los PRs de órdenes. | Fusionar, desplegar, escribir en la hoja, ejecutar órdenes sin aprobar. |
 
 ## Ciclo
 
-Desde V1.7, las órdenes se aprueban en la pestaña ORDENES_CODEX de la hoja
-([migración](migracion-ordenes-codex.md), [modelo de trabajo](mano-derecha.md)).
+1. **Decidir.** El propietario define qué hacer, por su cuenta o con Codex/ChatGPT. Si quiere, Claude
+   (`/planear-proyecto`) redacta los campos de la orden.
+2. **Aprobar.** En el dashboard: *Órdenes → Nueva orden* y **Aprobar y crear el issue**. El issue lleva el título
+   `[ORD-PRJ-NNN][PRJ-NNN] descripción`; si ya existe uno con ese ID, no se crea otro.
+3. **Pedir.** **«Copiar para Claude»** en `/ordenes` y pegarlo en la sesión de Claude del repositorio, o decir
+   «ejecuta ORD-PRJ-NNN».
+4. **Ejecutar.** Claude (`/ejecutar-orden`) valida la orden y la ejecuta en su rama: código, pruebas y PR con el
+   `ORDEN_ID` en el título, `Closes #<issue>`, cada criterio con su evidencia y la salida de las pruebas. Lleva la CI a
+   verde.
+5. **Registrar.** El dashboard detecta el PR: **Registrar el PR detectado** (`PR_ABIERTO`).
+6. **Decidir.** El propietario revisa, fusiona o pide cambios, marca la orden y actualiza la tarea. Un PR fusionado no
+   cierra la tarea por sí solo. Si hay que desplegar, Claude da el script y el propietario lo corre.
 
-1. **Redactar.** En la sesión del proyecto, `/planear-proyecto` propone la orden como una fila en estado `BORRADOR`, ligada a
-   una tarea de TAREAS.
-2. **Aprobar.** El propietario la pega en la hoja y la pasa a `APROBADA`.
-3. **Enviar.** `/orden-codex` valida la orden y abre el issue «Tarea para Codex». El título es
-   `[ORD-PRJ-NNN][PRJ-NNN] descripción`, y si ya hay un issue con ese ID no se crea otro.
-4. **Delegar.** El propietario lanza la tarea en Codex Cloud (chatgpt.com/codex) con el texto del botón
-   **«Copiar para Codex»** de `/ordenes`. Mencionar a `@codex` en el issue **no** inicia la tarea: la prueba de
-   2026-10-14 lo descartó (el conector responde «create an environment» aunque el entorno exista y las tareas directas
-   funcionen). Automatizar este paso (workflow con la API de OpenAI) queda como opción futura, con aprobación aparte.
-5. **Entregar.** Codex trabaja en una rama `codex/…` y abre un PR con el `ORDEN_ID` en el título, `Closes #<issue>` y la
-   salida de las pruebas.
-6. **Revisar.** Por la mañana, `/orden-codex` revisa el PR contra los criterios y deja su evaluación.
-7. **Decidir.** El propietario fusiona, pide cambios o cierra, y actualiza la orden y la tarea en la hoja. Un PR
-   fusionado no cierra la tarea por sí solo.
+Si algún PR de una orden lo abre otro agente (por ejemplo, Codex), `/ejecutar-orden` lo revisa contra los criterios.
 
 ## Qué se puede delegar
 
@@ -51,7 +52,7 @@ Cada repositorio tiene un `AGENTS.md` (Codex lo lee al empezar). Lo mínimo que 
 - Si la tarea es ambigua o exige salir del alcance: parar y explicar en el PR, sin adivinar.
 - Nunca inventar progreso ni marcar tareas como terminadas.
 
-## Configurar Codex (una vez, lo hace el propietario)
+## Configurar Codex (opcional, solo para asesorar)
 
 1. En ChatGPT, abrir Codex y conectar GitHub.
 2. Dar acceso solo a `PROJECT-OS`, `SIGSAH` y `RADAROS`.

@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ORIGINAL = ROOT / ".claude" / "skills"
 COPIAS = [ROOT / "docs" / "delegacion-codex" / repo / ".claude" / "skills" for repo in ("sigsah", "radaros")]
-SKILLS = ("planear-proyecto", "orden-codex")
+SKILLS = ("planear-proyecto", "ejecutar-orden")
 
 
 def archivos(base):

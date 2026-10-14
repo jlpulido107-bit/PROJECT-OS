@@ -2,18 +2,18 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
-import { CopiarParaCodex, OrderActions } from '@/components/operations/forms'
+import { CopiarParaClaude, OrderActions } from '@/components/operations/forms'
 import { githubClient } from '@/lib/operations/dispatch'
-import { textoParaCodexDeOrden } from '@/lib/operations/github'
+import { textoParaEjecutarDeOrden } from '@/lib/operations/github'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
 
-export const metadata: Metadata = { title: 'Órdenes a Codex' }
+export const metadata: Metadata = { title: 'Órdenes' }
 
 const GRUPOS: Array<{ id: GrupoOrden; titulo: string; vacio: string }> = [
   { id: 'tu-turno', titulo: 'Te toca', vacio: 'No hay órdenes esperando tu aprobación o tu decisión.' },
-  { id: 'en-curso', titulo: 'En curso (Codex o Claude)', vacio: 'No hay órdenes en curso.' },
+  { id: 'en-curso', titulo: 'En curso (Claude)', vacio: 'No hay órdenes en curso.' },
   { id: 'invalidas', titulo: 'Con estado inválido', vacio: '' },
   { id: 'terminadas', titulo: 'Terminadas', vacio: 'Todavía no hay órdenes terminadas.' },
 ]
@@ -23,8 +23,8 @@ const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string } }) {
   const o = v.orden
   const tone = RIESGO_TONE[o.riesgo as keyof typeof RIESGO_TONE] ?? 'neutral'
-  // Mientras Codex no tenga el PR, el propietario lanza la tarea con este texto (el @codex en issues no la inicia).
-  const textoCodex = canWrite && !prDetectado ? textoParaCodexDeOrden(o) : null
+  // Mientras no haya PR, el propietario pide a Claude que ejecute la orden con este texto.
+  const textoOrden = canWrite && !prDetectado ? textoParaEjecutarDeOrden(o) : null
   return (
     <article className="card" aria-labelledby={`orden-${o.id}`}>
       <header className="card-head">
@@ -53,7 +53,7 @@ function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: bool
           <div><dt>Notas</dt><dd><Text value={o.notas} empty="Sin notas" /></dd></div>
         </dl>
       </details>
-      {textoCodex ? <CopiarParaCodex ordenId={o.id} texto={textoCodex} /> : null}
+      {textoOrden ? <CopiarParaClaude ordenId={o.id} texto={textoOrden} /> : null}
       {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
         <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} />
       ) : null}
@@ -68,12 +68,12 @@ function OrdenCard({ v, canWrite, prDetectado }: { v: OrdenVista; canWrite: bool
 
 export default async function OrdenesPage() {
   const { user, result } = await privateData('/ordenes')
-  if (!result.ok) return <><h1>Órdenes a Codex</h1><LoadError result={result} /></>
+  if (!result.ok) return <><h1>Órdenes</h1><LoadError result={result} /></>
   const data = result.data
   const r = resumenOrdenes(data)
   const total = data.ordenes.length
   const canWrite = writeAccess(user.email).allowed
-  // PRs de Codex para las órdenes ENVIADA (solo lectura en GitHub; si falla, simplemente no se muestran).
+  // PRs de las órdenes ENVIADA (solo lectura en GitHub; si falla, simplemente no se muestran).
   const client = canWrite ? githubClient() : null
   const prs = new Map<string, { url: string; estado: string }>()
   if (client) {
@@ -89,7 +89,7 @@ export default async function OrdenesPage() {
 
   return (
     <>
-      <h1>Órdenes a Codex</h1>
+      <h1>Órdenes</h1>
       <Freshness data={data} />
       <TabWarnings data={data} tabs={['ORDENES_CODEX', 'TAREAS']} />
       {canWrite ? <p><a className="button button-primary" href="/ordenes/nueva">Nueva orden</a></p> : null}

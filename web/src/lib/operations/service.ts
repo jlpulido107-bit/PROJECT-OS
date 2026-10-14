@@ -270,7 +270,7 @@ export class OperationsService {
     })
   }
 
-  /** Crea una orden a Codex en BORRADOR (V1.8 F3). Solo el propietario la aprueba después. */
+  /** Crea una orden en BORRADOR (V1.8 F3). Solo el propietario la aprueba después. */
   createOrder(cmd: CreateOrderCommand, ctx: OperationContext): Promise<OperationResult> {
     return this.exclusive(async () => {
       const op: OperationName = 'orden.crear'

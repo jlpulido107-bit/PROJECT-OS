@@ -6,7 +6,7 @@ import { parseOrderTransition } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
-/** Transiciones de una orden a Codex con el estado esperado (V1.8 F3). Aprobar también la envía a GitHub/Codex (F4). */
+/** Transiciones de una orden con el estado esperado (V1.8 F3). Aprobar también crea su issue en GitHub (F4). */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   return handleWrite(request, (body, ctx) => {

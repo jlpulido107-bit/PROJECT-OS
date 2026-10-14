@@ -8,7 +8,7 @@ import { findById, InMemoryTableStore, readView, toRecord, type TableStore } fro
 import { parseCreateOrder, parseOrderTransition } from '@/lib/operations/validation'
 import { FakeSheets } from './helpers/fake-sheets'
 
-/** Órdenes a Codex desde el dashboard (V1.8 F3), contra el mock y contra el adaptador de Sheets simulado. */
+/** Órdenes desde el dashboard (V1.8 F3), contra el mock y contra el adaptador de Sheets simulado. */
 
 const NOW = new Date('2026-10-14T16:30:00Z') // 10:30 en Mérida
 const ACTOR = { actor: 'escritor@example.com' }

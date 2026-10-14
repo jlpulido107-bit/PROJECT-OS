@@ -5,7 +5,7 @@ import { WriteGate } from '@/components/operations/write-access'
 import { taskState } from '@/lib/aggregate'
 import { privateData } from '@/lib/page-data'
 
-export const metadata: Metadata = { title: 'Nueva orden a Codex' }
+export const metadata: Metadata = { title: 'Nueva orden' }
 
 /** Proyectos con repositorio (las órdenes se ejecutan en GitHub). */
 const PROYECTOS_CON_REPO = new Set(['SIG', 'ECO', 'POS'])
@@ -15,7 +15,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
   const { user, result } = await privateData('/ordenes/nueva')
   return (
     <>
-      <h1>Nueva orden a Codex</h1>
+      <h1>Nueva orden</h1>
       <WriteGate email={user.email}>
         {!result.ok ? <LoadError result={result} /> : (
           <OrderForm

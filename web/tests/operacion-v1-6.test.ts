@@ -32,7 +32,7 @@ function fixtureRoot(mutate?: (root: string) => void) {
   for (const rel of [
     'web/deploy/cloudrun/service.template.yaml', 'web/deploy/cloudrun/artifact-cleanup-policy.json', 'web/src/proxy.ts',
     'web/src/app/(private)/layout.tsx', 'web/src/lib/auth.ts', 'web/src/lib/authz.ts', 'docs/estado-produccion-v1-6-2026-10-11.md',
-    'docs/estado-produccion-v1-7-2026-10-13.md',
+    'docs/estado-produccion-v1-7-2026-10-13.md', 'docs/estado-produccion-v1-8-2026-10-14.md',
   ]) {
     mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
     cpSync(path.join(ROOT, rel), path.join(root, rel))
@@ -165,7 +165,7 @@ describe('preflight de aceptación offline', () => {
   })
 
   it('un registro de producción con otro digest → FALLO', () => {
-    const { por } = estados(fixtureRoot((r) => edit(r, 'docs/estado-produccion-v1-7-2026-10-13.md', (t) => t.replaceAll('cde104f0', '00000000'))))
+    const { por } = estados(fixtureRoot((r) => edit(r, 'docs/estado-produccion-v1-8-2026-10-14.md', (t) => t.replaceAll('60d3feb7', '00000000'))))
     expect(por.P13).toBe('FALLO')
   })
 
@@ -175,7 +175,7 @@ describe('preflight de aceptación offline', () => {
     const registro = read(path.join(ROOT, DESPLEGADO.registro ?? ''))
     for (const v of [DESPLEGADO.commit, DESPLEGADO.digest, DESPLEGADO.revision]) expect(registro).toContain(v)
     // Un registro que solo describe la V1.6 no basta: P13 lo rechaza.
-    const { por } = estados(fixtureRoot((r) => edit(r, 'docs/estado-produccion-v1-7-2026-10-13.md', () => read(path.join(ROOT, 'docs/estado-produccion-v1-6-2026-10-11.md')))))
+    const { por } = estados(fixtureRoot((r) => edit(r, 'docs/estado-produccion-v1-8-2026-10-14.md', () => read(path.join(ROOT, 'docs/estado-produccion-v1-6-2026-10-11.md')))))
     expect(por.P13).toBe('FALLO')
   })
 

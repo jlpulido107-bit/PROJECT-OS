@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildFixtureTabs } from '@/lib/fixtures'
 import { WRITE_HEADERS } from '@/lib/operations/constants'
 import { derivedRequestId, transitionWithDispatch } from '@/lib/operations/dispatch'
-import { createGitHubClient, cuerpoIssue, textoParaCodex, textoParaCodexDeOrden, urlGitHubPermitida } from '@/lib/operations/github'
+import { createGitHubClient, cuerpoIssue, textoParaEjecutar, textoParaEjecutarDeOrden, urlGitHubPermitida } from '@/lib/operations/github'
 import { OperationsService } from '@/lib/operations/service'
 import { findById, InMemoryTableStore, readView, toRecord } from '@/lib/operations/table-store'
 import { parseOrderTransition } from '@/lib/operations/validation'
@@ -79,7 +79,7 @@ describe('cliente de GitHub', () => {
   })
 })
 
-describe('aprobar y enviar a Codex (F4)', () => {
+describe('aprobar y crear el issue (F4)', () => {
   it('aprobar crea el issue sin mencionar a @codex y deja la orden ENVIADA con su ISSUE_URL', async () => {
     const { store, service } = setup()
     const gh = fakeGitHub()
@@ -87,7 +87,7 @@ describe('aprobar y enviar a Codex (F4)', () => {
     expect(r.envio).toMatchObject({ ok: true, creado: true, issueUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/100' })
     expect(gh.issues).toHaveLength(1)
     expect(gh.issues[0]!.title).toBe('[ORD-POS-901][DEMO-002] Orden demo por aprobar')
-    // El @codex en issues no inicia tareas: el propietario lanza la orden con «Copiar para Codex».
+    // Sin menciones: el propietario pide a Claude que ejecute la orden con «Copiar para Claude».
     expect(gh.issues[0]!.comments).toHaveLength(0)
     expect(gh.calls.some((c) => c.includes('/comments'))).toBe(false)
     expect(await orden(store, 'ORD-POS-901')).toMatchObject({ ESTADO: 'ENVIADA', ISSUE_URL: 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/100' })
@@ -168,22 +168,22 @@ describe('aprobar y enviar a Codex (F4)', () => {
     expect(body).toContain('@\u200balguien')
   })
 
-  it('el texto para Codex lleva repositorio, issue, rama, título [ORDEN_ID], Closes y la orden sin menciones', () => {
+  it('el texto para ejecutar lleva la orden, repositorio, issue, título [ORDEN_ID], Closes y la orden sin menciones', () => {
     const o = { ordenId: 'ORD-POS-002', proyectoId: 'POS', tareaId: 'POS-009', titulo: 'Prueba', objetivo: 'Avisar a @alguien <!-- oculto -->', contexto: '', criterios: 'C', fueraDeAlcance: 'F', comoProbar: 'npm test', riesgo: 'BAJO' }
-    const t = textoParaCodex(o, 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/34')
-    for (const s of ['jlpulido107-bit/PROJECT-OS', 'issues/34', 'codex/ord-pos-002', '`[ORD-POS-002]`', '`Closes #34`', 'No fusiones ni despliegues', '### Criterios de aceptación', 'AGENTS.md'])
+    const t = textoParaEjecutar(o, 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/34')
+    for (const s of ['jlpulido107-bit/PROJECT-OS', 'issues/34', 'Ejecuta la orden ORD-POS-002', '/ejecutar-orden', 'nunca en main', '`[ORD-POS-002]`', '`Closes #34`', 'No fusiones ni despliegues', '### Criterios de aceptación', 'AGENTS.md'])
       expect(t).toContain(s)
     expect(t).not.toMatch(/@alguien|oculto/)
   })
 
-  it('el texto para Codex solo existe para órdenes ENVIADA con issue del repositorio de su proyecto', () => {
+  it('el texto para ejecutar solo existe para órdenes ENVIADA con issue del repositorio de su proyecto', () => {
     const base = { id: 'ORD-POS-002', proyectoId: 'POS', tareaId: 'POS-009', titulo: 't', objetivo: 'o', contexto: null, criterios: 'c', fueraDeAlcance: 'f', comoProbar: 'p', riesgo: 'BAJO', estado: 'ENVIADA', issueUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/34' }
-    expect(textoParaCodexDeOrden(base)).toContain('issues/34')
-    expect(textoParaCodexDeOrden({ ...base, estado: 'APROBADA' })).toBeNull()
-    expect(textoParaCodexDeOrden({ ...base, issueUrl: null })).toBeNull()
-    expect(textoParaCodexDeOrden({ ...base, issueUrl: 'https://github.com/jlpulido107-bit/SIGSAH/issues/34' })).toBeNull()
-    expect(textoParaCodexDeOrden({ ...base, issueUrl: 'https://github.com/otro/PROJECT-OS/issues/34' })).toBeNull()
-    expect(textoParaCodexDeOrden({ ...base, proyectoId: 'DEV' })).toBeNull()
+    expect(textoParaEjecutarDeOrden(base)).toContain('issues/34')
+    expect(textoParaEjecutarDeOrden({ ...base, estado: 'APROBADA' })).toBeNull()
+    expect(textoParaEjecutarDeOrden({ ...base, issueUrl: null })).toBeNull()
+    expect(textoParaEjecutarDeOrden({ ...base, issueUrl: 'https://github.com/jlpulido107-bit/SIGSAH/issues/34' })).toBeNull()
+    expect(textoParaEjecutarDeOrden({ ...base, issueUrl: 'https://github.com/otro/PROJECT-OS/issues/34' })).toBeNull()
+    expect(textoParaEjecutarDeOrden({ ...base, proyectoId: 'DEV' })).toBeNull()
   })
 
   it('dos aprobaciones simultáneas de la misma orden crean un solo issue', async () => {

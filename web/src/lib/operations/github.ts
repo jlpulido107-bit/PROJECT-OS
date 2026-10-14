@@ -1,10 +1,11 @@
 /**
- * Envío de órdenes aprobadas a Codex vía GitHub (V1.8 F4, docs/plan-v1-8-automatizacion.md).
+ * Issue de las órdenes aprobadas en GitHub (V1.8 F4, docs/plan-v1-8-automatizacion.md). Desde 2026-10-14 las ejecuta
+ * Claude en la sesión del repositorio (skill `/ejecutar-orden`); el propietario decide con Codex/ChatGPT.
  *
  * - Solo los 3 repositorios del propietario (lista fija en código: nunca se toma el repositorio de la hoja).
  * - Idempotente: antes de crear, busca un issue cuyo título empiece por `[ORDEN_ID]`; si existe, lo reutiliza.
- * - No menciona a `@codex`: ese disparador no inicia tareas desde issues. El propietario lanza la tarea en Codex con el
- *   texto de `textoParaCodex` (botón «Copiar para Codex» del dashboard).
+ * - No menciona a `@codex`. El propietario lanza la ejecución con el texto de `textoParaEjecutar` (botón «Copiar para
+ *   Claude» del dashboard).
  * - Token de GitHub de grano fino (Issues: lectura/escritura; Pull requests: lectura) solo para esos repositorios, leído de
  *   GITHUB_DISPATCH_TOKEN (Secret Manager). Errores sin cuerpo: solo el estado HTTP.
  * - Nunca fusiona, nunca toca código ni ramas.
@@ -110,15 +111,15 @@ export function cuerpoIssue(orden: OrdenParaEnviar): string {
 }
 
 /**
- * Texto que el propietario pega en Codex (chatgpt.com/codex) para lanzar la orden. Es el mismo contenido del issue,
- * más las instrucciones de entrega: rama `codex/…`, PR con `[ORDEN_ID]` en el título y `Closes` el issue.
+ * Texto que el propietario pega en la sesión de Claude del repositorio para que ejecute la orden. Es el mismo contenido
+ * del issue, más las instrucciones de entrega: rama propia, PR con `[ORDEN_ID]` en el título y `Closes` el issue.
  */
-export function textoParaCodex(o: OrdenParaEnviar, issueUrl: string): string {
+export function textoParaEjecutar(o: OrdenParaEnviar, issueUrl: string): string {
   const repo = repoDe(o.proyectoId)
   const n = /\/issues\/(\d+)$/.exec(issueUrl)?.[1]
   return [
-    `Repositorio: ${repo} (rama base: main). Orden ${o.ordenId}, issue ${issueUrl}.`,
-    'Sigue AGENTS.md. Trabaja en una rama nueva `codex/' + o.ordenId.toLowerCase() + '`; nunca en main.',
+    `Ejecuta la orden ${o.ordenId} (aprobada en el dashboard) con /ejecutar-orden. Repositorio: ${repo} (rama base: main). Issue: ${issueUrl}.`,
+    'Sigue AGENTS.md. Trabaja en una rama propia; nunca en main.',
     `Abre un PR con \`[${o.ordenId}]\` al inicio del título y \`Closes #${n ?? '?'}\` en la descripción.`,
     'Pega en el PR la salida de las pruebas. No fusiones ni despliegues.',
     '',
@@ -128,15 +129,15 @@ export function textoParaCodex(o: OrdenParaEnviar, issueUrl: string): string {
   ].join('\n')
 }
 
-/** Texto para Codex de una orden ENVIADA con issue de su repositorio; null si no aplica. */
-export function textoParaCodexDeOrden(o: {
+/** Texto para ejecutar una orden ENVIADA con issue de su repositorio; null si no aplica. */
+export function textoParaEjecutarDeOrden(o: {
   id: string; proyectoId: string | null; tareaId: string | null; titulo: string | null; objetivo: string | null
   contexto: string | null; criterios: string | null; fueraDeAlcance: string | null; comoProbar: string | null
   riesgo: string | null; estado: string | null; issueUrl: string | null
 }): string | null {
   if (o.estado !== 'ENVIADA' || !o.issueUrl || !o.proyectoId || !REPOSITORIOS[o.proyectoId]) return null
   if (repoDeUrl(o.issueUrl, 'issues') !== REPOSITORIOS[o.proyectoId]) return null
-  return textoParaCodex({
+  return textoParaEjecutar({
     ordenId: o.id, proyectoId: o.proyectoId, tareaId: o.tareaId ?? '', titulo: o.titulo ?? '', objetivo: o.objetivo ?? '',
     contexto: o.contexto ?? '', criterios: o.criterios ?? '', fueraDeAlcance: o.fueraDeAlcance ?? '',
     comoProbar: o.comoProbar ?? '', riesgo: o.riesgo ?? 'BAJO',
@@ -198,7 +199,7 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
   }
 
   return {
-    /** Crea (o reutiliza) el issue de la orden. No menciona a Codex. */
+    /** Crea (o reutiliza) el issue de la orden. No menciona a nadie. */
     async enviar(o: OrdenParaEnviar): Promise<ResultadoEnvio> {
       const repo = repoDe(o.proyectoId)
       const existente = await buscarIssue(repo, o.ordenId)

@@ -1,7 +1,8 @@
 # Modelo de trabajo V1.7: Claude como mano derecha por proyecto
 
-Cómo planeamos el propietario y Claude cada proyecto, y cómo llegan las tareas a Codex. Decidido por el propietario el
-2026-10-13: una sesión de Claude Code por repositorio, órdenes a Codex aprobadas en la hoja y cinco roles.
+Cómo planeamos el propietario y Claude cada proyecto, y cómo se ejecutan las órdenes. Decidido por el propietario el
+2026-10-13: una sesión de Claude Code por repositorio y cinco roles. Desde el 2026-10-14 las órdenes se aprueban en el
+dashboard y **las ejecuta Claude**; el propietario decide con apoyo de Codex/ChatGPT ([órdenes](delegacion-codex.md)).
 
 ## Piezas
 
@@ -10,7 +11,7 @@ Cómo planeamos el propietario y Claude cada proyecto, y cómo llegan las tareas
 | Fuente operativa: metas, tareas, horas y órdenes | Google Sheets «PROJECT-OS V1 — Tablero maestro» | El propietario. Claude **solo lee** |
 | Memoria del proyecto: contexto, decisiones e hipótesis | `docs/brief-proyecto.md` en cada repositorio | Claude propone por PR; el propietario aprueba |
 | Conversación de planeación | Una sesión de Claude Code por repositorio (SIG, ECO, POS) | Propietario y Claude |
-| Trabajo técnico delegado | Issue «Tarea para Codex» → PR de Codex | Claude abre el issue; Codex abre el PR |
+| Trabajo técnico por orden | Orden aprobada en el dashboard → issue → PR de Claude | El dashboard abre el issue; Claude abre el PR |
 | Vista de conjunto | Dashboard `/estado` | Nadie: solo lectura |
 
 | Proyecto | Repositorio | Sesión |
@@ -27,7 +28,7 @@ repositorio), **cálculo** e **hipótesis**.
 
 - **Mano derecha.** Resume el estado, propone las 3 prioridades de la semana, dice qué decisiones necesita del propietario
   y vigila que plan y realidad cuadren.
-- **Ingeniero / arquitecto.** Diseño técnico, riesgos y deuda. Redacta las órdenes para Codex y revisa sus PRs.
+- **Ingeniero / arquitecto.** Diseño técnico, riesgos y deuda. Redacta las órdenes, las ejecuta cuando están aprobadas y revisa los PRs.
 - **Analista de datos.** Plan contra real (ASIGNACIONES contra TIEMPOS), avance por meta y métricas del proyecto. En ECO,
   también las tendencias.
 - **Mercadólogo.** Mercado, cliente, competencia, precio, canal y mensaje. Toda afirmación de mercado lleva su fuente o se
@@ -48,19 +49,16 @@ Cada rutina es una skill de Claude Code en el repositorio (`.claude/skills/`). S
 | Rutina | Cuándo | Qué hace |
 | --- | --- | --- |
 | `/planear-proyecto` | Al abrir la sesión y en la revisión semanal | Lee la hoja, el brief y GitHub. Da el parte por roles y propone las filas de TAREAS y ORDENES_CODEX para que el propietario las pegue |
-| `/orden-codex` | Después de que el propietario marque órdenes APROBADA | Valida cada orden, abre su issue sin duplicar y dice qué actualizar en la hoja. Por la mañana revisa los PRs de Codex |
+| `/ejecutar-orden` | «ejecuta ORD-…» o el texto de «Copiar para Claude» | Valida la orden aprobada, la ejecuta en la rama de la sesión y abre el PR con la CI en verde. A pedido o por la mañana revisa los PRs de órdenes |
 
-## Ciclo de una orden a Codex
+## Ciclo de una orden
 
-1. **Redactar.** En la sesión del proyecto, Claude redacta la orden como una fila de ORDENES_CODEX, en estado BORRADOR.
-2. **Aprobar.** El propietario la pega en la hoja y la pasa a **APROBADA**. Solo él aprueba.
-3. **Enviar.** `/orden-codex` abre el issue «Tarea para Codex», con el `ORDEN_ID` en el título. Si ya existe, no abre otro.
-4. **Ejecutar.** Codex trabaja la tarea y abre un PR. Cómo se lanza se confirma en la primera prueba (POS-009); ver
-   [delegación a Codex](delegacion-codex.md).
-5. **Revisar.** Claude revisa el PR contra los criterios de aceptación y deja su evaluación en el PR.
-6. **Decidir.** El propietario fusiona o cierra el PR, y actualiza la orden y la tarea en la hoja.
+1. **Decidir.** El propietario define la tarea (con Codex/ChatGPT si quiere); Claude puede redactar los campos.
+2. **Aprobar.** En el dashboard, **Aprobar y crear el issue**. Solo el propietario aprueba.
+3. **Ejecutar.** El propietario pide «ejecuta ORD-…» en la sesión del repositorio; Claude abre el PR con evidencia.
+4. **Decidir.** El propietario revisa, fusiona o pide cambios, y registra el PR y el cierre en el dashboard.
 
-Estados, IDs y reglas: [migración ORDENES_CODEX](migracion-ordenes-codex.md).
+Detalle: [órdenes](delegacion-codex.md). Estados, IDs y reglas: [migración ORDENES_CODEX](migracion-ordenes-codex.md).
 
 ## Automatización nocturna
 
