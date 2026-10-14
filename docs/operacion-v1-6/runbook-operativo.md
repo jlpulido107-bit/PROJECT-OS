@@ -129,9 +129,9 @@ resource.type="cloud_run_revision" AND resource.labels.service_name="project-os-
 
 ## 7. Recuperación y rollback
 
-- **Estado actual (2026-10-13): dos revisiones**; hasta V1.6 había una sola revisión. `…-00002-58z` (V1.7, imagen `produccion`) sirve el 100 %; `…-00001-gsk`
-  (V1.6, imagen `produccion-anterior`) queda disponible. El rollback de tráfico ya es posible, pero **no está
-  ensayado** (G2). Registro: [estado de producción V1.7](../estado-produccion-v1-7-2026-10-13.md).
+- **Estado actual (2026-10-14):** hasta V1.6 había una sola revisión; hoy `…-00005-f6w` (V1.8 F4b, imagen `produccion`) sirve el 100 %; `…-00004-l5g`
+  (V1.8 F4, imagen `produccion-anterior`) queda disponible. El rollback de tráfico es posible, pero **no está
+  ensayado** (G2). Registro: [estado de producción V1.8](../estado-produccion-v1-8-2026-10-14.md).
 - **Recuperación sin revisión anterior** (hoy). Las opciones son:
   1. *Fix forward:* corregir y redesplegar [M].
   2. Volver a aplicar el mismo manifiesto con la **misma imagen por digest** [M], si el problema fue de configuración.

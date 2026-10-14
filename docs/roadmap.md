@@ -54,7 +54,7 @@
 - [x] F2 Escritura real limitada para el propietario. Fusionada; se activa con [escritura-v1-8.md](escritura-v1-8.md).
 - [x] F3 Crear, aprobar y cancelar órdenes desde el dashboard. Fusionada.
 - [x] F4 Envío a GitHub al aprobar. Fusionada y desplegada (revisión `00004`).
-- [x] F4b Sin `@codex` (no inicia tareas desde issues): la tarea se lanza con «Copiar para Codex».
+- [x] F4b Sin `@codex` (no inicia tareas desde issues): la tarea se lanza con «Copiar para Codex». Desplegada (revisión `00005`, [registro](estado-produccion-v1-8-2026-10-14.md)).
 - [ ] F5 Revisión matutina programada de los PRs de Codex.
 
 ## V1.4 — Informes y planificación (antes V1.3)
