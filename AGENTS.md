@@ -1,9 +1,13 @@
 # Instrucciones para agentes — PROJECT-OS
 
 ## Roles
-- Usuario: dueño del producto y aprobación final.
-- ChatGPT: arquitectura, prioridades, revisión y especificaciones.
-- Claude Code: implementación, pruebas y propuesta de cambios.
+- Propietario: decide y aprueba (órdenes, fusión, despliegue).
+- ChatGPT: planea y redacta las órdenes.
+- Claude Code: implementa y corrige (rama, PR, pruebas, correcciones que devuelva la supervisión).
+- Codex: supervisa de forma independiente; no corrige ni escribe en GitHub, Sheets ni repositorios.
+
+Ciclo: implementación de Claude → revisión independiente de Codex → decisión del propietario. Las correcciones
+vuelven a Claude. Una revisión favorable no autoriza fusión, despliegue ni cierre automático.
 
 ## Reglas
 - No escribir directamente en main; trabajar con ramas y PR.
@@ -16,6 +20,11 @@
 - Validar tests y diff antes de pedir revisión.
 - No habilitar `schedule` hasta que el usuario apruebe una prueba real.
 - El colector solo lee; no cierra tareas ni toma decisiones de negocio.
+
+## Implementación y supervisión
+- Quien implementa (Claude) crea la rama y el PR y publica los resultados en el issue y el PR.
+- Quien supervisa (Codex) solo devuelve su reporte al propietario, sin escrituras externas. Detalle del reporte en
+  [`docs/delegacion-codex.md`](docs/delegacion-codex.md#supervisión-independiente-codex).
 
 ## Órdenes (desde 2026-10-14: el propietario decide, Claude ejecuta)
 - Protocolo completo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md). Rutina: `/ejecutar-orden`.
