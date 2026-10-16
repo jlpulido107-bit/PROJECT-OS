@@ -19,9 +19,12 @@ const ME = 'jlpulido107-bit'
 interface Issue { number: number; title: string; html_url: string; body: string; comments: Array<{ body: string; login: string }>; login: string }
 
 /** GitHub mínimo en memoria: issues, comentarios y PRs de un repositorio. */
+const HEAD = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const BASE = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+
 function fakeGitHub(opts: { failCreate?: number } = {}) {
   const issues: Issue[] = []
-  const prs: Array<{ number: number; title: string; html_url: string; state: string; merged_at: string | null; user: { login: string }; head: { repo: { full_name: string } } }> = []
+  const prs: Array<{ number: number; title: string; html_url: string; state: string; merged_at: string | null; user: { login: string }; head: { sha?: unknown; repo: { full_name: string } }; base?: { sha?: unknown } }> = []
   const calls: string[] = []
   const fetchImpl = (async (url: string, init: RequestInit = {}) => {
     const u = new URL(url)
@@ -141,10 +144,28 @@ describe('aprobar y crear el issue (F4)', () => {
 
   it('detecta el PR de una orden por su título, sin escribir', async () => {
     const gh = fakeGitHub()
-    gh.prs.push({ number: 7, title: '[ORD-POS-901] Prueba', html_url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/7', state: 'open', merged_at: null, user: { login: 'chatgpt-codex-connector[bot]' }, head: { repo: { full_name: 'jlpulido107-bit/PROJECT-OS' } } })
-    expect(await gh.client.prDeOrden('POS', 'ORD-POS-901')).toEqual({ url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/7', number: 7, estado: 'abierto' })
+    gh.prs.push({ number: 7, title: '[ORD-POS-901] Prueba', html_url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/7', state: 'open', merged_at: null, user: { login: 'chatgpt-codex-connector[bot]' }, head: { sha: HEAD, repo: { full_name: 'jlpulido107-bit/PROJECT-OS' } }, base: { sha: BASE } })
+    expect(await gh.client.prDeOrden('POS', 'ORD-POS-901')).toEqual({ url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/7', number: 7, estado: 'abierto', headSha: HEAD, baseSha: BASE })
     expect(await gh.client.prDeOrden('POS', 'ORD-POS-999')).toBeNull()
     expect(gh.calls.every((c) => c.startsWith('GET'))).toBe(true)
+  })
+
+  it('un PR identificado con SHA ausente o inválido da error explícito, no null', async () => {
+    const pr = { number: 7, title: '[ORD-POS-901] Prueba', html_url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/7', state: 'open', merged_at: null, user: { login: ME }, head: { sha: HEAD, repo: { full_name: 'jlpulido107-bit/PROJECT-OS' } }, base: { sha: BASE } }
+    const invalidos = [
+      { ...pr, head: { ...pr.head, sha: undefined } }, { ...pr, head: { ...pr.head, sha: HEAD.slice(0, 7) } },
+      { ...pr, head: { ...pr.head, sha: HEAD.toUpperCase() } }, { ...pr, base: undefined }, { ...pr, base: { sha: 'z'.repeat(40) } },
+      { ...pr, base: { sha: 123 } },
+    ]
+    for (const p of invalidos) {
+      const gh = fakeGitHub()
+      gh.prs.push(p)
+      await expect(gh.client.prDeOrden('POS', 'ORD-POS-901')).rejects.toMatchObject({ status: 'respuesta-invalida' })
+    }
+    // Un PR ajeno (fork) con SHA inválido no cuenta como identificado: sigue siendo «sin PR».
+    const gh = fakeGitHub()
+    gh.prs.push({ ...pr, head: { sha: 'x', repo: { full_name: 'intruso/PROJECT-OS' } } })
+    expect(await gh.client.prDeOrden('POS', 'ORD-POS-901')).toBeNull()
   })
 
   it('un issue, comentario o PR de otra cuenta no captura la orden', async () => {

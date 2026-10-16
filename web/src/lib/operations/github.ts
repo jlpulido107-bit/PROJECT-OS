@@ -50,7 +50,13 @@ export interface PrDeOrden {
   url: string
   number: number
   estado: 'abierto' | 'fusionado' | 'cerrado'
+  /** SHA completo (40 hex) del último commit de la rama del PR. */
+  headSha: string
+  /** SHA completo (40 hex) de la base del PR. */
+  baseSha: string
 }
+
+const SHA_COMPLETO = /^[0-9a-f]{40}$/
 
 export class GitHubError extends Error {
   constructor(readonly status: number | 'red' | 'repo-no-permitido' | 'respuesta-invalida') {
@@ -245,7 +251,7 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       const login = await cuentaPropia()
       const prs = await call<Array<{
         number: number; title: string; html_url: string; state: string; merged_at: string | null; user?: User
-        head?: { repo?: { full_name?: string } | null }
+        head?: { sha?: unknown; repo?: { full_name?: string } | null }; base?: { sha?: unknown }
       }>>('GET', `/repos/${repo}/pulls?state=all&sort=created&direction=desc&per_page=50`)
       // Solo PRs de la cuenta del propietario o del conector de Codex, desde el mismo repositorio (nunca de un fork).
       const pr = prs.find((p) =>
@@ -253,7 +259,13 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
         (esPropio(p.user, login) || (p.user?.login ?? '').toLowerCase() === CODEX_BOT) &&
         (p.head?.repo?.full_name ?? '').toLowerCase() === repo.toLowerCase())
       if (!pr) return null
-      return { url: pr.html_url, number: pr.number, estado: pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado' }
+      // Un PR identificado sin SHA válidos es una respuesta inválida, no «sin PR»: nunca se fabrican valores.
+      const { sha: headSha } = pr.head ?? {}
+      const { sha: baseSha } = pr.base ?? {}
+      if (typeof headSha !== 'string' || typeof baseSha !== 'string' || !SHA_COMPLETO.test(headSha) || !SHA_COMPLETO.test(baseSha)) {
+        throw new GitHubError('respuesta-invalida')
+      }
+      return { url: pr.html_url, number: pr.number, estado: pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado', headSha, baseSha }
     },
   }
 }
