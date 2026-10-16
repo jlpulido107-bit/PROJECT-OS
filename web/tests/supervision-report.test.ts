@@ -7,7 +7,7 @@ import type { PoliticaReporte } from '@/lib/supervision/report'
 const H = 'a'.repeat(40)
 const B = 'b'.repeat(40)
 const HASH = 'c'.repeat(64)
-const POL: PoliticaReporte = { ciRequerida: true }
+const POL: PoliticaReporte = { ciRequerida: true, criteriosEsperados: ['1', '2'] }
 
 type Rep = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
 const base = (): Rep => ({
@@ -30,7 +30,7 @@ const cambios = () => ({
   ...base(), veredicto: 'CAMBIOS',
   hallazgos: [{ id: 'H1', severidad: 'ALTA', ubicacion: 'a.ts:1', condicion: 'c', impacto: 'i', bloquea: true, justificacion: 'rompe' }],
 })
-const inconcluso = () => ({ ...base(), veredicto: 'INCONCLUSO', criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'no pude' }] })
+const inconcluso = () => ({ ...base(), veredicto: 'INCONCLUSO', criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'no pude' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }] })
 const errores = (x: unknown, p = POL) => {
   const r = validarReporte(x, p)
   expect(r.ok).toBe(false)
@@ -44,7 +44,7 @@ describe('reporte válido de cada veredicto', () => {
     expect(r.ok && r.reporte.veredicto).toBe(v)
   })
   it('CAMBIOS también por criterio NO_CUMPLE sin hallazgos', () => {
-    expect(validarReporte({ ...base(), veredicto: 'CAMBIOS', criterios: [{ id: '1', resultado: 'NO_CUMPLE', evidencia: 'x' }] }, POL).ok).toBe(true)
+    expect(validarReporte({ ...base(), veredicto: 'CAMBIOS', criterios: [{ id: '1', resultado: 'NO_CUMPLE', evidencia: 'x' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }] }, POL).ok).toBe(true)
   })
   it('hallazgo no bloqueante no impide CONFORME y no exige justificación', () => {
     const h = { id: 'H2', severidad: 'BAJA', ubicacion: 'x', condicion: 'c', impacto: 'i', bloquea: false, justificacion: '' }
@@ -136,7 +136,7 @@ describe('coherencia del veredicto (criterio 2)', () => {
     expect(errores(con((r) => { r.evidencia.propias[0].codigoSalida = 1 })).join()).toMatch(/código 0/)
   })
   it('una afirmación del autor no sustituye pruebas propias ni CI', () => {
-    expect(errores(con((r) => { r.evidencia.propias = []; r.evidencia.ci = { estado: 'CI_AUSENTE' } }), { ciRequerida: false }).join()).toMatch(/pruebas propias/)
+    expect(errores(con((r) => { r.evidencia.propias = []; r.evidencia.ci = { estado: 'CI_AUSENTE' } }), { ...POL, ciRequerida: false }).join()).toMatch(/pruebas propias/)
   })
   it('CI exitosa de otro head no cuenta', () => {
     expect(errores(con((r) => { r.evidencia.ci.sha = B })).join()).toMatch(/CI exitosa no es del head/)
@@ -144,17 +144,43 @@ describe('coherencia del veredicto (criterio 2)', () => {
   })
   it('CI ausente: CONFORME solo si la política no la requiere', () => {
     const r = con((x) => { x.evidencia.ci = { estado: 'CI_AUSENTE' } })
-    expect(validarReporte(r, { ciRequerida: false }).ok).toBe(true)
-    expect(errores(r, { ciRequerida: true }).join()).toMatch(/CI_AUSENTE con CI requerida/)
+    expect(validarReporte(r, { ...POL, ciRequerida: false }).ok).toBe(true)
+    expect(errores(r, { ...POL, ciRequerida: true }).join()).toMatch(/CI_AUSENTE con CI requerida/)
   })
   it.each(['PENDIENTE', 'FALLO'])('CI %s nunca es CONFORME, ni con CI no requerida', (estado) => {
     const r = con((x) => { x.evidencia.ci = { estado, sha: H } })
-    expect(errores(r, { ciRequerida: true }).length).toBeGreaterThan(0)
-    expect(errores(r, { ciRequerida: false }).length).toBeGreaterThan(0)
+    expect(errores(r, { ...POL, ciRequerida: true }).length).toBeGreaterThan(0)
+    expect(errores(r, { ...POL, ciRequerida: false }).length).toBeGreaterThan(0)
   })
   it('CI fallida con NO_CUMPLE y veredicto CAMBIOS es válido (contrato §6, caso 8)', () => {
-    const r = { ...base(), veredicto: 'CAMBIOS', criterios: [{ id: '1', resultado: 'NO_CUMPLE', evidencia: 'CI falló' }], evidencia: { ...base().evidencia, ci: { estado: 'FALLO', sha: H } } }
+    const r = { ...base(), veredicto: 'CAMBIOS', criterios: [{ id: '1', resultado: 'NO_CUMPLE', evidencia: 'CI falló' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }], evidencia: { ...base().evidencia, ci: { estado: 'FALLO', sha: H } } }
     expect(validarReporte(r, POL).ok).toBe(true)
+  })
+})
+
+describe('criterios de la orden (F1)', () => {
+  const crit = (...ids: string[]) => ids.map((id) => ({ id, resultado: 'CUMPLE', evidencia: 'ok' }))
+  const pol6 = { ...POL, criteriosEsperados: ['1', '2', '3', '4', '5', '6'] }
+  it('rechaza criterios faltantes', () => {
+    expect(errores(con((r) => { r.criterios = crit('1', '2') }), pol6).join()).toMatch(/falta el criterio 3/)
+  })
+  it('rechaza criterios sobrantes', () => {
+    expect(errores(con((r) => { r.criterios = crit('1', '2', '9') })).join()).toMatch(/criterio 9 no pertenece/)
+  })
+  it('rechaza criterios duplicados (2 entradas iguales con 6 esperados)', () => {
+    const e = errores(con((r) => { r.criterios = crit('1', '1') }), pol6).join()
+    expect(e).toMatch(/criterio 1 está repetido/)
+    expect(e).toMatch(/falta el criterio 2/)
+  })
+  it('también para CAMBIOS e INCONCLUSO', () => {
+    expect(errores({ ...cambios(), criterios: crit('1') }).join()).toMatch(/falta el criterio 2/)
+    expect(errores({ ...inconcluso(), criterios: crit('1', '1') }).join()).toMatch(/repetido/)
+  })
+  it('acepta la lista exacta en cualquier orden', () => {
+    expect(validarReporte(con((r) => { r.criterios = crit('2', '1') }), POL).ok).toBe(true)
+  })
+  it('acepta ORD-POS-1000 (alineado con ordenes.ts)', () => {
+    expect(validarReporte(con((r) => { r.ordenId = 'ORD-POS-1000'; r.autorizacion.orden = 'ORD-POS-1000' }), POL).ok).toBe(true)
   })
 })
 

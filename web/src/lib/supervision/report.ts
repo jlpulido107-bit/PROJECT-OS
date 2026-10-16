@@ -65,6 +65,8 @@ export interface ReporteRevision {
 export interface PoliticaReporte {
   /** Si es false, `CI_AUSENTE` puede ser CONFORME dejando constancia (nunca éxito implícito). */
   ciRequerida: boolean
+  /** IDs de los criterios de aceptación de la orden: el reporte debe traer exactamente uno por cada ID. */
+  criteriosEsperados: readonly string[]
 }
 
 export type ResultadoValidacion =
@@ -86,7 +88,7 @@ export type ResultadoProcesamiento =
 
 const SHA = /^[0-9a-f]{40}$/
 const HASH = /^[0-9a-f]{64}$/
-const ORDEN = /^ORD-(POS|SIG|ECO)-\d{3}$/
+const ORDEN = /^ORD-(POS|SIG|ECO)-\d{3,}$/
 const TAREA = /^[A-Z]{2,5}-\d{1,6}$/
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const RESULTADOS: readonly string[] = ['CUMPLE', 'NO_CUMPLE', 'NO_VERIFICADO']
@@ -266,8 +268,24 @@ function problemasComprobaciones(r: ReporteRevision, politica: PoliticaReporte):
   return p
 }
 
+/** Criterios faltantes, sobrantes o repetidos respecto de los de la orden (§3.2: todos los criterios). */
+function problemasCriterios(r: ReporteRevision, politica: PoliticaReporte): string[] {
+  const esperados = new Set(politica.criteriosEsperados)
+  const vistos = new Set<string>()
+  const p: string[] = []
+  for (const c of r.criterios) {
+    if (vistos.has(c.id)) p.push(`criterios: el criterio ${c.id} está repetido`)
+    else if (!esperados.has(c.id)) p.push(`criterios: el criterio ${c.id} no pertenece a la orden`)
+    vistos.add(c.id)
+  }
+  for (const id of esperados) if (!vistos.has(id)) p.push(`criterios: falta el criterio ${id}`)
+  return p
+}
+
 /** Coherencia del veredicto con su evidencia (§3.2). Devuelve los errores; vacío = coherente. */
 function coherencia(r: ReporteRevision, politica: PoliticaReporte): string[] {
+  const faltas = problemasCriterios(r, politica)
+  if (faltas.length > 0) return faltas
   const esperado = veredictoPorEvidencia(r)
   if (esperado !== null) {
     return r.veredicto === esperado ? [] : [`veredicto: ${r.veredicto} incoherente con la evidencia, corresponde ${esperado}`]
