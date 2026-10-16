@@ -6,7 +6,8 @@ import { hashCriterios, type Criterio } from './key'
  *
  * Formato admitido: cada criterio empieza en el INICIO de una línea con `N.` o `N)` (N entero sin ceros a la izquierda,
  * hasta 3 cifras) y un espacio, seguido de texto. Toda línea siguiente que no empiece así (incluidas las sangradas y las
- * que traen números dentro del texto) es continuación del criterio anterior. Todos los criterios usan el mismo
+ * que traen números dentro del texto) es continuación del criterio anterior, salvo que sea un encabezado numérico mal
+ * formado al margen («2.», «02. Dos», «2.Dos»), que se rechaza. Todos los criterios usan el mismo
  * delimitador y sus IDs crecen en orden estricto. No hay texto antes del primer criterio.
  *
  * Nada se renumera, completa ni elimina: lo que no cumple el formato se rechaza con el motivo.
@@ -17,6 +18,9 @@ export type ResultadoCriterios =
   | { ok: false; motivo: string }
 
 const INICIO = /^([1-9]\d{0,2})([.)])[ \t]+(\S.*)$/
+// Encabezado numérico mal formado: `N.` o `N)` pegado al margen que no cumple INICIO (sin texto, sin espacio, ceros a la
+// izquierda, más de 3 cifras). Se rechaza en vez de absorberlo como continuación. `3.5` (decimal) no es encabezado.
+const ENCABEZADO_MALFORMADO = /^\d+[.)](?!\d)/
 
 export function extraerCriterios(texto: string): ResultadoCriterios {
   const lineas = texto.replace(/\r\n?/g, '\n').split('\n')
@@ -26,6 +30,7 @@ export function extraerCriterios(texto: string): ResultadoCriterios {
   const bloques: Array<{ id: string; delim: string; lineas: string[] }> = []
   for (const linea of lineas) {
     const m = INICIO.exec(linea)
+    if (!m && ENCABEZADO_MALFORMADO.test(linea)) return { ok: false, motivo: `encabezado numérico mal formado al inicio de línea: «${linea.trim()}»` }
     if (m) bloques.push({ id: m[1]!, delim: m[2]!, lineas: [m[3]!] })
     else if (linea.trim() !== '') {
       const actual = bloques.at(-1)

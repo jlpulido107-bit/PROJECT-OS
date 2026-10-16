@@ -47,6 +47,15 @@ describe('extraerCriterios', () => {
     expect(motivo('2. Dos\n1. Uno')).toMatch(/orden creciente/)
     expect(motivo('01. Uno')).toMatch(/IDs explícitos/)
     expect(motivo('1.Uno')).toMatch(/IDs explícitos/)
-    expect(motivo('1. \n2. Dos')).toMatch(/antes del primer criterio/)
+    expect(motivo('1. \n2. Dos')).toMatch(/mal formado/)
+  })
+
+  it('rechaza encabezados mal formados después de un criterio válido (no los absorbe)', () => {
+    expect(motivo('1. Uno\n2. ')).toMatch(/mal formado/)
+    expect(motivo('1. Uno\n1. ')).toMatch(/mal formado/)
+    expect(motivo('1. Uno\n02. Dos')).toMatch(/mal formado/)
+    expect(motivo('1. Uno\n2.Dos')).toMatch(/mal formado/)
+    expect(motivo('1) Uno\n2)')).toMatch(/mal formado/)
+    expect(ok('1. Uno\n3.5 litros\n   2. sangrada\n2. Dos').criteriosEsperados).toEqual(['1', '2'])
   })
 })
