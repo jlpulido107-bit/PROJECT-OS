@@ -19,8 +19,8 @@ export type ResultadoCriterios =
 
 const INICIO = /^([1-9]\d{0,2})([.)])[ \t]+(\S.*)$/
 // Encabezado numérico mal formado: `N.` o `N)` pegado al margen que no cumple INICIO (sin texto, sin espacio, ceros a la
-// izquierda, más de 3 cifras). Se rechaza en vez de absorberlo como continuación. `3.5` (decimal) no es encabezado.
-const ENCABEZADO_MALFORMADO = /^\d+[.)](?!\d)/
+// izquierda, más de 3 cifras). Se rechaza en vez de absorberlo como continuación. `3.5` (decimal con punto) no es encabezado; `2)3` sí.
+const ENCABEZADO_MALFORMADO = /^\d+(?:\.(?!\d)|\))/
 
 export function extraerCriterios(texto: string): ResultadoCriterios {
   const lineas = texto.replace(/\r\n?/g, '\n').split('\n')

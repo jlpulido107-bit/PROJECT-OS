@@ -56,6 +56,7 @@ describe('extraerCriterios', () => {
     expect(motivo('1. Uno\n02. Dos')).toMatch(/mal formado/)
     expect(motivo('1. Uno\n2.Dos')).toMatch(/mal formado/)
     expect(motivo('1) Uno\n2)')).toMatch(/mal formado/)
+    expect(motivo('1) Uno\n2)3 pruebas')).toMatch(/mal formado/)
     expect(ok('1. Uno\n3.5 litros\n   2. sangrada\n2. Dos').criteriosEsperados).toEqual(['1', '2'])
   })
 })
