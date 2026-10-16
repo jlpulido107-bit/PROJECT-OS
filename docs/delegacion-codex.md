@@ -1,6 +1,6 @@
 # Órdenes: el propietario decide, Claude ejecuta (V1.8)
 
-Cómo el propietario, ChatGPT, Claude Code y Codex comparten trabajo sin perder el control. Aplica a PROJECT-OS (POS),
+Cómo el propietario, ChatGPT y Claude Code comparten trabajo sin perder el control. Aplica a PROJECT-OS (POS),
 SIGSAH (SIG) y RADAROS (ECO). La hoja de Google sigue siendo la fuente operativa; GitHub es donde vive el trabajo
 técnico.
 
@@ -8,51 +8,60 @@ técnico.
 GitHub falló de forma repetida: `@codex` en issues no inicia tareas y las tareas lanzadas a mano abrían PRs incompletos.
 Desde ahora el flujo va al revés: **el propietario decide, ChatGPT planea, Claude implementa y Codex supervisa.**
 
+**Cambio del 2026-10-16, DEC-POS-001 (decisión del propietario).** ChatGPT dirige, gestiona y supervisa las entregas de
+Claude; ya no se exige transferirlas a un agente Codex separado. El propietario conserva la aprobación de órdenes y la
+decisión de fusión, despliegue y cierre. Lo anterior (ORD-POS-007 / PR #50) queda como antecedente histórico; los
+nombres `ORDENES_CODEX` y este documento no se renombran.
+
 ## Roles
 
 | Quién | Hace | No hace |
 | --- | --- | --- |
 | Propietario | Decide y aprueba: metas, prioridades y órdenes en el dashboard; revisa, fusiona y despliega. | — |
-| ChatGPT | Planea y redacta las órdenes: ideas, alcance, priorización, criterios. | Tocar los repositorios. |
-| Claude Code | Implementa y corrige: una sesión por repositorio; **ejecuta las órdenes aprobadas** (rama → PR con la CI en verde) y atiende las correcciones que le devuelva la supervisión. | Fusionar, desplegar, escribir en la hoja, ejecutar órdenes sin aprobar. |
-| Codex | Supervisa de forma independiente los PRs de órdenes y devuelve su reporte al propietario. | Corregir, escribir en GitHub o Sheets, fusionar, desplegar. |
+| ChatGPT | Dirige, planea y gestiona: redacta órdenes (borradores), crea y actualiza registros de gestión y publica hallazgos dentro de su autorización. Supervisa: revisa código y evidencia de forma independiente del implementador y verifica las correcciones. | Implementar código, modificar repositorios, aprobar órdenes, disparar agentes, fusionar, desplegar o cerrar. |
+| Claude Code | Implementa, prueba y corrige: una sesión por repositorio; **ejecuta las órdenes aprobadas** (rama → PR con la CI en verde), hace su autocontrol y corrige en el mismo PR lo que devuelva la supervisión. | Fusionar, desplegar, escribir en Sheets reales, ejecutar órdenes sin aprobar. |
 
 ## Ciclo
 
-1. **Planear.** ChatGPT planea y redacta la orden; el propietario decide. Si quiere, Claude (`/planear-proyecto`)
+1. **Planear.** ChatGPT planea y redacta la orden (un borrador no aprueba ni dispara nada); el propietario decide. Si quiere, Claude (`/planear-proyecto`)
    redacta los campos.
 2. **Aprobar.** En el dashboard: *Órdenes → Nueva orden* y **Aprobar y crear el issue**. El issue lleva el título
    `[ORD-PRJ-NNN][PRJ-NNN] descripción`; si ya existe uno con ese ID, no se crea otro.
-3. **Llamar.** Con la [rutina de Claude](rutina-claude.md) configurada, aprobar ya llama a Claude. Si no está
-   configurada o la llamada falla: **Ejecutar con Claude** en `/ordenes`, o **«Copiar para Claude»** y pegarlo en la
-   sesión del repositorio («ejecuta ORD-PRJ-NNN»).
+3. **Llamar.** Con la [rutina de Claude](rutina-claude.md) configurada, aprobar llama a Claude una sola vez: esa es la
+   ejecución inicial y no se pide un lanzamiento manual duplicado. Solo si la rutina no está configurada o la llamada
+   falla: **Ejecutar con Claude** en `/ordenes`, o **«Copiar para Claude»** y pegarlo en la sesión del repositorio
+   («ejecuta ORD-PRJ-NNN»). La integración pendiente no se da por activa hasta que el propietario la confirme.
 4. **Implementar.** Claude (`/ejecutar-orden`) valida la orden y la ejecuta en su rama: código, pruebas y PR con el
    `ORDEN_ID` en el título, `Closes #<issue>`, cada criterio con su evidencia y la salida de las pruebas. Lleva la CI a
    verde.
 5. **Registrar.** El dashboard detecta el PR: **Registrar el PR detectado** (`PR_ABIERTO`).
-6. **Supervisar.** Codex revisa el PR de forma independiente (ver abajo) y entrega su reporte al propietario.
-7. **Decidir.** El propietario revisa el reporte, fusiona o pide cambios. Las correcciones se devuelven a Claude, que
-   las implementa en el mismo PR. Un PR fusionado no cierra la tarea por sí solo. Si hay que desplegar, Claude da el
+6. **Supervisar.** ChatGPT revisa el PR de forma independiente (ver abajo) y entrega su dictamen al propietario. El
+   aviso matutino no sustituye ese dictamen.
+7. **Decidir.** El propietario revisa el dictamen, fusiona o pide cambios. Las correcciones se devuelven a Claude, que
+   las implementa en el mismo PR; la autorización es vigente por orden y no se hereda retroactivamente. Una aprobación
+   técnica no autoriza fusión, despliegue ni cierre, y un PR fusionado no cierra la tarea por sí solo. Si hay que desplegar, Claude da el
    script y el propietario lo corre.
 
 Si algún PR de una orden lo abre otro agente, `/ejecutar-orden` lo revisa contra los criterios.
 
-## Supervisión independiente (Codex)
+## Supervisión independiente (ChatGPT)
 
-Codex supervisa; no implementa ni corrige. Su reporte exige:
+Hay dos controles distintos. El **autocontrol** es de Claude: corre las pruebas, revisa su propio diff y lo declara en
+el PR. La **revisión independiente** es de ChatGPT, que no implementó el cambio. El autocontrol no la sustituye.
+ChatGPT no implementa ni corrige código ni modifica repositorios; sí puede crear o actualizar registros de gestión y
+publicar hallazgos dentro de su autorización. Su dictamen exige:
 
-- **Identificación:** orden, tarea, PR y commits base y final revisados.
+- **Identificación:** orden, tarea, PR y SHA base y final revisados.
 - **Evaluación por criterio:** cada criterio de aceptación como cumplido, no cumplido o no verificable, con su
   evidencia.
-- **Origen de la evidencia:** separar las pruebas que Codex ejecutó por su cuenta, el resultado de la CI y las
+- **Origen de la evidencia, en fuentes separadas:** las pruebas propias del supervisor, el resultado de la CI y las
   afirmaciones del autor del PR.
-- **Hallazgos:** cada uno con severidad, ubicación, condiciones, impacto y justificación de por qué es (o no)
+- **Hallazgos:** cada uno con ID, severidad, ubicación, condición, impacto y justificación de por qué es (o no)
   bloqueante.
-- **Límites:** una revisión favorable no autoriza fusión, despliegue ni cierre automático; la decisión es del
-  propietario.
+- **Límites:** una aprobación técnica no autoriza fusión, despliegue ni cierre; la decisión es del propietario.
 
 **Implementación vs. supervisión.** Las instrucciones de implementación (crear la rama y el PR, publicar resultados
-en el issue y el PR) son de Claude. La supervisión devuelve su reporte al propietario, sin escrituras externas.
+en el issue y el PR) son de Claude. La corrección vuelve al mismo PR y la hace Claude.
 
 ## Qué se puede delegar
 
@@ -60,8 +69,9 @@ en el issue y el PR) son de Claude. La supervisión devuelve su reporte al propi
   scripts de solo lectura.
 - **Solo con supervisión (riesgo medio):** cambios de comportamiento visibles para usuarios, cambios de esquema
   (requieren migración explícita).
-- **Nunca:** despliegues, workflows, secretos, permisos, IAM, escritura en Google Sheets o Apps Script reales,
-  datos clínicos o personales, decisiones de negocio o clínicas.
+- **Nunca (para el ingeniero):** despliegues, workflows, secretos, permisos, IAM, escritura en Google Sheets o Apps
+  Script reales, datos clínicos o personales, decisiones de negocio o clínicas. La gestión autorizada de ChatGPT en
+  los registros del PM no cae en esta prohibición.
 
 ## Reglas para el agente
 
@@ -73,9 +83,11 @@ Cada repositorio tiene un `AGENTS.md`. Lo mínimo que dice para quien implementa
 - Si la tarea es ambigua o exige salir del alcance: parar y explicar en el PR, sin adivinar.
 - Nunca inventar progreso ni marcar tareas como terminadas.
 
-## Configurar Codex (opcional, solo para supervisar)
+## Configurar la supervisión de ChatGPT (opcional)
 
-1. En ChatGPT, abrir Codex y conectar GitHub (solo lectura).
+Ya no hace falta un agente Codex separado. Si se quiere que ChatGPT lea los PRs con una conexión propia:
+
+1. En ChatGPT, conectar GitHub (solo lectura para la revisión).
 2. Dar acceso solo a `PROJECT-OS`, `SIGSAH` y `RADAROS`.
 3. Crear un entorno por repositorio. Sin secretos ni variables con credenciales. Acceso a internet: apagado o
    limitado a instalar dependencias.
