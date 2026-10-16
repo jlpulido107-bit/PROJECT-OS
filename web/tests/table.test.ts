@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_DATA_ROWS, TAB_HEADERS, TABS_READ } from '@/lib/schema'
+import { isOptionalTab, MAX_DATA_ROWS, OPTIONAL_TABS, TAB_HEADERS, TABS_READ } from '@/lib/schema'
 import { buildDataset, parseTable } from '@/lib/table'
 
 const DEP_HEADER = [...TAB_HEADERS.DEPENDENCIAS]
@@ -78,7 +78,53 @@ describe('conjunto de datos', () => {
 
   it('las pestañas no recibidas quedan como ausentes, no como vacías', () => {
     const ds = buildDataset({}, { source: 'sheets', fetchedAt: 0 })
-    for (const tab of TABS_READ) expect(ds.tabs[tab]).toMatchObject({ ok: false, problem: 'pestana-ausente' })
+    for (const tab of TABS_READ.filter((t) => !isOptionalTab(t))) {
+      expect(ds.tabs[tab]).toMatchObject({ ok: false, problem: 'pestana-ausente' })
+    }
     expect(ds.proyectos).toEqual([])
+  })
+})
+
+describe('SUPERVISION (pestaña opcional, V1.9)', () => {
+  const header = [...TAB_HEADERS.SUPERVISION]
+  const fila = (valores: Record<string, string>) => header.map((h) => valores[h] ?? '')
+
+  it('está declarada como opcional y con las 24 columnas del contrato', () => {
+    expect(OPTIONAL_TABS).toEqual(['SUPERVISION'])
+    expect(header).toHaveLength(24)
+    expect(header[0]).toBe('SUPERVISION_ID')
+    expect(header.at(-1)).toBe('ACTUALIZADO_EN')
+  })
+
+  it('ausente: el resto se lee igual y no hay estado ni aviso de pestaña faltante', () => {
+    const ds = buildDataset({ HITOS: [[...TAB_HEADERS.HITOS]] }, { source: 'sheets', fetchedAt: 0 })
+    expect(ds.tabs.SUPERVISION).toBeUndefined()
+    expect(Object.values(ds.tabs).map((t) => t.tab)).not.toContain('SUPERVISION')
+    expect(ds.supervision).toEqual([])
+    expect(ds.tabs.HITOS).toMatchObject({ ok: true })
+    expect(ds.issues).toEqual([])
+  })
+
+  it('presente con encabezados correctos: la lee', () => {
+    const raw = {
+      SUPERVISION: [
+        header,
+        fila({ SUPERVISION_ID: 'SUP-001', ORDEN_ID: 'ORD-POS-011', ESTADO: 'pendiente', INTENTO: '1', RONDA: '0', ACTUALIZADO_EN: '2026-10-16' }),
+      ],
+    }
+    const ds = buildDataset(raw, { source: 'sheets', fetchedAt: 0 })
+    expect(ds.tabs.SUPERVISION).toMatchObject({ ok: true, rows: 1, problem: null })
+    expect(ds.supervision).toHaveLength(1)
+    expect(ds.supervision[0]).toMatchObject({ id: 'SUP-001', ordenId: 'ORD-POS-011', estado: 'PENDIENTE', intento: 1, ronda: 0 })
+  })
+
+  it('presente con encabezados incorrectos: se reporta como en las demás pestañas', () => {
+    const incompletos = header.filter((h) => h !== 'CLAVE')
+    const ds = buildDataset({ SUPERVISION: [incompletos, incompletos.map(() => 'x')] }, { source: 'sheets', fetchedAt: 0 })
+    expect(ds.tabs.SUPERVISION).toMatchObject({ ok: false, problem: 'encabezados-faltantes', missingColumns: ['CLAVE'] })
+    expect(ds.supervision).toEqual([])
+
+    const vacia = buildDataset({ SUPERVISION: [[]] }, { source: 'sheets', fetchedAt: 0 })
+    expect(vacia.tabs.SUPERVISION).toMatchObject({ ok: false, problem: 'sin-encabezados' })
   })
 })

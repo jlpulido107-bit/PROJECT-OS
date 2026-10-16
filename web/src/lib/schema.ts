@@ -53,10 +53,29 @@ export const TAB_HEADERS = {
     'ORDEN_ID', 'PROYECTO_ID', 'TAREA_ID', 'TITULO', 'OBJETIVO', 'CONTEXTO', 'CRITERIOS_ACEPTACION',
     'FUERA_DE_ALCANCE', 'COMO_PROBAR', 'RIESGO', 'ESTADO', 'ISSUE_URL', 'PR_URL', 'NOTAS', 'ACTUALIZADO_EN',
   ],
+  /**
+   * V1.9 (opcional): estado de supervisión de PRs (docs/migracion-supervision.md, contrato §3.1/§4/§5).
+   * Solo lectura por ahora; no está en WRITE_HEADERS.
+   */
+  SUPERVISION: [
+    'SUPERVISION_ID', 'ORDEN_ID', 'PROYECTO_ID', 'TAREA_ID', 'REPO', 'ISSUE', 'PR', 'HEAD_SHA', 'BASE_SHA',
+    'HASH_CRITERIOS', 'VERSION_CONTRATO', 'VERSION_POLITICA', 'CLAVE', 'REVISION_ID', 'EJECUCION_ID', 'INTENTO',
+    'RONDA', 'ESTADO', 'VEREDICTO', 'ORIGEN', 'REPORTE_REF', 'MOTIVO', 'VERSION', 'ACTUALIZADO_EN',
+  ],
 } as const
 
 export type TabName = keyof typeof TAB_HEADERS
 export type TabColumn<T extends TabName> = (typeof TAB_HEADERS)[T][number]
+
+/**
+ * Pestañas que pueden no existir en la hoja real. Si faltan, el dashboard lee el resto igual, sin error ni aviso.
+ * Si existen, se validan como las demás (encabezados incorrectos se reportan).
+ */
+export const OPTIONAL_TABS = ['SUPERVISION'] as const satisfies readonly TabName[]
+export type OptionalTabName = (typeof OPTIONAL_TABS)[number]
+export function isOptionalTab(tab: TabName): tab is OptionalTabName {
+  return (OPTIONAL_TABS as readonly string[]).includes(tab)
+}
 
 /** Pestañas que lee el dashboard. AUDITORIA, REGISTROS y DASHBOARD no se leen (mínimo necesario). */
 export const TABS_READ = Object.keys(TAB_HEADERS) as TabName[]

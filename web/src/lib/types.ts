@@ -1,5 +1,5 @@
 import type { Timestamp } from './dates'
-import type { TabName } from './schema'
+import type { OptionalTabName, TabName } from './schema'
 
 export interface Proyecto {
   id: string
@@ -157,6 +157,34 @@ export interface Orden {
   actualizadoEn: string | null
 }
 
+/** Fila de SUPERVISION (V1.9, opcional). Sin texto libre del reporte: solo veredicto, referencia y motivo corto. */
+export interface Supervision {
+  id: string
+  ordenId: string | null
+  proyectoId: string | null
+  tareaId: string | null
+  repo: string | null
+  issue: string | null
+  pr: string | null
+  headSha: string | null
+  baseSha: string | null
+  hashCriterios: string | null
+  versionContrato: string | null
+  versionPolitica: string | null
+  clave: string | null
+  revisionId: string | null
+  ejecucionId: string | null
+  intento: number | null
+  ronda: number | null
+  estado: string | null
+  veredicto: string | null
+  origen: string | null
+  reporteRef: string | null
+  motivo: string | null
+  version: string | null
+  actualizadoEn: Timestamp | null
+}
+
 export type TabProblem = 'pestana-ausente' | 'encabezados-faltantes' | 'encabezados-duplicados' | 'sin-encabezados'
 
 export interface TabStatus {
@@ -187,7 +215,8 @@ export interface Dataset {
   source: DataSource
   /** Instante en que se leyeron los datos (epoch ms). */
   fetchedAt: number
-  tabs: Record<TabName, TabStatus>
+  /** Las pestañas opcionales ausentes no tienen entrada (no son un problema). */
+  tabs: Record<Exclude<TabName, OptionalTabName>, TabStatus> & Partial<Record<OptionalTabName, TabStatus>>
   proyectos: Proyecto[]
   hitos: Hito[]
   tareas: Tarea[]
@@ -201,6 +230,7 @@ export interface Dataset {
   decisiones: Decision[]
   syncRuns: SyncRun[]
   ordenes: Orden[]
+  supervision: Supervision[]
   issues: DataIssue[]
   /** Hay más incidencias de las que se conservaron. */
   issuesTruncated: boolean
