@@ -1,6 +1,6 @@
 import { parseCivilDate, parseTimestamp, type Parsed, type Timestamp } from './dates'
 import { cellText, normalizeCode, parseFraction, parseNonNegative, parseSafeUrl } from './parse'
-import { MAX_DATA_ROWS, TAB_HEADERS, type TabName } from './schema'
+import { isOptionalTab, MAX_DATA_ROWS, TAB_HEADERS, type TabName } from './schema'
 import type { DataIssue, DataSource, Dataset, RawTabs, TabStatus } from './types'
 
 const MAX_ISSUES = 200
@@ -127,6 +127,8 @@ function mapTab<T>(
   log: IssueLog,
   map: (r: ReturnType<typeof reader>, id: string) => T,
 ): T[] {
+  // Pestaña opcional ausente: sin estado ni aviso. Presente: se valida como las demás.
+  if (isOptionalTab(tab) && raw[tab] === undefined) return []
   const parsed = parseTable(tab, raw[tab])
   tabs[tab] = parsed.status
   const idColumn = TAB_HEADERS[tab][0]
@@ -294,12 +296,39 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     actualizadoEn: r.date('ACTUALIZADO_EN'),
   }))
 
+  const supervision = mapTab('SUPERVISION', raw, tabs, log, (r, id) => ({
+    id,
+    ordenId: r.text('ORDEN_ID'),
+    proyectoId: r.text('PROYECTO_ID'),
+    tareaId: r.text('TAREA_ID'),
+    repo: r.text('REPO'),
+    issue: r.text('ISSUE'),
+    pr: r.text('PR'),
+    headSha: r.text('HEAD_SHA'),
+    baseSha: r.text('BASE_SHA'),
+    hashCriterios: r.text('HASH_CRITERIOS'),
+    versionContrato: r.text('VERSION_CONTRATO'),
+    versionPolitica: r.text('VERSION_POLITICA'),
+    clave: r.text('CLAVE'),
+    revisionId: r.text('REVISION_ID'),
+    ejecucionId: r.text('EJECUCION_ID'),
+    intento: r.amount('INTENTO'),
+    ronda: r.amount('RONDA'),
+    estado: r.code('ESTADO'),
+    veredicto: r.code('VEREDICTO'),
+    origen: r.text('ORIGEN'),
+    reporteRef: r.text('REPORTE_REF'),
+    motivo: r.text('MOTIVO'),
+    version: r.text('VERSION'),
+    actualizadoEn: r.timestamp('ACTUALIZADO_EN'),
+  }))
+
   return {
     source: meta.source,
     fetchedAt: meta.fetchedAt,
-    tabs: tabs as Record<TabName, TabStatus>,
+    tabs: tabs as Dataset['tabs'],
     proyectos, hitos, tareas, capacidad, asignaciones, planes, planItems, tiempos,
-    evidencias, dependencias, decisiones, syncRuns, ordenes,
+    evidencias, dependencias, decisiones, syncRuns, ordenes, supervision,
     issues: log.issues,
     issuesTruncated: log.truncated,
   }

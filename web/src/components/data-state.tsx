@@ -45,7 +45,10 @@ const PROBLEM_TEXT: Record<NonNullable<TabStatus['problem']>, string> = {
 
 /** Aviso cuando una pestaña necesaria no es válida: sus datos se muestran como "no disponibles", no como cero. */
 export function TabWarnings({ data, tabs }: { data: Dataset; tabs: TabName[] }) {
-  const problems = tabs.map((t) => data.tabs[t]).filter((s) => !s.ok || s.truncated)
+  // Una pestaña opcional ausente no tiene estado y no genera aviso.
+  const problems = tabs
+    .map((t) => data.tabs[t])
+    .filter((s): s is TabStatus => s !== undefined && (!s.ok || s.truncated))
   if (problems.length === 0) return null
   return (
     <div className="alert alert-warn" role="alert">
