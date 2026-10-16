@@ -2,8 +2,9 @@
 
 **Tipo:** cambio de esquema aditivo. Es una pestaña nueva y no toca las existentes (ni `ORDENES_CODEX`).
 **Quién la aplica:** el propietario, a mano en la hoja.
-**Estado:** la pestaña base (24 columnas) es una propuesta pendiente de aplicar; ❓ no se ha confirmado que exista en la
-hoja real. Orden ORD-POS-011 (tarea POS-013). La sección [Persistencia durable](#persistencia-durable-análisis-y-propuesta)
+**Estado:** la pestaña `SUPERVISION` (24 columnas, A1:X1, sin filas) fue creada por el propietario y verificada con
+encabezados correctos en el orden de `TAB_HEADERS` (16/10, solo lectura); producción aún no la lee porque el código no
+está desplegado. Orden ORD-POS-011 (tarea POS-013). La sección [Persistencia durable](#persistencia-durable-análisis-y-propuesta)
 (ORD-POS-016) es un análisis y una **propuesta pendiente de decisión**: no está aplicada ni implementada.
 
 ## Por qué

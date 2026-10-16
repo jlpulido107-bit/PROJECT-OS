@@ -200,8 +200,12 @@ de migración.
 
 La rutina inicial ([rutina-claude.md](rutina-claude.md), paso 3 del prompt) **rechaza** una orden si ya existe un PR,
 abierto o fusionado, con el `ORDEN_ID` en el título: comenta en el issue y termina. La vía de corrección en el mismo PR
-**existe** como segunda rutina documentada (modo corrección, PR #56) con cinco datos validados. Su conexión con el
-dashboard sigue pendiente (§8), y que el propietario la haya creado en su entorno no está verificado aquí. Hasta
+**existe** como segunda rutina documentada (modo corrección, PR #56) con cinco datos validados. La rutina
+`PROJECT-OS · corregir PR` existe y se disparó dos veces con éxito en la misma rama y sin PR nuevo: Puerta A en #56
+(`bc404d0` → `b487b5f`, [evidencia](https://github.com/jlpulido107-bit/PROJECT-OS/pull/56#issuecomment-6205316729)) y
+corrección real de un hallazgo en #62 (`828905a` → `a09ac2c`,
+[evidencia](https://github.com/jlpulido107-bit/PROJECT-OS/pull/62#issuecomment-6206541105)). Su conexión con el
+dashboard sigue pendiente (§8). Hasta
 demostrar el circuito completo, la ronda `CORRIGIENDO` no es ejecutable de extremo a extremo.
 
 ## Opciones técnicas en evaluación
@@ -222,8 +226,8 @@ despliegue de estas piezas, y ninguna se ha probado con servicios reales. Las pr
 | PR | Pieza | Fusionado | Desplegado | Validado operativamente |
 | --- | --- | --- | --- | --- |
 | #54 | Este contrato (documento) | Sí | No aplica | No |
-| #56 | Modo corrección de la rutina en el mismo PR (documento) | Sí | Sin evidencia | No |
-| #58 | Pestaña `SUPERVISION` opcional: esquema, lectura y migración | Sí | Sin evidencia | No; ❓ si el propietario creó la pestaña |
+| #56 | Modo corrección de la rutina en el mismo PR (documento) | Sí | Sin evidencia | Sí, dos disparos exitosos ([#56](https://github.com/jlpulido107-bit/PROJECT-OS/pull/56#issuecomment-6205316729), [#62](https://github.com/jlpulido107-bit/PROJECT-OS/pull/62#issuecomment-6206541105)); conexión con el dashboard pendiente |
+| #58 | Pestaña `SUPERVISION` opcional: esquema, lectura y migración | Sí | Sin evidencia | No: la pestaña fue creada por el propietario y verificada con encabezados correctos (16/10, solo lectura); producción aún no la lee porque el código no está desplegado |
 | #60 | Motor puro de estados (`engine.ts`, 12 casos) | Sí | Sin evidencia | No |
 | #62 | Validador de reporte, vigencia, clave idempotente y hash de criterios (`report.ts`, `key.ts`) | Sí | Sin evidencia | No |
 | #64 | SHA de base y head del PR y extractor de criterios (`criterios.ts`); F1 resuelto en `07be1e2` ([dictamen](https://github.com/jlpulido107-bit/PROJECT-OS/pull/64#issuecomment-6225987598)) | Sí (`9ab370e`) | Sin evidencia | No |
