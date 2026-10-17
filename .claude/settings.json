@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(bash scripts/pm-alta.sh:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
