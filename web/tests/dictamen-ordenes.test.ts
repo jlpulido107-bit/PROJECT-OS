@@ -69,9 +69,15 @@ describe('dictamen vigente por orden', () => {
     expect((await evaluar([comentario(r)]))?.siguiente).toBe('Revisar entradas del dictamen')
   })
 
+  const v2 = (rol: string, modelo: string, revisionId: string) => reporte({ versionContrato: '2', rol, modelo, revisionId })
   it.each([
     ['un CONFORME', [reporte()], 'Falta segundo revisor'], ['el mismo revisionId dos veces', [reporte(), reporte()], 'Falta segundo revisor'],
-    ['dos revisionId distintos', [reporte(), reporte({ revisionId: 'REV-2' })], 'Listo para tu decisión'],
+    ['dos de v1 (sin rol ni modelo)', [reporte(), reporte({ revisionId: 'REV-2' })], 'Falta segundo revisor'],
+    ['PRIMERO y SEGUNDO del mismo modelo', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-sonnet-5-5', 'R2')], 'Falta segundo revisor'],
+    ['PRIMERO y SEGUNDO de otro modelo', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-fable-5-1', 'R2')], 'Listo para tu decisión'],
+    ['DELTA y SEGUNDO de otro modelo', [v2('DELTA', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-fable-5-1', 'R2')], 'Listo para tu decisión'],
+    ['PRIMERO v2 y segundo de v1', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), reporte({ revisionId: 'R2' })], 'Falta segundo revisor'],
+    ['dos PRIMERO de modelos distintos', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('PRIMERO', 'claude-fable-5-1', 'R2')], 'Falta segundo revisor'],
   ])('MEDIO con %s: %s', async (_, reportes, paso) => {
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })
