@@ -32,8 +32,10 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 3. **POST.** Un solo `curl` con un `requestId` nuevo (UUID v4), sin `Authorization`:
 
    ```bash
+   DASHBOARD=https://project-os-dashboard-235975889400.northamerica-south1.run.app
+   REQ=$(python3 -c 'import uuid; print(uuid.uuid4())')
    curl -sS -w '\n%{http_code}\n' -X POST "$DASHBOARD/api/operaciones/<tareas|decisiones|ordenes>" \
-     -H 'Content-Type: application/json' -d "$(jq -n --arg r "$(uuidgen)" '{requestId:$r, …campos}')"
+     -H 'Content-Type: application/json' -d "$(jq -n --arg r "$REQ" '{requestId:$r, …campos}')"
    ```
 
    - `tareas`: `proyectoId`, `titulo`, `tipo`, `prioridad`, `criterioTerminado`; opcionales `hitoId`, `descripcion`,
