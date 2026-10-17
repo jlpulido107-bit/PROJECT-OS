@@ -2,7 +2,7 @@
 
 Cómo planeamos el propietario y Claude cada proyecto, y cómo se ejecutan las órdenes. Decidido por el propietario el
 2026-10-13: una sesión de Claude Code por repositorio y cinco roles. Desde el 2026-10-14 las órdenes se aprueban en el
-dashboard y **las ejecuta Claude**; el propietario decide con apoyo de Codex/ChatGPT ([órdenes](delegacion-codex.md)).
+dashboard y **las ejecuta Claude**; el propietario decide ([órdenes](delegacion-codex.md)). Sin auditor externo desde DEC-POS-008.
 
 ## Piezas
 
@@ -53,7 +53,7 @@ Cada rutina es una skill de Claude Code en el repositorio (`.claude/skills/`). S
 
 ## Ciclo de una orden
 
-1. **Decidir.** El propietario define la tarea (con Codex/ChatGPT si quiere); Claude puede redactar los campos.
+1. **Decidir.** El propietario define la tarea; Claude puede redactar los campos.
 2. **Aprobar.** En el dashboard, **Aprobar y crear el issue**. Solo el propietario aprueba.
 3. **Ejecutar.** El propietario pide «ejecuta ORD-…» en la sesión del repositorio; Claude abre el PR con evidencia.
 4. **Decidir.** El propietario revisa, fusiona o pide cambios, y registra el PR y el cierre en el dashboard.

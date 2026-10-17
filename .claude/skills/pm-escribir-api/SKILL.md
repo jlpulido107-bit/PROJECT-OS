@@ -28,7 +28,9 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
    dilo: así se evitan duplicados.
 2. **Proponer y esperar.** Muestra al propietario el cuerpo completo, campo por campo, y valida los límites
    (título 160, descripción 2000, criterio 1000, responsable 80, asunto 200, decisión 2000, justificación 2000,
-   textos de orden 2000). Espera un **«sí» literal**; cualquier otra respuesta o el silencio es no: no escribas.
+   textos de orden 2000). Espera un **«sí» literal** del propietario; cualquier otra respuesta o el silencio es no: no
+   escribas. El «sí» puede darse en el chat del escritor o en el del PM; en el segundo caso el PM lo reenvía al escritor
+   citando su texto literal (DEC-POS-008).
 3. **POST.** Genera el `requestId` (UUID v4) **una sola vez** y guarda el cuerpo exacto en un archivo **antes** de
    enviar; luego un solo `curl`, sin `Authorization`:
 

@@ -5,21 +5,19 @@
 - Claude Code (DEC-POS-002, 2026-10-16; sustituye el reparto de DEC-POS-001): planea (borradores que no aprueban nada),
   implementa, revisa y corrige, cada función en una sesión separada. El revisor nunca es la sesión que implementó, usa
   otro modelo y revisa a ciegas: solo la orden, el diff y el contrato, sin la descripción del PR.
-- ChatGPT: auditor externo. Audita 1 de cada 5 órdenes de riesgo BAJO y toda orden de riesgo MEDIO antes de fusionar.
-  No implementa código ni modifica repositorios. La gestión y los hallazgos que publique en los registros del PM
-  quedan dentro de lo que el propietario autorice.
-- No se exige un agente Codex separado. «Codex» sobrevive solo en nombres históricos (`ORDENES_CODEX`, `docs/delegacion-codex.md`).
+- Sin auditor externo (DEC-POS-008, 2026-10-17): el propietario canceló a ChatGPT. No se exige un agente Codex
+  separado; «Codex» sobrevive solo en nombres históricos (`ORDENES_CODEX`, `docs/delegacion-codex.md`).
 
-Ciclo: implementación y autocontrol de Claude → revisión ciega de otra sesión de Claude (otro modelo) → auditoría de
-ChatGPT cuando la política por riesgo la exige → decisión del propietario. Las correcciones vuelven a Claude, en el
-mismo PR. Política por riesgo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003).
-Un dictamen favorable (del revisor o del auditor) no autoriza fusión, despliegue ni cierre.
+Ciclo: implementación y autocontrol de Claude → revisión ciega de otra sesión de Claude según el riesgo (en MEDIO, con
+segundo revisor) → decisión del propietario. Las correcciones vuelven a Claude, en el mismo PR, con máximo 2 rondas.
+Política por riesgo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) (vigente con DEC-POS-008).
+Un dictamen favorable no autoriza fusión, despliegue ni cierre.
 
 ## Reglas
 - No escribir directamente en main; trabajar con ramas y PR.
 - No fusionar ni ejecutar despliegues sin autorización.
 - No modificar código de repositorios fuente desde aquí.
-- Google Sheets es la fuente operativa; jamás inventar progreso. Las sesiones de implementación y de auditoría no
+- Google Sheets es la fuente operativa; jamás inventar progreso. Las sesiones de implementación y de revisión no
   escriben en Sheets reales ni usan el conector de Google Sheets.
 - Escritura del PM (DEC-POS-005): solo la sesión PM (Claude) escribe, únicamente por la API de operaciones del dashboard
   (tareas, decisiones PENDIENTE y órdenes BORRADOR), con la skill `pm-escribir-api` y tras el «sí» explícito del
@@ -35,10 +33,9 @@ Un dictamen favorable (del revisor o del auditor) no autoriza fusión, despliegu
 ## Implementación y supervisión
 - Quien implementa (Claude) crea la rama y el PR y publica los resultados en el issue y el PR. Su autocontrol (pruebas
   propias, revisión de su diff) no sustituye la revisión independiente.
-- Quien revisa (otra sesión de Claude) y quien audita (ChatGPT) no son quien implementó: entregan su dictamen al
-  propietario; ChatGPT puede publicar hallazgos y actualizar registros de gestión solo dentro de su autorización.
+- Quien revisa (otra sesión de Claude, con otro modelo) no es quien implementó: entrega su dictamen al propietario.
   Detalle del dictamen en
-  [`docs/delegacion-codex.md`](docs/delegacion-codex.md#supervisión-independiente-chatgpt).
+  [`docs/delegacion-codex.md`](docs/delegacion-codex.md#supervisión-independiente).
 - Claude se ejecuta una sola vez al aprobar la orden en el dashboard; no se pide un lanzamiento manual duplicado.
 
 ## Órdenes (desde 2026-10-14: el propietario decide, Claude ejecuta)
