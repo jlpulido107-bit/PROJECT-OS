@@ -44,7 +44,8 @@ export async function handleWrite(
 ) {
   let requestId: string | undefined
   try {
-    const session = await getServerSession(authOptions)
+    // Con Authorization (agente PM) no hay sesión que leer: el guard valida el token.
+    const session = request.headers.has('authorization') ? null : await getServerSession(authOptions)
     const { actor, body, agent } = await evaluateWriteRequest(request, {
       email: session?.user?.email ?? null,
       env: process.env,

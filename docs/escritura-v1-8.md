@@ -137,6 +137,9 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
 - **Token.** El servidor compara el SHA-256 del token con `PM_AGENT_TOKEN_SHA256` (64 hex) en tiempo constante. Sin la
   variable, o con token inválido, responde 401 sin decir el motivo. Token y cookie de sesión a la vez: 400. Generar el
   token, guardar el hash en Cloud Run y desplegar lo hace el propietario (riesgo ALTO, fuera de esta orden).
+- **Proxy.** Sin sesión, el proxy (`web/src/lib/authz.ts`) solo deja pasar `POST` a `/api/operaciones/{tareas,decisiones,ordenes}`
+  y `PATCH` a `/api/operaciones/tareas/<id>` con `Bearer` cuyo SHA-256 (Web Crypto) coincide con la variable. Cualquier otra
+  ruta, método (incluido `GET`) o token sigue exigiendo sesión; la API vuelve a verificar token, operación y campos.
 - **Permitido** (lista blanca): `tarea.crear`, `tarea.editar`, `decision.crear` (siempre PENDIENTE) y `orden.crear`
   (siempre BORRADOR, nunca ALTO). `tarea.editar` solo cambia `titulo`, `descripcion`, `prioridad`, `hitoId`,
   `fechaPlan`, `fechaLimite`, `horasEstimadas` y `criterioTerminado`, con control de VERSION.
