@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
-import { Badge, DateText, Empty, Section, StateBadge, Text } from '@/components/ui'
+import { Badge, DateText, Empty, ExternalLink, Section, StateBadge, Text } from '@/components/ui'
 import { formatMinutes, type MinutesTotal } from '@/lib/aggregate'
-import { revisionEstado, DIAS_ACTIVIDAD, type Alerta, type HitoEstado, type RiesgoHito } from '@/lib/estado'
+import { revisionEstado, DIAS_ACTIVIDAD, type Alerta, type HitoEstado, type OrdenEnCurso, type RiesgoHito } from '@/lib/estado'
 import { privateData } from '@/lib/page-data'
 
 export const metadata: Metadata = { title: 'Estado de proyectos' }
@@ -63,6 +63,29 @@ function HitoFila({ h }: { h: HitoEstado }) {
   )
 }
 
+function OrdenesEnCurso({ ordenes, proyecto }: { ordenes: OrdenEnCurso[]; proyecto: string }) {
+  return (
+    <>
+      <h3>Órdenes en curso</h3>
+      {ordenes.length === 0 ? <p className="muted small">Sin órdenes en curso</p> : (
+        <ul className="list" aria-label={`Órdenes en curso de ${proyecto}`}>
+          {ordenes.map((o) => (
+            <li key={o.orden.id}>
+              <span className="mono">{o.orden.id}</span> · <Text value={o.orden.titulo} empty="Sin título" /> <StateBadge code={o.estado} />
+              <div className="small">Siguiente: {o.siguiente.texto} ({o.siguiente.quien})</div>
+              <div className="small">
+                {o.issueUrl ? <ExternalLink href={o.issueUrl}>Issue</ExternalLink> : null}
+                {o.issueUrl && o.prUrl ? ' · ' : null}
+                {o.prUrl ? <ExternalLink href={o.prUrl}>PR</ExternalLink> : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
 export default async function EstadoPage() {
   const { result } = await privateData('/estado')
   if (!result.ok) return <><h1>Estado de proyectos</h1><LoadError result={result} /></>
@@ -75,7 +98,7 @@ export default async function EstadoPage() {
     <>
       <h1>Estado de proyectos</h1>
       <Freshness data={data} />
-      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'TIEMPOS', 'EVIDENCIAS']} />
+      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'TIEMPOS', 'EVIDENCIAS', 'ORDENES_CODEX']} />
       <p className="muted small">
         Lectura de la hoja: metas, tareas y horas tal como están registradas. Las alertas no cambian ningún estado.
       </p>
@@ -108,6 +131,7 @@ export default async function EstadoPage() {
               <div><dt>Actividad ({DIAS_ACTIVIDAD} días)</dt><dd>{p.actividad.evidencias} {p.actividad.evidencias === 1 ? 'evidencia' : 'evidencias'}{p.actividad.ultima ? <span className="small muted"> · última <DateText value={p.actividad.ultima} /></span> : <span className="small muted"> · ninguna registrada</span>}</dd></div>
             </dl>
             <Alertas alertas={p.alertas} label={`Alertas de ${p.proyecto.id}`} />
+            <OrdenesEnCurso ordenes={p.ordenes} proyecto={p.proyecto.id} />
             {p.hitos.length === 0 ? (
               <Empty>Este proyecto no tiene metas en HITOS.</Empty>
             ) : (
