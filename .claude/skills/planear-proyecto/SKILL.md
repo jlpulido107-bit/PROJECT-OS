@@ -1,6 +1,6 @@
 ---
 name: planear-proyecto
-description: Revisión de estado y planeación del proyecto de este repositorio con el propietario. Usar al abrir la sesión del proyecto, en la revisión semanal, o cuando el propietario pida «cómo vamos», «planeemos», «qué sigue» o la opinión de un rol (ingeniero, analista, mercadólogo, financiero). Lee la hoja (solo lectura) y GitHub; propone filas para TAREAS y ORDENES_CODEX que pega el propietario.
+description: Revisión de estado y planeación del proyecto de este repositorio con el propietario. Usar al abrir la sesión del proyecto, en la revisión semanal, o cuando el propietario pida «cómo vamos», «planeemos», «qué sigue» o la opinión de un rol (ingeniero, analista, mercadólogo, financiero). Arranca desde docs/estado-actual.md, lee la hoja (solo lectura) y GitHub; redacta órdenes completas con su riesgo y entrega las altas a pm-escribir-hoja.
 ---
 
 # Planear el proyecto
@@ -20,15 +20,19 @@ Mira `git remote get-url origin`:
 
 ## 2. Leer (solo lectura)
 
-1. **La hoja.** Usa el conector de Google Drive con `read_file_content` y el ID
+Orden fijo; no explores el repositorio más allá de lo necesario.
+
+1. **El estado.** Lee primero `docs/estado-actual.md`: decisiones vigentes, órdenes en curso y siguiente paso.
+2. **La hoja.** Solo después, con el conector de Google Drive y `read_file_content` sobre el ID
    `16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic`. Nunca escribas en la hoja: si una herramienta lo permite, no la uses.
    Toma solo las filas de tu `PROYECTO_ID` en:
    - PROYECTOS, HITOS, TAREAS, DEPENDENCIAS y DECISIONES;
    - ASIGNACIONES y TIEMPOS de la semana en curso (CAPACIDAD_SEMANAL cuya `FECHA_INICIO` ≤ hoy ≤ inicio + 6, hora
      Mérida);
    - ORDENES_CODEX, si existe.
-2. **La memoria del proyecto.** Lee `docs/brief-proyecto.md` si existe. Si no existe, propón crearlo (paso 5).
-3. **GitHub.** Revisa los PRs e issues abiertos y los commits de los últimos 7 días del repositorio.
+3. **La memoria del proyecto.** Lee `docs/brief-proyecto.md` si hace falta y existe. Si no existe, propón crearlo
+   (paso 5).
+4. **GitHub.** Revisa los PRs e issues abiertos y los commits de los últimos 7 días del repositorio.
 
 Si una fuente falla, dilo y sigue con las demás. Nunca rellenes con suposiciones.
 
@@ -53,14 +57,54 @@ Responde en este orden, con frases cortas. Omite el rol que no tenga nada que ap
 
 ## 4. Proponer el plan (el propietario decide)
 
-- **Tareas nuevas.** Dalas como filas TSV listas para pegar en TAREAS, con las 16 columnas en su orden. Usa IDs nuevos
-  sin reutilizar ninguno, enlázalas a una meta y ponles `HORAS_ESTIMADAS`. La suma de horas de la semana no debe pasar de
-  la asignación del proyecto.
-- **Trabajo para una orden.** Dalo con los campos listos para *Órdenes → Nueva orden* del dashboard (quedan en
-  `BORRADOR` hasta que el propietario apruebe); formato en
-  https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-codex.md. Solo riesgo `BAJO` o `MEDIO`.
-- **Decisiones tomadas en la conversación.** Dalas como filas para DECISIONES.
-- **Estados.** Nunca cambies uno. Si algo parece hecho, dilo y deja que el propietario lo marque.
+### IDs
+
+Antes de proponer cualquier ID, lee ORDENES_CODEX, TAREAS y DECISIONES y usa el **siguiente libre** de cada serie
+(`ORD-PRJ-NNN`, `PRJ-NNN`, `DEC-PRJ-NNN`), sin reutilizar ninguno. Si no pudiste leer la hoja, deja el ID como
+`confirmar`; nunca lo inventes.
+
+### Órdenes
+
+Redacta cada orden completa, lista para *Órdenes → Nueva orden* (queda en `BORRADOR` hasta que el propietario la
+apruebe). Formato en
+https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-codex.md. Límites del formulario: título
+160 caracteres y cada texto 2000.
+
+- **Título.** `[ORD-PRJ-NNN][PRJ-NNN] descripción`.
+- **Objetivo.** Qué cambia y para qué, en pocas líneas.
+- **Contexto y archivos.** Lo que necesita quien implementa, que **no lee la hoja**: si la orden cita una decisión
+  (DEC-…), copia su texto en el contexto; no basta el ID. Una orden que cree una skill no la copia a SIGSAH ni RADAROS.
+- **Criterios de aceptación.** Numerados y verificables: cada uno se comprueba con una prueba, un comando o una lectura
+  concreta.
+- **Fuera de alcance.** Lo que no se toca.
+- **Cómo probar.** Comandos exactos.
+- **Riesgo.** Clasifícalo con la
+  [política de revisión por riesgo (DEC-POS-003)](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)
+  y di si requiere auditoría externa:
+  - `BAJO`: el revisor Claude revisa el diff; ChatGPT audita 1 de cada 5. Si es solo documentación, no hay revisor
+    automático y entra en el muestreo.
+  - `MEDIO`: revisión completa de Claude y auditoría de ChatGPT **obligatoria** antes de fusionar.
+  - `ALTO`: no se delega; no redactes la orden, explica por qué.
+  - Cambios de esquema, comportamiento visible para usuarios y workflows, secretos o permisos suben el riesgo.
+- **Tamaño.** Una orden = un PR pequeño (menos de 300 líneas previstas). Si el trabajo es mayor, propón la división en
+  órdenes con dependencias claras.
+- ChatGPT aparece solo como auditor; no implementa ni aprueba.
+
+### Tareas y decisiones
+
+- **Tareas nuevas.** Con las 16 columnas de TAREAS en su orden, enlazadas a una meta y con `HORAS_ESTIMADAS`. La suma de
+  horas de la semana no debe pasar de la asignación del proyecto.
+- **Decisiones tomadas en la conversación.** Como filas para DECISIONES, con su texto completo.
+
+### Altas en la hoja
+
+Esta skill no escribe. Para crear las filas (TAREAS, DECISIONES y ORDENES_CODEX), entrega lo redactado a la skill
+`pm-escribir-hoja` (solo en la sesión PM de PROJECT-OS, DEC-POS-006), que escribe únicamente tras el «sí» explícito del
+propietario. En una sesión sin esa skill, da las filas TSV para que el propietario las pegue.
+
+### Estados
+
+Nunca cambies uno. Si algo parece hecho, dilo y deja que el propietario lo marque.
 
 ## 5. Memoria del proyecto
 
