@@ -148,5 +148,10 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
 - **Auditoría.** `ACTOR=agente-pm` y `;agente=pm` al final de `ORIGEN`. La idempotencia por `requestId` es la de siempre.
 - **Frecuencia.** Límite propio (clave `agente-pm`): ráfaga de 5 y 1 operación por minuto; al excederlo, 429.
   El humano tiene ráfaga de 10 y 1 cada 20 s.
-- **Revocar.** Borrar la variable `PM_AGENT_TOKEN_SHA256` y redesplegar: el acceso del agente queda deshabilitado
-  (401). La escritura humana no se toca.
+- **Activar (ORD-POS-028).** `render.mjs` monta `PM_AGENT_TOKEN_SHA256` desde el secreto
+  `project-os-pm-agent-token-sha256` (valor: SHA-256 hex del token), solo si defines la versión fijada, junto con
+  `WRITE_MODE=sheets`: `export SECRET_VERSION_PM_AGENT=<versión>`. Nunca acepta el hash ni el token como valor literal;
+  una versión mal formada, o sin `WRITE_MODE=sheets`, hace fallar el render sin imprimir YAML. Comprobación:
+  `grep -c PM_AGENT_TOKEN_SHA256 /tmp/project-os-service.yaml` debe dar `1` (`0` = acceso deshabilitado).
+- **Revocar.** Desplegar sin `SECRET_VERSION_PM_AGENT` (`unset SECRET_VERSION_PM_AGENT`, renderizar y `services replace`):
+  la variable `PM_AGENT_TOKEN_SHA256` desaparece y el acceso del agente queda deshabilitado (401). La escritura humana no se toca.
