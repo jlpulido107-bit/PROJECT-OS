@@ -1,7 +1,8 @@
 import { isBlocked, mondayOf, sumMinutes, taskState, type MinutesTotal } from './aggregate'
 import { addDays, daysBetween, todayInMerida } from './dates'
+import { estadoOrden, SIGUIENTE_PASO, type EstadoOrden } from './ordenes'
 import { COMPLETED_STATE } from './schema'
-import type { Dataset, Hito, Proyecto, Tarea } from './types'
+import type { Dataset, Hito, Orden, Proyecto, Tarea } from './types'
 
 /**
  * Revisión de estado por proyecto (V1.7). Lectura pura de la hoja:
@@ -50,8 +51,43 @@ export interface SemanaEstado {
   sesionesSinProyecto: number
 }
 
+/** Estados de una orden que se listan en /estado (BORRADOR, CERRADA y CANCELADA no). */
+const ESTADOS_EN_CURSO: readonly EstadoOrden[] = ['APROBADA', 'ENVIADA', 'PR_ABIERTO', 'REVISADA']
+
+export interface OrdenEnCurso {
+  orden: Orden
+  estado: EstadoOrden
+  siguiente: (typeof SIGUIENTE_PASO)[EstadoOrden]
+  /** Solo https://github.com/…; cualquier otra URL se descarta. */
+  issueUrl: string | null
+  prUrl: string | null
+}
+
+/** Devuelve la URL solo si es https de github.com; si no, `null` (no se renderiza como enlace). */
+export function urlGithub(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' && u.hostname === 'github.com' && !u.username && !u.password ? u.href : null
+  } catch {
+    return null
+  }
+}
+
+/** Órdenes del proyecto en curso; una con estado inválido se omite. */
+export function ordenesEnCurso(ds: Pick<Dataset, 'ordenes'>, proyectoId: string): OrdenEnCurso[] {
+  const lista: OrdenEnCurso[] = []
+  for (const orden of ds.ordenes) {
+    const estado = estadoOrden(orden.estado)
+    if (orden.proyectoId !== proyectoId || !estado || !ESTADOS_EN_CURSO.includes(estado)) continue
+    lista.push({ orden, estado, siguiente: SIGUIENTE_PASO[estado], issueUrl: urlGithub(orden.issueUrl), prUrl: urlGithub(orden.prUrl) })
+  }
+  return lista.sort((a, b) => ESTADOS_EN_CURSO.indexOf(a.estado) - ESTADOS_EN_CURSO.indexOf(b.estado) || a.orden.id.localeCompare(b.orden.id))
+}
+
 export interface ProyectoEstado {
   proyecto: Proyecto
+  ordenes: OrdenEnCurso[]
   hitos: HitoEstado[]
   proximoHito: HitoEstado | null
   tareasAbiertas: number
@@ -175,7 +211,11 @@ export function revisionEstado(ds: Dataset, now: Date = new Date()): RevisionEst
       .filter((e) => e.proyectoId === proyecto.id && e.fecha !== null && e.fecha <= hoy)
       .reduce<string | null>((max, e) => (max === null || (e.fecha ?? '') > max ? e.fecha : max), null)
 
+    const ordenes = ordenesEnCurso(ds, proyecto.id)
+    const revisadas = ordenes.filter((o) => o.estado === 'REVISADA').length
+
     const alertas: Alerta[] = []
+    if (revisadas > 0) alertas.push({ nivel: 'media', texto: `${plural(revisadas, 'orden revisada espera', 'órdenes revisadas esperan')} tu fusión o cierre.` })
     for (const h of hitos) {
       const nombre = `«${h.hito.nombre ?? h.hito.id}»`
       if (h.riesgo === 'vencido') alertas.push({ nivel: 'alta', texto: `La meta ${nombre} venció hace ${plural(-(h.diasRestantes ?? 0), 'día', 'días')} y no está COMPLETADO.` })
@@ -201,6 +241,7 @@ export function revisionEstado(ds: Dataset, now: Date = new Date()): RevisionEst
 
     return {
       proyecto,
+      ordenes,
       hitos,
       proximoHito,
       tareasAbiertas: abiertas.length,

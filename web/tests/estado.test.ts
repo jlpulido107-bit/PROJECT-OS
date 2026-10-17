@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { revisionEstado } from '@/lib/estado'
+import { ordenesEnCurso, revisionEstado, urlGithub } from '@/lib/estado'
 import { TAB_HEADERS, type TabName } from '@/lib/schema'
 import { buildDataset } from '@/lib/table'
 import type { RawTabs } from '@/lib/types'
@@ -197,5 +197,55 @@ describe('revisión de estado: tareas y actividad', () => {
     const antes = JSON.stringify(ds)
     revisionEstado(ds, NOW)
     expect(JSON.stringify(ds)).toBe(antes)
+  })
+})
+
+describe('revisión de estado: órdenes en curso', () => {
+  const orden = (id: string, estado: string, extra: Row = {}): Row => ({
+    ORDEN_ID: id, PROYECTO_ID: 'SIG', TAREA_ID: 'SIG-001', TITULO: `Orden ${id}`, ESTADO: estado, ...extra,
+  })
+  const ISSUE = 'https://github.com/jlpulido107-bit/SIGSAH/issues/1'
+  const PR = 'https://github.com/jlpulido107-bit/SIGSAH/pull/2'
+  const conOrdenes = (rows: Row[]) =>
+    revisionEstado(build({ ...base, ORDENES_CODEX: rows }), NOW).proyectos.find((p) => p.proyecto.id === 'SIG')!
+
+  it('lista solo APROBADA, ENVIADA, PR_ABIERTO y REVISADA, con siguiente paso, quién y enlaces', () => {
+    const p = conOrdenes([
+      orden('ORD-SIG-001', 'BORRADOR'), orden('ORD-SIG-002', 'CERRADA'), orden('ORD-SIG-003', 'CANCELADA'),
+      orden('ORD-SIG-004', 'REVISADA', { ISSUE_URL: ISSUE, PR_URL: PR }),
+      orden('ORD-SIG-005', 'ENVIADA', { ISSUE_URL: ISSUE }),
+      orden('ORD-SIG-006', 'APROBADA'), orden('ORD-SIG-007', 'PR_ABIERTO', { ISSUE_URL: ISSUE, PR_URL: PR }),
+      { ...orden('ORD-ECO-001', 'ENVIADA'), PROYECTO_ID: 'ECO' },
+    ])
+    expect(p.ordenes.map((o) => o.orden.id)).toEqual(['ORD-SIG-006', 'ORD-SIG-005', 'ORD-SIG-007', 'ORD-SIG-004'])
+    expect(p.ordenes[1]).toMatchObject({ estado: 'ENVIADA', siguiente: { quien: 'claude' }, issueUrl: ISSUE, prUrl: null })
+    expect(p.ordenes[3]).toMatchObject({ siguiente: { quien: 'propietario' }, issueUrl: ISSUE, prUrl: PR })
+  })
+
+  it('sin órdenes en curso la lista queda vacía', () => {
+    expect(conOrdenes([orden('ORD-SIG-001', 'CERRADA')]).ordenes).toEqual([])
+    expect(dev.ordenes).toEqual([])
+  })
+
+  it('una orden con estado inválido se omite sin romper la revisión', () => {
+    const p = conOrdenes([orden('ORD-SIG-001', 'INVENTADO'), orden('ORD-SIG-002', ''), orden('ORD-SIG-003', 'ENVIADA')])
+    expect(p.ordenes.map((o) => o.orden.id)).toEqual(['ORD-SIG-003'])
+  })
+
+  it('alerta media por las órdenes REVISADAS y ninguna si no hay', () => {
+    const con = conOrdenes([orden('ORD-SIG-001', 'REVISADA'), orden('ORD-SIG-002', 'REVISADA')])
+    expect(con.alertas).toContainEqual({ nivel: 'media', texto: '2 órdenes revisadas esperan tu fusión o cierre.' })
+    expect(textos(conOrdenes([orden('ORD-SIG-001', 'ENVIADA')])).join()).not.toContain('revisada')
+  })
+
+  it('un enlace que no es https de github.com no se conserva como enlace', () => {
+    expect(urlGithub(PR)).toBe(PR)
+    for (const mala of ['http://github.com/a/b/pull/1', 'https://evil.example/pull/1', 'https://github.com.evil.example/x',
+      'https://user:pw@github.com/a/b', 'javascript:alert(1)', 'no es url', '', null]) {
+      expect(urlGithub(mala)).toBeNull()
+    }
+    const p = conOrdenes([orden('ORD-SIG-001', 'PR_ABIERTO', { ISSUE_URL: 'https://evil.example/i/1', PR_URL: 'http://github.com/a/b/pull/1' })])
+    expect(p.ordenes[0]).toMatchObject({ issueUrl: null, prUrl: null })
+    expect(ordenesEnCurso(build({ ...base, ORDENES_CODEX: [] }), 'SIG')).toEqual([])
   })
 })
