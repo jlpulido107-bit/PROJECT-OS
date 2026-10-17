@@ -1,6 +1,6 @@
 ---
 name: planear-proyecto
-description: Revisión de estado y planeación del proyecto de este repositorio con el propietario. Usar al abrir la sesión del proyecto, en la revisión semanal, o cuando el propietario pida «cómo vamos», «planeemos», «qué sigue» o la opinión de un rol (ingeniero, analista, mercadólogo, financiero). Arranca desde docs/estado-actual.md, lee la hoja (solo lectura) y GitHub; redacta órdenes completas con su riesgo y entrega las altas a pm-escribir-hoja.
+description: Revisión de estado y planeación del proyecto de este repositorio con el propietario. Usar al abrir la sesión del proyecto, en la revisión semanal, o cuando el propietario pida «cómo vamos», «planeemos», «qué sigue» o la opinión de un rol (ingeniero, analista, mercadólogo, financiero). Arranca desde docs/estado-actual.md, lee la hoja (solo lectura) y GitHub; redacta órdenes completas con su riesgo y entrega las altas a pm-escribir-api.
 ---
 
 # Planear el proyecto
@@ -99,7 +99,7 @@ https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-c
 ### Altas en la hoja
 
 Esta skill no escribe. Para crear las filas (TAREAS, DECISIONES y ORDENES_CODEX), entrega lo redactado a la skill
-`pm-escribir-hoja` (solo en la sesión PM de PROJECT-OS, DEC-POS-006), que escribe únicamente tras el «sí» explícito del
+`pm-escribir-api` (solo en la sesión PM de PROJECT-OS, DEC-POS-005), que escribe por la API de operaciones únicamente tras el «sí» explícito del
 propietario. En una sesión sin esa skill, da las filas TSV para que el propietario las pegue.
 
 ### Estados
