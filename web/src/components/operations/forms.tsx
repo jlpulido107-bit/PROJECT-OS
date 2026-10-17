@@ -639,6 +639,7 @@ const SUPERVISION_TEXTO: Record<string, string> = {
   'sin-rutina': 'Esta rutina no está configurada (docs/rutina-claude.md).',
   'head-cambio': 'El PR cambió desde que cargaste la página. Recárgala antes de lanzar.',
   'sin-accion': 'Ya no toca este paso. Recarga la página.',
+  'correlativo-agotado': 'Correlativo de revisión agotado (máximo 999).',
   'orden-sin-pr': 'La orden no tiene un PR válido.',
   'http-429': 'Se alcanzó el límite de ejecuciones de la rutina. Espera unos minutos.',
   'auditoria-pendiente': 'La sesión corre, pero no quedó la fila de AUDITORIA: avisa al propietario de la hoja.',

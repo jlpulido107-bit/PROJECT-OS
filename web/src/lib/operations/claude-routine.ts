@@ -1,3 +1,5 @@
+import 'server-only'
+
 /**
  * Ejecución automática de órdenes con Claude (V1.8 F5a, docs/rutina-claude.md).
  *

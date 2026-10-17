@@ -47,8 +47,9 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
      opcional `contexto`.
 4. **Verificar.** Con `201`, relee la fila (una sola vez, con los valores propuestos) y `AUDITORIA` (`ACTOR` =
    `agente-pm`, `ORIGEN` termina en `;agente=pm`). Informa ID, fila y auditoría.
-5. **Errores.** Si el script termina con 4xx o 5xx, detente e informa código y mensaje. Un 429 espera al menos un
-   minuto.
+5. **Errores.** Si el script termina con error, detente e informa código y mensaje (un 429 espera al menos un minuto).
+   Solo un 2xx es éxito. Un 3xx es error («redirección inesperada»). Un 4xx no escribió nada: el `.enviado.json` pasa a
+   `.rechazado.json` y el JSON corregido se reenvía sin `--repetir`. Un 5xx o un fallo de transporte lo conservan.
 6. **Resultado incierto.** Si el script informa fallo de transporte (salida distinta de 0 sin código HTTP, timeout) o
    no hay respuesta clara, la alta pudo escribirse: detente, informa y reconcilia releyendo la pestaña y `AUDITORIA`
    antes de cualquier otra alta.

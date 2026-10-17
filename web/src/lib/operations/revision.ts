@@ -20,7 +20,7 @@ export interface SupervisionInfo {
   sessionUrl?: string
   /** true si se lanzó ahora; false si el mismo requestId ya había lanzado esta sesión. */
   nueva?: boolean
-  /** 'sin-rutina', 'head-cambio', 'sin-accion', 'http-429', 'red', 'auditoria-pendiente'… (nunca cuerpos de respuesta). */
+  /** 'sin-rutina', 'head-cambio', 'sin-accion', 'correlativo-agotado', 'http-429', 'red', 'auditoria-pendiente'… (nunca cuerpos de respuesta). */
   codigo?: string
 }
 
@@ -54,7 +54,9 @@ async function lanzarUnaVez(
   let plan: PlanLanzamiento | null
   try {
     const datos = await github.datosDictamen(proyectoId, prUrl)
-    plan = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null }, { repo, numero: Number(/\/pull\/(\d+)$/.exec(prUrl)![1]) }).plan
+    const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null }, { repo, numero: Number(/\/pull\/(\d+)$/.exec(prUrl)![1]) })
+    if (ev.agotado) return { ok: false, codigo: 'correlativo-agotado' }
+    plan = ev.plan
   } catch (error) {
     return fallo(error)
   }
