@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Despliega el dashboard a Cloud Run en un solo comando: renderiza el YAML, compara los NOMBRES de variables con la
 # revisión activa (nunca imprime valores), pide confirmación y aplica. Solo lo ejecuta el propietario (Cloud Shell).
-#   web/deploy/cloudrun/deploy.sh [--dry-run]     (exporta antes las variables de render.mjs, p. ej. SECRET_VERSION_PM_AGENT=<versión vigente>)
+#   web/deploy/cloudrun/deploy.sh [--dry-run] [--desde-activa] [--quitar NOMBRE]...
+# Sin --desde-activa, exporta antes las variables de render.mjs. Con ella, la revisión activa las aporta y lo ya exportado
+# (p. ej. IMAGE=<digest nuevo>) prevalece. --quitar permite que esa variable falte en el YAML (repetible).
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-project-os-511102}"
@@ -10,11 +12,19 @@ SERVICE_NAME="${SERVICE_NAME:-project-os-dashboard}"
 export PROJECT_ID REGION SERVICE_NAME
 
 DRY_RUN=0
-for arg in "$@"; do
-  case "$arg" in
+DESDE_ACTIVA=0
+QUITAR=" "
+USO="Uso: deploy.sh [--dry-run] [--desde-activa] [--quitar NOMBRE]..."
+while [ $# -gt 0 ]; do
+  case "$1" in
     --dry-run) DRY_RUN=1 ;;
-    *) echo "Uso: deploy.sh [--dry-run]" >&2; exit 2 ;;
+    --desde-activa) DESDE_ACTIVA=1 ;;
+    --quitar)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[A-Z][A-Z0-9_]*$ ]]; then echo "$USO (NOMBRE en mayúsculas)" >&2; exit 2; fi
+      QUITAR="$QUITAR$2 "; shift ;;
+    *) echo "$USO" >&2; exit 2 ;;
   esac
+  shift
 done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,21 +32,65 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 YAML="$WORK/service.yaml"
 
+leer_activa() {
+  if ! gcloud run services describe "$SERVICE_NAME" --project "$PROJECT_ID" --region "$REGION" --format=json > "$WORK/activa.json"; then
+    echo "DETENTE: no se pudo leer la revisión activa; no se aplicó nada." >&2
+    exit 1
+  fi
+}
+
+SOBRESCRITAS=""
+if [ "$DESDE_ACTIVA" -eq 1 ]; then
+  leer_activa
+  # NOMBRE=valor\0 por variable de render.mjs que la activa define; los valores solo viajan por el entorno, nunca se imprimen.
+  if ! node -e '
+    const fs = require("fs")
+    let spec, c
+    try { spec = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).spec.template.spec; c = spec.containers[0] } catch { c = undefined }
+    if (!c) { console.error("la revisión activa no es JSON válido o no tiene contenedor"); process.exit(1) }
+    const env = new Map((c.env ?? []).map((e) => [e.name, e]))
+    const literal = (n) => env.get(n)?.value
+    const clave = (n) => env.get(n)?.valueFrom?.secretKeyRef?.key
+    const m = {
+      IMAGE: c.image, RUNTIME_SA: spec.serviceAccountName, SERVICE_URL: literal("NEXTAUTH_URL"), OAUTH_CLIENT_ID: literal("GOOGLE_CLIENT_ID"),
+      SECRET_VERSION_NEXTAUTH: clave("NEXTAUTH_SECRET"), SECRET_VERSION_OAUTH: clave("GOOGLE_CLIENT_SECRET"),
+      SECRET_VERSION_ALLOWLIST: clave("AUTH_ALLOWED_EMAILS"), SECRET_VERSION_WRITERS: clave("AUTH_WRITER_EMAILS"),
+      SECRET_VERSION_GITHUB: clave("GITHUB_DISPATCH_TOKEN"), SECRET_VERSION_CLAUDE_ROUTINE: clave("CLAUDE_ROUTINE_TOKEN"),
+      SECRET_VERSION_PM_AGENT: clave("PM_AGENT_TOKEN_SHA256"), WRITE_MODE: env.has("PROJECT_OS_WRITE_MODE") ? "sheets" : undefined,
+      WRITE_SERVICE_ACCOUNT: literal("PROJECT_OS_WRITE_SERVICE_ACCOUNT"), CLAUDE_ROUTINE_ID: literal("CLAUDE_ROUTINE_ID"),
+    }
+    for (const [k, v] of Object.entries(m)) if (v) process.stdout.write(`${k}=${v}\0`)
+  ' "$WORK/activa.json" > "$WORK/mapeo.bin"; then
+    echo "DETENTE: no se pudo leer la configuración de la revisión activa; no se aplicó nada." >&2
+    exit 1
+  fi
+  while IFS='=' read -r -d '' NOMBRE VALOR; do
+    if [ -n "${!NOMBRE:-}" ]; then SOBRESCRITAS="$SOBRESCRITAS $NOMBRE"; else export "$NOMBRE=$VALOR"; fi
+  done < "$WORK/mapeo.bin"
+fi
+
 if ! node "$HERE/render.mjs" > "$YAML"; then
   echo "DETENTE: el render falló; no se aplicó nada." >&2
   exit 1
 fi
-
-if ! gcloud run services describe "$SERVICE_NAME" --project "$PROJECT_ID" --region "$REGION" --format=json > "$WORK/activa.json"; then
-  echo "DETENTE: no se pudo leer la revisión activa; no se aplicó nada." >&2
+if ! grep -q '[^[:space:]]' "$YAML"; then
+  echo "DETENTE: el YAML renderizado está vacío; no se aplicó nada." >&2
   exit 1
 fi
 
+[ "$DESDE_ACTIVA" -eq 1 ] || leer_activa
+
 # Nombres (con dígitos) de las variables de la revisión activa y del YAML nuevo, y la imagen de cada una.
-node -e '
-  const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).spec.template.spec.containers[0]
+if ! node -e '
+  let c
+  try { c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).spec.template.spec.containers[0] } catch { c = undefined }
+  if (!c) process.exit(1)
   console.log((c.env ?? []).map((e) => e.name).join("\n"))
-' "$WORK/activa.json" | sort -u | sed '/^$/d' > "$WORK/activas.txt"
+' "$WORK/activa.json" > "$WORK/activas.raw"; then
+  echo "DETENTE: la revisión activa no es JSON válido o no tiene contenedor; no se aplicó nada." >&2
+  exit 1
+fi
+sort -u "$WORK/activas.raw" | sed '/^$/d' > "$WORK/activas.txt"
 grep -oE '^ *- name: [A-Z][A-Z0-9_]*$' "$YAML" | sed -E 's/^ *- name: //' | sort -u > "$WORK/nuevas.txt"
 # Versión de cada secreto (NOMBRE secreto:versión): solo nombres y números, nunca valores.
 node -e '
@@ -47,13 +101,30 @@ awk '/^ *- name: [A-Z][A-Z0-9_]*$/ { sub(/^ *- name: /, ""); v = $0; ref = 0; ne
   /^ *secretKeyRef:/ { ref = 1; next }
   ref && /^ *name: / { sub(/^ *name: /, ""); s = $0; next }
   ref && /^ *key: / { sub(/^ *key: /, ""); gsub(/[\047"]/, ""); print v " " s ":" $0; ref = 0 }' "$YAML" > "$WORK/secretos-nuevos.txt"
+# Tipo de cada variable (literal o secreto), para resumir los cambios valor↔secreto.
+node -e '
+  const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).spec.template.spec.containers[0]
+  for (const e of c.env ?? []) console.log(`${e.name} ${e.valueFrom?.secretKeyRef ? "secreto" : "literal"}`)
+' "$WORK/activa.json" > "$WORK/tipos-activos.txt"
+awk '/^ *- name: [A-Z][A-Z0-9_]*$/ { sub(/^ *- name: /, ""); v = $0; t[v] = "literal"; o[++n] = v; next }
+  /^ *secretKeyRef:/ { t[v] = "secreto" }
+  END { for (i = 1; i <= n; i++) print o[i] " " t[o[i]] }' "$YAML" > "$WORK/tipos-nuevos.txt"
+CAMBIOS_TIPO="$(awk 'NR == FNR { a[$1] = $2; next } ($1 in a) && a[$1] != $2 { print $1 ": " a[$1] " → " $2 }' \
+  "$WORK/tipos-activos.txt" "$WORK/tipos-nuevos.txt")"
 SECRETOS_DISTINTOS="$(awk 'NR == FNR { a[$1] = $2; next }
   ($1 in a) && a[$1] != $2 { split(a[$1], x, ":"); split($2, y, ":"); print $1 ": " a[$1] " → " (x[1] == y[1] ? y[2] : $2) }' \
   "$WORK/secretos-activos.txt" "$WORK/secretos-nuevos.txt")"
 IMAGEN_ACTIVA="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).spec.template.spec.containers[0].image ?? "")' "$WORK/activa.json")"
 IMAGEN_NUEVA="$(grep -E '^ *(- )?image: ' "$YAML" | head -n 1 | sed -E 's/^ *(- )?image: //')"
 
-FALTAN="$(comm -23 "$WORK/activas.txt" "$WORK/nuevas.txt")"
+FALTAN=""
+QUITADAS=""
+for NOMBRE in $(comm -23 "$WORK/activas.txt" "$WORK/nuevas.txt"); do
+  case "$QUITAR" in
+    *" $NOMBRE "*) QUITADAS="${QUITADAS:+$QUITADAS$'\n'}$NOMBRE" ;;
+    *) FALTAN="${FALTAN:+$FALTAN$'\n'}$NOMBRE" ;;
+  esac
+done
 if [ -n "$FALTAN" ]; then
   echo "DETENTE: la revisión activa tiene variables que el YAML no trae:" >&2
   echo "$FALTAN" | sed 's/^/  - /' >&2
@@ -66,7 +137,14 @@ echo "Imagen activa: ${IMAGEN_ACTIVA:-desconocida}"
 echo "Imagen nueva:  $IMAGEN_NUEVA"
 echo "Variables nuevas:"
 if [ -n "$AGREGADAS" ]; then echo "$AGREGADAS" | sed 's/^/  + /'; else echo "  (ninguna)"; fi
-echo "Variables quitadas: (ninguna)"
+echo "Variables quitadas:"
+if [ -n "$QUITADAS" ]; then echo "$QUITADAS" | sed 's/^/  - /'; else echo "  (ninguna)"; fi
+if [ "$DESDE_ACTIVA" -eq 1 ]; then
+  echo "Variables sobrescritas (ya exportadas, prevalecen sobre la activa):"
+  if [ -n "$SOBRESCRITAS" ]; then echo "$SOBRESCRITAS" | tr ' ' '\n' | sed '/^$/d' | sed 's/^/  ! /'; else echo "  (ninguna)"; fi
+fi
+echo "Cambios valor↔secreto:"
+if [ -n "$CAMBIOS_TIPO" ]; then echo "$CAMBIOS_TIPO" | sed 's/^/  ~ /'; else echo "  (ninguno)"; fi
 echo "Secretos con versión distinta:"
 if [ -n "$SECRETOS_DISTINTOS" ]; then echo "$SECRETOS_DISTINTOS" | sed 's/^/  ~ /'; else echo "  (ninguno)"; fi
 
