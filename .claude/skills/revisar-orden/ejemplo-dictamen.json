@@ -1,0 +1,32 @@
+{
+  "versionContrato": "1",
+  "versionPolitica": "DEC-POS-003",
+  "ordenId": "ORD-POS-023",
+  "tareaId": "POS-019",
+  "proyectoId": "POS",
+  "repo": "jlpulido107-bit/PROJECT-OS",
+  "issue": 77,
+  "pr": 78,
+  "headSha": "1111111111111111111111111111111111111111",
+  "baseSha": "2222222222222222222222222222222222222222",
+  "hashCriterios": "f3b239e94b3d04157278cda26d2a93ec2e0456db25c84ba3ca622c82c8ec5d7f",
+  "revisionId": "REV-ORD-POS-023-1",
+  "ejecucionId": "EJE-ORD-POS-023-1",
+  "intento": 1,
+  "ronda": 0,
+  "autorizacion": { "otorgadaPor": "propietario", "orden": "ORD-POS-023", "desde": "2026-10-17" },
+  "limiteConsumo": { "presupuesto": "1 USD", "tiempoMaximo": "30 min" },
+  "criterios": [
+    { "id": "1", "resultado": "CUMPLE", "evidencia": "La skill valida los cuatro datos y no lee la descripción del PR. Caso negativo: HEAD_ESPERADO distinto del head actual hace terminar sin dictamen." },
+    { "id": "2", "resultado": "CUMPLE", "evidencia": "Exige comando, SHA, código de salida y un caso negativo por criterio. Caso negativo: criterio sin prueba ejecutada queda NO_VERIFICADO." }
+  ],
+  "evidencia": {
+    "propias": [
+      { "comando": "cd web && npx vitest run tests/supervision-dictamen-ejemplo.test.ts", "sha": "1111111111111111111111111111111111111111", "codigoSalida": 0 }
+    ],
+    "ci": { "estado": "EXITO", "ejecucion": "run-123", "sha": "1111111111111111111111111111111111111111" },
+    "autor": ["El autor afirma que las pruebas pasan (no sustituye la evidencia propia)."]
+  },
+  "hallazgos": [],
+  "veredicto": "CONFORME"
+}
