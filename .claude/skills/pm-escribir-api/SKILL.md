@@ -29,15 +29,18 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 2. **Proponer y esperar.** Muestra al propietario el cuerpo completo, campo por campo, y valida los límites
    (título 160, descripción 2000, criterio 1000, responsable 80, asunto 200, decisión 2000, justificación 2000,
    textos de orden 2000). Espera un **«sí» literal**; cualquier otra respuesta o el silencio es no: no escribas.
-3. **POST.** Un solo `curl` con un `requestId` nuevo (UUID v4), sin `Authorization`:
+3. **POST.** Genera el `requestId` (UUID v4) **una sola vez** y guarda el cuerpo exacto en un archivo **antes** de
+   enviar; luego un solo `curl`, sin `Authorization`:
 
    ```bash
    DASHBOARD=https://project-os-dashboard-235975889400.northamerica-south1.run.app
    REQ=$(python3 -c 'import uuid; print(uuid.uuid4())')
-   curl -sS -w '\n%{http_code}\n' -X POST "$DASHBOARD/api/operaciones/<tareas|decisiones|ordenes>" \
-     -H 'Content-Type: application/json' -d "$(jq -n --arg r "$REQ" '{requestId:$r, …campos}')"
+   CUERPO=$(mktemp); jq -n --arg r "$REQ" '{requestId:$r, …campos}' > "$CUERPO"; echo "requestId=$REQ"; cat "$CUERPO"
+   curl -sS --max-time 60 -w '\n%{http_code}\n' -X POST "$DASHBOARD/api/operaciones/<tareas|decisiones|ordenes>" \
+     -H 'Content-Type: application/json' --data-binary @"$CUERPO"
    ```
 
+   Anota `requestId` y cuerpo en la conversación: son los únicos que valen para repetir esta alta.
    - `tareas`: `proyectoId`, `titulo`, `tipo`, `prioridad`, `criterioTerminado`; opcionales `hitoId`, `descripcion`,
      `responsable`, `fechaPlan`, `fechaLimite`, `horasEstimadas`.
    - `decisiones`: `proyectoId`, `asunto`, `decision`, `justificacion`, `responsable`; opcionales `fecha`, `evidenciaUrl`.
@@ -45,5 +48,9 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
      opcional `contexto`.
 4. **Verificar.** Con `201`, relee la fila (una sola vez, con los valores propuestos) y `AUDITORIA` (`ACTOR` =
    `agente-pm`, `ORIGEN` termina en `;agente=pm`). Informa ID, fila y auditoría.
-5. **Errores.** Ante 4xx o 5xx, detente e informa código y mensaje. No reintentes con otro `requestId`: una repetición
-   con el mismo `requestId` es idempotente, pero solo si el propietario la pide. Un 429 espera al menos un minuto.
+5. **Errores.** Ante 4xx o 5xx, detente e informa código y mensaje. Un 429 espera al menos un minuto.
+6. **Resultado incierto.** Si `curl` falla (salida distinta de 0, código `000`, timeout) o no hay respuesta clara,
+   la alta pudo escribirse: detente, informa y reconcilia releyendo la pestaña y `AUDITORIA` antes de cualquier otra
+   alta.
+7. **Repetir.** Nunca generes otro `requestId` ni otro cuerpo para la misma alta. Solo si el propietario autoriza
+   repetir, reenvía el **mismo** `$CUERPO` (mismo `requestId`, idempotente); si se perdió, vuelve al paso 1.
