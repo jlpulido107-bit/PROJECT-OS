@@ -9,8 +9,8 @@ Todo dato lleva su fuente; lo que no pude verificar va como **hipótesis**.
 - **DEC-POS-002** (2026-10-16): Claude planea, implementa, revisa y corrige en sesiones separadas; ChatGPT es auditor. Fuente: [`AGENTS.md`](../AGENTS.md).
 - **DEC-POS-003** (2026-10-16): la revisión se gradúa por riesgo. Fuente: [política](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003).
 - **DEC-POS-004** (2026-10-16): persistencia de la supervisión (D1 a D3), decidida y no implementada. Fuente: [migración](migracion-supervision.md).
-- **DEC-POS-005**: el PM (Claude) solo escribe en la hoja por la API del dashboard (tareas, decisiones PENDIENTE y órdenes BORRADOR); nunca aprueba, cierra ni cambia estados del propietario. Fuente: pestaña DECISIONES.
-- **DEC-POS-006**: interina hasta O5b; el PM añade filas en TAREAS, DECISIONES y ORDENES_CODEX con el conector de Google Sheets, solo con la skill `pm-escribir-hoja` y tras el «sí» del propietario; un solo escritor; caduca al desplegar O5b. Fuente: pestaña DECISIONES.
+- **DEC-POS-005** (2026-10-16): el PM (Claude) solo escribe en la hoja por la API del dashboard (tareas, decisiones PENDIENTE y órdenes BORRADOR); nunca aprueba, cierra ni cambia estados del propietario. Fuente: pestaña DECISIONES.
+- **DEC-POS-006** (2026-10-16): interina hasta O5b; el PM añade filas en TAREAS, DECISIONES y ORDENES_CODEX con el conector de Google Sheets, solo con la skill `pm-escribir-hoja` y tras el «sí» del propietario; un solo escritor; caduca al desplegar O5b. Fuente: pestaña DECISIONES.
 
 ## En curso
 
@@ -27,4 +27,5 @@ Todo dato lleva su fuente; lo que no pude verificar va como **hipótesis**.
 ## Cómo se actualiza
 
 Al cerrar cada orden se reescribe este archivo con la skill `cerrar-orden`. **Hipótesis:** esa skill aún no existe en
-`.claude/skills/`; hasta entonces lo actualiza la orden que cambie el estado.
+`.claude/skills/`; hasta entonces se actualiza en un PR aparte después de fusionar, no dentro de cada orden (evita
+conflictos entre PRs en paralelo).

@@ -28,8 +28,8 @@ Sistema de dirección y seguimiento de los proyectos del propietario (fuente: pe
 | 2026-10-16 | DEC-POS-002: Claude planea, implementa, revisa y corrige en sesiones separadas; ChatGPT es auditor externo | [`AGENTS.md`](../AGENTS.md) |
 | 2026-10-16 | DEC-POS-003: la revisión se gradúa por riesgo | [Política](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
 | 2026-10-16 | DEC-POS-004: persistencia de la supervisión (D1 a D3), decidida y no implementada | [Migración](migracion-supervision.md) |
-| — | DEC-POS-005: el PM solo escribe en la hoja por la API del dashboard (tareas, decisiones PENDIENTE, órdenes BORRADOR) | Pestaña DECISIONES |
-| — | DEC-POS-006: interina hasta O5b; el PM escribe con el conector de Sheets, con la skill `pm-escribir-hoja` y tras el «sí» del propietario | Pestaña DECISIONES |
+| 2026-10-16 | DEC-POS-005: el PM solo escribe en la hoja por la API del dashboard (tareas, decisiones PENDIENTE, órdenes BORRADOR) | Pestaña DECISIONES |
+| 2026-10-16 | DEC-POS-006: interina hasta O5b; el PM escribe con el conector de Sheets, con la skill `pm-escribir-hoja` y tras el «sí» del propietario | Pestaña DECISIONES |
 
 ## Hipótesis abiertas
 
