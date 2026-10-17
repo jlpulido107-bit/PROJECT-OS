@@ -6,22 +6,26 @@
 > falta la persistencia durable (reserva, registro, reporte íntegro). Las opciones técnicas siguen en evaluación y no
 > se declara ninguna integración ni costo como validados (ver [Opciones técnicas](#opciones-técnicas-en-evaluación)).
 
-Orden: ORD-POS-009 · tarea POS-013 · riesgo bajo. Alineado con DEC-POS-001 por ORD-POS-016 (R1).
+Orden: ORD-POS-009 · tarea POS-013 · riesgo bajo. Alineado con DEC-POS-001 por ORD-POS-016 (R1) y con DEC-POS-002,
+DEC-POS-003 y DEC-POS-004 por ORD-POS-018 (§1, «Opciones técnicas» y §8).
 
-## 1. Roles (DEC-POS-001, 2026-10-16)
+## 1. Roles (DEC-POS-002, 2026-10-16; sustituye a DEC-POS-001)
 
-Los roles son los de [AGENTS.md](../AGENTS.md) (PR #66); este contrato no los cambia.
+Los roles son los de [AGENTS.md](../AGENTS.md); este contrato no los cambia. Estados, clave, vigencia, rondas y las
+tres identidades (§5) siguen igual.
 
 | Quién | En este contrato |
 | --- | --- |
 | Propietario | Aprueba las órdenes y decide fusiones, despliegues y cierres. Ninguna etapa automática puede hacerlo. |
-| ChatGPT | Dirige y supervisa: redacta órdenes (borradores que no aprueban ni disparan nada) y revisa de forma independiente el código y la evidencia del PR. No implementa ni modifica repositorios. |
-| Claude Code | Implementa, prueba, hace su autocontrol y corrige en el mismo PR lo que devuelva ChatGPT. |
+| Claude Code | Planea (borradores que no aprueban nada), implementa, revisa y corrige en sesiones separadas. El revisor nunca es la sesión que implementó, usa otro modelo y revisa a ciegas (orden, diff y contrato, sin la descripción del PR). |
+| ChatGPT | Auditor externo (1 de cada 5 órdenes BAJO y toda orden MEDIO, [política](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)). No implementa ni modifica repositorios. |
 | PROJECT-OS | Coordinaría el registro (reservas, estados, reportes) con lo que entregue el propietario. Hoy no lo hace (§8). |
 
-**R1 (primera revisión):** la revisión la hace ChatGPT y el propietario la importa a mano al coordinador como respaldo.
+**R1 (primera revisión):** la hace un revisor Claude con **vínculo de sesión**: el coordinador solo acepta dictámenes
+de sesiones que él lanzó, con el hash del contenido. La importación manual por el propietario queda como respaldo.
 Un ejecutor Codex separado **no es dependencia**; «Codex» sobrevive solo en nombres históricos (`ORDENES_CODEX`).
-Donde este documento dice «revisor» o «reporte», es el dictamen de ChatGPT, nunca el autocontrol de Claude.
+Donde este documento dice «revisor» o «reporte», es el dictamen de la sesión revisora (o el del auditor ChatGPT, si se
+indica), nunca el autocontrol del implementador.
 
 **Autorización por orden.** La corrección automática futura requiere autorización explícita del propietario en cada
 orden, con su límite de consumo. Las órdenes anteriores (ORD-POS-001 a 008 y las ya cerradas) **no la heredan**. Una
@@ -212,8 +216,11 @@ demostrar el circuito completo, la ronda `CORRIGIENDO` no es ejecutable de extre
 
 Ninguna está elegida ni validada; no se afirma integración ni costo.
 
-- **R1, reporte de ChatGPT importado por el propietario:** vía elegida para la primera revisión (DEC-POS-001); el
-  validador y el extractor existen, falta la persistencia y la importación en el coordinador.
+- **R1, revisor Claude con vínculo de sesión:** vía elegida para la primera revisión (DEC-POS-002). El coordinador solo
+  acepta dictámenes de sesiones que él lanzó, con hash del contenido; la importación manual del propietario es el
+  respaldo. El validador y el extractor existen; falta la persistencia, el vínculo de sesión (`SESION_ID`, ver
+  [migración](migracion-supervision.md#persistencia-durable-análisis-y-propuesta)) y la importación en el coordinador.
+- **ChatGPT como auditor:** por política de riesgo (DEC-POS-003), sin dependencia técnica con el coordinador.
 - **Conector actual:** no expone entornos; hoy no basta para lanzar la supervisión.
 - **SDK de Codex con login oficial de ChatGPT:** candidato no necesario para R1; falta probar que cumple §5.
 - **Agents API:** alternativa con costo separado, sin estimar.
@@ -232,10 +239,11 @@ despliegue de estas piezas, y ninguna se ha probado con servicios reales. Las pr
 | #62 | Validador de reporte, vigencia, clave idempotente y hash de criterios (`report.ts`, `key.ts`) | Sí | Sin evidencia | No |
 | #64 | SHA de base y head del PR y extractor de criterios (`criterios.ts`); F1 resuelto en `07be1e2` ([dictamen](https://github.com/jlpulido107-bit/PROJECT-OS/pull/64#issuecomment-6225987598)) | Sí (`9ab370e`) | Sin evidencia | No |
 | #66 | Roles de DEC-POS-001 en AGENTS.md y documentos | Sí | No aplica | No |
+| ORD-POS-018 | Roles de DEC-POS-002, política de DEC-POS-003 y persistencia de DEC-POS-004 (documentos) | En revisión | No aplica | No |
 
 El motor, el validador y el extractor **ya existen**; no son trabajo por construir. Falta: persistencia de reserva,
 `estadoAnterior`, `cicloTerminado` y reporte íntegro; escritura de `SUPERVISION` (no está en `WRITE_HEADERS`); la
-importación manual del reporte; y conectar la corrección en el mismo PR con el dashboard. No se afirma persistencia
+importación manual del reporte y el vínculo de sesión; y conectar la corrección en el mismo PR con el dashboard. No se afirma persistencia
 funcional donde falta.
 
 ## Fuera de alcance de este documento
