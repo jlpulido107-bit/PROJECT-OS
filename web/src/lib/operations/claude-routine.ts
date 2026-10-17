@@ -40,12 +40,51 @@ export function textoRutina(e: EjecucionOrden): string {
   return [`ORDEN_ID: ${e.ordenId}`, `REPOSITORIO: ${repo}`, `ISSUE: ${e.issueUrl}`].join('\n')
 }
 
+export interface SupervisionRutina {
+  ordenId: string
+  proyectoId: string
+  prUrl: string
+  headSha: string
+  /** Solo revisión. */
+  rol?: 'PRIMERO' | 'DELTA' | 'SEGUNDO'
+  n: number
+  ronda: number
+  intento: number
+  /** Fecha (AAAA-MM-DD) desde la que rige la autorización del propietario. */
+  desde: string
+  /** Solo corrección: URL del comentario del dictamen CAMBIOS vigente. */
+  hallazgosUrl?: string
+}
+
+const SHA = /^[0-9a-f]{40}$/
+const FECHA = /^\d{4}-\d{2}-\d{2}$/
+
+/** Texto de revisión (revisar-orden) o corrección (corregir-pr): solo datos validados o derivados, nunca texto libre. */
+export function textoSupervision(e: SupervisionRutina): string {
+  const repo = REPOSITORIOS[e.proyectoId]
+  const num = repoDeUrl(e.prUrl, 'pull') === repo ? /\/pull\/(\d{1,7})$/.exec(e.prUrl)?.[1] : undefined
+  const hallazgos = e.hallazgosUrl !== undefined && repoDeUrl(e.hallazgosUrl.split('#')[0]!, 'pull') === repo && /#issuecomment-\d{1,15}$/.test(e.hallazgosUrl)
+  if (!ORDEN_ID.test(e.ordenId) || !repo || !e.ordenId.startsWith(`ORD-${e.proyectoId}-`) || !num || !SHA.test(e.headSha) || !FECHA.test(e.desde)
+    || ![e.n, e.ronda, e.intento].every((v) => Number.isInteger(v) && v >= 0 && v < 1000) || (e.rol === undefined) === (e.hallazgosUrl === undefined)
+    || (e.hallazgosUrl !== undefined && !hallazgos)) throw new RoutineError('datos-invalidos')
+  const comunes = [`ORDEN_ID: ${e.ordenId}`, `REPOSITORIO: ${repo}`]
+  if (e.hallazgosUrl !== undefined) return [...comunes, `PR: ${e.prUrl}`, `HEAD_ESPERADO: ${e.headSha}`, `HALLAZGOS: ${e.hallazgosUrl}`].join('\n')
+  return [
+    ...comunes, `PR: ${num}`, `HEAD_ESPERADO: ${e.headSha}`, `ROL: ${e.rol}`,
+    `REVISION_ID: REV-${e.ordenId}-${e.n}`, `EJECUCION_ID: EJE-${e.ordenId}-${e.n}`, `INTENTO: ${e.intento}`, `RONDA: ${e.ronda}`,
+    'LIMITE_CONSUMO: 1 USD; 30 min', `AUTORIZACION: propietario; ${e.ordenId}; ${e.desde}`,
+  ].join('\n')
+}
+
 export function createRoutineClient(routineId: string, token: string, fetchImpl: typeof fetch = fetch) {
   if (!ROUTINE_ID.test(routineId)) throw new RoutineError('datos-invalidos')
   return {
     /** Lanza una ejecución y devuelve la URL de la sesión de Claude Code. */
-    async ejecutar(e: EjecucionOrden): Promise<{ sessionUrl: string }> {
-      const text = textoRutina(e)
+    ejecutar(e: EjecucionOrden): Promise<{ sessionUrl: string }> {
+      return this.lanzar(textoRutina(e))
+    },
+    /** Dispara la rutina con un texto ya validado. Errores: solo el estado HTTP, sin cuerpo. */
+    async lanzar(text: string): Promise<{ sessionUrl: string }> {
       let response: Response
       try {
         response = await fetchImpl(`${API}/${routineId}/fire`, {
@@ -85,4 +124,20 @@ export function routineClient(env: NodeJS.ProcessEnv = process.env): RoutineClie
   const token = env.CLAUDE_ROUTINE_TOKEN?.trim()
   if (!id || !token || !ROUTINE_ID.test(id)) return null
   return createRoutineClient(id, token)
+}
+
+export interface RutinasSupervision {
+  revisar: RoutineClient | null
+  segundo: RoutineClient | null
+  corregir: RoutineClient | null
+}
+
+/** Rutinas de revisión, segundo revisor y corrección (ORD-POS-037); cada una existe solo con su ID válido y su token. */
+export function rutinasSupervision(env: NodeJS.ProcessEnv = process.env): RutinasSupervision {
+  const una = (nombre: 'REVISAR' | 'SEGUNDO' | 'CORREGIR') => {
+    const id = env[`CLAUDE_ROUTINE_${nombre}_ID`]?.trim()
+    const token = env[`CLAUDE_ROUTINE_${nombre}_TOKEN`]?.trim()
+    return id && token && ROUTINE_ID.test(id) ? createRoutineClient(id, token) : null
+  }
+  return { revisar: una('REVISAR'), segundo: una('SEGUNDO'), corregir: una('CORREGIR') }
 }

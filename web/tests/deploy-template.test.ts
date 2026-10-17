@@ -174,6 +174,15 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     expect(() => render(template, { ...VARS, ...WRITE, ...RUTINA, SECRET_VERSION_CLAUDE_ROUTINE: 'latest' })).toThrow('SECRET_VERSION_CLAUDE_ROUTINE')
     // Sin escritura real no se inyecta nada de la rutina (va dentro del bloque de escritura).
     expect(render(template, { ...VARS, ...RUTINA })).not.toContain('CLAUDE_ROUTINE')
+    // ORD-POS-037: rutinas de revisión, segundo revisor y corrección, opcionales y por parejas.
+    for (const n of ['REVISAR', 'SEGUNDO', 'CORREGIR']) {
+      const par = { SECRET_VERSION_GITHUB: '1', [`CLAUDE_ROUTINE_${n}_ID`]: 'trig_01ABCdef234', [`SECRET_VERSION_CLAUDE_ROUTINE_${n}`]: '3' }
+      expect(render(template, { ...VARS, ...WRITE, ...par })).toMatch(new RegExp(`- name: CLAUDE_ROUTINE_${n}_ID\\n\\s+value: trig_01ABCdef234\\n\\s+- name: CLAUDE_ROUTINE_${n}_TOKEN\\n\\s+valueFrom:\\n\\s+secretKeyRef:\\n\\s+name: project-os-claude-routine-${n.toLowerCase()}-token\\n\\s+key: '3'`))
+      expect(() => render(template, { ...VARS, ...WRITE, ...par, [`SECRET_VERSION_CLAUDE_ROUTINE_${n}`]: '' })).toThrow('van juntos')
+      expect(() => render(template, { ...VARS, ...WRITE, ...par, SECRET_VERSION_GITHUB: '' })).toThrow('exige SECRET_VERSION_GITHUB')
+      expect(() => render(template, { ...VARS, ...WRITE, ...par, [`CLAUDE_ROUTINE_${n}_ID`]: '../x y' })).toThrow('no tiene el formato')
+    }
+    expect(render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: '1' })).not.toMatch(/CLAUDE_ROUTINE_(REVISAR|SEGUNDO|CORREGIR)/)
     // ORD-POS-028: acceso del agente PM opcional, solo por versión fijada del secreto del hash.
     expect(out).not.toContain('PM_AGENT_TOKEN_SHA256')
     const withPm = render(template, { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: '4' })

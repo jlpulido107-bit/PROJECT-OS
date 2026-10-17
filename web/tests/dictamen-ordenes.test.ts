@@ -88,7 +88,7 @@ describe('dictamen vigente por orden', () => {
     ['otro repo', comentario(reporte({ repo: 'jlpulido107-bit/SIGSAH' })), 'invalido'], ['otro hash', comentario(reporte({ hashCriterios: 'x' })), 'invalido'],
     ['JSON inválido, sin mostrar su contenido', comentario('{no es json <script>alert(1)</script>'), 'invalido'],
   ])('Lanzar revisión: %s', async (_, c, tipo, head?: string) => {
-    expect(await evaluar(c ? [c] : [], 'BAJO', { head })).toEqual({ estado: { tipo }, siguiente: 'Lanzar revisión' })
+    expect(await evaluar(c ? [c] : [], 'BAJO', { head })).toMatchObject({ estado: { tipo }, siguiente: 'Lanzar revisión' })
   })
 
   it.each([

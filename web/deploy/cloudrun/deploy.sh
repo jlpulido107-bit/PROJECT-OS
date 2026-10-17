@@ -59,12 +59,19 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
       SECRET_VERSION_PM_AGENT: clave("PM_AGENT_TOKEN_SHA256"), WRITE_MODE: env.has("PROJECT_OS_WRITE_MODE") ? "sheets" : undefined,
       WRITE_SERVICE_ACCOUNT: literal("PROJECT_OS_WRITE_SERVICE_ACCOUNT"), CLAUDE_ROUTINE_ID: literal("CLAUDE_ROUTINE_ID"),
     }
+    for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
+      m[`CLAUDE_ROUTINE_${n}_ID`] = literal(`CLAUDE_ROUTINE_${n}_ID`)
+      m[`SECRET_VERSION_CLAUDE_ROUTINE_${n}`] = clave(`CLAUDE_ROUTINE_${n}_TOKEN`)
+    }
     // Variable del YAML de la que sale cada una: con --quitar de esa variable no se toma de la activa.
     const de = { SERVICE_URL: "NEXTAUTH_URL", OAUTH_CLIENT_ID: "GOOGLE_CLIENT_ID", SECRET_VERSION_NEXTAUTH: "NEXTAUTH_SECRET",
       SECRET_VERSION_OAUTH: "GOOGLE_CLIENT_SECRET", SECRET_VERSION_ALLOWLIST: "AUTH_ALLOWED_EMAILS", SECRET_VERSION_WRITERS: "AUTH_WRITER_EMAILS",
       SECRET_VERSION_GITHUB: "GITHUB_DISPATCH_TOKEN", SECRET_VERSION_CLAUDE_ROUTINE: "CLAUDE_ROUTINE_TOKEN CLAUDE_ROUTINE_ID",
       CLAUDE_ROUTINE_ID: "CLAUDE_ROUTINE_ID CLAUDE_ROUTINE_TOKEN", SECRET_VERSION_PM_AGENT: "PM_AGENT_TOKEN_SHA256",
       WRITE_MODE: "PROJECT_OS_WRITE_MODE", WRITE_SERVICE_ACCOUNT: "PROJECT_OS_WRITE_SERVICE_ACCOUNT" }
+    for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
+      de[`CLAUDE_ROUTINE_${n}_ID`] = de[`SECRET_VERSION_CLAUDE_ROUTINE_${n}`] = `CLAUDE_ROUTINE_${n}_ID CLAUDE_ROUTINE_${n}_TOKEN`
+    }
     const quitar = process.argv[2].split(" ")
     const omitir = Object.keys(m).filter((k) => (de[k] ?? "").split(" ").some((n) => n && quitar.includes(n)))
     fs.writeFileSync(process.argv[3], ` ${omitir.join(" ")} `)

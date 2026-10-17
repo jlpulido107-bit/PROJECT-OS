@@ -53,7 +53,7 @@ describe('garantías de seguridad del código', () => {
 
   it('todas las rutas de escritura pasan por la guarda del servidor', () => {
     const routes = sources.filter((s) => s.file.startsWith(path.join('app', 'api', 'operaciones')) && s.file.endsWith('route.ts'))
-    expect(routes.length).toBe(7)
+    expect(routes.length).toBe(8)
     for (const { file, text } of routes) {
       expect(text, file).toMatch(/handleWrite\(request,/)
       expect(text, file).not.toMatch(/export async function (GET|PUT|DELETE)/)

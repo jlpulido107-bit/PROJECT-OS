@@ -52,6 +52,9 @@ export function render(template, env) {
  * Opcional (F4): SECRET_VERSION_GITHUB, versión fijada del secreto project-os-github-token (issue de cada orden).
  * Opcional (F5a, docs/rutina-claude.md): CLAUDE_ROUTINE_ID (no secreto) y SECRET_VERSION_CLAUDE_ROUTINE, versión fijada del
  * secreto project-os-claude-routine-token. Van juntos y exigen SECRET_VERSION_GITHUB (la ejecución se registra en el issue).
+ * Opcional (ORD-POS-037, docs/rutina-claude.md): por parejas y con la misma exigencia, CLAUDE_ROUTINE_REVISAR_ID con
+ * SECRET_VERSION_CLAUDE_ROUTINE_REVISAR (secreto project-os-claude-routine-revisar-token), y lo mismo con _SEGUNDO y _CORREGIR.
+ * Habilitan los botones «Lanzar revisión», «Lanzar segundo revisor» y «Pedir corrección» de /ordenes.
  * Opcional (ORD-POS-028, docs/escritura-v1-8.md §6): SECRET_VERSION_PM_AGENT, versión fijada del secreto
  * project-os-pm-agent-token-sha256 (hash del token del agente PM). Solo con WRITE_MODE=sheets; nunca el hash ni el token literal.
  */
@@ -98,6 +101,18 @@ function escritura(env, problems) {
     '                  name: project-os-claude-routine-token',
     `                  key: '${routine}'`,
   ] : []
+  const supervisionLines = ['REVISAR', 'SEGUNDO', 'CORREGIR'].flatMap((nombre) => {
+    const id = (env[`CLAUDE_ROUTINE_${nombre}_ID`] ?? '').trim()
+    const version = (env[`SECRET_VERSION_CLAUDE_ROUTINE_${nombre}`] ?? '').trim()
+    if (Boolean(id) !== Boolean(version)) problems.push(`CLAUDE_ROUTINE_${nombre}_ID y SECRET_VERSION_CLAUDE_ROUTINE_${nombre} van juntos`)
+    else if (version && !github) problems.push(`la rutina ${nombre} exige SECRET_VERSION_GITHUB`)
+    if (id && !ROUTINE_ID.test(id)) problems.push(`CLAUDE_ROUTINE_${nombre}_ID no tiene el formato esperado`)
+    if (version && !/^[1-9][0-9]*$/.test(version)) problems.push(`SECRET_VERSION_CLAUDE_ROUTINE_${nombre} no tiene el formato esperado`)
+    return id && version ? [
+      `            - name: CLAUDE_ROUTINE_${nombre}_ID`, `              value: ${id}`, `            - name: CLAUDE_ROUTINE_${nombre}_TOKEN`,
+      '              valueFrom:', '                secretKeyRef:', `                  name: project-os-claude-routine-${nombre.toLowerCase()}-token`, `                  key: '${version}'`,
+    ] : []
+  })
   const pmAgentLines = pmAgent ? [
     '            - name: PM_AGENT_TOKEN_SHA256',
     '              valueFrom:',
@@ -117,6 +132,7 @@ function escritura(env, problems) {
     `                  key: '${version}'`,
     ...githubLines,
     ...routineLines,
+    ...supervisionLines,
     ...pmAgentLines,
     '',
   ].join('\n')
