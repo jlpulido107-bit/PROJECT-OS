@@ -19,7 +19,8 @@ class TestSkillsSync(unittest.TestCase):
             self.assertTrue(texto.startswith(f"---\nname: {skill}\ndescription: "), skill)
 
     def test_copias_identicas(self):
-        original = archivos(ORIGINAL)
+        # Solo estas skills se copian; las demás de .claude/skills/ son únicamente de PROJECT-OS.
+        original = {k: v for k, v in archivos(ORIGINAL).items() if k.split("/")[0] in SKILLS}
         self.assertEqual(sorted(original), [f"{s}/SKILL.md" for s in sorted(SKILLS)])
         for copia in COPIAS:
             self.assertEqual(archivos(copia), original, copia)
