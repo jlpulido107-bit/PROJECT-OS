@@ -157,3 +157,8 @@ ESTADO_ANTERIOR	CICLO_TERMINADO	RESERVA_ESTADO	RESERVA_EXPIRA_EN	REPORTE_HASH	CO
 Justificación: no pide infraestructura ni permisos nuevos y reutiliza la auditoría, la idempotencia y el control de
 concurrencia ya probados. Cada decisión requiere su propia orden de implementación. Aplicar la migración sigue siendo
 manual del propietario.
+
+**DEC-POS-009 sustituye a D1 a D3.** El dictamen vive solo en el PR (comentario con la marca
+`<!-- project-os:dictamen-revisor -->` y un JSON que valida `validarReporte`); no se persiste en `SUPERVISION` ni en
+`SUPERVISION_REPORTES`. `/ordenes` lo lee de GitHub en solo lectura (ORD-POS-035) y muestra el dictamen del head actual y
+el siguiente paso; D1 a D3 quedan sin aplicar.

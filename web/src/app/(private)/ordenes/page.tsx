@@ -5,7 +5,9 @@ import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Te
 import { CopiarParaClaude, OrderActions } from '@/components/operations/forms'
 import { githubClient } from '@/lib/operations/dispatch'
 import { routineClient } from '@/lib/operations/claude-routine'
+import { dictamenDeOrden, urlComentario } from '@/lib/operations/dictamenes'
 import { textoParaEjecutarDeOrden } from '@/lib/operations/github'
+import type { EvaluacionDictamen } from '@/lib/supervision/dictamen'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
@@ -21,8 +23,25 @@ const GRUPOS: Array<{ id: GrupoOrden; titulo: string; vacio: string }> = [
 
 const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 
-function OrdenCard({ v, canWrite, prDetectado, claude }: {
+const SIN_DICTAMEN = { anterior: 'Dictamen de un head anterior', invalido: 'Dictamen no válido', ninguno: 'Sin dictamen del head actual' } as const
+
+/** Dictamen vigente del PR (texto plano: solo campos validados, nunca el contenido del comentario). */
+function DictamenFila({ prUrl, ev }: { prUrl: string; ev: EvaluacionDictamen | null | undefined }) {
+  if (!ev) return <>Sin datos de GitHub</>
+  if (ev.estado.tipo !== 'vigente') return <>{SIN_DICTAMEN[ev.estado.tipo]}</>
+  const d = ev.estado.dictamen
+  const href = urlComentario(prUrl, d.comentarioId)
+  return (
+    <>
+      {d.veredicto} · ronda {d.ronda} · {d.bloquean} bloquean, {d.noBloquean} no · <span className="mono">{d.sha}</span>
+      {href ? <> · <ExternalLink href={href}>Ver dictamen</ExternalLink></> : null}
+    </>
+  )
+}
+
+function OrdenCard({ v, canWrite, prDetectado, claude, dictamen }: {
   v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }
+  dictamen?: EvaluacionDictamen | null
   claude?: { configurada: boolean; sesion?: string | null }
 }) {
   const o = v.orden
@@ -42,6 +61,12 @@ function OrdenCard({ v, canWrite, prDetectado, claude }: {
         <div><dt>Proyecto</dt><dd>{o.proyectoId ? <Link href={`/proyectos/${encodeURIComponent(o.proyectoId)}`}>{o.proyectoId}</Link> : <span className="muted">—</span>}</dd></div>
         <div><dt>Tarea</dt><dd>{o.tareaId ? <Link href={`/tareas/${encodeURIComponent(o.tareaId)}/editar`} className="mono">{o.tareaId}</Link> : <span className="muted">—</span>}</dd></div>
         <div><dt>Siguiente paso</dt><dd>{v.siguiente ? v.siguiente.texto : <span className="muted">—</span>}</dd></div>
+        {o.prUrl && dictamen !== undefined ? (
+          <>
+            <div><dt>Dictamen</dt><dd><DictamenFila prUrl={o.prUrl} ev={dictamen} /></dd></div>
+            {dictamen ? <div><dt>Siguiente (revisión)</dt><dd>{dictamen.siguiente}</dd></div> : null}
+          </>
+        ) : null}
         <div><dt>Actualizada</dt><dd><DateText value={o.actualizadoEn} /></dd></div>
         <div><dt>Issue</dt><dd>{o.issueUrl ? <ExternalLink href={o.issueUrl}>{o.issueUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin issue</span>}</dd></div>
         <div><dt>PR</dt><dd>{!o.prUrl && prDetectado ? <><ExternalLink href={prDetectado.url}>{prDetectado.url.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> <Badge tone="info">Detectado: {prDetectado.estado}</Badge></> : o.prUrl ? <ExternalLink href={o.prUrl}>{o.prUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin PR</span>}</dd></div>
@@ -95,6 +120,13 @@ export default async function OrdenesPage() {
     }))
   }
 
+  // Dictamen vigente de las órdenes con PR (solo lectura en GitHub; null = «Sin datos de GitHub»).
+  const dictamenes = new Map<string, EvaluacionDictamen | null>()
+  const lector = githubClient()
+  await Promise.all(data.ordenes.filter((o) => o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
+    dictamenes.set(o.id, lector ? await dictamenDeOrden(lector, o) : null)
+  }))
+
   return (
     <>
       <h1>Órdenes</h1>
@@ -114,7 +146,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}
