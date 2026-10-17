@@ -36,12 +36,14 @@ function activa(names: string[], secrets: Record<string, string> = {}) {
   return file
 }
 
-function run(args: string[], opts: { env?: Record<string, string>; names?: string[]; secrets?: Record<string, string>; input?: string } = {}) {
+function run(args: string[], opts: { env?: Record<string, string>; names?: string[]; secrets?: Record<string, string>; input?: string; raw?: string } = {}) {
   const log = path.join(dir, 'gcloud.log')
   writeFileSync(log, '')
+  const activaFile = opts.raw === undefined ? activa(opts.names ?? ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256'], opts.secrets) : path.join(dir, 'cruda.json')
+  if (opts.raw !== undefined) writeFileSync(activaFile, opts.raw)
   const result = spawnSync('bash', [SCRIPT, ...args], {
     cwd: dir, input: opts.input ?? '', encoding: 'utf8',
-    env: { PATH: `${dir}:${process.env.PATH}`, GCLOUD_LOG: log, GCLOUD_ACTIVA: activa(opts.names ?? ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256'], opts.secrets), ...(opts.env ?? RENDER_ENV) } as unknown as NodeJS.ProcessEnv,
+    env: { PATH: `${dir}:${process.env.PATH}`, GCLOUD_LOG: log, GCLOUD_ACTIVA: activaFile, ...(opts.env ?? RENDER_ENV) } as unknown as NodeJS.ProcessEnv,
   })
   return { code: result.status, out: `${result.stdout}${result.stderr}`, calls: readFileSync(log, 'utf8') }
 }
@@ -93,5 +95,115 @@ describe('deploy.sh', () => {
     expect(calls.at(-1)).toContain('--limit 3')
     for (const call of calls) expect(call).toMatch(/--project project-os-511102 --region northamerica-south1/)
     expect(r.out).not.toContain('SECRETO-NO-IMPRIMIR')
+  })
+
+  it('--quitar: permite que falte la variable, la lista y sigue pidiendo «desplegar»', () => {
+    const names = ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256', 'ANTIGUA_V2']
+    const sin = run(['--quitar', 'ANTIGUA_V2', '--dry-run'], { names })
+    expect(sin.code).toBe(0)
+    expect(sin.out).toMatch(/Variables quitadas:\n  - ANTIGUA_V2/)
+    const nodesp = run(['--quitar', 'ANTIGUA_V2'], { names, input: 'no\n' })
+    expect(nodesp.code).toBe(1)
+    expect(nodesp.calls).not.toContain('replace')
+    const ok = run(['--quitar', 'ANTIGUA_V2'], { names, input: 'desplegar\n' })
+    expect(ok.calls).toContain('services replace')
+    expect(run(['--quitar', 'minuscula']).code).toBe(2)
+  })
+
+  it('--quitar de una variable que el YAML aún trae: se detiene y la nombra', () => {
+    const r = run(['--quitar', 'PM_AGENT_TOKEN_SHA256'], { input: 'desplegar\n' })
+    expect(r.code).toBe(1)
+    expect(r.out).toContain('DETENTE: se pidió --quitar PM_AGENT_TOKEN_SHA256')
+    expect(r.calls).toBe('')
+  })
+
+  it('render que sale 0 con YAML vacío: se detiene sin llamar a gcloud', () => {
+    writeFileSync(path.join(dir, 'node'), `#!/usr/bin/env bash\ncase "$1" in *render.mjs) exit 0 ;; esac\nexec "${process.execPath}" "$@"\n`)
+    chmodSync(path.join(dir, 'node'), 0o755)
+    const r = run([], { input: 'desplegar\n' })
+    expect(r.code).toBe(1)
+    expect(r.out).toContain('DETENTE: el YAML renderizado está vacío')
+    expect(r.calls).toBe('')
+  })
+
+  it('cambios valor↔secreto: lista los nombres sin valores', () => {
+    const r = run(['--dry-run'], { names: ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256', 'GOOGLE_CLIENT_ID'], secrets: { GOOGLE_CLIENT_ID: 's:1' } })
+    expect(r.out).toContain('Cambios valor↔secreto:')
+    expect(r.out).toContain('GOOGLE_CLIENT_ID: secreto → literal')
+    expect(r.out).not.toContain('SECRETO-NO-IMPRIMIR')
+    const igual = run(['--dry-run'], { secrets: { PM_AGENT_TOKEN_SHA256: 'p:7' } })
+    expect(igual.out).toMatch(/Cambios valor↔secreto:\n  \(ninguno\)/)
+  })
+
+  describe('--desde-activa', () => {
+    const { IMAGE: _i, RUNTIME_SA: _r, SERVICE_URL: _s, OAUTH_CLIENT_ID: _o, ...base } = RENDER_ENV
+    void [_i, _r, _s, _o]
+    const full = JSON.stringify({ spec: { template: { spec: { serviceAccountName: RENDER_ENV.RUNTIME_SA, containers: [{
+      image: `us-docker.pkg.dev/proj-os-1/repo/dash@sha256:${'b'.repeat(64)}`,
+      env: [
+        { name: 'NEXTAUTH_URL', value: RENDER_ENV.SERVICE_URL }, { name: 'GOOGLE_CLIENT_ID', value: RENDER_ENV.OAUTH_CLIENT_ID },
+        { name: 'NEXTAUTH_SECRET', valueFrom: { secretKeyRef: { name: 'n', key: '1' } } },
+        { name: 'GOOGLE_CLIENT_SECRET', valueFrom: { secretKeyRef: { name: 'o', key: '1' } } },
+        { name: 'AUTH_ALLOWED_EMAILS', valueFrom: { secretKeyRef: { name: 'a', key: '1' } } },
+        { name: 'AUTH_WRITER_EMAILS', valueFrom: { secretKeyRef: { name: 'w', key: '1' } } },
+        { name: 'PM_AGENT_TOKEN_SHA256', valueFrom: { secretKeyRef: { name: 'p', key: '7' } } },
+        { name: 'PROJECT_OS_WRITE_MODE', value: 'sheets' },
+        { name: 'PROJECT_OS_WRITE_SERVICE_ACCOUNT', value: RENDER_ENV.WRITE_SERVICE_ACCOUNT },
+      ],
+    }] } } } })
+
+
+    it('sin exportar nada: toma todo de la activa y no imprime valores', () => {
+      const r = run(['--desde-activa', '--dry-run'], { raw: full, env: { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' } })
+      expect(r.code).toBe(0)
+      expect(r.out).toContain('Imagen nueva:  us-docker.pkg.dev/proj-os-1/repo/dash@sha256:' + 'b'.repeat(64))
+      expect(r.out).toMatch(/Variables sobrescritas[^\n]*\n  \(ninguna\)/)
+      for (const valor of [RENDER_ENV.SERVICE_URL, RENDER_ENV.OAUTH_CLIENT_ID, RENDER_ENV.RUNTIME_SA, RENDER_ENV.WRITE_SERVICE_ACCOUNT]) expect(r.out).not.toContain(valor)
+      expect(r.calls).not.toContain('replace')
+    })
+
+    it('lo exportado prevalece y se lista como sobrescrita', () => {
+      const r = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...base, IMAGE } })
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`Imagen nueva:  ${IMAGE}`)
+      expect(r.out).toMatch(/sobrescritas[^\n]*\n  ! IMAGE\n/)
+    })
+
+    const min = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
+
+    it('--quitar PM_AGENT_TOKEN_SHA256: no se toma de la activa, el YAML no la trae y se lista como quitada', () => {
+      const r = run(['--desde-activa', '--quitar', 'PM_AGENT_TOKEN_SHA256', '--dry-run'], { raw: full, env: min })
+      expect(r.code).toBe(0)
+      expect(r.out).toMatch(/Variables quitadas:\n  - PM_AGENT_TOKEN_SHA256\n/)
+      expect(r.calls).not.toContain('replace')
+    })
+
+    it('exportada vacía: prevalece y se lista como sobrescrita; sin --quitar, la faltante detiene', () => {
+      const env = { ...min, SECRET_VERSION_PM_AGENT: '' }
+      const r = run(['--desde-activa', '--quitar', 'PM_AGENT_TOKEN_SHA256', '--dry-run'], { raw: full, env })
+      expect(r.code).toBe(0)
+      expect(r.out).toMatch(/sobrescritas[^\n]*\n  ! SECRET_VERSION_PM_AGENT\n/)
+      const sin = run(['--desde-activa'], { raw: full, env, input: 'desplegar\n' })
+      expect(sin.code).toBe(1)
+      expect(sin.out).toMatch(/DETENTE: la revisión activa tiene variables que el YAML no trae:\n  - PM_AGENT_TOKEN_SHA256/)
+      expect(sin.calls).not.toContain('replace')
+    })
+
+    it('IMAGE exportada vacía: el render falla sin aplicar', () => {
+      const r = run(['--desde-activa'], { raw: full, env: { ...min, IMAGE: '' }, input: 'desplegar\n' })
+      expect(r.code).toBe(1)
+      expect(r.out).toContain('el render falló')
+      expect(r.calls).not.toContain('replace')
+    })
+
+    it('JSON inválido, vacío o sin contenedor: se detiene sin aplicar', () => {
+      const env = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
+      for (const raw of ['no es json', '{"spec":{"template":{"spec":{"containers":[]}}}}', '']) {
+        const r = run(['--desde-activa'], { raw, env, input: 'desplegar\n' })
+        expect(r.code).toBe(1)
+        expect(r.out).toContain('DETENTE')
+        expect(r.calls).not.toContain('replace')
+      }
+    })
   })
 })
