@@ -1,7 +1,4 @@
-# Instrucciones para agentes — web/
-
-Las reglas del proyecto están en [`../AGENTS.md`](../AGENTS.md) y tienen prioridad: solo lectura sobre Google Sheets,
-nada de secretos en el repositorio, sin merge ni despliegue sin autorización del usuario.
+Reglas propias de web/: [`../.claude/rules/web.md`](../.claude/rules/web.md).
 
 <!-- BEGIN:nextjs-agent-rules -->
 
