@@ -4,7 +4,7 @@ import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
 import { CopiarParaClaude, OrderActions } from '@/components/operations/forms'
 import { githubClient } from '@/lib/operations/dispatch'
-import { routineClient } from '@/lib/operations/claude-routine'
+import { routineClient, rutinasSupervision, type RutinasSupervision } from '@/lib/operations/claude-routine'
 import { dictamenDeOrden, urlComentario } from '@/lib/operations/dictamenes'
 import { textoParaEjecutarDeOrden } from '@/lib/operations/github'
 import type { EvaluacionDictamen } from '@/lib/supervision/dictamen'
@@ -39,9 +39,20 @@ function DictamenFila({ prUrl, ev }: { prUrl: string; ev: EvaluacionDictamen | n
   )
 }
 
-function OrdenCard({ v, canWrite, prDetectado, claude, dictamen }: {
+/** Un solo botón según el dictamen del PR (ORD-POS-037); sin la rutina configurada o con riesgo ALTO no aparece. */
+function botonSupervision(ev: EvaluacionDictamen | null | undefined, rutinas: RutinasSupervision) {
+  const plan = ev?.plan
+  if (!plan) return undefined
+  const [accion, etiqueta, rutina] = plan.tipo === 'CORREGIR' ? ['corregir', 'Pedir corrección', rutinas.corregir] as const
+    : plan.tipo === 'SEGUNDO' ? ['revisar', 'Lanzar segundo revisor', rutinas.segundo] as const
+    : ['revisar', 'Lanzar revisión', rutinas.revisar] as const
+  return rutina ? { accion, etiqueta, headSha: plan.headSha } : undefined
+}
+
+function OrdenCard({ v, canWrite, prDetectado, claude, dictamen, supervision }: {
   v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }
   dictamen?: EvaluacionDictamen | null
+  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string }
   claude?: { configurada: boolean; sesion?: string | null }
 }) {
   const o = v.orden
@@ -84,7 +95,7 @@ function OrdenCard({ v, canWrite, prDetectado, claude, dictamen }: {
       </details>
       {textoOrden ? <CopiarParaClaude ordenId={o.id} texto={textoOrden} /> : null}
       {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
-        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} claude={claude} />
+        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} claude={claude} supervision={supervision} />
       ) : null}
       {v.problemas.length > 0 ? (
         <ul className="list" aria-label={`Problemas de ${o.id}`}>
@@ -123,6 +134,7 @@ export default async function OrdenesPage() {
   // Dictamen vigente de las órdenes con PR (solo lectura en GitHub; null = «Sin datos de GitHub»).
   const dictamenes = new Map<string, EvaluacionDictamen | null>()
   const lector = githubClient()
+  const rutinas: RutinasSupervision = canWrite ? rutinasSupervision() : { revisar: null, segundo: null, corregir: null }
   await Promise.all(data.ordenes.filter((o) => o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
     dictamenes.set(o.id, lector ? await dictamenDeOrden(lector, o) : null)
   }))
@@ -146,7 +158,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} supervision={botonSupervision(dictamenes.get(v.orden.id), rutinas)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}

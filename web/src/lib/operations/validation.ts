@@ -414,6 +414,20 @@ export function parseEjecutarOrden(ordenId: string, body: unknown): { ordenId: s
   return { ordenId: id, forzar }
 }
 
+export interface LanzarSupervisionCommand { requestId: string; ordenId: string; accion: 'revisar' | 'corregir'; headEsperado: string }
+
+/** «Lanzar revisión» / «Pedir corrección» (ORD-POS-037): solo el head que vio el propietario; el resto lo deriva el servidor. */
+export function parseLanzarSupervision(ordenId: string, body: unknown): LanzarSupervisionCommand {
+  const c = new Checker(asObject(body), ['requestId', 'accion', 'headEsperado'])
+  const id = ordenId.trim().toUpperCase()
+  if (!ORDER_ID.test(id)) c.setError('ordenId', 'ID de orden no válido')
+  const requestId = c.requestId()
+  const accion = c.oneOf('accion', ['REVISAR', 'CORREGIR'], true)
+  const headEsperado = c.pattern('headEsperado', /^[0-9a-f]{40}$/, true, 'SHA de 40 caracteres hexadecimales')
+  c.done()
+  return { requestId, ordenId: id, accion: accion!.toLowerCase() as 'revisar' | 'corregir', headEsperado: headEsperado! }
+}
+
 /** Hash estable del comando validado (sin requestId) para detectar reutilización con otro payload. */
 export function payloadHash(operation: string, command: object): string {
   const { requestId: _ignored, ...rest } = command as Record<string, unknown>

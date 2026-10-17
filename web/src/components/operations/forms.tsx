@@ -635,8 +635,35 @@ export function CopiarParaClaude({ ordenId, texto }: { ordenId: string; texto: s
   )
 }
 
+const SUPERVISION_TEXTO: Record<string, string> = {
+  'sin-rutina': 'Esta rutina no está configurada (docs/rutina-claude.md).',
+  'head-cambio': 'El PR cambió desde que cargaste la página. Recárgala antes de lanzar.',
+  'sin-accion': 'Ya no toca este paso. Recarga la página.',
+  'orden-sin-pr': 'La orden no tiene un PR válido.',
+  'http-429': 'Se alcanzó el límite de ejecuciones de la rutina. Espera unos minutos.',
+  'auditoria-pendiente': 'La sesión corre, pero no quedó la fila de AUDITORIA: avisa al propietario de la hoja.',
+  red: 'No hubo conexión con Claude. Puedes volver a intentarlo.',
+}
+
+/** Resultado de lanzar una revisión o una corrección (ORD-POS-037). */
+function SupervisionStatus({ supervision }: { supervision?: EjecucionResult }) {
+  if (supervision?.ok && supervision.sessionUrl) {
+    return (
+      <p className="small">
+        {supervision.nueva ? 'Sesión lanzada: ' : 'Esta sesión ya estaba lanzada: '}
+        <a href={supervision.sessionUrl} target="_blank" rel="noopener noreferrer nofollow">ver la sesión</a>.
+        {supervision.codigo ? ` ${SUPERVISION_TEXTO[supervision.codigo] ?? ''}` : ' El dictamen aparecerá aquí cuando termine.'}
+      </p>
+    )
+  }
+  const codigo = supervision?.codigo ?? 'error'
+  return <p className="small"><strong>Atención:</strong> {SUPERVISION_TEXTO[codigo] ?? `No se pudo lanzar (${codigo}).`}</p>
+}
+
 /** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
-export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude }: {
+export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude, supervision }: {
+  /** Revisión o corrección que toca (ORD-POS-037) y el head del PR que se vio al cargar. */
+  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string }
   ordenId: string
   estado: string
   canApprove: boolean
@@ -647,6 +674,7 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude 
 }) {
   const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
   const run = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}/ejecutar`, 'POST')
+  const sup = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}/supervision`, 'POST')
   const [mode, setMode] = useState<'idle' | 'cancel' | 'pr'>('idle')
 
   const send = (accion: string, extra: Record<string, string> = {}) => op.submit({ accion, expectedEstado: estado, ...extra })
@@ -665,10 +693,13 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude 
   if (run.state.status === 'done') {
     return <div className="card-actions"><EjecucionStatus ejecucion={(run.state.result as OpSuccess & { ejecucion?: EjecucionResult }).ejecucion} /></div>
   }
+  if (sup.state.status === 'done') {
+    return <div className="card-actions"><SupervisionStatus supervision={(sup.state.result as OpSuccess & { supervision?: EjecucionResult }).supervision} /></div>
+  }
   function relanzar() {
     if (window.confirm('Claude ya tiene una sesión para esta orden. ¿Lanzar otra ejecución?')) void run.submit({ forzar: 'SI' })
   }
-  const sending = op.state.status === 'sending' || run.state.status === 'sending'
+  const sending = op.state.status === 'sending' || run.state.status === 'sending' || sup.state.status === 'sending'
   const primary = (label: string, busy: string, onClick: () => void) => (
     <button type="button" className="button button-primary" onClick={onClick} disabled={sending} aria-busy={sending}>
       {sending ? busy : label}
@@ -693,6 +724,9 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude 
               ? primary('Registrar el PR detectado', 'Guardando…', () => send('REGISTRAR_PR', { url: prDetectado }))
               : <button type="button" className="button" onClick={() => setMode('pr')} disabled={sending}>Registrar PR…</button>
           ) : null}
+          {supervision && (estado === 'PR_ABIERTO' || estado === 'REVISADA')
+            ? primary(supervision.etiqueta, 'Lanzando…', () => void sup.submit({ accion: supervision.accion.toUpperCase(), headEsperado: supervision.headSha }))
+            : null}
           {estado === 'PR_ABIERTO' ? primary('Marcar revisada', 'Guardando…', () => send('REVISAR')) : null}
           {estado === 'REVISADA' ? primary('Cerrar orden', 'Guardando…', () => send('CERRAR')) : null}
           <button type="button" className="button" onClick={() => setMode('cancel')} disabled={sending}>Cancelar…</button>

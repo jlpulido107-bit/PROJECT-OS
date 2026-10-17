@@ -399,6 +399,27 @@ export class OperationsService {
   }
 
   /**
+   * Idempotencia de los lanzamientos de revisión o corrección: la sesión ya auditada con este requestId, o null.
+   * El mismo requestId con otra orden, operación o payload es un conflicto.
+   */
+  sesionLanzada(op: OperationName, requestId: string, hash: string, ordenId: string): Promise<string | null> {
+    return this.exclusive(async () => {
+      const found = this.findAudited(await readView(this.store, 'AUDITORIA'), requestId)
+      if (!found) return null
+      if (found.op.operacion !== op || found.op.hash !== hash || found.op.id !== ordenId) throw new OperationError('conflicto-idempotencia')
+      return found.op.fields.get('SESION')?.despues ?? null
+    })
+  }
+
+  /** Constancia del lanzamiento (URL de la sesión) en AUDITORIA. No toca ORDENES_CODEX. */
+  registrarLanzamiento(op: OperationName, requestId: string, hash: string, ordenId: string, sessionUrl: string, ctx: OperationContext): Promise<void> {
+    return this.exclusive(async () => {
+      const audit = await readView(this.store, 'AUDITORIA')
+      await this.auditFirst(op, hash, requestId, ctx, 'ORDENES_CODEX', ordenId, new Map([['SESION', { antes: '', despues: sessionUrl }]]), this.clock(), audit)
+    })
+  }
+
+  /**
    * Conciliación verificable (contrato §7): la última operación auditada de cada registro debe reflejarse en la
    * entidad. Lista intenciones sin efecto (p. ej. escritura fallida tras auditoría) o divergentes.
    */
@@ -416,7 +437,8 @@ export class OperationsService {
       pendientes.push({ requestId: op.requestId, operacion: op.operacion, entidad: op.entidad, id: op.id, motivo })
     // Auditorías incompletas o contradictorias: nunca se dan por conciliadas.
     for (const op of ops) if (op.integridad !== 'completa') item(op, op.integridad === 'parcial' ? 'auditoria-parcial' : 'auditoria-inconsistente')
-    const complete = ops.filter((op) => op.integridad === 'completa')
+    // Los lanzamientos de rutinas dejan constancia pero no cambian la orden: no hay efecto que conciliar.
+    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.(revisar|corregir)_lanzar$/.test(op.operacion))
     // Actualización perdida: dos ediciones auditadas parten de la misma VERSION del mismo registro
     // (posible solo sin CAS entre instancias; contrato §6). La segunda pisó a la primera.
     const transitions = new Map<string, AuditedOperation[]>()

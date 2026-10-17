@@ -56,6 +56,8 @@ export type OperationName =
   | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
   /** No escribe en la hoja: lanza la rutina de Claude (F5a). */
   | 'orden.ejecutar'
+  /** No escriben en la entidad: lanzan una rutina de revisión o de corrección y dejan constancia en AUDITORIA (ORD-POS-037). */
+  | 'orden.revisar_lanzar' | 'orden.corregir_lanzar'
 
 /** Órdenes (V1.8 F3, docs/migracion-ordenes-codex.md). Desde el dashboard no se crean órdenes de riesgo ALTO. */
 export const ORDER_RISKS = ['BAJO', 'MEDIO'] as const

@@ -42,7 +42,7 @@ const PRIVATE_PAGES = [
 const PRIVATE_APIS = [
   '/api/resumen', '/api/planificacion', '/api/control', '/api/operaciones/tareas', '/api/operaciones/tareas/POS-001',
   '/api/operaciones/tiempos', '/api/operaciones/decisiones', '/api/operaciones/ordenes', '/api/operaciones/ordenes/ORD-POS-001',
-  '/api/operaciones/ordenes/ORD-POS-001/ejecutar',
+  '/api/operaciones/ordenes/ORD-POS-001/ejecutar', '/api/operaciones/ordenes/ORD-POS-001/supervision',
 ]
 
 for (const path of PRIVATE_PAGES) {

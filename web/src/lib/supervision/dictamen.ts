@@ -27,7 +27,19 @@ export type EstadoDictamen =
   | { tipo: 'vigente'; dictamen: DictamenVigente }
   | { tipo: 'anterior' | 'invalido' | 'ninguno' }
 
-export interface EvaluacionDictamen { estado: EstadoDictamen; siguiente: string }
+/** Lanzamiento que toca ahora (ORD-POS-037), con datos derivados solo de los dictámenes válidos del PR. */
+export interface PlanLanzamiento {
+  tipo: 'PRIMERO' | 'DELTA' | 'SEGUNDO' | 'CORREGIR'
+  headSha: string
+  /** Correlativo de REV-/EJE-<orden>-<n>. */
+  n: number
+  ronda: number
+  intento: number
+  /** Solo CORREGIR: comentario del dictamen CAMBIOS vigente (HALLAZGOS). */
+  comentarioId?: number
+}
+
+export interface EvaluacionDictamen { estado: EstadoDictamen; siguiente: string; plan: PlanLanzamiento | null }
 
 export interface OrdenDictamen { id: string; riesgo: string | null; criterios: string | null }
 export interface PrDictamen { repo: string; numero: number }
@@ -74,6 +86,23 @@ function siguientePaso(vigentes: Valido[], riesgo: string | null): { elegido: Va
   return { elegido: conforme, texto: riesgo === 'BAJO' || dobleRevision ? 'Listo para tu decisión' : 'Falta segundo revisor' }
 }
 
+function planDe(
+  texto: string, validos: Valido[], vigentes: Valido[], elegido: Valido | null, headSha: string, orden: OrdenDictamen,
+): PlanLanzamiento | null {
+  if (orden.riesgo === 'ALTO') return null
+  const numero = (v: Valido) => Number(new RegExp(`^REV-${orden.id}-(\\d{1,6})$`).exec(v.reporte.revisionId)?.[1] ?? 0)
+  const base = { headSha, n: Math.max(0, ...validos.map(numero)) + 1 }
+  const intento = (tipo: PlanLanzamiento['tipo']) => 1 + vigentes.filter((v) => v.reporte.rol === tipo).length
+  if (texto.startsWith('Corregir')) return { ...base, tipo: 'CORREGIR', ronda: elegido!.reporte.ronda + 1, intento: 1, comentarioId: elegido!.id }
+  if (texto === 'Falta segundo revisor') return { ...base, tipo: 'SEGUNDO', ronda: elegido!.reporte.ronda, intento: intento('SEGUNDO') }
+  if (texto !== 'Lanzar revisión') return null
+  // Tras un CAMBIOS en un head anterior y una corrección, toca el delta de la ronda siguiente.
+  const previo = validos.at(-1)?.reporte
+  const delta = previo?.veredicto === 'CAMBIOS'
+  const ronda = (previo?.ronda ?? 0) + (delta ? 1 : 0)
+  return ronda > RONDAS_MAX ? null : { ...base, tipo: delta ? 'DELTA' : 'PRIMERO', ronda, intento: 1 }
+}
+
 export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
   const marcados = datos.comentarios.filter((c) => tieneMarca(c.body))
   const validos: Valido[] = []
@@ -88,7 +117,7 @@ export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDict
   const vigentes = [...porRevision.values()].sort((a, b) => a.indice - b.indice)
   if (vigentes.length === 0) {
     const tipo = validos.length > 0 ? 'anterior' : marcados.length > 0 ? 'invalido' : 'ninguno'
-    return { estado: { tipo }, siguiente: 'Lanzar revisión' }
+    return { estado: { tipo }, siguiente: 'Lanzar revisión', plan: planDe('Lanzar revisión', validos, vigentes, null, datos.headSha, orden) }
   }
   const { elegido, texto } = siguientePaso(vigentes, orden.riesgo)
   const r = elegido!.reporte
@@ -96,5 +125,6 @@ export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDict
   return {
     estado: { tipo: 'vigente', dictamen: { veredicto: r.veredicto, ronda: r.ronda, bloquean, noBloquean: r.hallazgos.length - bloquean, sha: r.headSha.slice(0, 7), comentarioId: elegido!.id } },
     siguiente: texto,
+    plan: planDe(texto, validos, vigentes, elegido, datos.headSha, orden),
   }
 }
