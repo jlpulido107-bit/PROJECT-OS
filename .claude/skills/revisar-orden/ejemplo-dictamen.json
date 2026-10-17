@@ -1,5 +1,7 @@
 {
-  "versionContrato": "1",
+  "versionContrato": "2",
+  "rol": "PRIMERO",
+  "modelo": "claude-sonnet-5-5",
   "versionPolitica": "DEC-POS-003",
   "ordenId": "ORD-POS-023",
   "tareaId": "POS-019",

@@ -116,6 +116,11 @@ revisor no basta: falta el del segundo revisor sobre el mismo head.
 4. Si `ok` es falso, corrige el JSON con los errores devueltos y repite. Si no logras que pase, publica un
    dictamen `INCONCLUSO` que lo explique; nunca publiques un JSON que no pasó.
 
+Contrato versión 2: escribe `versionContrato` `"2"`, `rol` según el modo (revisión completa = `PRIMERO`, delta tras
+corrección = `DELTA`, segundo revisor = `SEGUNDO`) y `modelo` con el identificador del modelo con el que corre tu
+sesión (p. ej. `claude-sonnet-5-5`). `/ordenes` solo da por cumplida la doble revisión de MEDIO si el `SEGUNDO` usa un
+modelo distinto al del `PRIMERO` o `DELTA`.
+
 Campos comunes del JSON (contrato §3.1): versiones, identidad (`ordenId`, `tareaId`, `proyectoId`, `repo`, `issue`,
 `pr`), vigencia (`headSha`, `baseSha`, `hashCriterios`), trazabilidad (`revisionId`, `ejecucionId`, `intento`,
 `ronda`), `autorizacion` y `limiteConsumo`. Copia los valores de la orden y del coordinador; no inventes

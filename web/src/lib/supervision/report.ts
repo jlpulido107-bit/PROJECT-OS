@@ -21,6 +21,8 @@ export const LIMITES = {
 export type ResultadoCriterio = 'CUMPLE' | 'NO_CUMPLE' | 'NO_VERIFICADO'
 export type EstadoCi = 'EXITO' | 'FALLO' | 'PENDIENTE' | 'CI_AUSENTE'
 export type Severidad = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA'
+/** Papel del revisor (contrato v2): revisión completa, delta tras corrección o segundo revisor de MEDIO. */
+export type RolRevisor = 'PRIMERO' | 'DELTA' | 'SEGUNDO'
 
 export interface CriterioReporte { id: string; resultado: ResultadoCriterio; evidencia: string }
 export interface PruebaPropia { comando: string; sha: string; codigoSalida: number }
@@ -37,6 +39,9 @@ export interface Hallazgo {
 
 export interface ReporteRevision {
   versionContrato: string
+  /** Solo en la versión 2 del contrato (obligatorios allí); en la 1 quedan sin definir. */
+  rol?: RolRevisor
+  modelo?: string
   versionPolitica: string
   ordenId: string
   tareaId: string
@@ -91,6 +96,8 @@ const HASH = /^[0-9a-f]{64}$/
 const ORDEN = /^ORD-(POS|SIG|ECO)-\d{3,}$/
 const TAREA = /^[A-Z]{2,5}-\d{1,6}$/
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+const MODELO = /^[a-z0-9][a-z0-9._-]{2,63}$/
+const ROLES: readonly string[] = ['PRIMERO', 'DELTA', 'SEGUNDO']
 const RESULTADOS: readonly string[] = ['CUMPLE', 'NO_CUMPLE', 'NO_VERIFICADO']
 const ESTADOS_CI: readonly string[] = ['EXITO', 'FALLO', 'PENDIENTE', 'CI_AUSENTE']
 const SEVERIDADES: readonly string[] = ['CRITICA', 'ALTA', 'MEDIA', 'BAJA']
@@ -147,6 +154,9 @@ function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
   // §3.1 comunes
   const versionContrato = L.texto(o, 'versionContrato', '', 64)
   const versionPolitica = L.texto(o, 'versionPolitica', '', 64)
+  const v2 = versionContrato === '2'
+  const rol = v2 ? L.opcion<RolRevisor>(o, 'rol', '', ROLES) : undefined
+  const modelo = v2 ? L.texto(o, 'modelo', '', 64, MODELO) : undefined
   const ordenId = L.texto(o, 'ordenId', '', 64, ORDEN)
   const tareaId = L.texto(o, 'tareaId', '', 64, TAREA)
   const proyectoId = L.texto(o, 'proyectoId', '', 8, /^(POS|SIG|ECO)$/)
@@ -231,7 +241,7 @@ function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
   const veredicto = L.opcion<Veredicto>(o, 'veredicto', '', VEREDICTOS)
   if (L.errores.length > 0) return null
   return {
-    versionContrato, versionPolitica, ordenId, tareaId, proyectoId, repo, issue, pr, headSha, baseSha, hashCriterios,
+    versionContrato, ...(v2 ? { rol, modelo } : {}), versionPolitica, ordenId, tareaId, proyectoId, repo, issue, pr, headSha, baseSha, hashCriterios,
     revisionId, ejecucionId, intento, ronda, autorizacion, limiteConsumo, criterios,
     evidencia: { propias, ci, autor }, hallazgos, veredicto,
   }

@@ -64,8 +64,14 @@ function siguientePaso(vigentes: Valido[], riesgo: string | null): { elegido: Va
   const conforme = ultimo('CONFORME')
   if (!conforme) return { elegido: null, texto: 'Lanzar revisión' }
   if (riesgo === 'ALTO') return { elegido: conforme, texto: 'Escala al propietario' }
-  // MEDIO (y todo riesgo no reconocido, por prudencia) exige dos CONFORME de revisionId distinto sobre el mismo head.
-  return { elegido: conforme, texto: riesgo === 'BAJO' || vigentes.length >= 2 ? 'Listo para tu decisión' : 'Falta segundo revisor' }
+  // MEDIO (y todo riesgo no reconocido, por prudencia): un CONFORME PRIMERO o DELTA y otro SEGUNDO de otro modelo,
+  // ambos de contrato v2 sobre el mismo head. Los de v1 (sin rol ni modelo) no cuentan como segundo revisor.
+  const conformes = vigentes.filter((x) => x.reporte.veredicto === 'CONFORME')
+  const modelo = (x: Valido) => x.reporte.modelo?.toLowerCase()
+  const dobleRevision = conformes.some((p) =>
+    (p.reporte.rol === 'PRIMERO' || p.reporte.rol === 'DELTA') &&
+    conformes.some((s) => s.reporte.rol === 'SEGUNDO' && modelo(s) !== undefined && modelo(s) !== modelo(p)))
+  return { elegido: conforme, texto: riesgo === 'BAJO' || dobleRevision ? 'Listo para tu decisión' : 'Falta segundo revisor' }
 }
 
 export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {

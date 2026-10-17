@@ -98,6 +98,18 @@ la declara no requerida, el reporte puede ser `CONFORME` dejando constancia de l
 es `CONFORME`. **Nunca** cuenta como éxito implícito. Una CI requerida pendiente no es éxito: no se solicita la revisión
 hasta que termine.
 
+#### Contrato versión 2 (rol y modelo del revisor)
+
+Con `versionContrato` `"2"`, el reporte declara quién lo emite, para que `/ordenes` dé por cumplida la doble revisión de
+MEDIO (DEC-POS-008) solo cuando la hacen revisores con modelos distintos: un `CONFORME` con rol `PRIMERO` o `DELTA` y
+otro con rol `SEGUNDO` de otro modelo, ambos sobre el head actual. La versión `"1"` se sigue aceptando sin estos campos,
+pero no cuenta como segundo revisor. BAJO no cambia.
+
+| Campo | Obligatorio | Valores |
+| --- | --- | --- |
+| `rol` | solo en v2 | `PRIMERO` (revisión completa), `DELTA` (tras una corrección) o `SEGUNDO` (segundo revisor de MEDIO) |
+| `modelo` | solo en v2 | Identificador del modelo de la sesión revisora, p. ej. `claude-sonnet-5-5` (minúsculas, dígitos, `.`, `_`, `-`; 3 a 64) |
+
 ### 3.3 Solicitud de corrección
 
 Además de los comunes: la lista de hallazgos bloqueantes a corregir (por ID y criterio asociado), la **rama** y el

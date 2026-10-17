@@ -61,6 +61,15 @@ describe('rechazos de forma (criterio 1)', () => {
     expect(() => validarReporte(hostil, POL)).not.toThrow()
     expect(validarReporte(hostil, POL).ok).toBe(false)
   })
+  it('contrato v1 sin rol ni modelo es válido; v2 los exige y los valida', () => {
+    expect(validarReporte(base(), POL).ok).toBe(true)
+    const v2 = (mut: (r: Rep) => void = () => {}) => con((r) => { r.versionContrato = '2'; r.rol = 'SEGUNDO'; r.modelo = 'claude-sonnet-5-5'; mut(r) })
+    expect(validarReporte(v2(), POL).ok).toBe(true)
+    expect(errores(v2((r) => { delete r.rol })).some((e) => e.startsWith('rol:'))).toBe(true)
+    expect(errores(v2((r) => { delete r.modelo })).some((e) => e.startsWith('modelo:'))).toBe(true)
+    expect(errores(v2((r) => { r.rol = 'TERCERO' })).some((e) => e.startsWith('rol:'))).toBe(true)
+    for (const m of ['', 'Claude Sonnet', 'a', 42]) expect(errores(v2((r) => { r.modelo = m })).some((e) => e.startsWith('modelo:'))).toBe(true)
+  })
   it.each(['versionContrato', 'versionPolitica', 'ordenId', 'tareaId', 'proyectoId', 'repo', 'issue', 'pr', 'headSha', 'baseSha',
     'hashCriterios', 'revisionId', 'ejecucionId', 'intento', 'ronda', 'autorizacion', 'limiteConsumo', 'criterios', 'evidencia', 'hallazgos', 'veredicto',
   ])('campo ausente: %s', (campo) => {
