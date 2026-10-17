@@ -522,6 +522,12 @@ export SECRET_VERSION_NEXTAUTH=1 SECRET_VERSION_OAUTH=1 SECRET_VERSION_ALLOWLIST
 
 ### 5.7 Desplegar desde la plantilla revisada
 
+**Un solo comando (ORD-POS-030).** Exporta las variables del render (p. ej. `SECRET_VERSION_PM_AGENT=7`) y corre
+`web/deploy/cloudrun/deploy.sh --dry-run` desde cualquier directorio del repo: renderiza, compara solo los nombres de
+variables con la revisión activa, se detiene y nombra las que falten, y con `--dry-run` no aplica. Sin `--dry-run` pide
+escribir «desplegar», aplica con `services replace` y lista las últimas 3 revisiones. Lo ejecuta solo el propietario. Los pasos
+manuales de abajo quedan como referencia.
+
 Acceso del agente PM (opcional, solo con `WRITE_MODE=sheets`): `export SECRET_VERSION_PM_AGENT=<versión>` antes de
 `render.mjs`; compruébalo con `grep -c PM_AGENT_TOKEN_SHA256 /tmp/project-os-service.yaml` (`1` = activo). Para revocarlo,
 despliega sin esa variable. Detalle en [`escritura-v1-8.md` §6](escritura-v1-8.md).
