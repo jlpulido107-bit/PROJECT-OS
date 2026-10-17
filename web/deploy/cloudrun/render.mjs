@@ -52,12 +52,17 @@ export function render(template, env) {
  * Opcional (F4): SECRET_VERSION_GITHUB, versión fijada del secreto project-os-github-token (issue de cada orden).
  * Opcional (F5a, docs/rutina-claude.md): CLAUDE_ROUTINE_ID (no secreto) y SECRET_VERSION_CLAUDE_ROUTINE, versión fijada del
  * secreto project-os-claude-routine-token. Van juntos y exigen SECRET_VERSION_GITHUB (la ejecución se registra en el issue).
+ * Opcional (ORD-POS-028, docs/escritura-v1-8.md §6): SECRET_VERSION_PM_AGENT, versión fijada del secreto
+ * project-os-pm-agent-token-sha256 (hash del token del agente PM). Solo con WRITE_MODE=sheets; nunca el hash ni el token literal.
  */
 const ROUTINE_ID = /^[A-Za-z0-9_-]{8,80}$/
 const WRITE_SA = /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/
 
 function escritura(env, problems) {
   const mode = (env.WRITE_MODE ?? '').trim()
+  const pmAgent = (env.SECRET_VERSION_PM_AGENT ?? '').trim()
+  if (pmAgent && !/^[1-9][0-9]*$/.test(pmAgent)) problems.push('SECRET_VERSION_PM_AGENT no tiene el formato esperado')
+  else if (pmAgent && mode !== 'sheets') problems.push('SECRET_VERSION_PM_AGENT exige WRITE_MODE=sheets')
   if (mode === '' || mode === 'disabled') return ''
   if (mode !== 'sheets') {
     problems.push('WRITE_MODE debe ser disabled o sheets')
@@ -93,6 +98,13 @@ function escritura(env, problems) {
     '                  name: project-os-claude-routine-token',
     `                  key: '${routine}'`,
   ] : []
+  const pmAgentLines = pmAgent ? [
+    '            - name: PM_AGENT_TOKEN_SHA256',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-pm-agent-token-sha256',
+    `                  key: '${pmAgent}'`,
+  ] : []
   return [
     '            - name: PROJECT_OS_WRITE_MODE',
     '              value: sheets',
@@ -105,6 +117,7 @@ function escritura(env, problems) {
     `                  key: '${version}'`,
     ...githubLines,
     ...routineLines,
+    ...pmAgentLines,
     '',
   ].join('\n')
 }

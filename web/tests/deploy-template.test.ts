@@ -174,6 +174,17 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     expect(() => render(template, { ...VARS, ...WRITE, ...RUTINA, SECRET_VERSION_CLAUDE_ROUTINE: 'latest' })).toThrow('SECRET_VERSION_CLAUDE_ROUTINE')
     // Sin escritura real no se inyecta nada de la rutina (va dentro del bloque de escritura).
     expect(render(template, { ...VARS, ...RUTINA })).not.toContain('CLAUDE_ROUTINE')
+    // ORD-POS-028: acceso del agente PM opcional, solo por versión fijada del secreto del hash.
+    expect(out).not.toContain('PM_AGENT_TOKEN_SHA256')
+    const withPm = render(template, { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: '4' })
+    expect(withPm).toMatch(/- name: PM_AGENT_TOKEN_SHA256\n\s+valueFrom:\n\s+secretKeyRef:\n\s+name: project-os-pm-agent-token-sha256\n\s+key: '4'/)
+    expect(withPm).not.toMatch(/PM_AGENT_TOKEN_SHA256\n\s+value:/)
+    expect(render(template, { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: ' ' })).toBe(out)
+    for (const bad of ['latest', '0', '04', '-1', 'a'.repeat(64)]) {
+      expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: bad }), bad).toThrow('SECRET_VERSION_PM_AGENT')
+    }
+    expect(() => render(template, { ...VARS, SECRET_VERSION_PM_AGENT: '4' })).toThrow('exige WRITE_MODE=sheets')
+    expect(() => render(template, { ...VARS, WRITE_MODE: 'disabled', SECRET_VERSION_PM_AGENT: '4' })).toThrow('exige WRITE_MODE=sheets')
     // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
     expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })
