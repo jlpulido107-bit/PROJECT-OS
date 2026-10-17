@@ -51,10 +51,6 @@ const evaluar = (comentarios: Parameters<typeof cliente>[0], riesgo?: string | n
 beforeEach(() => limpiarCacheDictamenes())
 
 describe('dictamen vigente por orden', () => {
-  it('sin dictamen: Lanzar revisión', async () => {
-    expect(await evaluar([])).toEqual({ estado: { tipo: 'ninguno' }, siguiente: 'Lanzar revisión' })
-  })
-
   it('BAJO con CONFORME: listo, con datos y enlace al comentario', async () => {
     const ev = await evaluar([comentario(reporte())])
     expect(ev).toMatchObject({ siguiente: 'Listo para tu decisión', estado: { tipo: 'vigente', dictamen: { veredicto: 'CONFORME', ronda: 0, bloquean: 0, noBloquean: 0, sha: 'aaaaaaa' } } })
@@ -62,12 +58,10 @@ describe('dictamen vigente por orden', () => {
     expect(urlComentario('https://evil.example/pull/1', 1)).toBeNull()
   })
 
-  it('CAMBIOS: corrige hasta la ronda 2 y luego escala; cuenta hallazgos', async () => {
-    expect(await evaluar([comentario(cambios())])).toMatchObject({ siguiente: 'Corregir (ronda 1 de 2)', estado: { dictamen: { bloquean: 1, noBloquean: 1 } } })
-    limpiarCacheDictamenes()
-    expect((await evaluar([comentario(cambios({ ronda: 1 }))]))?.siguiente).toBe('Corregir (ronda 2 de 2)')
-    limpiarCacheDictamenes()
-    expect((await evaluar([comentario(cambios({ ronda: 2 }))]))?.siguiente).toBe('Escala al propietario')
+  it.each([
+    [{}, 'Corregir (ronda 1 de 2)'], [{ ronda: 1 }, 'Corregir (ronda 2 de 2)'], [{ ronda: 2 }, 'Escala al propietario'],
+  ])('CAMBIOS %j: %s; cuenta hallazgos', async (extra, paso) => {
+    expect(await evaluar([comentario(cambios(extra))])).toMatchObject({ siguiente: paso, estado: { dictamen: { bloquean: 1, noBloquean: 1 } } })
   })
 
   it('INCONCLUSO: revisar las entradas', async () => {
@@ -75,44 +69,30 @@ describe('dictamen vigente por orden', () => {
     expect((await evaluar([comentario(r)]))?.siguiente).toBe('Revisar entradas del dictamen')
   })
 
-  it('MEDIO: un CONFORME falta el segundo; dos revisionId distintos, listo; el mismo revisionId no suma', async () => {
-    expect((await evaluar([comentario(reporte())], 'MEDIO'))?.siguiente).toBe('Falta segundo revisor')
-    limpiarCacheDictamenes()
-    expect((await evaluar([comentario(reporte()), comentario(reporte())], 'MEDIO'))?.siguiente).toBe('Falta segundo revisor')
-    limpiarCacheDictamenes()
-    expect((await evaluar([comentario(reporte()), comentario(reporte({ revisionId: 'REV-2' }))], 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
+  it.each([
+    ['un CONFORME', [reporte()], 'Falta segundo revisor'], ['el mismo revisionId dos veces', [reporte(), reporte()], 'Falta segundo revisor'],
+    ['dos revisionId distintos', [reporte(), reporte({ revisionId: 'REV-2' })], 'Listo para tu decisión'],
+  ])('MEDIO con %s: %s', async (_, reportes, paso) => {
+    expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })
 
-  it('ignora la marca falsa, el autor ajeno y el dictamen de otra orden', async () => {
-    for (const c of [comentario(reporte(), ME, 'Dictamen sin marca'), comentario(reporte(), 'intruso'), comentario(reporte({ ordenId: 'ORD-POS-100' }))]) {
-      limpiarCacheDictamenes()
-      expect((await evaluar([c]))?.siguiente).toBe('Lanzar revisión')
-    }
-    limpiarCacheDictamenes()
-    expect((await evaluar([comentario(reporte(), 'intruso')]))?.estado).toEqual({ tipo: 'ninguno' })
+  it.each([
+    ['sin dictamen', null, 'ninguno'], ['otro head (head anterior)', comentario(reporte()), 'anterior', 'c'.repeat(40)], ['marca falsa', comentario(reporte(), ME, 'Dictamen sin marca'), 'ninguno'], ['autor ajeno', comentario(reporte(), 'intruso'), 'ninguno'],
+    ['otra orden', comentario(reporte({ ordenId: 'ORD-POS-100' })), 'invalido'], ['otro PR', comentario(reporte({ pr: 51 })), 'invalido'],
+    ['otro repo', comentario(reporte({ repo: 'jlpulido107-bit/SIGSAH' })), 'invalido'], ['otro hash', comentario(reporte({ hashCriterios: 'x' })), 'invalido'],
+    ['JSON inválido, sin mostrar su contenido', comentario('{no es json <script>alert(1)</script>'), 'invalido'],
+  ])('Lanzar revisión: %s', async (_, c, tipo, head?: string) => {
+    expect(await evaluar(c ? [c] : [], 'BAJO', { head })).toEqual({ estado: { tipo }, siguiente: 'Lanzar revisión' })
   })
 
-  it('JSON inválido: «no válido», sin mostrar su contenido', async () => {
-    const mal = await evaluar([comentario('{no es json <script>alert(1)</script>')])
-    expect(mal).toEqual({ estado: { tipo: 'invalido' }, siguiente: 'Lanzar revisión' })
-    limpiarCacheDictamenes()
-    expect((await evaluar([comentario(reporte({ veredicto: 'CONFORME', hashCriterios: 'x' }))]))?.estado).toEqual({ tipo: 'invalido' })
-  })
-
-  it('dictamen de otro head: head anterior', async () => {
-    expect(await evaluar([comentario(reporte())], 'BAJO', { head: 'c'.repeat(40) })).toEqual({ estado: { tipo: 'anterior' }, siguiente: 'Lanzar revisión' })
-  })
-
-  it('si GitHub falla, null (Sin datos de GitHub) y no se rompe', async () => {
-    expect(await evaluar([comentario(reporte())], 'BAJO', { fallo: true })).toBeNull()
-  })
-
-  it('guarda en caché lo leído de GitHub', async () => {
+  it.each([
+    ['lo leído de GitHub', false, 0, 1], ['el fallo de GitHub (null) unos 60 s', true, 59_000, 1], ['y reintenta pasados 60 s', true, 60_000, 2],
+  ])('guarda en caché %s', async (_, fallo, despues, esperadas) => {
     let llamadas = 0
-    const base = cliente([comentario(reporte())])
+    const base = cliente([comentario(reporte())], { fallo })
     const c = { ...base, datosDictamen: (...a: Parameters<typeof base.datosDictamen>) => { llamadas++; return base.datosDictamen(...a) } }
-    await dictamenDeOrden(c, orden())
-    await dictamenDeOrden(c, orden())
-    expect(llamadas).toBe(1)
+    const primera = await dictamenDeOrden(c, orden(), 1_000)
+    const segunda = await dictamenDeOrden(c, orden(), 1_000 + despues)
+    expect([fallo ? primera : null, fallo ? segunda : null, llamadas]).toEqual([null, null, esperadas])
   })
 })
