@@ -13,18 +13,24 @@ Claude; ya no se exige transferirlas a un agente Codex separado. El propietario 
 decisión de fusión, despliegue y cierre. Lo anterior (ORD-POS-007 / PR #50) queda como antecedente histórico; los
 nombres `ORDENES_CODEX` y este documento no se renombran.
 
+**Cambio del 2026-10-16, DEC-POS-002, DEC-POS-003 y DEC-POS-004 (ORD-POS-018).** Claude planea, implementa, revisa y
+corrige en sesiones separadas; ChatGPT pasa a **auditor externo**. La revisión se gradúa por riesgo (ver
+[Política de revisión por riesgo](#política-de-revisión-por-riesgo-dec-pos-003)) y la persistencia de la supervisión
+queda decidida en la [migración](migracion-supervision.md#persistencia-durable-análisis-y-propuesta). Esto sustituye
+el reparto de DEC-POS-001; las reglas de seguridad no cambian.
+
 ## Roles
 
 | Quién | Hace | No hace |
 | --- | --- | --- |
 | Propietario | Decide y aprueba: metas, prioridades y órdenes en el dashboard; revisa, fusiona y despliega. | — |
-| ChatGPT | Dirige, planea y gestiona: redacta órdenes (borradores), crea y actualiza registros de gestión y publica hallazgos dentro de su autorización. Supervisa: revisa código y evidencia de forma independiente del implementador y verifica las correcciones. | Implementar código, modificar repositorios, aprobar órdenes, disparar agentes, fusionar, desplegar o cerrar. |
-| Claude Code | Implementa, prueba y corrige: una sesión por repositorio; **ejecuta las órdenes aprobadas** (rama → PR con la CI en verde), hace su autocontrol y corrige en el mismo PR lo que devuelva la supervisión. | Fusionar, desplegar, escribir en Sheets reales, ejecutar órdenes sin aprobar. |
+| Claude Code | Planea (borradores que no aprueban nada), implementa, revisa y corrige, **cada función en una sesión separada**; **ejecuta las órdenes aprobadas** (rama → PR con la CI en verde), hace su autocontrol y corrige en el mismo PR. El **revisor** nunca es la sesión que implementó, usa otro modelo y revisa a ciegas (orden, diff y contrato, sin la descripción del PR). | Fusionar, desplegar, escribir en Sheets reales, ejecutar órdenes sin aprobar. |
+| ChatGPT | **Auditor externo**: audita 1 de cada 5 órdenes BAJO y toda orden MEDIO antes de fusionar, y verifica las correcciones. Puede crear y actualizar registros de gestión y publicar hallazgos dentro de su autorización. | Implementar código, modificar repositorios, aprobar órdenes, disparar agentes, fusionar, desplegar o cerrar. |
 
 ## Ciclo
 
-1. **Planear.** ChatGPT planea y redacta la orden (un borrador no aprueba ni dispara nada); el propietario decide. Si quiere, Claude (`/planear-proyecto`)
-   redacta los campos.
+1. **Planear.** Claude (`/planear-proyecto`) planea y redacta la orden (un borrador no aprueba ni dispara nada); el
+   propietario decide.
 2. **Aprobar.** En el dashboard: *Órdenes → Nueva orden* y **Aprobar y crear el issue**. El issue lleva el título
    `[ORD-PRJ-NNN][PRJ-NNN] descripción`; si ya existe uno con ese ID, no se crea otro.
 3. **Llamar.** Con la [rutina de Claude](rutina-claude.md) configurada, aprobar llama a Claude una sola vez: esa es la
@@ -35,21 +41,22 @@ nombres `ORDENES_CODEX` y este documento no se renombran.
    `ORDEN_ID` en el título, `Closes #<issue>`, cada criterio con su evidencia y la salida de las pruebas. Lleva la CI a
    verde.
 5. **Registrar.** El dashboard detecta el PR: **Registrar el PR detectado** (`PR_ABIERTO`).
-6. **Supervisar.** ChatGPT revisa el PR de forma independiente (ver abajo) y entrega su dictamen al propietario. El
-   aviso matutino no sustituye ese dictamen.
+6. **Revisar y auditar.** Otra sesión de Claude revisa el PR a ciegas y, si la política lo exige, ChatGPT lo audita
+   (ver abajo); ambos entregan su dictamen al propietario. El aviso matutino no sustituye esos dictámenes.
 7. **Decidir.** El propietario revisa el dictamen, fusiona o pide cambios. Las correcciones se devuelven a Claude, que
-   las implementa en el mismo PR; la autorización es vigente por orden y no se hereda retroactivamente. Una aprobación
-   técnica no autoriza fusión, despliegue ni cierre, y un PR fusionado no cierra la tarea por sí solo. Si hay que desplegar, Claude da el
-   script y el propietario lo corre.
+   las implementa en el mismo PR; la autorización es vigente por orden y no se hereda retroactivamente. Un dictamen
+   favorable no autoriza fusión, despliegue ni cierre, y un PR fusionado no cierra la tarea por sí solo. Si hay que
+   desplegar, Claude da el script y el propietario lo corre.
 
 Si algún PR de una orden lo abre otro agente, `/ejecutar-orden` lo revisa contra los criterios.
 
 ## Supervisión independiente (ChatGPT)
 
-Hay dos controles distintos. El **autocontrol** es de Claude: corre las pruebas, revisa su propio diff y lo declara en
-el PR. La **revisión independiente** es de ChatGPT, que no implementó el cambio. El autocontrol no la sustituye.
-ChatGPT no implementa ni corrige código ni modifica repositorios; sí puede crear o actualizar registros de gestión y
-publicar hallazgos dentro de su autorización. Su dictamen exige:
+Hay tres controles distintos. El **autocontrol** es de Claude: corre las pruebas, revisa su propio diff y lo declara en
+el PR. La **revisión independiente** es de otra sesión de Claude con otro modelo, a ciegas. La **auditoría** es de
+ChatGPT. El autocontrol no sustituye a ninguna. ChatGPT no implementa ni corrige código ni modifica repositorios; sí
+puede crear o actualizar registros de gestión y publicar hallazgos dentro de su autorización. El dictamen del revisor y
+el del auditor exigen:
 
 - **Identificación:** orden, tarea, PR y SHA base y final revisados.
 - **Evaluación por criterio:** cada criterio de aceptación como cumplido, no cumplido o no verificable, con su
@@ -62,6 +69,23 @@ publicar hallazgos dentro de su autorización. Su dictamen exige:
 
 **Implementación vs. supervisión.** Las instrucciones de implementación (crear la rama y el PR, publicar resultados
 en el issue y el PR) son de Claude. La corrección vuelve al mismo PR y la hace Claude.
+
+## Política de revisión por riesgo (DEC-POS-003)
+
+La revisión cara se concentra donde un error compartido cuesta más y se limita el consumo. «Corrección automática» es
+la de Claude en el mismo PR, con el límite de rondas del [contrato](contrato-supervision-automatica.md#2-estados-de-supervisión).
+
+| Riesgo | Revisión | Auditoría de ChatGPT | Corrección automática |
+| --- | --- | --- | --- |
+| BAJO | El revisor Claude revisa el diff | 1 de cada 5 órdenes | Sí, hasta 2 rondas |
+| BAJO solo documentación | Sin revisor automático | Entra en el muestreo | — |
+| MEDIO | Revisión completa de Claude | Obligatoria antes de fusionar | 2 rondas y luego escala |
+| ALTO | No se delega | — | — |
+
+**Métrica de auditoría (decidida por el propietario).** Por cada orden auditada se cuentan los hallazgos de ChatGPT que
+bloquean, que el propietario confirma como reales y que el revisor Claude no reportó. Se registra en el PR de la orden
+y se resume por mes como «hallazgos solo de auditoría / órdenes auditadas». Si en un mes es mayor que 0,5, se revisa la
+política.
 
 ## Qué se puede delegar
 
@@ -83,7 +107,7 @@ Cada repositorio tiene un `AGENTS.md`. Lo mínimo que dice para quien implementa
 - Si la tarea es ambigua o exige salir del alcance: parar y explicar en el PR, sin adivinar.
 - Nunca inventar progreso ni marcar tareas como terminadas.
 
-## Configurar la supervisión de ChatGPT (opcional)
+## Configurar la auditoría de ChatGPT (opcional)
 
 Ya no hace falta un agente Codex separado. Si se quiere que ChatGPT lea los PRs con una conexión propia:
 

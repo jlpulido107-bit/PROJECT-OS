@@ -5,7 +5,8 @@
 **Estado:** la pestaña `SUPERVISION` (24 columnas, A1:X1, sin filas) fue creada por el propietario y verificada con
 encabezados correctos en el orden de `TAB_HEADERS` (16/10, solo lectura); producción aún no la lee porque el código no
 está desplegado. Orden ORD-POS-011 (tarea POS-013). La sección [Persistencia durable](#persistencia-durable-análisis-y-propuesta)
-(ORD-POS-016) es un análisis y una **propuesta pendiente de decisión**: no está aplicada ni implementada.
+(ORD-POS-016) es un análisis; sus decisiones D1 a D3 están **decididas** (DEC-POS-004, 2026-10-16, ORD-POS-018), pero
+**no aplicadas ni implementadas**.
 
 ## Por qué
 
@@ -124,14 +125,14 @@ que no existan.
 | Sesión, autor del comentario, autor del dictamen | Solo `ORIGEN` (una columna) | No separables | Se trata como no autenticado: `BLOQUEADO` con riesgo de manipulación |
 
 **Conclusión:** lo actual **no basta** para reserva, recuperación ni registro íntegro. Antes de implementar reservas y
-registro hay que decidir la propuesta de abajo.
+registro hay que implementar la propuesta de abajo, ya decidida (DEC-POS-004).
 
-### Propuesta de migración (pendiente de decisión del propietario; no aplicada)
+### Propuesta de migración (no aplicada)
 
 Cambio aditivo, columnas nuevas **al final** de `SUPERVISION`, sin tocar las 24 actuales (el lector tolera columnas extra):
 
 ```
-ESTADO_ANTERIOR	CICLO_TERMINADO	RESERVA_ESTADO	RESERVA_EXPIRA_EN	REPORTE_HASH	COMENTARIO_ID	COMENTARIO_HASH	IMPORTADO_POR	AUTOR_COMENTARIO	AUTOR_DICTAMEN
+ESTADO_ANTERIOR	CICLO_TERMINADO	RESERVA_ESTADO	RESERVA_EXPIRA_EN	REPORTE_HASH	COMENTARIO_ID	COMENTARIO_HASH	IMPORTADO_POR	AUTOR_COMENTARIO	AUTOR_DICTAMEN	SESION_ID
 ```
 
 | Columna | Valores / regla |
@@ -142,14 +143,17 @@ ESTADO_ANTERIOR	CICLO_TERMINADO	RESERVA_ESTADO	RESERVA_EXPIRA_EN	REPORTE_HASH	CO
 | `REPORTE_HASH` | SHA-256 del contenido íntegro guardado; verifica, no sustituye |
 | `COMENTARIO_ID`, `COMENTARIO_HASH` | ID y hash del comentario verificado, si el reporte viene de uno |
 | `IMPORTADO_POR`, `AUTOR_COMENTARIO`, `AUTOR_DICTAMEN` | Las tres identidades de contrato §5; el último es declarado |
+| `SESION_ID` | Sesión de Claude que lanzó el coordinador para esa revisión (DEC-POS-002). Solo se acepta un dictamen de esa sesión, con su `REPORTE_HASH`; no sustituye a las tres identidades |
 
-**Decisiones previas, a cargo del propietario** (sin ellas no se implementa):
+**Decisiones del propietario (DEC-POS-004, 2026-10-16).** Están decididas, **no aplicadas ni implementadas**:
 
-1. **Contenido íntegro del reporte:** (a) pestaña nueva `SUPERVISION_REPORTES` con el JSON en partes (`REPORTE_ID, PARTE,
-   TOTAL, CONTENIDO, HASH_PARTE`) para evitar el límite de celda, o (b) almacenamiento externo, que requeriría
-   infraestructura y permisos que esta orden no define. Recomendación: (a), sin infraestructura nueva.
-2. **Escritura:** añadir `SUPERVISION` a `WRITE_HEADERS` y `EntityTab`, con auditoría primero, o un escritor propio.
-3. **Reserva entre instancias:** mantener el escritor único (`maxScale: 1`) y documentarlo como supuesto, o exigir CAS en
-   la hoja. Hoy la deduplicación multiinstancia **no** está garantizada.
+1. **D1, contenido íntegro del reporte:** pestaña nueva `SUPERVISION_REPORTES`, con el JSON en partes y hash
+   (`REPORTE_ID, PARTE, TOTAL, CONTENIDO, HASH_PARTE`) para evitar el límite de celda. Sin infraestructura nueva.
+2. **D2, escritura:** `SUPERVISION` se escribe con el escritor auditado que ya existe (`WRITE_HEADERS` y `EntityTab`,
+   auditoría primero).
+3. **D3, reserva entre instancias:** un solo escritor (`maxScale: 1`) como supuesto documentado, con una reserva que
+   expira. La deduplicación multiinstancia **sigue sin estar garantizada**.
 
-Cada decisión aceptada requiere su propia orden. Aplicar la migración sigue siendo manual del propietario.
+Justificación: no pide infraestructura ni permisos nuevos y reutiliza la auditoría, la idempotencia y el control de
+concurrencia ya probados. Cada decisión requiere su propia orden de implementación. Aplicar la migración sigue siendo
+manual del propietario.

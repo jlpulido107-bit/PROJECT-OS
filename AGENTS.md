@@ -2,14 +2,18 @@
 
 ## Roles
 - Propietario: aprueba las órdenes y decide fusión, despliegue y cierre.
-- ChatGPT: dirige, planea, gestiona y supervisa (DEC-POS-001, 2026-10-16). Redacta órdenes (borradores que no
-  aprueban ni disparan nada), crea y actualiza los registros de gestión y publica hallazgos dentro de lo autorizado,
-  y revisa de forma independiente el código y la evidencia del PR. No implementa código ni modifica repositorios.
-- Claude Code: implementa, prueba, hace su autocontrol y corrige en el mismo PR lo que devuelva ChatGPT.
+- Claude Code (DEC-POS-002, 2026-10-16; sustituye el reparto de DEC-POS-001): planea (borradores que no aprueban nada),
+  implementa, revisa y corrige, cada función en una sesión separada. El revisor nunca es la sesión que implementó, usa
+  otro modelo y revisa a ciegas: solo la orden, el diff y el contrato, sin la descripción del PR.
+- ChatGPT: auditor externo. Audita 1 de cada 5 órdenes de riesgo BAJO y toda orden de riesgo MEDIO antes de fusionar.
+  No implementa código ni modifica repositorios. La gestión y los hallazgos que publique en los registros del PM
+  quedan dentro de lo que el propietario autorice.
 - No se exige un agente Codex separado. «Codex» sobrevive solo en nombres históricos (`ORDENES_CODEX`, `docs/delegacion-codex.md`).
 
-Ciclo: implementación y autocontrol de Claude → revisión independiente de ChatGPT → decisión del propietario. Las
-correcciones vuelven a Claude, en el mismo PR. Una aprobación técnica no autoriza fusión, despliegue ni cierre.
+Ciclo: implementación y autocontrol de Claude → revisión ciega de otra sesión de Claude (otro modelo) → auditoría de
+ChatGPT cuando la política por riesgo la exige → decisión del propietario. Las correcciones vuelven a Claude, en el
+mismo PR. Política por riesgo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003).
+Un dictamen favorable (del revisor o del auditor) no autoriza fusión, despliegue ni cierre.
 
 ## Reglas
 - No escribir directamente en main; trabajar con ramas y PR.
@@ -27,8 +31,9 @@ correcciones vuelven a Claude, en el mismo PR. Una aprobación técnica no autor
 ## Implementación y supervisión
 - Quien implementa (Claude) crea la rama y el PR y publica los resultados en el issue y el PR. Su autocontrol (pruebas
   propias, revisión de su diff) no sustituye la revisión independiente.
-- Quien supervisa (ChatGPT) no es quien implementó: revisa el PR y entrega su dictamen al propietario; puede publicar
-  hallazgos y actualizar registros de gestión solo dentro de su autorización. Detalle del dictamen en
+- Quien revisa (otra sesión de Claude) y quien audita (ChatGPT) no son quien implementó: entregan su dictamen al
+  propietario; ChatGPT puede publicar hallazgos y actualizar registros de gestión solo dentro de su autorización.
+  Detalle del dictamen en
   [`docs/delegacion-codex.md`](docs/delegacion-codex.md#supervisión-independiente-chatgpt).
 - Claude se ejecuta una sola vez al aprobar la orden en el dashboard; no se pide un lanzamiento manual duplicado.
 
