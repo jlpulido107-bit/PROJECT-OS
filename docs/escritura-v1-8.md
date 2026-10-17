@@ -144,7 +144,7 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
   (siempre BORRADOR, nunca ALTO). `tarea.editar` solo cambia `titulo`, `descripcion`, `prioridad`, `hitoId`,
   `fechaPlan`, `fechaLimite`, `horasEstimadas` y `criterioTerminado`, con control de VERSION.
 - **Prohibido (403, no escribe nada):** aprobar, enviar, cancelar, registrar PR, revisar, cerrar y ejecutar órdenes,
-  registrar tiempos y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`).
+  registrar tiempos y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`). Tampoco puede fijar `bloqueo` al crear una tarea (403).
 - **Auditoría.** `ACTOR=agente-pm` y `;agente=pm` al final de `ORIGEN`. La idempotencia por `requestId` es la de siempre.
 - **Frecuencia.** Límite propio (clave `agente-pm`): ráfaga de 5 y 1 operación por minuto; al excederlo, 429.
   El humano tiene ráfaga de 10 y 1 cada 20 s.

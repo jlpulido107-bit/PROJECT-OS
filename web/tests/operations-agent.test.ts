@@ -105,6 +105,12 @@ describe('tarea.editar del agente (criterio 3)', () => {
     expect(await fails(evaluateWriteRequest(req(body), ctx('tarea.editar')))).toEqual(['operacion-no-permitida', 403])
   })
 
+  it('tarea.crear con bloqueo → 403; sin bloqueo pasa', async () => {
+    const body = { requestId: 'x', titulo: 'T', bloqueo: 'Esperando' }
+    expect(await fails(evaluateWriteRequest(req(body), ctx('tarea.crear')))).toEqual(['operacion-no-permitida', 403])
+    expect((await evaluateWriteRequest(req({ requestId: 'x', titulo: 'T' }), ctx('tarea.crear'))).actor).toBe(AGENT_ACTOR)
+  })
+
   it('campos permitidos pasan y respetan VERSION', async () => {
     const { store, service } = setup()
     const changes = { titulo: 'Título nuevo', descripcion: 'd', prioridad: 'ALTA', fechaPlan: '2026-10-20', fechaLimite: '2026-10-30', horasEstimadas: '3', criterioTerminado: 'Hecho' }

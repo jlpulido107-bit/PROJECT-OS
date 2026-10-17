@@ -67,6 +67,10 @@ async function evaluateAgentRequest(
   if (!ctx.agentLimiter.take(AGENT_ACTOR)) throw new OperationError('demasiadas-solicitudes')
 
   const body = await readJson(request)
+  if (ctx.operation === 'tarea.crear' && body && typeof body === 'object' && !Array.isArray(body)) {
+    // DEC-POS-005: el PM no fija bloqueos de tareas, tampoco al crearlas.
+    if (Object.keys(body).some((key) => key.toLowerCase() === 'bloqueo')) throw new OperationError('operacion-no-permitida')
+  }
   if (ctx.operation === 'tarea.editar') {
     const changes = body && typeof body === 'object' ? (body as Record<string, unknown>).changes : undefined
     if (changes && typeof changes === 'object' && !Array.isArray(changes)) {

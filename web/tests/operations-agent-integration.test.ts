@@ -10,7 +10,7 @@ import { PATCH as patchTarea } from '@/app/api/operaciones/tareas/[id]/route'
 import { POST as postTarea } from '@/app/api/operaciones/tareas/route'
 import { POST as postTiempo } from '@/app/api/operaciones/tiempos/route'
 import { proxy } from '@/proxy'
-import { auditTable } from '@/lib/operations/runtime'
+import { auditTable, mockWriteTabs } from '@/lib/operations/runtime'
 
 /** Recorrido real proxy → ruta → servicio del agente PM (ORD-POS-027, H1 y H1-bis), en modo mock. */
 
@@ -63,6 +63,7 @@ async function through(handler: Handler, request: NextRequest, id = 'X') {
   return { status: response.status, passed: true, json: await response.json() as Record<string, unknown> }
 }
 
+const tareasTable = async () => (mockWriteTabs()?.TAREAS ?? []) as unknown[][]
 const rows = async () => ((await auditTable()) ?? []).length
 const task = { proyectoId: 'POS', titulo: 'Tarea del PM', tipo: 'DESARROLLO', prioridad: 'MEDIA', criterioTerminado: 'Hecho' }
 const decision = { proyectoId: 'POS', asunto: 'Asunto', decision: 'Decisión', justificacion: 'Porque', responsable: 'PM' }
@@ -91,6 +92,19 @@ describe('agente PM: proxy → ruta → servicio', () => {
       expect(await through(patchTarea as Handler, request, 'DEMO-002')).toMatchObject({ passed: true, status: 403 })
     }
     expect(await rows()).toBe(before)
+  })
+
+  it('tarea.crear con bloqueo → 403 operacion-no-permitida sin filas en TAREAS ni AUDITORIA; sin bloqueo sigue creando', async () => {
+    const tareas = async () => (await tareasTable()).length
+    const [auditBefore, tareasBefore] = [await rows(), await tareas()]
+    for (const bloqueo of ['Esperando a X', '', null]) {
+      const request = build('POST', '/api/operaciones/tareas', { ...task, requestId: uuid(), bloqueo })
+      expect(await through(postTarea as Handler, request)).toMatchObject({ passed: true, status: 403, json: { error: { codigo: 'operacion-no-permitida' } } })
+    }
+    expect([await rows(), await tareas()]).toEqual([auditBefore, tareasBefore])
+    const ok = await through(postTarea as Handler, build('POST', '/api/operaciones/tareas', { ...task, requestId: uuid() }))
+    expect(ok).toMatchObject({ passed: true, status: 201 })
+    expect(await tareas()).toBe(tareasBefore + 1)
   })
 
   it.each([
