@@ -4,9 +4,10 @@ import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '../auth'
 import { writeModeStatus } from './config'
+import type { OperationName } from './constants'
 import { evaluateWriteRequest } from './guard'
 import { OperationError } from './errors'
-import { bumpWriteGeneration, writeRateLimiter } from './runtime'
+import { agentRateLimiter, bumpWriteGeneration, writeRateLimiter } from './runtime'
 import type { OperationContext, OperationResult } from './service'
 
 const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' }
@@ -39,17 +40,20 @@ export async function handleWrite(
   request: Request,
   run: (body: unknown, ctx: OperationContext) => Promise<OperationResult>,
   successStatus: number,
+  operation?: OperationName,
 ) {
   let requestId: string | undefined
   try {
     const session = await getServerSession(authOptions)
-    const { actor, body } = await evaluateWriteRequest(request, {
+    const { actor, body, agent } = await evaluateWriteRequest(request, {
       email: session?.user?.email ?? null,
       env: process.env,
       limiter: writeRateLimiter(),
+      operation,
+      agentLimiter: agentRateLimiter(),
     })
     requestId = requestIdOf(body)
-    const result = await run(body, { actor })
+    const result = await run(body, { actor, ...(agent ? { agent } : {}) })
     bumpWriteGeneration()
     return NextResponse.json(
       { ok: true, ...result, modo: writeModeStatus().mode, requestId },

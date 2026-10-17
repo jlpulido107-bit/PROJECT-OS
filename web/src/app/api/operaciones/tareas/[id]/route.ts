@@ -12,5 +12,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
     return service.updateTask(parseUpdateTask(decodeURIComponent(id), body), ctx)
-  }, 200)
+  }, 200, 'tarea.editar')
 }

@@ -25,6 +25,8 @@ import {
 export interface OperationContext {
   /** Correo del escritor autenticado (solo se escribe en AUDITORIA; nunca en logs). */
   actor: string
+  /** Petición del agente PM (token propio): la auditoría añade `;agente=pm` a ORIGEN. */
+  agent?: boolean
 }
 
 export interface OperationResult {
@@ -97,7 +99,7 @@ interface AuditedOperation {
   integridad: 'completa' | 'parcial' | 'inconsistente'
 }
 
-const ORIGIN_PATTERN = /^dashboard-v1\.4;modo=(mock|sheets);op=([a-z._]+);req=([0-9a-f-]{36});h=([0-9a-f]{16})$/
+const ORIGIN_PATTERN = /^dashboard-v1\.4;modo=(mock|sheets);op=([a-z._]+);req=([0-9a-f-]{36});h=([0-9a-f]{16})(?:;agente=pm)?$/
 
 export class OperationsService {
   private queue: Promise<unknown> = Promise.resolve()
@@ -480,8 +482,8 @@ export class OperationsService {
     return `${prefix}${String(max + 1).padStart(3, '0')}`
   }
 
-  private origin(op: OperationName, requestId: string, hash: string) {
-    return `${ORIGIN_PREFIX};modo=${this.options.mode};op=${op};req=${requestId};h=${hash}`
+  private origin(op: OperationName, requestId: string, hash: string, agent = false) {
+    return `${ORIGIN_PREFIX};modo=${this.options.mode};op=${op};req=${requestId};h=${hash}${agent ? ';agente=pm' : ''}`
   }
 
   /** Escribe la auditoría ANTES que la entidad. Si falla, no se escribe nada (fail-closed). */
@@ -492,7 +494,7 @@ export class OperationsService {
     const stamp = meridaIsoTimestamp(now)
     const compact = stamp.slice(0, 19).replace(/[-:T]/g, '')
     const batch = this.randomHex(4).toUpperCase()
-    const origin = this.origin(op, requestId, hash)
+    const origin = this.origin(op, requestId, hash, ctx.agent === true)
     const rows = [...diff.entries()].map(([campo, { antes, despues }], i) =>
       toRow(auditView, {
         AUDIT_ID: `AUD-${compact}-${batch}-${String(i + 1).padStart(2, '0')}-${String(diff.size).padStart(2, '0')}`,

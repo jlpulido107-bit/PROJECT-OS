@@ -12,5 +12,5 @@ export async function POST(request: Request) {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
     return service.createDecision(parseCreateDecision(body, todayInMerida()), ctx)
-  }, 201)
+  }, 201, 'decision.crear')
 }

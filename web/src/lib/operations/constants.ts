@@ -61,3 +61,10 @@ export type OperationName =
 export const ORDER_RISKS = ['BAJO', 'MEDIO'] as const
 export const INITIAL_ORDER_STATE = 'BORRADOR'
 export const ORDER_TERMINAL_STATES = ['CERRADA', 'CANCELADA'] as const
+
+/** Acceso del agente PM (DEC-POS-005, docs/escritura-v1-8.md): solo estas operaciones y solo estos campos de tarea. */
+export const AGENT_ACTOR = 'agente-pm'
+export const AGENT_OPERATIONS: readonly OperationName[] = ['tarea.crear', 'tarea.editar', 'decision.crear', 'orden.crear']
+export const AGENT_EDITABLE_TASK_FIELDS = [
+  'titulo', 'descripcion', 'prioridad', 'hitoId', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'criterioTerminado',
+] as const

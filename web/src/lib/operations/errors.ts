@@ -3,6 +3,8 @@ export type OperationErrorCode =
   | 'no-autenticado'
   | 'sin-permiso-lectura'
   | 'origen-invalido'
+  | 'credenciales-ambiguas'
+  | 'operacion-no-permitida'
   | 'escritura-deshabilitada'
   | 'sin-permiso-escritura'
   | 'tipo-contenido'
@@ -35,6 +37,8 @@ const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
   'sin-permiso-lectura': 403,
   'origen-invalido': 403,
+  'credenciales-ambiguas': 400,
+  'operacion-no-permitida': 403,
   'escritura-deshabilitada': 403,
   'sin-permiso-escritura': 403,
   'tipo-contenido': 415,
@@ -68,6 +72,8 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'no-autenticado': 'Inicia sesión para continuar.',
   'sin-permiso-lectura': 'Tu cuenta no está autorizada.',
   'origen-invalido': 'Solicitud rechazada por origen no válido.',
+  'credenciales-ambiguas': 'La solicitud trae dos credenciales distintas.',
+  'operacion-no-permitida': 'Esta credencial no puede realizar esa operación.',
   'escritura-deshabilitada': 'La escritura está deshabilitada en este servidor.',
   'sin-permiso-escritura': 'Tu cuenta solo tiene permiso de lectura.',
   'tipo-contenido': 'Se esperaba JSON.',

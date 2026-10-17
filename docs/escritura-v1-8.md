@@ -128,3 +128,22 @@ Si acabas de quitar un permiso, el token anterior puede seguir en uso hasta 10 m
 3. Opcional:
    `gcloud iam service-accounts disable "$WRITE_SA" --project="$PROJECT_ID"`.
 4. Para corregir datos, usa `AUDITORIA` como guía. El panel no borra registros.
+
+## 6. Acceso del agente PM (ORD-POS-027, DEC-POS-005)
+
+Una sesión PM de Claude escribe por la misma API de operaciones con `Authorization: Bearer <token>`, sin cookie de sesión.
+Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una orden aparte tras desplegar.
+
+- **Token.** El servidor compara el SHA-256 del token con `PM_AGENT_TOKEN_SHA256` (64 hex) en tiempo constante. Sin la
+  variable, o con token inválido, responde 401 sin decir el motivo. Token y cookie de sesión a la vez: 400. Generar el
+  token, guardar el hash en Cloud Run y desplegar lo hace el propietario (riesgo ALTO, fuera de esta orden).
+- **Permitido** (lista blanca): `tarea.crear`, `tarea.editar`, `decision.crear` (siempre PENDIENTE) y `orden.crear`
+  (siempre BORRADOR, nunca ALTO). `tarea.editar` solo cambia `titulo`, `descripcion`, `prioridad`, `hitoId`,
+  `fechaPlan`, `fechaLimite`, `horasEstimadas` y `criterioTerminado`, con control de VERSION.
+- **Prohibido (403, no escribe nada):** aprobar, enviar, cancelar, registrar PR, revisar, cerrar y ejecutar órdenes,
+  registrar tiempos y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`).
+- **Auditoría.** `ACTOR=agente-pm` y `;agente=pm` al final de `ORIGEN`. La idempotencia por `requestId` es la de siempre.
+- **Frecuencia.** Límite propio (clave `agente-pm`): ráfaga de 5 y 1 operación por minuto; al excederlo, 429.
+  El humano tiene ráfaga de 10 y 1 cada 20 s.
+- **Revocar.** Borrar la variable `PM_AGENT_TOKEN_SHA256` y redesplegar: el acceso del agente queda deshabilitado
+  (401). La escritura humana no se toca.

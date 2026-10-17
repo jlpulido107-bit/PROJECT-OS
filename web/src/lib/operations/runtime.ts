@@ -31,13 +31,14 @@ interface ProcessState {
   runtime: Runtime | null
   sheetsRuntime: Runtime | null
   limiter: RateLimiter
+  agentLimiter: RateLimiter
   generation: number
 }
 const KEY = Symbol.for('project-os.operations.v1-4')
 
 function processState(): ProcessState {
   const g = globalThis as unknown as Record<symbol, ProcessState | undefined>
-  g[KEY] ??= { runtime: null, sheetsRuntime: null, limiter: new RateLimiter(), generation: 0 }
+  g[KEY] ??= { runtime: null, sheetsRuntime: null, limiter: new RateLimiter(), agentLimiter: new RateLimiter(5, 60_000), generation: 0 }
   return g[KEY]
 }
 
@@ -92,6 +93,11 @@ export function mockWriteTabs(): RawTabs | null {
 
 export function writeRateLimiter(): RateLimiter {
   return processState().limiter
+}
+
+/** Límite del agente PM: más estricto que el humano (5 ráfaga, 1 cada 60 s). */
+export function agentRateLimiter(): RateLimiter {
+  return processState().agentLimiter
 }
 
 /** Generación de escrituras del proceso: el dashboard descarta su caché si cambió. */

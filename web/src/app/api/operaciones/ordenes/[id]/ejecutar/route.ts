@@ -18,5 +18,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { ordenId, forzar } = parseEjecutarOrden(decodeURIComponent(id), body)
     const ejecucion = await ejecutarConClaude(service, ordenId, { forzar })
     return { operacion: 'orden.ejecutar', entidad: 'ORDENES_CODEX', id: ordenId, repetida: false, ejecucion }
-  }, 200)
+  }, 200, 'orden.ejecutar')
 }
