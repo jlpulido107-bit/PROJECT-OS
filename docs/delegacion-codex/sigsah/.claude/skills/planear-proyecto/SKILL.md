@@ -79,16 +79,17 @@ https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-c
 - **Fuera de alcance.** Lo que no se toca.
 - **Cómo probar.** Comandos exactos.
 - **Riesgo.** Clasifícalo con la
-  [política de revisión por riesgo (DEC-POS-003)](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)
-  y di si requiere auditoría externa:
-  - `BAJO`: el revisor Claude revisa el diff; ChatGPT audita 1 de cada 5. Si es solo documentación, no hay revisor
-    automático y entra en el muestreo.
-  - `MEDIO`: revisión completa de Claude y auditoría de ChatGPT **obligatoria** antes de fusionar.
+  [política de revisión por riesgo (DEC-POS-003 y DEC-POS-008)](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)
+  y di qué revisión requiere:
+  - `BAJO`: revisor Claude a ciegas con modelo distinto al que implementó. Si es solo documentación, no hay revisor
+    automático.
+  - `MEDIO`: revisión completa a ciegas, re-revisión del delta tras cada corrección y segundo revisor (Fable 5.1)
+    antes de fusionar.
   - `ALTO`: no se delega; no redactes la orden, explica por qué.
   - Cambios de esquema, comportamiento visible para usuarios y workflows, secretos o permisos suben el riesgo.
 - **Tamaño.** Una orden = un PR pequeño (menos de 300 líneas previstas). Si el trabajo es mayor, propón la división en
   órdenes con dependencias claras.
-- ChatGPT aparece solo como auditor; no implementa ni aprueba.
+- Máximo 2 rondas de corrección por orden.
 
 ### Tareas y decisiones
 

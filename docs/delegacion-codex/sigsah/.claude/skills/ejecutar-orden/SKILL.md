@@ -5,7 +5,7 @@ description: Ejecuta una orden aprobada (ORD-PRY-NNN) del dashboard de PROJECT-O
 
 # Ejecutar órdenes
 
-Flujo (decidido por el propietario el 2026-10-14): el propietario decide con Codex/ChatGPT y aprueba la orden en el
+Flujo (decidido por el propietario el 2026-10-14): el propietario decide y aprueba la orden en el
 dashboard; Claude la ejecuta. Reglas: https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-codex.md
 
 ## A. Ejecutar una orden

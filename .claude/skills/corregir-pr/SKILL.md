@@ -5,8 +5,9 @@ description: Aplica una corrección en la rama de un PR de orden ya abierto (ORD
 
 # Corregir un PR de orden
 
-Roles (DEC-POS-002, DEC-POS-003): quien corrige es Claude, en una sesión separada de la revisora. Las correcciones van en
-el **mismo PR** y la misma rama; máximo **2 rondas** por orden. Reglas: [`AGENTS.md`](../../../AGENTS.md),
+Roles (DEC-POS-002, DEC-POS-003, DEC-POS-008): quien corrige es Claude, en una sesión separada de la revisora. Las
+correcciones van en el **mismo PR** y la misma rama; máximo **2 rondas** por orden. Tras cada corrección el revisor
+vuelve a revisar el delta (en MEDIO, antes de fusionar, también un segundo revisor); eso no lo haces tú. Reglas: [`AGENTS.md`](../../../AGENTS.md),
 [`docs/rutina-claude.md`](../../../docs/rutina-claude.md#modo-corrección-segunda-rutina-project-os--corregir-pr) y
 [`docs/contrato-supervision-automatica.md`](../../../docs/contrato-supervision-automatica.md) (§3.3, §3.4 y §7).
 Esta skill es solo de PROJECT-OS. No tiene horario: solo actúas cuando te disparan con los cinco datos.
