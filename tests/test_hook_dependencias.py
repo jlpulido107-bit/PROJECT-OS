@@ -25,9 +25,10 @@ class TestHookDependencias(unittest.TestCase):
             self.assertEqual(r.stdout + r.stderr, "", remoto)
         self.assertEqual(NODE_MODULES.exists(), antes)
 
-    def test_settings_solo_tiene_el_hook_session_start(self):
+    def test_settings_solo_tiene_el_hook_session_start_y_el_permiso_de_pm_alta(self):
         ajustes = json.loads(SETTINGS.read_text(encoding="utf-8"))
-        self.assertEqual(list(ajustes), ["hooks"])
+        self.assertEqual(list(ajustes), ["permissions", "hooks"])
+        self.assertEqual(ajustes["permissions"], {"allow": ["Bash(bash scripts/pm-alta.sh:*)"]})
         self.assertEqual(list(ajustes["hooks"]), ["SessionStart"])
         comandos = [h["command"] for g in ajustes["hooks"]["SessionStart"] for h in g["hooks"]]
         self.assertEqual(len(comandos), 1)
