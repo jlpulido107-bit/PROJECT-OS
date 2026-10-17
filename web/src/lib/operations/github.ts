@@ -11,6 +11,8 @@
  * - Nunca fusiona, nunca toca código ni ramas.
  */
 
+import type { DatosPr } from '../supervision/dictamen'
+
 export const REPOSITORIOS: Readonly<Record<string, string>> = Object.freeze({
   POS: 'jlpulido107-bit/PROJECT-OS',
   SIG: 'jlpulido107-bit/SIGSAH',
@@ -243,6 +245,25 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       await call('POST', `/repos/${repo}/issues/${number}/comments`, {
         body: `${MARCA_CLAUDE}\n\nSesión: ${sessionUrl}\n\nClaude abrirá un PR con el ID de la orden en el título y \`Closes\` este issue. No fusiona ni despliega.`,
       })
+    },
+
+    /** Head SHA y comentarios propios (cuenta del token) de un PR del proyecto. Solo lectura. */
+    async datosDictamen(proyectoId: string, prUrl: string): Promise<DatosPr> {
+      const repo = repoDe(proyectoId)
+      const n = /\/pull\/(\d{1,7})$/.exec(prUrl)?.[1]
+      if (repoDeUrl(prUrl, 'pull') !== repo || !n) throw new GitHubError('repo-no-permitido')
+      const login = await cuentaPropia()
+      const headSha = (await call<{ head?: { sha?: unknown } }>('GET', `/repos/${repo}/pulls/${n}`)).head?.sha
+      if (typeof headSha !== 'string' || !SHA_COMPLETO.test(headSha)) throw new GitHubError('respuesta-invalida')
+      const comentarios: DatosPr['comentarios'] = []
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const items = await call<Array<{ id?: unknown; body?: unknown; user?: User }>>('GET', `/repos/${repo}/issues/${n}/comments?per_page=100&page=${page}`)
+        for (const c of items) {
+          if (esPropio(c.user, login) && typeof c.body === 'string' && typeof c.id === 'number') comentarios.push({ id: c.id, body: c.body })
+        }
+        if (items.length < 100) break
+      }
+      return { headSha, comentarios }
     },
 
     /** PR cuyo título empieza por `[ORDEN_ID]` (el más reciente), o null. Solo lectura. */
