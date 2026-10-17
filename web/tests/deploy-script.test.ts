@@ -28,18 +28,20 @@ esac
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function activa(names: string[]) {
+function activa(names: string[], secrets: Record<string, string> = {}) {
   const file = path.join(dir, 'activa.json')
-  writeFileSync(file, JSON.stringify({ spec: { template: { spec: { containers: [{ image: 'imagen-vieja', env: names.map((name) => ({ name, value: 'SECRETO-NO-IMPRIMIR' })) }] } } } }))
+  writeFileSync(file, JSON.stringify({ spec: { template: { spec: { containers: [{ image: 'imagen-vieja', env: names.map((name) => secrets[name]
+    ? { name, valueFrom: { secretKeyRef: { name: secrets[name].split(':')[0], key: secrets[name].split(':')[1] } } }
+    : { name, value: 'SECRETO-NO-IMPRIMIR' }) }] } } } }))
   return file
 }
 
-function run(args: string[], opts: { env?: Record<string, string>; names?: string[]; input?: string } = {}) {
+function run(args: string[], opts: { env?: Record<string, string>; names?: string[]; secrets?: Record<string, string>; input?: string } = {}) {
   const log = path.join(dir, 'gcloud.log')
   writeFileSync(log, '')
   const result = spawnSync('bash', [SCRIPT, ...args], {
     cwd: dir, input: opts.input ?? '', encoding: 'utf8',
-    env: { PATH: `${dir}:${process.env.PATH}`, GCLOUD_LOG: log, GCLOUD_ACTIVA: activa(opts.names ?? ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256']), ...(opts.env ?? RENDER_ENV) } as unknown as NodeJS.ProcessEnv,
+    env: { PATH: `${dir}:${process.env.PATH}`, GCLOUD_LOG: log, GCLOUD_ACTIVA: activa(opts.names ?? ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256'], opts.secrets), ...(opts.env ?? RENDER_ENV) } as unknown as NodeJS.ProcessEnv,
   })
   return { code: result.status, out: `${result.stdout}${result.stderr}`, calls: readFileSync(log, 'utf8') }
 }
@@ -65,6 +67,14 @@ describe('deploy.sh', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain('+ PM_AGENT_TOKEN_SHA256')
     expect(r.out).toContain(IMAGE)
+    expect(r.calls).not.toContain('replace')
+  })
+
+  it('secreto con versión distinta: lo lista en el resumen sin imprimir valores', () => {
+    const r = run(['--dry-run'], { secrets: { PM_AGENT_TOKEN_SHA256: 'project-os-pm-agent-token-sha256:10' } })
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('PM_AGENT_TOKEN_SHA256: project-os-pm-agent-token-sha256:10 → 7')
+    expect(r.out).not.toContain('SECRETO-NO-IMPRIMIR')
     expect(r.calls).not.toContain('replace')
   })
 

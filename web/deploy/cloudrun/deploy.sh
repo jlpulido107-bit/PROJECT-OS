@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Despliega el dashboard a Cloud Run en un solo comando: renderiza el YAML, compara los NOMBRES de variables con la
 # revisión activa (nunca imprime valores), pide confirmación y aplica. Solo lo ejecuta el propietario (Cloud Shell).
-#   web/deploy/cloudrun/deploy.sh [--dry-run]     (exporta antes las variables de render.mjs, p. ej. SECRET_VERSION_PM_AGENT=7)
+#   web/deploy/cloudrun/deploy.sh [--dry-run]     (exporta antes las variables de render.mjs, p. ej. SECRET_VERSION_PM_AGENT=<versión vigente>)
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-project-os-511102}"
@@ -38,6 +38,18 @@ node -e '
   console.log((c.env ?? []).map((e) => e.name).join("\n"))
 ' "$WORK/activa.json" | sort -u | sed '/^$/d' > "$WORK/activas.txt"
 grep -oE '^ *- name: [A-Z][A-Z0-9_]*$' "$YAML" | sed -E 's/^ *- name: //' | sort -u > "$WORK/nuevas.txt"
+# Versión de cada secreto (NOMBRE secreto:versión): solo nombres y números, nunca valores.
+node -e '
+  const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).spec.template.spec.containers[0]
+  for (const e of c.env ?? []) { const r = e.valueFrom?.secretKeyRef; if (r) console.log(`${e.name} ${r.name}:${r.key}`) }
+' "$WORK/activa.json" > "$WORK/secretos-activos.txt"
+awk '/^ *- name: [A-Z][A-Z0-9_]*$/ { sub(/^ *- name: /, ""); v = $0; ref = 0; next }
+  /^ *secretKeyRef:/ { ref = 1; next }
+  ref && /^ *name: / { sub(/^ *name: /, ""); s = $0; next }
+  ref && /^ *key: / { sub(/^ *key: /, ""); gsub(/[\047"]/, ""); print v " " s ":" $0; ref = 0 }' "$YAML" > "$WORK/secretos-nuevos.txt"
+SECRETOS_DISTINTOS="$(awk 'NR == FNR { a[$1] = $2; next }
+  ($1 in a) && a[$1] != $2 { split(a[$1], x, ":"); split($2, y, ":"); print $1 ": " a[$1] " → " (x[1] == y[1] ? y[2] : $2) }' \
+  "$WORK/secretos-activos.txt" "$WORK/secretos-nuevos.txt")"
 IMAGEN_ACTIVA="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).spec.template.spec.containers[0].image ?? "")' "$WORK/activa.json")"
 IMAGEN_NUEVA="$(grep -E '^ *(- )?image: ' "$YAML" | head -n 1 | sed -E 's/^ *(- )?image: //')"
 
@@ -55,6 +67,8 @@ echo "Imagen nueva:  $IMAGEN_NUEVA"
 echo "Variables nuevas:"
 if [ -n "$AGREGADAS" ]; then echo "$AGREGADAS" | sed 's/^/  + /'; else echo "  (ninguna)"; fi
 echo "Variables quitadas: (ninguna)"
+echo "Secretos con versión distinta:"
+if [ -n "$SECRETOS_DISTINTOS" ]; then echo "$SECRETOS_DISTINTOS" | sed 's/^/  ~ /'; else echo "  (ninguno)"; fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "--dry-run: no se aplicó nada."
