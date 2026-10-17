@@ -11,5 +11,5 @@ export async function POST(request: Request) {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
     return service.createTask(parseCreateTask(body), ctx)
-  }, 201)
+  }, 201, 'tarea.crear')
 }
