@@ -19,8 +19,12 @@ Un dictamen favorable (del revisor o del auditor) no autoriza fusión, despliegu
 - No escribir directamente en main; trabajar con ramas y PR.
 - No fusionar ni ejecutar despliegues sin autorización.
 - No modificar código de repositorios fuente desde aquí.
-- Google Sheets es la fuente operativa; jamás inventar progreso. La prohibición de escribir en Sheets reales aplica
-  al ingeniero (Claude); no anula la gestión autorizada de ChatGPT como PM.
+- Google Sheets es la fuente operativa; jamás inventar progreso. Las sesiones de implementación y de auditoría no
+  escriben en Sheets reales ni usan el conector de Google Sheets.
+- Excepción interina (DEC-POS-006): solo la sesión PM (Claude) puede añadir filas en TAREAS, DECISIONES y
+  ORDENES_CODEX con el conector, únicamente con la skill `pm-escribir-hoja` y tras el «sí» explícito del propietario;
+  nunca edita ni borra filas ni aprueba, cierra o cancela nada. Un solo escritor. Caduca al desplegar O5b (API
+  auditada para el agente), y entonces se retira esta excepción.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.
