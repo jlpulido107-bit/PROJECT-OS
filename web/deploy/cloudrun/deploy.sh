@@ -59,13 +59,25 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
       SECRET_VERSION_PM_AGENT: clave("PM_AGENT_TOKEN_SHA256"), WRITE_MODE: env.has("PROJECT_OS_WRITE_MODE") ? "sheets" : undefined,
       WRITE_SERVICE_ACCOUNT: literal("PROJECT_OS_WRITE_SERVICE_ACCOUNT"), CLAUDE_ROUTINE_ID: literal("CLAUDE_ROUTINE_ID"),
     }
+    // Variable del YAML de la que sale cada una: con --quitar de esa variable no se toma de la activa.
+    const de = { SERVICE_URL: "NEXTAUTH_URL", OAUTH_CLIENT_ID: "GOOGLE_CLIENT_ID", SECRET_VERSION_NEXTAUTH: "NEXTAUTH_SECRET",
+      SECRET_VERSION_OAUTH: "GOOGLE_CLIENT_SECRET", SECRET_VERSION_ALLOWLIST: "AUTH_ALLOWED_EMAILS", SECRET_VERSION_WRITERS: "AUTH_WRITER_EMAILS",
+      SECRET_VERSION_GITHUB: "GITHUB_DISPATCH_TOKEN", SECRET_VERSION_CLAUDE_ROUTINE: "CLAUDE_ROUTINE_TOKEN CLAUDE_ROUTINE_ID",
+      CLAUDE_ROUTINE_ID: "CLAUDE_ROUTINE_ID CLAUDE_ROUTINE_TOKEN", SECRET_VERSION_PM_AGENT: "PM_AGENT_TOKEN_SHA256",
+      WRITE_MODE: "PROJECT_OS_WRITE_MODE", WRITE_SERVICE_ACCOUNT: "PROJECT_OS_WRITE_SERVICE_ACCOUNT" }
+    const quitar = process.argv[2].split(" ")
+    const omitir = Object.keys(m).filter((k) => (de[k] ?? "").split(" ").some((n) => n && quitar.includes(n)))
+    fs.writeFileSync(process.argv[3], ` ${omitir.join(" ")} `)
     for (const [k, v] of Object.entries(m)) if (v) process.stdout.write(`${k}=${v}\0`)
-  ' "$WORK/activa.json" > "$WORK/mapeo.bin"; then
+  ' "$WORK/activa.json" "$QUITAR" "$WORK/omitir.txt" > "$WORK/mapeo.bin"; then
     echo "DETENTE: no se pudo leer la configuración de la revisión activa; no se aplicó nada." >&2
     exit 1
   fi
+  # Definida (aunque esté vacía) prevalece y el render valida su valor; la de una variable pedida con --quitar no se toma.
+  OMITIR="$(cat "$WORK/omitir.txt")"
   while IFS='=' read -r -d '' NOMBRE VALOR; do
-    if [ -n "${!NOMBRE:-}" ]; then SOBRESCRITAS="$SOBRESCRITAS $NOMBRE"; else export "$NOMBRE=$VALOR"; fi
+    if [ -n "${!NOMBRE+x}" ]; then SOBRESCRITAS="$SOBRESCRITAS $NOMBRE"
+    elif [[ "$OMITIR" != *" $NOMBRE "* ]]; then export "$NOMBRE=$VALOR"; fi
   done < "$WORK/mapeo.bin"
 fi
 
@@ -77,6 +89,12 @@ if ! grep -q '[^[:space:]]' "$YAML"; then
   echo "DETENTE: el YAML renderizado está vacío; no se aplicó nada." >&2
   exit 1
 fi
+for NOMBRE in $QUITAR; do
+  if grep -qE "^ *- name: $NOMBRE\$" "$YAML"; then
+    echo "DETENTE: se pidió --quitar $NOMBRE pero el YAML renderizado la trae; no se aplicó nada." >&2
+    exit 1
+  fi
+done
 
 [ "$DESDE_ACTIVA" -eq 1 ] || leer_activa
 

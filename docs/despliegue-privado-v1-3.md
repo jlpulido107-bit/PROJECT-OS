@@ -525,7 +525,7 @@ export SECRET_VERSION_NEXTAUTH=1 SECRET_VERSION_OAUTH=1 SECRET_VERSION_ALLOWLIST
 **Un solo comando (ORD-POS-030).** Exporta las variables del render (`SECRET_VERSION_PM_AGENT=<versión vigente>`) y corre
 `web/deploy/cloudrun/deploy.sh --dry-run`: compara variables y versiones de secretos sin valores; sin `--dry-run` pide «desplegar».
 `--desde-activa` toma las variables de render.mjs de la revisión activa (lo que exportes, p. ej. `IMAGE`, prevalece y se lista como «sobrescrita»).
-`--quitar NOMBRE` (repetible) permite que esa variable falte en el YAML y la lista en «Variables quitadas»; sin él, una variable faltante detiene.
+`--quitar NOMBRE` (repetible) permite que esa variable falte en el YAML (no se toma de la activa; si el YAML aún la trae, detiene) y la lista en «Variables quitadas».
 El resumen añade «Cambios valor↔secreto»; un YAML vacío o una activa ilegible detienen sin aplicar.
 
 Acceso del agente PM (opcional, solo con `WRITE_MODE=sheets`): `export SECRET_VERSION_PM_AGENT=<versión>` antes de

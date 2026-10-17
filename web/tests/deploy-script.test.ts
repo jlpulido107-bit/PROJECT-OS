@@ -110,6 +110,22 @@ describe('deploy.sh', () => {
     expect(run(['--quitar', 'minuscula']).code).toBe(2)
   })
 
+  it('--quitar de una variable que el YAML aún trae: se detiene y la nombra', () => {
+    const r = run(['--quitar', 'PM_AGENT_TOKEN_SHA256'], { input: 'desplegar\n' })
+    expect(r.code).toBe(1)
+    expect(r.out).toContain('DETENTE: se pidió --quitar PM_AGENT_TOKEN_SHA256')
+    expect(r.calls).toBe('')
+  })
+
+  it('render que sale 0 con YAML vacío: se detiene sin llamar a gcloud', () => {
+    writeFileSync(path.join(dir, 'node'), `#!/usr/bin/env bash\ncase "$1" in *render.mjs) exit 0 ;; esac\nexec "${process.execPath}" "$@"\n`)
+    chmodSync(path.join(dir, 'node'), 0o755)
+    const r = run([], { input: 'desplegar\n' })
+    expect(r.code).toBe(1)
+    expect(r.out).toContain('DETENTE: el YAML renderizado está vacío')
+    expect(r.calls).toBe('')
+  })
+
   it('cambios valor↔secreto: lista los nombres sin valores', () => {
     const r = run(['--dry-run'], { names: ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256', 'GOOGLE_CLIENT_ID'], secrets: { GOOGLE_CLIENT_ID: 's:1' } })
     expect(r.out).toContain('Cambios valor↔secreto:')
@@ -153,7 +169,34 @@ describe('deploy.sh', () => {
       expect(r.out).toMatch(/sobrescritas[^\n]*\n  ! IMAGE\n/)
     })
 
-    it('JSON inválido, sin contenedor o YAML vacío: se detiene sin aplicar', () => {
+    const min = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
+
+    it('--quitar PM_AGENT_TOKEN_SHA256: no se toma de la activa, el YAML no la trae y se lista como quitada', () => {
+      const r = run(['--desde-activa', '--quitar', 'PM_AGENT_TOKEN_SHA256', '--dry-run'], { raw: full, env: min })
+      expect(r.code).toBe(0)
+      expect(r.out).toMatch(/Variables quitadas:\n  - PM_AGENT_TOKEN_SHA256\n/)
+      expect(r.calls).not.toContain('replace')
+    })
+
+    it('exportada vacía: prevalece y se lista como sobrescrita; sin --quitar, la faltante detiene', () => {
+      const env = { ...min, SECRET_VERSION_PM_AGENT: '' }
+      const r = run(['--desde-activa', '--quitar', 'PM_AGENT_TOKEN_SHA256', '--dry-run'], { raw: full, env })
+      expect(r.code).toBe(0)
+      expect(r.out).toMatch(/sobrescritas[^\n]*\n  ! SECRET_VERSION_PM_AGENT\n/)
+      const sin = run(['--desde-activa'], { raw: full, env, input: 'desplegar\n' })
+      expect(sin.code).toBe(1)
+      expect(sin.out).toMatch(/DETENTE: la revisión activa tiene variables que el YAML no trae:\n  - PM_AGENT_TOKEN_SHA256/)
+      expect(sin.calls).not.toContain('replace')
+    })
+
+    it('IMAGE exportada vacía: el render falla sin aplicar', () => {
+      const r = run(['--desde-activa'], { raw: full, env: { ...min, IMAGE: '' }, input: 'desplegar\n' })
+      expect(r.code).toBe(1)
+      expect(r.out).toContain('el render falló')
+      expect(r.calls).not.toContain('replace')
+    })
+
+    it('JSON inválido, vacío o sin contenedor: se detiene sin aplicar', () => {
       const env = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
       for (const raw of ['no es json', '{"spec":{"template":{"spec":{"containers":[]}}}}', '']) {
         const r = run(['--desde-activa'], { raw, env, input: 'desplegar\n' })
