@@ -444,6 +444,16 @@ export class OperationsService {
     })
   }
 
+  /** Libera la reserva de la clave cuando la rutina rechazó la petición (4xx) y no se lanzó nada (ORD-POS-045). */
+  liberarLanzamiento(ordenId: string, clave: string, ctx: OperationContext): Promise<void> {
+    return this.exclusive(async () => {
+      const audit = await readView(this.store, 'AUDITORIA')
+      const now = this.clock()
+      const diff = new Map([['CLAVE', { antes: '', despues: clave }], ['LIBERA', { antes: '', despues: now.toISOString() }]])
+      await this.auditFirst('orden.supervision_liberar', payloadHash('orden.supervision_liberar', { clave }), randomUUID(), ctx, 'ORDENES_CODEX', ordenId, diff, now, audit)
+    })
+  }
+
   /**
    * Conciliación verificable (contrato §7): la última operación auditada de cada registro debe reflejarse en la
    * entidad. Lista intenciones sin efecto (p. ej. escritura fallida tras auditoría) o divergentes.
@@ -463,7 +473,7 @@ export class OperationsService {
     // Auditorías incompletas o contradictorias: nunca se dan por conciliadas.
     for (const op of ops) if (op.integridad !== 'completa') item(op, op.integridad === 'parcial' ? 'auditoria-parcial' : 'auditoria-inconsistente')
     // Los lanzamientos de rutinas dejan constancia pero no cambian la orden: no hay efecto que conciliar.
-    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.((revisar|corregir)_lanzar|supervision_reservar)$/.test(op.operacion))
+    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.((revisar|corregir)_lanzar|supervision_(reservar|liberar))$/.test(op.operacion))
     // Actualización perdida: dos ediciones auditadas parten de la misma VERSION del mismo registro
     // (posible solo sin CAS entre instancias; contrato §6). La segunda pisó a la primera.
     const transitions = new Map<string, AuditedOperation[]>()
@@ -760,18 +770,20 @@ export function parseAudit(audit: TableView): AuditedOperation[] {
 export type EstadoLanzamiento = { tipo: 'lanzada'; sesion: string } | { tipo: 'reservada' } | { tipo: 'libre' }
 /** Una reserva sin lanzamiento caduca a las 2 horas (ORD-POS-039). */
 export const RESERVA_MS = 2 * 60 * 60 * 1000
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/
 
 function estadoLanzamiento(ops: AuditedOperation[], clave: string, now: Date): EstadoLanzamiento {
   const conClave = ops.filter((o) => o.integridad === 'completa' && o.fields.get('CLAVE')?.despues === clave)
   const lanzada = conClave.find((o) => /^orden\.(revisar|corregir)_lanzar$/.test(o.operacion) && o.fields.get('SESION')?.despues)
   // Una SESION que no es de claude.ai/code (p. ej. editada a mano en la hoja) no se enlaza ni libera el paso (ORD-POS-041).
   if (lanzada) return esSesionClaude(lanzada.fields.get('SESION')!.despues) ? { tipo: 'lanzada', sesion: lanzada.fields.get('SESION')!.despues } : { tipo: 'reservada' }
-  const vigente = conClave.some((o) => {
-    if (o.operacion !== 'orden.supervision_reservar') return false
-    const t = Date.parse(o.fields.get('RESERVA')?.despues ?? '')
-    return Number.isFinite(t) && now.getTime() - t < RESERVA_MS
-  })
-  return vigente ? { tipo: 'reservada' } : { tipo: 'libre' }
+  // Manda la última reserva o liberación de la clave (ORD-POS-045).
+  const ultima = conClave.filter((o) => /^orden\.supervision_(reservar|liberar)$/.test(o.operacion)).at(-1)
+  if (!ultima || ultima.operacion === 'orden.supervision_liberar') return { tipo: 'libre' }
+  // Una RESERVA que no es fecha ISO (p. ej. editada a mano) cuenta como reservada: no se sabe si caducó.
+  const raw = ultima.fields.get('RESERVA')?.despues ?? ''
+  const t = ISO_UTC.test(raw) ? Date.parse(raw) : NaN
+  return !Number.isFinite(t) || now.getTime() - t < RESERVA_MS ? { tipo: 'reservada' } : { tipo: 'libre' }
 }
 
 export function todayForCommands(now: Date = new Date()): string {

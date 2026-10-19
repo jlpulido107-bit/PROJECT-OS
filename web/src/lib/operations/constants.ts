@@ -60,8 +60,8 @@ export type OperationName =
   | 'orden.ejecutar'
   /** No escriben en la entidad: lanzan una rutina de revisión o de corrección y dejan constancia en AUDITORIA (ORD-POS-037). */
   | 'orden.revisar_lanzar' | 'orden.corregir_lanzar'
-  /** Reserva auditada antes de lanzar una revisión o corrección (ORD-POS-039); tampoco cambia la orden. */
-  | 'orden.supervision_reservar'
+  /** Reserva auditada antes de lanzar una revisión o corrección (ORD-POS-039) y su liberación si la rutina la rechaza (ORD-POS-045); tampoco cambian la orden. */
+  | 'orden.supervision_reservar' | 'orden.supervision_liberar'
 
 /** Órdenes (V1.8 F3, docs/migracion-ordenes-codex.md). Desde el dashboard no se crean órdenes de riesgo ALTO. */
 export const ORDER_RISKS = ['BAJO', 'MEDIO'] as const
