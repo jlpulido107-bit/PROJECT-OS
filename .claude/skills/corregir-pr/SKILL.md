@@ -34,6 +34,16 @@ No hay nadie a quien preguntar: si algo no cuadra, comenta en el PR por qué y t
 4. **Rondas.** Si el PR ya tiene 2 rondas de corrección tuyas (comentarios de resultado de esta skill), comenta que se
    agotó el máximo (DEC-POS-003) y termina: decide el propietario.
 
+## Checkout de la orden
+
+Ubica `REPO_DIR`, el checkout de `REPOSITORIO`, como indica
+[`revisar-orden`](../revisar-orden/SKILL.md#checkout-de-la-orden): directorio actual y hermanos, con `origin` exactamente
+`https://github.com/<REPOSITORIO>` o `git@github.com:<REPOSITORIO>`, `.git` final opcional, sin distinguir mayúsculas
+(otro host no vale). Si no hay ninguno o hay más de uno, termina sin tocar nada y explica qué faltó. Todo lo de abajo
+(checkout, cambios, pruebas y push) ocurre en `REPO_DIR`; lee y respeta su `AGENTS.md` (y `CLAUDE.md`) además del de
+PROJECT-OS: si chocan, gana la regla más restrictiva. En SIGSAH nunca uses `clasp push` ni determines valores clínicos.
+Para órdenes POS, `REPO_DIR` es el checkout de PROJECT-OS y nada cambia.
+
 ## Validar HALLAZGOS
 
 Lee el comentario. Debe estar en el issue de la orden (el de título `[ORDEN_ID]…`) o en el PR validado. Sus
@@ -69,11 +79,13 @@ alcance» son los que mandan.
 
 ## Aplicar
 
-1. Haz checkout de la rama del PR en `HEAD_ESPERADO` (verifica `git rev-parse HEAD`).
-2. Aplica solo las correcciones atendidas; sigue `AGENTS.md` y `CLAUDE.md`.
-3. Corre las pruebas del repositorio (en PROJECT-OS: `python -m unittest discover -s tests` y, si tocas `web/`,
-   `npm test` en `web/`). Si fallan por tu cambio, corrígelo antes de terminar.
-4. Empuja **un commit nuevo a la misma rama** del PR.
+1. En `REPO_DIR`, haz checkout de la rama del PR en `HEAD_ESPERADO` (verifica `git -C REPO_DIR rev-parse HEAD`).
+2. Aplica solo las correcciones atendidas; sigue `AGENTS.md` y `CLAUDE.md` de `REPO_DIR` y de PROJECT-OS.
+3. Corre en `REPO_DIR` las pruebas que indica «Cómo probar» de la orden (en PROJECT-OS:
+   `python -m unittest discover -s tests` y, si tocas `web/`, `npm test` en `web/`). Si fallan por tu cambio,
+   corrígelo antes de terminar.
+4. Empuja **un commit nuevo a la misma rama** `claude/…` del PR con `git -C REPO_DIR push origin <rama>`; nunca a otro
+   remote, otra rama ni otro repositorio.
 
 ## Resultado
 
