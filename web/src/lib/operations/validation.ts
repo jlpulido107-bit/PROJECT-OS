@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { addDays, parseCivilDate } from '../dates'
 import { parseSafeUrl } from '../parse'
+import { extraerCriterios } from '../supervision/criterios'
 import {
   CLOSING_TASK_STATES, LIMITS, ORDER_RISKS, TASK_PRIORITIES, WRITABLE_TASK_STATES,
 } from './constants'
@@ -370,8 +371,23 @@ export function parseCreateOrder(body: unknown): CreateOrderCommand {
     comoProbar: c.text('comoProbar', long) ?? '',
     riesgo: c.oneOf('riesgo', ORDER_RISKS, true) ?? '',
   }
+  const errorCriterios = cmd.criterios ? motivoCriterios(cmd.criterios) : null
+  if (errorCriterios) c.setError('criterios', `Un criterio por línea, numerados («1. …», «2. …»): ${errorCriterios}`)
   c.done()
   return cmd
+}
+
+/** Solo al crear (ORD-POS-044): las órdenes existentes no se revalidan. Exige ≥ 2 criterios que extraerCriterios vea. */
+function motivoCriterios(texto: string): string | null {
+  const r = extraerCriterios(texto)
+  if (!r.ok) return r.motivo
+  for (const { numero, texto: t } of r.criterios) {
+    // « 2. » o « 2) » dentro del texto con un número mayor: otro criterio pegado en la misma línea.
+    for (const [, n, delim] of t.matchAll(/(?:^|\s)([1-9]\d{0,2})([.)])\s+\S/g)) {
+      if (Number(n) > numero) return `el criterio ${numero} contiene «${n}${delim}» en la misma línea`
+    }
+  }
+  return r.criterios.length < 2 ? 'hay menos de 2 criterios numerados en líneas separadas' : null
 }
 
 const ACCIONES = ['APROBAR', 'CANCELAR', 'ENVIAR', 'REGISTRAR_PR', 'REVISAR', 'CERRAR'] as const

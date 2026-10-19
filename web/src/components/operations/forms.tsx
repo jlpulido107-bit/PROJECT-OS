@@ -518,8 +518,8 @@ export function OrderForm({ projects, tasks, defaultProject }: {
         <Field name="contexto" label="Contexto y archivos (opcional)" state={op.state} wide>
           {(p) => <textarea {...p} name="contexto" rows={2} maxLength={2000} />}
         </Field>
-        <Field name="criterios" label="Criterios de aceptación" state={op.state} wide hint="Verificables con una prueba o un comando.">
-          {(p) => <textarea {...p} name="criterios" required rows={3} maxLength={2000} />}
+        <Field name="criterios" label="Criterios de aceptación" state={op.state} wide hint="Un criterio por línea: 1. …, 2. … (mínimo 2, verificables con una prueba o un comando).">
+          {(p) => <textarea {...p} name="criterios" required rows={4} maxLength={2000} placeholder={'1. …\n2. …'} />}
         </Field>
         <Field name="fueraDeAlcance" label="Fuera de alcance" state={op.state} wide>
           {(p) => <textarea {...p} name="fueraDeAlcance" required rows={2} maxLength={2000} defaultValue="No desplegar, no fusionar, no cambiar workflows, secretos ni permisos, no escribir en Google Sheets." />}

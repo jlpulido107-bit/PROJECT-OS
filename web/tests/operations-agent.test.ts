@@ -125,7 +125,7 @@ describe('tarea.editar del agente (criterio 3)', () => {
 
 describe('creación y auditoría del agente (criterios 4 y 5)', () => {
   const AGENT = { actor: AGENT_ACTOR, agent: true as const }
-  const order = { proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'Agregar prueba', objetivo: 'Cubrir X', criterios: 'npm test', fueraDeAlcance: 'nada', comoProbar: 'npm test', riesgo: 'BAJO' }
+  const order = { proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'Agregar prueba', objetivo: 'Cubrir X', criterios: '1. npm test pasa\n2. Lint sin errores', fueraDeAlcance: 'nada', comoProbar: 'npm test', riesgo: 'BAJO' }
 
   it('crea tarea, decisión PENDIENTE y orden BORRADOR con ACTOR agente-pm y ;agente=pm', async () => {
     const { store, service } = setup()
