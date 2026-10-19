@@ -1,20 +1,23 @@
 import { cacheSeconds } from '../config'
 import { evaluarDictamen, type EvaluacionDictamen, type DatosPr } from '../supervision/dictamen'
-import { REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
+import { REPOSITORIOS, codigoFalloGitHub, repoDeUrl, type GitHubClient } from './github'
 
 /**
  * Dictamen vigente de las órdenes con PR (DEC-POS-009), leído de GitHub con el cliente existente. Solo lectura. Los datos
  * de GitHub se guardan en memoria DASHBOARD_CACHE_SECONDS; si GitHub falla o tarda, devuelve null («Sin datos de GitHub») y
- * guarda el fallo FALLO_MS por PR para no esperar en cada carga.
+ * guarda el fallo FALLO_MS por PR, con su código (falloDictamen), para no esperar en cada carga.
  */
 
 const LIMITE_MS = 20_000
 const FALLO_MS = 60_000
-const cache = new Map<string, { hasta: number; datos: DatosPr | null }>()
+const cache = new Map<string, { hasta: number; datos: DatosPr | null; fallo?: string }>()
 
 export interface OrdenConPr { id: string; proyectoId: string | null; prUrl: string | null; riesgo: string | null; criterios: string | null }
 
 export function limpiarCacheDictamenes(): void { cache.clear() }
+
+/** Código del último fallo de lectura guardado para el PR (http-NNN, tiempo, …) o null si no falló. */
+export const falloDictamen = (prUrl: string): string | null => cache.get(prUrl)?.fallo ?? null
 
 /** URL del comentario, armada con la del PR (nunca la que devuelve la API). */
 export const urlComentario = (prUrl: string, id: number): string | null =>
@@ -32,8 +35,10 @@ export async function dictamenDeOrden(client: GitHubClient, o: OrdenConPr, ahora
         new Promise<never>((_, rechazar) => setTimeout(() => rechazar(new Error('tiempo')), LIMITE_MS).unref?.()),
       ])
       entrada = { hasta: ahora + cacheSeconds() * 1000, datos: leidos }
-    } catch {
-      entrada = { hasta: ahora + FALLO_MS, datos: null }
+    } catch (error) {
+      const fallo = codigoFalloGitHub(error)
+      console.warn(`[project-os] lectura del dictamen fallida: ${fallo}`)
+      entrada = { hasta: ahora + FALLO_MS, datos: null, fallo }
     }
     cache.set(prUrl, entrada)
   }
