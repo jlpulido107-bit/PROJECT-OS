@@ -35,10 +35,12 @@ export function lanzarSupervision(
   service: OperationsService, cmd: LanzarSupervisionCommand, ctx: OperationContext,
   { github = githubClient(), rutinas = rutinasSupervision() }: { github?: GitHubClient | null; rutinas?: RutinasSupervision } = {},
 ): Promise<SupervisionInfo> {
-  const running = enCurso.get(cmd.ordenId)
+  // Por orden y acción: revisar y corregir concurrentes no comparten resultado (ORD-POS-045).
+  const k = `${cmd.ordenId}|${cmd.accion}`
+  const running = enCurso.get(k)
   if (running) return running
-  const p = lanzarUnaVez(service, cmd, ctx, github, rutinas).finally(() => enCurso.delete(cmd.ordenId))
-  enCurso.set(cmd.ordenId, p)
+  const p = lanzarUnaVez(service, cmd, ctx, github, rutinas).finally(() => enCurso.delete(k))
+  enCurso.set(k, p)
   return p
 }
 
@@ -88,6 +90,10 @@ async function lanzarUnaVez(
       : textoSupervision({ ...comun, rol: plan.tipo })
     sessionUrl = (await rutina.lanzar(texto)).sessionUrl
   } catch (error) {
+    // 4xx: la rutina rechazó la petición y no lanzó nada; se libera el paso. Con 5xx, red o tiempo la reserva sigue.
+    if (error instanceof RoutineError && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
+      await service.liberarLanzamiento(cmd.ordenId, clave, ctx).catch(() => console.warn('[project-os] reserva sin liberar'))
+    }
     return fallo(error)
   }
   try {

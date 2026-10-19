@@ -201,6 +201,48 @@ describe('una sola sesión por paso (ORD-POS-039)', () => {
     expect(e.fires).toHaveLength(0)
   })
 
+  it('429 (petición rechazada): audita la liberación con la misma clave y el paso vuelve a estar disponible (ORD-POS-045)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const e = escenario({ rutinaStatus: 429 })
+    const clave = `ORD-POS-099|revisar|${HEAD}|1`
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'http-429' })
+    const liberacion = e.auditoria().filter((f) => String(f[8]).includes('orden.supervision_liberar'))
+    expect(liberacion.map((f) => [f[5], f[5] === 'CLAVE' ? f[7] : ''])).toEqual([['CLAVE', clave], ['LIBERA', '']])
+    expect([...(await e.service.lanzamientosPorClave([clave])).values()]).toEqual([{ tipo: 'libre' }])
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'http-429' })
+    expect(e.fires).toHaveLength(2)
+    expect((await e.service.reconcile()).pendientes).toEqual([])
+  })
+
+  it('500: la reserva sigue y el reintento da «Resultado incierto» sin disparar', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const e = escenario({ rutinaStatus: 500 })
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'http-500' })
+    expect(e.auditoria().some((f) => f.includes('LIBERA'))).toBe(false)
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'resultado-incierto' })
+    expect(e.fires).toHaveLength(1)
+  })
+
+  it.each(['', 'ayer', '2026-10-17', '2026-13-45T00:00:00.000Z'])('RESERVA ilegible %j: cuenta como reservada, no como libre', async (raw) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const e = escenario({ rutinaStatus: 500 })
+    await e.lanzar('revisar')
+    const clave = `ORD-POS-099|revisar|${HEAD}|1`
+    for (const [i, fila] of (await e.store.readTable('AUDITORIA')).entries()) if (fila[5] === 'RESERVA') await e.store.writeRow('AUDITORIA', i + 1, fila.map((c, j) => j === 7 ? raw : c))
+    vi.spyOn(e.service as unknown as { clock: () => Date }, 'clock').mockReturnValue(new Date(NOW.getTime() + 3 * HORA))
+    expect([...(await e.service.lanzamientosPorClave([clave])).values()]).toEqual([{ tipo: 'reservada' }])
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'resultado-incierto' })
+    expect(e.fires).toHaveLength(1)
+  })
+
+  it('revisar y corregir concurrentes de la misma orden no comparten resultado', async () => {
+    const e = escenario({ comentarios: [comentario(cambios())] })
+    const [c, r] = await Promise.all([e.lanzar('corregir'), e.lanzar('revisar')])
+    expect(c).toMatchObject({ ok: true, nueva: true })
+    expect(r).toEqual({ ok: false, codigo: 'sin-accion' })
+    expect(e.fires.map((f) => f.rutina)).toEqual(['corregir'])
+  })
+
   it('la reserva sin lanzamiento caduca a las 2 horas', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const e = escenario({ rutinaStatus: 500 })
