@@ -37,10 +37,12 @@ No hay nadie a quien preguntar: si algo no cuadra, comenta en el PR por qué y t
 ## Checkout de la orden
 
 Ubica `REPO_DIR`, el checkout de `REPOSITORIO`, como indica
-[`revisar-orden`](../revisar-orden/SKILL.md#checkout-de-la-orden) (directorio actual y hermanos, remote `origin` que
-termine en `/<REPOSITORIO>`). Si no hay ninguno o hay más de uno, termina sin tocar nada y explica qué faltó. Todo lo de
-abajo (checkout, cambios, pruebas y push) ocurre en `REPO_DIR`; lee y respeta su `AGENTS.md` (y `CLAUDE.md`) además del
-de PROJECT-OS. Para órdenes POS, `REPO_DIR` es el checkout de PROJECT-OS y nada cambia.
+[`revisar-orden`](../revisar-orden/SKILL.md#checkout-de-la-orden): directorio actual y hermanos, con `origin` exactamente
+`https://github.com/<REPOSITORIO>` o `git@github.com:<REPOSITORIO>`, `.git` final opcional, sin distinguir mayúsculas
+(otro host no vale). Si no hay ninguno o hay más de uno, termina sin tocar nada y explica qué faltó. Todo lo de abajo
+(checkout, cambios, pruebas y push) ocurre en `REPO_DIR`; lee y respeta su `AGENTS.md` (y `CLAUDE.md`) además del de
+PROJECT-OS: si chocan, gana la regla más restrictiva. En SIGSAH nunca uses `clasp push` ni determines valores clínicos.
+Para órdenes POS, `REPO_DIR` es el checkout de PROJECT-OS y nada cambia.
 
 ## Validar HALLAZGOS
 
