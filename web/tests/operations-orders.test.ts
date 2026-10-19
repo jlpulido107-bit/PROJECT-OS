@@ -33,7 +33,7 @@ const ADAPTERS: Array<[string, () => { store: TableStore; service: OperationsSer
 
 const NEW_ORDER = {
   proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'Agregar prueba', objetivo: 'Cubrir el caso X',
-  criterios: 'npm test pasa', fueraDeAlcance: 'No tocar src', comoProbar: 'npm test', riesgo: 'BAJO',
+  criterios: '1. npm test pasa\n2. Lint sin errores', fueraDeAlcance: 'No tocar src', comoProbar: 'npm test', riesgo: 'BAJO',
 }
 
 async function orden(store: TableStore, id: string) {
@@ -130,6 +130,28 @@ describe('validación de órdenes', () => {
     expect(() => parseCreateOrder({ ...NEW_ORDER, riesgo: 'ALTO', requestId: uuid() })).toThrow(OperationError)
     expect(() => parseCreateOrder({ ...NEW_ORDER, estado: 'APROBADA', requestId: uuid() })).toThrow(OperationError)
     expect(() => parseCreateOrder({ ...NEW_ORDER, issueUrl: 'https://x', requestId: uuid() })).toThrow(OperationError)
+  })
+
+  it('criterios: uno por línea y numerados (ORD-POS-044)', () => {
+    const motivo = (criterios: string) => {
+      try {
+        parseCreateOrder({ ...NEW_ORDER, criterios, requestId: uuid() })
+        return 'ok'
+      } catch (error) {
+        return (error as OperationError).fields?.criterios ?? String(error)
+      }
+    }
+    expect(motivo('1. npm test pasa\n2. Lint sin errores\n   detalle del 2 con versión 3.5')).toBe('ok')
+    expect(motivo('1. npm test pasa 2. Lint sin errores 3. Build')).toMatch(/^Un criterio por línea.*el criterio 1 contiene «2\.»/)
+    expect(motivo('npm test pasa\nLint sin errores')).toMatch(/^Un criterio por línea.*no hay IDs explícitos/)
+    expect(motivo('1. npm test pasa')).toMatch(/menos de 2 criterios/)
+  })
+
+  it('las órdenes existentes con criterios de otro formato no se revalidan (ORD-POS-044)', async () => {
+    const { store, service } = ADAPTERS[0]![1]()
+    expect((await orden(store, 'ORD-POS-901'))?.CRITERIOS_ACEPTACION).toBe('Criterio demo')
+    await service.transitionOrder(parseOrderTransition('ORD-POS-901', { accion: 'APROBAR', expectedEstado: 'BORRADOR', requestId: uuid() }), ACTOR)
+    expect(await orden(store, 'ORD-POS-901')).toMatchObject({ ESTADO: 'APROBADA', CRITERIOS_ACEPTACION: 'Criterio demo' })
   })
 
   it('cancelar exige motivo; aprobar no lo admite; el ID debe ser ORD-PRY-NNN', () => {

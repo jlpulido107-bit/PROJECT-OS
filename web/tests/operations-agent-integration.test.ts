@@ -67,7 +67,7 @@ const tareasTable = async () => (mockWriteTabs()?.TAREAS ?? []) as unknown[][]
 const rows = async () => ((await auditTable()) ?? []).length
 const task = { proyectoId: 'POS', titulo: 'Tarea del PM', tipo: 'DESARROLLO', prioridad: 'MEDIA', criterioTerminado: 'Hecho' }
 const decision = { proyectoId: 'POS', asunto: 'Asunto', decision: 'Decisión', justificacion: 'Porque', responsable: 'PM' }
-const order = { proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'Agregar prueba', objetivo: 'Cubrir X', criterios: 'npm test', fueraDeAlcance: 'nada', comoProbar: 'npm test', riesgo: 'BAJO' }
+const order = { proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'Agregar prueba', objetivo: 'Cubrir X', criterios: '1. npm test pasa\n2. Lint sin errores', fueraDeAlcance: 'nada', comoProbar: 'npm test', riesgo: 'BAJO' }
 
 describe('agente PM: proxy → ruta → servicio', () => {
   it('token válido sin sesión crea tarea, decisión y orden, y edita campos, como agente-pm', async () => {
@@ -83,6 +83,15 @@ describe('agente PM: proxy → ruta → servicio', () => {
     const added = ((await auditTable()) ?? []).slice(before)
     expect(added.length).toBeGreaterThan(4)
     expect(added.every((row) => row[2] === 'agente-pm' && row[8]!.endsWith(';agente=pm'))).toBe(true)
+  })
+
+  it('orden.crear con todos los criterios en una línea → 422 con el mismo error de campo que el formulario (ORD-POS-044)', async () => {
+    const before = await rows()
+    const request = build('POST', '/api/operaciones/ordenes', { ...order, requestId: uuid(), criterios: '1. npm test 2. lint' })
+    const r = await through(postOrden as Handler, request)
+    expect(r).toMatchObject({ passed: true, status: 422, json: { error: { codigo: 'validacion' } } })
+    expect(JSON.stringify(r.json)).toContain('el criterio 1 contiene «2.» en la misma línea')
+    expect(await rows()).toBe(before)
   })
 
   it('editar ESTADO o BLOQUEO llega a la ruta y recibe 403 sin escribir', async () => {
