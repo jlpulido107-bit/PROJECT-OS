@@ -84,6 +84,8 @@ const ORDER_TRANSITIONS: Record<OrderTransitionCommand['accion'], { from: readon
   registrar_pr: { from: ['ENVIADA'], to: 'PR_ABIERTO', op: 'orden.registrar_pr' },
   revisar: { from: ['PR_ABIERTO'], to: 'REVISADA', op: 'orden.revisar' },
   cerrar: { from: ['REVISADA'], to: 'CERRADA', op: 'orden.cerrar' },
+  /** Cierre asistido (ORD-POS-046): solo tras confirmar en GitHub que el PR de la orden está fusionado (dispatch.ts). */
+  cerrar_fusionado: { from: ['ENVIADA', 'PR_ABIERTO', 'REVISADA'], to: 'CERRADA', op: 'orden.cerrar_fusionado' },
 }
 
 interface AuditedOperation {
@@ -318,7 +320,7 @@ export class OperationsService {
     return this.exclusive(async () => {
       const rule = ORDER_TRANSITIONS[cmd.accion]
       const op = rule.op
-      if ((cmd.accion === 'enviar' || cmd.accion === 'registrar_pr') && !cmd.url) {
+      if ((cmd.accion === 'enviar' || cmd.accion === 'registrar_pr' || cmd.accion === 'cerrar_fusionado') && !cmd.url) {
         throw new OperationError('validacion', { fields: { url: 'Requerido' } })
       }
       const hash = payloadHash(op, cmd)
@@ -375,7 +377,7 @@ export class OperationsService {
         }
       }
       if (cmd.accion === 'enviar' && cmd.url) next.ISSUE_URL = cmd.url
-      if (cmd.accion === 'registrar_pr' && cmd.url) next.PR_URL = cmd.url
+      if ((cmd.accion === 'registrar_pr' || cmd.accion === 'cerrar_fusionado') && cmd.url) next.PR_URL = cmd.url
       if (cmd.accion === 'cancelar' && cmd.motivo) {
         const nota = `Cancelada: ${cmd.motivo}`
         next.NOTAS = current.NOTAS ? `${current.NOTAS} | ${nota}` : nota
@@ -698,9 +700,10 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'orden.registrar_pr': ['ESTADO'],
   'orden.revisar': ['ESTADO'],
   'orden.cerrar': ['ESTADO'],
+  'orden.cerrar_fusionado': ['ESTADO'],
 }
 /** Operaciones que modifican un registro existente (no reescriben su ID). */
-const TRANSITION_OPS = new Set(['tarea.editar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar'])
+const TRANSITION_OPS = new Set(['tarea.editar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar', 'orden.cerrar_fusionado'])
 const AUDIT_ID_PATTERN = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})(?:-(\d{2}))?$/
 
 /**

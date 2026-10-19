@@ -150,11 +150,32 @@ export async function transitionWithDispatch(
     if (!envio.ok && envio.codigo === 'orden-no-aprobada') throw new OperationError('transicion-no-permitida')
     return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
   }
+  if (cmd.accion === 'cerrar_fusionado') return service.transitionOrder({ ...cmd, url: await prFusionado(service, cmd.ordenId, client) }, ctx)
   const result = await service.transitionOrder(cmd, ctx)
   if (cmd.accion !== 'aprobar') return result
   if (!client) return { ...result, envio: { ok: false, codigo: 'sin-token' } }
   const envio = await enviar(service, client, cmd.ordenId, cmd.requestId, ctx)
   return { ...result, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
+}
+
+/**
+ * Cierre asistido (ORD-POS-046): relee en GitHub el PR registrado o detectado de la orden. Solo un PR fusionado cuyo
+ * título empieza por `[ORDEN_ID]` permite cerrar; devuelve su URL para PR_URL. Nunca cierra sin el clic del propietario.
+ */
+async function prFusionado(service: OperationsService, ordenId: string, client: GitHubClient | null): Promise<string> {
+  if (!client) throw new OperationError('github-no-disponible')
+  const o = await service.readOrder(ordenId)
+  if (!o) throw new OperationError('orden-inexistente')
+  let pr: Awaited<ReturnType<GitHubClient['prParaCierre']>>
+  try {
+    pr = await client.prParaCierre(o.PROYECTO_ID ?? '', ordenId, o.PR_URL || null)
+  } catch (error) {
+    if (!(error instanceof GitHubError)) throw error
+    console.warn(`[project-os] lectura del PR para el cierre fallida: ${typeof error.status === 'number' ? `http-${error.status}` : error.status}`)
+    throw new OperationError('github-no-disponible')
+  }
+  if (!pr?.fusionado || !pr.deLaOrden) throw new OperationError('pr-no-fusionado')
+  return pr.url
 }
 
 /** Con la rutina configurada, una orden recién enviada se ejecuta sola: aprobar = llamar a Claude (F5a). */
