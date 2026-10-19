@@ -27,6 +27,8 @@ const CODEX_BOT = 'chatgpt-codex-connector[bot]'
 /** Primera línea del comentario con el que el dashboard deja constancia de que lanzó a Claude (F5a). */
 export const MARCA_CLAUDE = 'Claude · ejecución lanzada desde el dashboard'
 const SESION_CLAUDE = /https:\/\/claude\.ai\/code\/[A-Za-z0-9_/-]{1,200}/
+/** La URL entera es una sesión de claude.ai/code (anclada; ORD-POS-041). */
+export const esSesionClaude = (url: string): boolean => new RegExp(`^${SESION_CLAUDE.source}$`).test(url)
 
 export interface OrdenParaEnviar {
   ordenId: string
