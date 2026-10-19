@@ -81,7 +81,7 @@ async function lanzarUnaVez(
     throw error
   }
   if (reserva.tipo === 'lanzada') return { ok: true, sessionUrl: reserva.sesion, nueva: false }
-  if (reserva.tipo === 'reservada') return { ok: false, codigo: 'resultado-incierto' }
+  if (reserva.tipo === 'reservada' || reserva.tipo === 'sesion-invalida') return { ok: false, codigo: 'resultado-incierto' }
   let sessionUrl: string
   try {
     const comun = { ordenId: cmd.ordenId, proyectoId, prUrl, headSha: plan.headSha, n: plan.n, ronda: plan.ronda, intento: plan.intento, desde: todayInMerida() }

@@ -182,14 +182,14 @@ describe('una sola sesión por paso (ORD-POS-039)', () => {
     expect([...(await e.service.lanzamientosPorClave([`ORD-POS-099|revisar|${HEAD}|1`])).values()]).toEqual([{ tipo: 'reservada' }])
   })
 
-  it.each(['https://evil.example/code/session_1', 'javascript:alert(1)', 'https://claude.ai/code/session_1 x', 'xhttps://claude.ai/code/session_1'])('SESION %j en AUDITORIA: sin enlace, resultado incierto y no dispara (ORD-POS-041)', async (sesion) => {
+  it.each(['https://evil.example/code/session_1', 'javascript:alert(1)', 'https://claude.ai/code/session_1 x', 'xhttps://claude.ai/code/session_1'])('SESION %j en AUDITORIA: sin enlace, sesión no válida y no dispara (ORD-POS-041, 048)', async (sesion) => {
     const e = escenario()
     await e.lanzar('revisar')
     const clave = `ORD-POS-099|revisar|${HEAD}|1`
     expect(await e.service.lanzamientosPorClave([clave])).toEqual(new Map([[clave, { tipo: 'lanzada', sesion: 'https://claude.ai/code/session_1' }]]))
     // Edición manual de la hoja: SESION deja de ser una sesión de claude.ai/code.
     for (const [i, fila] of (await e.store.readTable('AUDITORIA')).entries()) if (fila.includes('https://claude.ai/code/session_1')) await e.store.writeRow('AUDITORIA', i + 1, fila.map((c) => c === 'https://claude.ai/code/session_1' ? sesion : c))
-    expect([...(await e.service.lanzamientosPorClave([clave])).values()]).toEqual([{ tipo: 'reservada' }])
+    expect([...(await e.service.lanzamientosPorClave([clave])).values()]).toEqual([{ tipo: 'sesion-invalida' }])
     expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'resultado-incierto' })
     expect(e.fires).toHaveLength(1)
   })
