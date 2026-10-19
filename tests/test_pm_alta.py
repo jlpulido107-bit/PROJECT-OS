@@ -97,6 +97,15 @@ class TestPmAlta(unittest.TestCase):
         self.assertEqual(self.ejecutar("tareas", "--repetir").returncode, 0)
         self.assertEqual(self.enviado(), primero)
 
+    def test_409_conserva_el_cuerpo_para_repetir(self):
+        r = self.ejecutar(codigo="409")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("resultado incierto", r.stderr)
+        primero = self.enviado()
+        self.assertFalse((self.tmp / "tarea.rechazado.json").exists())
+        self.assertEqual(self.ejecutar("tareas", "--repetir").returncode, 0)
+        self.assertEqual(self.enviado()["requestId"], primero["requestId"])
+
     def test_evidencia_url_de_mas_de_500(self):
         self.escribir({"proyectoId": "POS", "asunto": "a", "decision": "d", "justificacion": "j", "responsable": "r",
                        "evidenciaUrl": "https://x.example/" + "a" * 483})

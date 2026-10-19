@@ -49,6 +49,8 @@ echo "HTTP $codigo"; cat "$respuesta"; echo
 case "$codigo" in
   2??) ;;
   3??) echo "Error: redirección inesperada (HTTP $codigo)" >&2; exit 1 ;;
+  # 409 también llega tras escribir (verificacion-fallida, auditoria-inconsistente, estado-divergente).
+  409) echo "HTTP 409: resultado incierto: relee la hoja antes de repetir; si no hay fila, usa --repetir (mismo requestId). Se conserva $enviado" >&2; exit 1 ;;
   4??) rechazado="${enviado%.enviado.json}.rechazado.json"; mv -f "$enviado" "$rechazado"
     echo "Rechazada (HTTP $codigo): no se escribió nada. $enviado pasó a $rechazado; corrige $archivo y reenvíalo (requestId nuevo)" >&2; exit 1 ;;
   *) echo "Error HTTP $codigo: se conserva $enviado para --repetir" >&2; exit 1 ;;
