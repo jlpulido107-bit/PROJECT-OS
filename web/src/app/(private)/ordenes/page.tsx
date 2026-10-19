@@ -7,6 +7,9 @@ import { githubClient } from '@/lib/operations/dispatch'
 import { routineClient, rutinasSupervision, type RutinasSupervision } from '@/lib/operations/claude-routine'
 import { dictamenDeOrden, urlComentario } from '@/lib/operations/dictamenes'
 import { textoParaEjecutarDeOrden } from '@/lib/operations/github'
+import { claveLanzamiento } from '@/lib/operations/revision'
+import { operationsService } from '@/lib/operations/runtime'
+import type { EstadoLanzamiento } from '@/lib/operations/service'
 import type { EvaluacionDictamen } from '@/lib/supervision/dictamen'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
@@ -39,20 +42,27 @@ function DictamenFila({ prUrl, ev }: { prUrl: string; ev: EvaluacionDictamen | n
   )
 }
 
-/** Un solo botón según el dictamen del PR (ORD-POS-037); sin la rutina configurada o con riesgo ALTO no aparece. */
-function botonSupervision(ev: EvaluacionDictamen | null | undefined, rutinas: RutinasSupervision) {
+type Supervision = { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean }
+
+/**
+ * Un solo botón según el dictamen del PR (ORD-POS-037); sin la rutina configurada o con riesgo ALTO no aparece. Si el
+ * paso ya tiene lanzamiento o reserva vigente en AUDITORIA (ORD-POS-039), en lugar del botón va la sesión o «incierto».
+ */
+function botonSupervision(ordenId: string, ev: EvaluacionDictamen | null | undefined, rutinas: RutinasSupervision, lanzamientos: Map<string, EstadoLanzamiento>): Supervision | undefined {
   const plan = ev?.plan
   if (!plan) return undefined
   const [accion, etiqueta, rutina] = plan.tipo === 'CORREGIR' ? ['corregir', 'Pedir corrección', rutinas.corregir] as const
     : plan.tipo === 'SEGUNDO' ? ['revisar', 'Lanzar segundo revisor', rutinas.segundo] as const
     : ['revisar', 'Lanzar revisión', rutinas.revisar] as const
-  return rutina ? { accion, etiqueta, headSha: plan.headSha } : undefined
+  if (!rutina) return undefined
+  const previo = lanzamientos.get(claveLanzamiento(ordenId, plan))
+  return { accion, etiqueta, headSha: plan.headSha, sesion: previo?.tipo === 'lanzada' ? previo.sesion : undefined, incierto: previo?.tipo === 'reservada' }
 }
 
 function OrdenCard({ v, canWrite, prDetectado, claude, dictamen, supervision }: {
   v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }
   dictamen?: EvaluacionDictamen | null
-  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string }
+  supervision?: Supervision
   claude?: { configurada: boolean; sesion?: string | null }
 }) {
   const o = v.orden
@@ -138,6 +148,11 @@ export default async function OrdenesPage() {
   await Promise.all(data.ordenes.filter((o) => o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
     dictamenes.set(o.id, lector ? await dictamenDeOrden(lector, o) : null)
   }))
+  // Lanzamientos y reservas de la clave del plan actual (AUDITORIA, solo para escritores; si falla, se muestra el botón y el servidor decide).
+  const lanzamientos = new Map<string, EstadoLanzamiento>()
+  const claves = [...dictamenes].flatMap(([id, ev]) => ev?.plan ? [claveLanzamiento(id, ev.plan)] : [])
+  const servicio = canWrite && claves.length > 0 ? operationsService() : null
+  if (servicio) for (const [c, e] of await servicio.lanzamientosPorClave(claves).catch(() => new Map<string, EstadoLanzamiento>())) lanzamientos.set(c, e)
 
   return (
     <>
@@ -158,7 +173,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} supervision={botonSupervision(dictamenes.get(v.orden.id), rutinas)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}

@@ -20,8 +20,13 @@ export interface SupervisionInfo {
   sessionUrl?: string
   /** true si se lanzó ahora; false si el mismo requestId ya había lanzado esta sesión. */
   nueva?: boolean
-  /** 'sin-rutina', 'head-cambio', 'sin-accion', 'http-429', 'red', 'auditoria-pendiente'… (nunca cuerpos de respuesta). */
+  /** 'sin-rutina', 'head-cambio', 'sin-accion', 'resultado-incierto', 'http-429', 'red', 'auditoria-pendiente'… (nunca cuerpos de respuesta). */
   codigo?: string
+}
+
+/** Clave de un paso de supervisión (ORD-POS-039): orden + acción + head + correlativo del plan. */
+export function claveLanzamiento(ordenId: string, plan: PlanLanzamiento): string {
+  return `${ordenId}|${plan.tipo === 'CORREGIR' ? 'corregir' : 'revisar'}|${plan.headSha}|${plan.n}`
 }
 
 const enCurso = new Map<string, Promise<SupervisionInfo>>()
@@ -62,6 +67,17 @@ async function lanzarUnaVez(
   if (plan.headSha !== cmd.headEsperado) return { ok: false, codigo: 'head-cambio' }
   const rutina = plan.tipo === 'CORREGIR' ? rutinas.corregir : plan.tipo === 'SEGUNDO' ? rutinas.segundo : rutinas.revisar
   if (!rutina) return { ok: false, codigo: 'sin-rutina' }
+  // Una sola sesión por paso, con cualquier requestId: reserva auditada antes de disparar; si no se puede, no se dispara.
+  const clave = claveLanzamiento(cmd.ordenId, plan)
+  let reserva
+  try {
+    reserva = await service.reservarLanzamiento(cmd.ordenId, clave, ctx)
+  } catch (error) {
+    if (error instanceof OperationError) return { ok: false, codigo: error.code }
+    throw error
+  }
+  if (reserva.tipo === 'lanzada') return { ok: true, sessionUrl: reserva.sesion, nueva: false }
+  if (reserva.tipo === 'reservada') return { ok: false, codigo: 'resultado-incierto' }
   let sessionUrl: string
   try {
     const comun = { ordenId: cmd.ordenId, proyectoId, prUrl, headSha: plan.headSha, n: plan.n, ronda: plan.ronda, intento: plan.intento, desde: todayInMerida() }
@@ -73,7 +89,7 @@ async function lanzarUnaVez(
     return fallo(error)
   }
   try {
-    await service.registrarLanzamiento(op, cmd.requestId, hash, cmd.ordenId, sessionUrl, ctx)
+    await service.registrarLanzamiento(op, cmd.requestId, hash, cmd.ordenId, sessionUrl, ctx, clave)
   } catch (error) {
     // La sesión ya corre: no se pierde el enlace, pero tampoco se finge que quedó auditada.
     console.warn(`[project-os] lanzamiento sin auditoría: ${error instanceof OperationError ? error.code : 'desconocido'}`)

@@ -641,6 +641,8 @@ const SUPERVISION_TEXTO: Record<string, string> = {
   'sin-accion': 'Ya no toca este paso. Recarga la página.',
   'orden-sin-pr': 'La orden no tiene un PR válido.',
   'http-429': 'Se alcanzó el límite de ejecuciones de la rutina. Espera unos minutos.',
+  'resultado-incierto': 'Ya hay un lanzamiento reservado para este paso sin sesión registrada. Espera o revisa AUDITORIA (caduca a las 2 horas).',
+  'auditoria-fallida': 'No se pudo registrar la reserva en AUDITORIA: no se lanzó nada.',
   'auditoria-pendiente': 'La sesión corre, pero no quedó la fila de AUDITORIA: avisa al propietario de la hoja.',
   red: 'No hubo conexión con Claude. Puedes volver a intentarlo.',
 }
@@ -663,7 +665,7 @@ function SupervisionStatus({ supervision }: { supervision?: EjecucionResult }) {
 /** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
 export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude, supervision }: {
   /** Revisión o corrección que toca (ORD-POS-037) y el head del PR que se vio al cargar. */
-  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string }
+  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean }
   ordenId: string
   estado: string
   canApprove: boolean
@@ -725,7 +727,10 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude,
               : <button type="button" className="button" onClick={() => setMode('pr')} disabled={sending}>Registrar PR…</button>
           ) : null}
           {supervision && (estado === 'PR_ABIERTO' || estado === 'REVISADA')
-            ? primary(supervision.etiqueta, 'Lanzando…', () => void sup.submit({ accion: supervision.accion.toUpperCase(), headEsperado: supervision.headSha }))
+            ? supervision.sesion
+              ? <a className="button" href={supervision.sesion} target="_blank" rel="noopener noreferrer nofollow">{supervision.accion === 'corregir' ? 'Corrección en curso' : 'Revisión en curso'}: ver sesión</a>
+              : supervision.incierto ? <span className="small"><strong>Resultado incierto</strong> (reserva sin sesión registrada; caduca a las 2 horas)</span>
+              : primary(supervision.etiqueta, 'Lanzando…', () => void sup.submit({ accion: supervision.accion.toUpperCase(), headEsperado: supervision.headSha }))
             : null}
           {estado === 'PR_ABIERTO' ? primary('Marcar revisada', 'Guardando…', () => send('REVISAR')) : null}
           {estado === 'REVISADA' ? primary('Cerrar orden', 'Guardando…', () => send('CERRAR')) : null}
