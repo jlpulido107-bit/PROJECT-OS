@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { todayInMerida } from '@/lib/dates'
 import { buildFixtureTabs } from '@/lib/fixtures'
 import { createRoutineClient, rutinasSupervision, RoutineError, textoSupervision, type RutinasSupervision } from '@/lib/operations/claude-routine'
 import { WRITE_HEADERS, type OperationName } from '@/lib/operations/constants'
@@ -85,7 +86,8 @@ describe('lanzar revisión', () => {
     expect(e.fires[0]!.text).toBe([
       'ORDEN_ID: ORD-POS-099', 'REPOSITORIO: jlpulido107-bit/PROJECT-OS', 'PR: 50', `HEAD_ESPERADO: ${HEAD}`, 'ROL: PRIMERO',
       'REVISION_ID: REV-ORD-POS-099-1', 'EJECUCION_ID: EJE-ORD-POS-099-1', 'INTENTO: 1', 'RONDA: 0', 'LIMITE_CONSUMO: 1 USD; 30 min',
-      'AUTORIZACION: propietario; ORD-POS-099; 2026-10-17',
+      // La autorización se fecha con el reloj real (todayInMerida), no con el de la prueba.
+      `AUTORIZACION: propietario; ORD-POS-099; ${todayInMerida()}`,
     ].join('\n'))
     const fila = e.auditoria().find((f) => f.includes('SESION'))!
     expect(e.auditoria().filter((f) => f.includes(`ORD-POS-099|revisar|${HEAD}|1`))).toHaveLength(2)
