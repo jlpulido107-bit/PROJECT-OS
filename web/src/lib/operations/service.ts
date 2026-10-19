@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { todayInMerida } from '../dates'
 import { CLOSED_TASK_STATES } from '../schema'
 import {
@@ -411,11 +411,34 @@ export class OperationsService {
     })
   }
 
-  /** Constancia del lanzamiento (URL de la sesión) en AUDITORIA. No toca ORDENES_CODEX. */
-  registrarLanzamiento(op: OperationName, requestId: string, hash: string, ordenId: string, sessionUrl: string, ctx: OperationContext): Promise<void> {
+  /** Constancia del lanzamiento (URL de la sesión y clave del paso) en AUDITORIA. No toca ORDENES_CODEX. */
+  registrarLanzamiento(op: OperationName, requestId: string, hash: string, ordenId: string, sessionUrl: string, ctx: OperationContext, clave = ''): Promise<void> {
     return this.exclusive(async () => {
       const audit = await readView(this.store, 'AUDITORIA')
-      await this.auditFirst(op, hash, requestId, ctx, 'ORDENES_CODEX', ordenId, new Map([['SESION', { antes: '', despues: sessionUrl }]]), this.clock(), audit)
+      const diff = new Map([['SESION', { antes: '', despues: sessionUrl }], ...(clave ? [['CLAVE', { antes: '', despues: clave }] as const] : [])])
+      await this.auditFirst(op, hash, requestId, ctx, 'ORDENES_CODEX', ordenId, diff, this.clock(), audit)
+    })
+  }
+
+  /** Lanzamiento o reserva vigente de cada clave (orden|acción|head|n), con cualquier requestId (ORD-POS-039). */
+  async lanzamientosPorClave(claves: string[]): Promise<Map<string, EstadoLanzamiento>> {
+    const ops = parseAudit(await readView(this.store, 'AUDITORIA'))
+    return new Map(claves.map((c) => [c, estadoLanzamiento(ops, c, this.clock())]))
+  }
+
+  /**
+   * Reserva auditada antes de disparar una rutina (ORD-POS-039): si la clave ya tiene lanzamiento o una reserva vigente,
+   * no reserva. Si la escritura falla, lanza OperationError y no se dispara nada. Serializa solo este proceso (contrato §6).
+   */
+  reservarLanzamiento(ordenId: string, clave: string, ctx: OperationContext): Promise<EstadoLanzamiento> {
+    return this.exclusive(async () => {
+      const audit = await readView(this.store, 'AUDITORIA')
+      const now = this.clock()
+      const previo = estadoLanzamiento(parseAudit(audit), clave, now)
+      if (previo.tipo !== 'libre') return previo
+      const diff = new Map([['CLAVE', { antes: '', despues: clave }], ['RESERVA', { antes: '', despues: now.toISOString() }]])
+      await this.auditFirst('orden.supervision_reservar', payloadHash('orden.supervision_reservar', { clave }), randomUUID(), ctx, 'ORDENES_CODEX', ordenId, diff, now, audit)
+      return { tipo: 'libre' }
     })
   }
 
@@ -438,7 +461,7 @@ export class OperationsService {
     // Auditorías incompletas o contradictorias: nunca se dan por conciliadas.
     for (const op of ops) if (op.integridad !== 'completa') item(op, op.integridad === 'parcial' ? 'auditoria-parcial' : 'auditoria-inconsistente')
     // Los lanzamientos de rutinas dejan constancia pero no cambian la orden: no hay efecto que conciliar.
-    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.(revisar|corregir)_lanzar$/.test(op.operacion))
+    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.((revisar|corregir)_lanzar|supervision_reservar)$/.test(op.operacion))
     // Actualización perdida: dos ediciones auditadas parten de la misma VERSION del mismo registro
     // (posible solo sin CAS entre instancias; contrato §6). La segunda pisó a la primera.
     const transitions = new Map<string, AuditedOperation[]>()
@@ -729,6 +752,22 @@ export function parseAudit(audit: TableView): AuditedOperation[] {
     }
     return op
   })
+}
+
+export type EstadoLanzamiento = { tipo: 'lanzada'; sesion: string } | { tipo: 'reservada' } | { tipo: 'libre' }
+/** Una reserva sin lanzamiento caduca a las 2 horas (ORD-POS-039). */
+export const RESERVA_MS = 2 * 60 * 60 * 1000
+
+function estadoLanzamiento(ops: AuditedOperation[], clave: string, now: Date): EstadoLanzamiento {
+  const conClave = ops.filter((o) => o.integridad === 'completa' && o.fields.get('CLAVE')?.despues === clave)
+  const lanzada = conClave.find((o) => /^orden\.(revisar|corregir)_lanzar$/.test(o.operacion) && o.fields.get('SESION')?.despues)
+  if (lanzada) return { tipo: 'lanzada', sesion: lanzada.fields.get('SESION')!.despues }
+  const vigente = conClave.some((o) => {
+    if (o.operacion !== 'orden.supervision_reservar') return false
+    const t = Date.parse(o.fields.get('RESERVA')?.despues ?? '')
+    return Number.isFinite(t) && now.getTime() - t < RESERVA_MS
+  })
+  return vigente ? { tipo: 'reservada' } : { tipo: 'libre' }
 }
 
 export function todayForCommands(now: Date = new Date()): string {
