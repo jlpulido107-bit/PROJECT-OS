@@ -6,7 +6,7 @@ import {
   WRITE_HEADERS, type EntityTab, type OperationName,
 } from './constants'
 import { OperationError } from './errors'
-import { REPOSITORIOS, repoDeUrl } from './github'
+import { esSesionClaude, REPOSITORIOS, repoDeUrl } from './github'
 import {
   cell, findById, readView, toRecord, toRow, type TableStore, type TableView,
 } from './table-store'
@@ -761,7 +761,8 @@ export const RESERVA_MS = 2 * 60 * 60 * 1000
 function estadoLanzamiento(ops: AuditedOperation[], clave: string, now: Date): EstadoLanzamiento {
   const conClave = ops.filter((o) => o.integridad === 'completa' && o.fields.get('CLAVE')?.despues === clave)
   const lanzada = conClave.find((o) => /^orden\.(revisar|corregir)_lanzar$/.test(o.operacion) && o.fields.get('SESION')?.despues)
-  if (lanzada) return { tipo: 'lanzada', sesion: lanzada.fields.get('SESION')!.despues }
+  // Una SESION que no es de claude.ai/code (p. ej. editada a mano en la hoja) no se enlaza ni libera el paso (ORD-POS-041).
+  if (lanzada) return esSesionClaude(lanzada.fields.get('SESION')!.despues) ? { tipo: 'lanzada', sesion: lanzada.fields.get('SESION')!.despues } : { tipo: 'reservada' }
   const vigente = conClave.some((o) => {
     if (o.operacion !== 'orden.supervision_reservar') return false
     const t = Date.parse(o.fields.get('RESERVA')?.despues ?? '')
