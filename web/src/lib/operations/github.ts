@@ -68,6 +68,12 @@ export class GitHubError extends Error {
   }
 }
 
+/** Código de diagnóstico de un fallo de lectura en GitHub (sin token, URL ni cuerpo; ORD-POS-042). */
+export function codigoFalloGitHub(error: unknown): string {
+  if (error instanceof GitHubError) return typeof error.status === 'number' ? `http-${error.status}` : error.status
+  return error instanceof Error && error.message === 'tiempo' ? 'tiempo' : 'desconocido'
+}
+
 export function repoDe(proyectoId: string): string {
   const repo = REPOSITORIOS[proyectoId]
   if (!repo) throw new GitHubError('repo-no-permitido')

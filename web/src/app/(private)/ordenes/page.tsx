@@ -5,8 +5,8 @@ import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Te
 import { CopiarParaClaude, OrderActions } from '@/components/operations/forms'
 import { githubClient } from '@/lib/operations/dispatch'
 import { routineClient, rutinasSupervision, type RutinasSupervision } from '@/lib/operations/claude-routine'
-import { dictamenDeOrden, urlComentario } from '@/lib/operations/dictamenes'
-import { textoParaEjecutarDeOrden } from '@/lib/operations/github'
+import { dictamenDeOrden, falloDictamen, urlComentario } from '@/lib/operations/dictamenes'
+import { codigoFalloGitHub, textoParaEjecutarDeOrden } from '@/lib/operations/github'
 import { claveLanzamiento } from '@/lib/operations/revision'
 import { operationsService } from '@/lib/operations/runtime'
 import type { EstadoLanzamiento } from '@/lib/operations/service'
@@ -29,8 +29,8 @@ const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 const SIN_DICTAMEN = { anterior: 'Dictamen de un head anterior', invalido: 'Dictamen no válido', ninguno: 'Sin dictamen del head actual' } as const
 
 /** Dictamen vigente del PR (texto plano: solo campos validados, nunca el contenido del comentario). */
-function DictamenFila({ prUrl, ev }: { prUrl: string; ev: EvaluacionDictamen | null | undefined }) {
-  if (!ev) return <>Sin datos de GitHub</>
+function DictamenFila({ prUrl, ev, fallo }: { prUrl: string; ev: EvaluacionDictamen | null | undefined; fallo?: string | null }) {
+  if (!ev) return <>Sin datos de GitHub{fallo ? ` (${fallo})` : ''}</>
   if (ev.estado.tipo !== 'vigente') return <>{SIN_DICTAMEN[ev.estado.tipo]}</>
   const d = ev.estado.dictamen
   const href = urlComentario(prUrl, d.comentarioId)
@@ -59,8 +59,8 @@ function botonSupervision(ordenId: string, ev: EvaluacionDictamen | null | undef
   return { accion, etiqueta, headSha: plan.headSha, sesion: previo?.tipo === 'lanzada' ? previo.sesion : undefined, incierto: previo?.tipo === 'reservada' }
 }
 
-function OrdenCard({ v, canWrite, prDetectado, claude, dictamen, supervision }: {
-  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }
+function OrdenCard({ v, canWrite, prDetectado, falloPr, claude, dictamen, supervision }: {
+  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }; falloPr?: string
   dictamen?: EvaluacionDictamen | null
   supervision?: Supervision
   claude?: { configurada: boolean; sesion?: string | null }
@@ -84,13 +84,13 @@ function OrdenCard({ v, canWrite, prDetectado, claude, dictamen, supervision }: 
         <div><dt>Siguiente paso</dt><dd>{v.siguiente ? v.siguiente.texto : <span className="muted">—</span>}</dd></div>
         {o.prUrl && dictamen !== undefined ? (
           <>
-            <div><dt>Dictamen</dt><dd><DictamenFila prUrl={o.prUrl} ev={dictamen} /></dd></div>
+            <div><dt>Dictamen</dt><dd><DictamenFila prUrl={o.prUrl} ev={dictamen} fallo={falloPr} /></dd></div>
             {dictamen ? <div><dt>Siguiente (revisión)</dt><dd>{dictamen.siguiente}</dd></div> : null}
           </>
         ) : null}
         <div><dt>Actualizada</dt><dd><DateText value={o.actualizadoEn} /></dd></div>
         <div><dt>Issue</dt><dd>{o.issueUrl ? <ExternalLink href={o.issueUrl}>{o.issueUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin issue</span>}</dd></div>
-        <div><dt>PR</dt><dd>{!o.prUrl && prDetectado ? <><ExternalLink href={prDetectado.url}>{prDetectado.url.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> <Badge tone="info">Detectado: {prDetectado.estado}</Badge></> : o.prUrl ? <ExternalLink href={o.prUrl}>{o.prUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin PR</span>}</dd></div>
+        <div><dt>PR</dt><dd>{!o.prUrl && prDetectado ? <><ExternalLink href={prDetectado.url}>{prDetectado.url.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> <Badge tone="info">Detectado: {prDetectado.estado}</Badge></> : o.prUrl ? <ExternalLink href={o.prUrl}>{o.prUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : falloPr ? <span className="muted">Detección de PR fallida ({falloPr})</span> : <span className="muted">Sin PR</span>}</dd></div>
       </dl>
       <details>
         <summary>Detalle de la orden</summary>
@@ -129,14 +129,18 @@ export default async function OrdenesPage() {
   // Ejecución automática con Claude (F5a): solo si la rutina está configurada; la sesión ya lanzada se lee del issue.
   const rutina = canWrite && routineClient() !== null
   const sesiones = new Map<string, string | null>()
+  const fallos = new Map<string, string>()
   if (client) {
     await Promise.all(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId).map(async (o) => {
       try {
         const pr = await client.prDeOrden(o.proyectoId!, o.id)
         if (pr) prs.set(o.id, pr)
         else if (rutina && o.issueUrl) sesiones.set(o.id, await client.lanzamientoPrevio(o.proyectoId!, o.issueUrl))
-      } catch {
-        // Sin detalles: el panel sigue funcionando sin la detección.
+      } catch (error) {
+        // El panel sigue funcionando sin la detección; queda el código, nunca el token ni el cuerpo.
+        const codigo = codigoFalloGitHub(error)
+        console.warn(`[project-os] detección de PR fallida: ${codigo}`)
+        fallos.set(o.id, codigo)
       }
     }))
   }
@@ -147,6 +151,8 @@ export default async function OrdenesPage() {
   const rutinas: RutinasSupervision = canWrite ? rutinasSupervision() : { revisar: null, segundo: null, corregir: null }
   await Promise.all(data.ordenes.filter((o) => o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
     dictamenes.set(o.id, lector ? await dictamenDeOrden(lector, o) : null)
+    const fallo = falloDictamen(o.prUrl!)
+    if (fallo) fallos.set(o.id, fallo)
   }))
   // Lanzamientos y reservas de la clave del plan actual (AUDITORIA, solo para escritores; si falla, se muestra el botón y el servidor decide).
   const lanzamientos = new Map<string, EstadoLanzamiento>()
@@ -173,7 +179,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} falloPr={fallos.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}
