@@ -11,6 +11,9 @@ import type { Veredicto } from './types'
 export const MARCA_DICTAMEN = '<!-- project-os:dictamen-revisor -->'
 const BLOQUE_JSON = /```json\r?\n([\s\S]*?)\r?\n```/
 const RONDAS_MAX = 2
+/** REV-/EJE-<orden>-<n> llega hasta 999 (textoSupervision rechaza más). */
+const N_MAX = 999
+export const CORRELATIVO_AGOTADO = 'Correlativo de revisión agotado (máximo 999)'
 
 export interface DatosPr { headSha: string; comentarios: Array<{ id: number; body: string }> }
 
@@ -39,7 +42,7 @@ export interface PlanLanzamiento {
   comentarioId?: number
 }
 
-export interface EvaluacionDictamen { estado: EstadoDictamen; siguiente: string; plan: PlanLanzamiento | null }
+export interface EvaluacionDictamen { estado: EstadoDictamen; siguiente: string; plan: PlanLanzamiento | null; agotado?: true }
 
 export interface OrdenDictamen { id: string; riesgo: string | null; criterios: string | null }
 export interface PrDictamen { repo: string; numero: number }
@@ -104,6 +107,11 @@ function planDe(
 }
 
 export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
+  const ev = evaluar(datos, orden, pr)
+  return ev.plan && ev.plan.n > N_MAX ? { ...ev, siguiente: CORRELATIVO_AGOTADO, plan: null, agotado: true } : ev
+}
+
+function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
   const marcados = datos.comentarios.filter((c) => tieneMarca(c.body))
   const validos: Valido[] = []
   marcados.forEach((c, indice) => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { todayInMerida } from '@/lib/dates'
 import { buildFixtureTabs } from '@/lib/fixtures'
 import { createRoutineClient, rutinasSupervision, RoutineError, textoSupervision, type RutinasSupervision } from '@/lib/operations/claude-routine'
 import { WRITE_HEADERS, type OperationName } from '@/lib/operations/constants'
@@ -11,7 +12,7 @@ import { OperationsService } from '@/lib/operations/service'
 import { InMemoryTableStore } from '@/lib/operations/table-store'
 import { parseLanzarSupervision } from '@/lib/operations/validation'
 import { extraerCriterios } from '@/lib/supervision/criterios'
-import { MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
+import { CORRELATIVO_AGOTADO, evaluarDictamen, MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
 
 /** «Lanzar revisión» y «Pedir corrección» (ORD-POS-037) con GitHub y rutinas simulados: sin red. */
 
@@ -85,7 +86,8 @@ describe('lanzar revisión', () => {
     expect(e.fires[0]!.text).toBe([
       'ORDEN_ID: ORD-POS-099', 'REPOSITORIO: jlpulido107-bit/PROJECT-OS', 'PR: 50', `HEAD_ESPERADO: ${HEAD}`, 'ROL: PRIMERO',
       'REVISION_ID: REV-ORD-POS-099-1', 'EJECUCION_ID: EJE-ORD-POS-099-1', 'INTENTO: 1', 'RONDA: 0', 'LIMITE_CONSUMO: 1 USD; 30 min',
-      'AUTORIZACION: propietario; ORD-POS-099; 2026-10-17',
+      // La autorización se fecha con el reloj real (todayInMerida), no con el de la prueba.
+      `AUTORIZACION: propietario; ORD-POS-099; ${todayInMerida()}`,
     ].join('\n'))
     const fila = e.auditoria().find((f) => f.includes('SESION'))!
     expect(e.auditoria().filter((f) => f.includes(`ORD-POS-099|revisar|${HEAD}|1`))).toHaveLength(2)
@@ -127,6 +129,17 @@ describe('lanzar revisión', () => {
     expect(e.fires[0]!.rutina).toBe('segundo')
     expect(e.fires[0]!.text).toContain('ROL: SEGUNDO')
     expect(e.fires[0]!.text).toContain('REVISION_ID: REV-ORD-POS-099-2')
+  })
+
+  it('correlativo REV-…-999: sin botón, lo explica y el servidor no dispara', async () => {
+    const r999 = reporte({ revisionId: 'REV-ORD-POS-099-999', ejecucionId: 'EJE-ORD-POS-099-999' })
+    const ev = evaluarDictamen({ headSha: HEAD, comentarios: [{ id: 1, ...comentario(r999) }] }, { id: 'ORD-POS-099', riesgo: 'MEDIO', criterios: CRITERIOS }, { repo: 'jlpulido107-bit/PROJECT-OS', numero: 50 })
+    expect(ev).toMatchObject({ siguiente: CORRELATIVO_AGOTADO, plan: null, agotado: true })
+    expect(CORRELATIVO_AGOTADO).toBe('Correlativo de revisión agotado (máximo 999)')
+    const e = escenario({ comentarios: [comentario(r999)] })
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'correlativo-agotado' })
+    expect(e.fires).toHaveLength(0)
+    expect(await escenario({ comentarios: [comentario(reporte({ revisionId: 'REV-ORD-POS-099-998', ejecucionId: 'EJE-ORD-POS-099-998' }))] }).lanzar('revisar')).toMatchObject({ ok: true })
   })
 
   it('CAMBIOS con ronda menor que 2: pide corrección con la URL del comentario; con ronda 2 no hay botón', async () => {

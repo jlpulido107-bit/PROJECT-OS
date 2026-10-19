@@ -67,10 +67,60 @@ class TestPmAlta(unittest.TestCase):
         self.assertEqual([a for a in args if a.startswith("http")], [URL])
         self.assertNotIn("authorization", " ".join(args).lower())
 
-    def test_http_de_error_sale_distinto_de_0(self):
+    def test_2xx_conserva_el_cuerpo_enviado(self):
+        r = self.ejecutar(codigo="201")
+        self.assertEqual(r.returncode, 0)
+        self.assertTrue((self.tmp / "tarea.enviado.json").exists())
+
+    def test_3xx_es_redireccion_inesperada(self):
+        r = self.ejecutar(codigo="302")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("redirección inesperada", r.stderr)
+        self.assertTrue((self.tmp / "tarea.enviado.json").exists())
+
+    def test_4xx_renombra_a_rechazado_y_permite_reenviar(self):
         r = self.ejecutar(codigo="400")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("HTTP 400", r.stdout)
+        self.assertIn("tarea.rechazado.json", r.stderr)
+        self.assertFalse((self.tmp / "tarea.enviado.json").exists())
+        rechazado = json.loads((self.tmp / "tarea.rechazado.json").read_text())
+        self.assertEqual(self.ejecutar().returncode, 0)  # reenvío del JSON corregido, sin --repetir
+        self.assertNotEqual(self.enviado()["requestId"], rechazado["requestId"])
+
+    def test_5xx_conserva_el_cuerpo_para_repetir(self):
+        r = self.ejecutar(codigo="503")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--repetir", r.stderr)
+        primero = self.enviado()
+        self.assertFalse((self.tmp / "tarea.rechazado.json").exists())
+        self.assertEqual(self.ejecutar("tareas", "--repetir").returncode, 0)
+        self.assertEqual(self.enviado(), primero)
+
+    def test_409_conserva_el_cuerpo_para_repetir(self):
+        r = self.ejecutar(codigo="409")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("resultado incierto", r.stderr)
+        primero = self.enviado()
+        self.assertFalse((self.tmp / "tarea.rechazado.json").exists())
+        self.assertEqual(self.ejecutar("tareas", "--repetir").returncode, 0)
+        self.assertEqual(self.enviado()["requestId"], primero["requestId"])
+
+    def test_evidencia_url_de_mas_de_500(self):
+        self.escribir({"proyectoId": "POS", "asunto": "a", "decision": "d", "justificacion": "j", "responsable": "r",
+                       "evidenciaUrl": "https://x.example/" + "a" * 483})
+        r = self.ejecutar("decisiones")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("evidenciaUrl excede 500", r.stderr)
+        self.assertFalse((self.tmp / "args").exists())
+
+    def test_cuerpo_de_mas_de_16_kib(self):
+        self.escribir({**TAREA, "extra": "x" * 16384})
+        r = self.ejecutar()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("excede 16 KiB", r.stderr)
+        self.assertFalse((self.tmp / "args").exists())
+        self.assertFalse((self.tmp / "tarea.enviado.json").exists())
 
 
 if __name__ == "__main__":

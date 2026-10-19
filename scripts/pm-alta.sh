@@ -14,7 +14,7 @@ tipo=$1; archivo=$2; repetir=${3:-}
 # Límites de longitud por tipo (web/src/lib/operations/constants.ts, LIMITS).
 case "$tipo" in
   tareas) limites='{"titulo":160,"descripcion":2000,"criterioTerminado":1000,"responsable":80}' ;;
-  decisiones) limites='{"asunto":200,"decision":2000,"justificacion":2000,"responsable":80}' ;;
+  decisiones) limites='{"asunto":200,"decision":2000,"justificacion":2000,"responsable":80,"evidenciaUrl":500}' ;;
   ordenes) limites='{"titulo":160,"objetivo":2000,"criterios":2000,"fueraDeAlcance":2000,"comoProbar":2000,"contexto":2000}' ;;
   *) echo "Tipo no permitido: $tipo (solo tareas, decisiones u ordenes)" >&2; exit 2 ;;
 esac
@@ -35,6 +35,9 @@ else
   [ -z "$excedidos" ] || { echo "$excedidos" >&2; exit 2; }
   requestId=$(python3 -c 'import uuid; print(uuid.uuid4())')
   jq --arg r "$requestId" '. + {requestId: $r}' "$archivo" > "$enviado"
+  bytes=$(wc -c < "$enviado")
+  # Tope del cuerpo de la API (LIMITS.bodyBytes, 16 KiB).
+  [ "$bytes" -le 16384 ] || { rm -f "$enviado"; echo "El cuerpo ocupa $bytes bytes: excede 16 KiB (16384); no se envió" >&2; exit 2; }
   cuerpo=$enviado
 fi
 
@@ -43,4 +46,12 @@ respuesta=$(mktemp); trap 'rm -f "$respuesta"' EXIT
 codigo=$(curl -sS --max-time 60 -o "$respuesta" -w '%{http_code}' -X POST "$DASHBOARD/api/operaciones/$tipo" \
   -H 'Content-Type: application/json' --data-binary @"$cuerpo") || { echo "Fallo de transporte: el resultado es incierto" >&2; exit 1; }
 echo "HTTP $codigo"; cat "$respuesta"; echo
-[ "$codigo" -ge 200 ] && [ "$codigo" -lt 400 ]
+case "$codigo" in
+  2??) ;;
+  3??) echo "Error: redirección inesperada (HTTP $codigo)" >&2; exit 1 ;;
+  # 409 también llega tras escribir (verificacion-fallida, auditoria-inconsistente, estado-divergente).
+  409) echo "HTTP 409: resultado incierto: relee la hoja antes de repetir; si no hay fila, usa --repetir (mismo requestId). Se conserva $enviado" >&2; exit 1 ;;
+  4??) rechazado="${enviado%.enviado.json}.rechazado.json"; mv -f "$enviado" "$rechazado"
+    echo "Rechazada (HTTP $codigo): no se escribió nada. $enviado pasó a $rechazado; corrige $archivo y reenvíalo (requestId nuevo)" >&2; exit 1 ;;
+  *) echo "Error HTTP $codigo: se conserva $enviado para --repetir" >&2; exit 1 ;;
+esac
