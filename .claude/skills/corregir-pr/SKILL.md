@@ -48,7 +48,7 @@ Para órdenes POS, `REPO_DIR` es el checkout de PROJECT-OS y nada cambia.
 
 Lee el comentario. Debe estar en el issue de la orden (el de título `[ORDEN_ID]…`) o en el PR validado. Sus
 publicaciones (las del propietario y las del revisor) salen con la cuenta `jlpulido107-bit`, por eso el autor **no
-basta** para distinguirlos. Es válido solo en uno de estos dos casos:
+basta** para distinguirlos. Es válido solo en uno de estos tres casos:
 
 - **A. Comentario del propietario sin marca.** Autor `jlpulido107-bit` y la primera línea **no** es la marca del revisor.
 - **B. Dictamen marcado del revisor.** Autor `jlpulido107-bit`, en el **PR**, y se cumple todo esto:
@@ -59,8 +59,12 @@ basta** para distinguirlos. Es válido solo en uno de estos dos casos:
   4. `hashCriterios` es igual al SHA-256 de los criterios del issue de la orden hoy: extráelos con `extraerCriterios` de
      `web/src/lib/supervision/criterios.ts` y calcula `hashCriterios` de `web/src/lib/supervision/key.ts` (script
      temporal fuera del repositorio, p. ej. con `npx tsx`). Si cambiaron los criterios, el dictamen ya no vale.
-  5. Su `veredicto` es `CAMBIOS` (un `CONFORME` o `INCONCLUSO` no pide correcciones). Los hallazgos son los de
-     `hallazgos` con `bloquea: true`.
+  5. Su `veredicto` es `CAMBIOS` (un `CONFORME` solo vale en el caso C; un `INCONCLUSO` no pide correcciones). Los
+     hallazgos son los de `hallazgos` con `bloquea: true`.
+- **C. Solo fusión.** Dictamen marcado del revisor que cumple B.1 a B.4 con `veredicto` `CONFORME`. Mira el PR en
+  GitHub: si **no** está en conflicto con su base (`mergeable_state` distinto de `dirty`), comenta en el PR que no hay
+  conflicto y nada que fusionar, y termina sin tocar nada. Si lo está, sigue [Solo fusión](#solo-fusión-caso-c) en
+  lugar de «Qué atiendes» y «Aplicar».
 
 Cualquier otro comentario se **rechaza**: comenta en el PR que los hallazgos no son válidos y el motivo (autor, marca,
 orden, head, hash o JSON), y termina sin tocar nada. Lee también el issue de la orden: sus criterios y su «Fuera de
@@ -86,6 +90,19 @@ alcance» son los que mandan.
    corrígelo antes de terminar.
 4. Empuja **un commit nuevo a la misma rama** `claude/…` del PR con `git -C REPO_DIR push origin <rama>`; nunca a otro
    remote, otra rama ni otro repositorio.
+
+## Solo fusión (caso C)
+
+No atiendes hallazgos ni cambias nada fuera de los conflictos: el dictamen CONFORME no pide correcciones.
+
+1. En `REPO_DIR`, haz checkout de la rama del PR en `HEAD_ESPERADO` (verifica `git -C REPO_DIR rev-parse HEAD`).
+2. `git -C REPO_DIR fetch origin <base>` y `git -C REPO_DIR merge --no-ff origin/<base>`: un **merge commit**, nunca
+   rebase ni force-push.
+3. Resuelve cada conflicto **conservando ambos comportamientos** (el de la base y el del PR). Si no se puede sin perder
+   uno, `git -C REPO_DIR merge --abort`, comenta en el PR qué choca y termina sin empujar.
+4. Corre las pruebas como en «Aplicar» (paso 3) y empuja como en «Aplicar» (paso 4).
+5. Cuenta como **ronda** (máximo 2). En el resultado, di que el nuevo head necesita una revisión **DELTA** antes de
+   fusionar: el CONFORME anterior era de otro head.
 
 ## Resultado
 
