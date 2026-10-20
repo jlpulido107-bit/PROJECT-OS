@@ -180,6 +180,15 @@ describe('agente PM: proxy → ruta → servicio', () => {
     expect(await rows()).toBe(before)
   })
 
+  it('el agente PM no puede usar el cierre asistido (ORD-POS-046): 403 operacion-no-permitida sin filas', async () => {
+    const before = await rows()
+    const request = build('PATCH', '/api/operaciones/ordenes/ORD-POS-902', { requestId: uuid(), accion: 'CERRAR_FUSIONADO', expectedEstado: 'PR_ABIERTO' })
+    expect(await patchOrden(request, params('ORD-POS-902'))).toMatchObject({ status: 403 })
+    const again = build('PATCH', '/api/operaciones/ordenes/ORD-POS-902', { requestId: uuid(), accion: 'CERRAR_FUSIONADO', expectedEstado: 'PR_ABIERTO' })
+    expect(await (await patchOrden(again, params('ORD-POS-902'))).json()).toMatchObject({ error: { codigo: 'operacion-no-permitida' } })
+    expect(await rows()).toBe(before)
+  })
+
   it('exceder el límite propio del agente → 429 sin filas nuevas', async () => {
     for (let i = 0; i < 5; i++) {
       expect((await through(postTarea as Handler, build('POST', '/api/operaciones/tareas', { ...task, requestId: uuid() }))).status).toBe(201)

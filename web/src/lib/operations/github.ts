@@ -296,6 +296,23 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       }
       return { url: pr.html_url, number: pr.number, estado: pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado', headSha, baseSha }
     },
+
+    /**
+     * PR para el cierre asistido (ORD-POS-046): el registrado (PR_URL) o, sin él, el detectado por título. Dice si está
+     * fusionado y si su título empieza por `[ORDEN_ID]`. Solo lectura.
+     */
+    async prParaCierre(proyectoId: string, ordenId: string, prUrl: string | null): Promise<{ url: string; fusionado: boolean; deLaOrden: boolean } | null> {
+      if (!prUrl) {
+        const pr = await this.prDeOrden(proyectoId, ordenId)
+        return pr && { url: pr.url, fusionado: pr.estado === 'fusionado', deLaOrden: true }
+      }
+      const repo = repoDe(proyectoId)
+      const n = /\/pull\/(\d{1,7})$/.exec(prUrl)?.[1]
+      if (repoDeUrl(prUrl, 'pull') !== repo || !n) throw new GitHubError('repo-no-permitido')
+      const pr = await call<{ title?: unknown; merged_at?: unknown }>('GET', `/repos/${repo}/pulls/${n}`)
+      if (typeof pr.title !== 'string') throw new GitHubError('respuesta-invalida')
+      return { url: prUrl, fusionado: typeof pr.merged_at === 'string' && pr.merged_at !== '', deLaOrden: pr.title.startsWith(`[${ordenId}]`) }
+    },
   }
 }
 

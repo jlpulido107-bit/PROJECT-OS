@@ -32,6 +32,8 @@ export type OperationErrorCode =
   | 'verificacion-fallida'
   | 'auditoria-inconsistente'
   | 'estado-divergente'
+  | 'pr-no-fusionado'
+  | 'github-no-disponible'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -66,6 +68,8 @@ const STATUS: Record<OperationErrorCode, number> = {
   'verificacion-fallida': 409,
   'auditoria-inconsistente': 409,
   'estado-divergente': 409,
+  'pr-no-fusionado': 422,
+  'github-no-disponible': 503,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -101,6 +105,8 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'verificacion-fallida': 'La escritura no se pudo verificar; queda pendiente de conciliación.',
   'auditoria-inconsistente': 'La auditoría de esta solicitud está incompleta o es contradictoria; queda para revisión manual.',
   'estado-divergente': 'El registro no coincide con lo auditado (cambio sin operación auditada); revisa la conciliación.',
+  'pr-no-fusionado': 'GitHub no confirma un PR fusionado con el ID de la orden en el título; no se cerró nada.',
+  'github-no-disponible': 'No se pudo leer el PR en GitHub; no se cerró nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

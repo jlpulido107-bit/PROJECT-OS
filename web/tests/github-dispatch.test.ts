@@ -53,6 +53,7 @@ function fakeGitHub(opts: { failCreate?: number } = {}) {
       return json(201, {})
     }
     if (method === 'GET' && /\/pulls$/.test(u.pathname)) return json(200, prs)
+    if (method === 'GET' && (m = /\/pulls\/(\d+)$/.exec(u.pathname))) return json(200, prs.find((p) => p.number === Number(m![1])) ?? {})
     return json(404, {})
   }) as unknown as typeof fetch
   return { client: createGitHubClient('token-falso', fetchImpl), issues, prs, calls }
@@ -257,6 +258,75 @@ function fakeRoutine(opts: { status?: number } = {}) {
   }) as unknown as typeof fetch
   return { client: createRoutineClient('trig_01ABCdef234', 'token-rutina', fetchImpl), fires }
 }
+
+describe('cierre asistido de una orden con el PR fusionado (ORD-POS-046)', () => {
+  const PR = 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/7'
+  const pr = (o: { title?: string; state?: string; merged_at?: string | null } = {}) => ({
+    number: 7, title: '[ORD-POS-901] Prueba', html_url: PR, state: 'closed', merged_at: '2026-10-14T10:00:00Z', user: { login: ME },
+    head: { sha: HEAD, repo: { full_name: 'jlpulido107-bit/PROJECT-OS' } }, base: { sha: BASE }, ...o,
+  })
+  const cerrar = (service: OperationsService, gh: ReturnType<typeof fakeGitHub>, expectedEstado: string, requestId = uuid()) =>
+    transitionWithDispatch(service, parseOrderTransition('ORD-POS-901', { accion: 'CERRAR_FUSIONADO', expectedEstado, requestId }), ACTOR, gh.client)
+  async function enviada() {
+    const { store, service } = setup()
+    const gh = fakeGitHub()
+    await transitionWithDispatch(service, parseOrderTransition('ORD-POS-901', { accion: 'APROBAR', expectedEstado: 'BORRADOR', requestId: uuid() }), ACTOR, gh.client)
+    return { store, service, gh }
+  }
+  const auditoria = async (store: InMemoryTableStore) => (await readView(store, 'AUDITORIA')).rows.map((r) => r.cells)
+
+  it('fusionado y detectado: cierra desde ENVIADA en una sola operación auditada con un requestId', async () => {
+    const { store, service, gh } = await enviada()
+    gh.prs.push(pr())
+    const antes = (await auditoria(store)).length
+    const requestId = uuid()
+    expect(await cerrar(service, gh, 'ENVIADA', requestId)).toMatchObject({ operacion: 'orden.cerrar_fusionado', repetida: false })
+    expect(await orden(store, 'ORD-POS-901')).toMatchObject({ ESTADO: 'CERRADA', PR_URL: PR })
+    const filas = (await auditoria(store)).slice(antes)
+    expect(filas.length).toBeGreaterThanOrEqual(2)
+    expect(filas.every((f) => f.some((c) => String(c).includes(`op=orden.cerrar_fusionado;req=${requestId}`)))).toBe(true)
+    expect((await service.reconcile()).pendientes).toEqual([])
+    // Repetir el requestId no duplica filas ni cambia nada.
+    expect(await cerrar(service, gh, 'ENVIADA', requestId)).toMatchObject({ repetida: true })
+    expect((await auditoria(store)).length).toBe(antes + filas.length)
+  })
+
+  it('fusionado y registrado: cierra desde PR_ABIERTO o REVISADA releyendo el PR registrado', async () => {
+    for (const estado of ['PR_ABIERTO', 'REVISADA']) {
+      const { store, service, gh } = await enviada()
+      gh.prs.push(pr())
+      await service.transitionOrder(parseOrderTransition('ORD-POS-901', { accion: 'REGISTRAR_PR', expectedEstado: 'ENVIADA', url: PR, requestId: uuid() }), ACTOR)
+      if (estado === 'REVISADA') await service.transitionOrder(parseOrderTransition('ORD-POS-901', { accion: 'REVISAR', expectedEstado: 'PR_ABIERTO', requestId: uuid() }), ACTOR)
+      await cerrar(service, gh, estado)
+      expect((await orden(store, 'ORD-POS-901')).ESTADO).toBe('CERRADA')
+      expect(gh.calls).toContain('GET /repos/jlpulido107-bit/PROJECT-OS/pulls/7')
+    }
+  })
+
+  it.each([
+    ['abierto', { state: 'open', merged_at: null }],
+    ['cerrado sin fusionar', { state: 'closed', merged_at: null }],
+    ['con título de otra orden', { title: '[ORD-POS-999] Otra' }],
+  ])('PR %s: no cierra ni escribe', async (_n, o) => {
+    const { store, service, gh } = await enviada()
+    gh.prs.push(pr(o))
+    await service.transitionOrder(parseOrderTransition('ORD-POS-901', { accion: 'REGISTRAR_PR', expectedEstado: 'ENVIADA', url: PR, requestId: uuid() }), ACTOR)
+    const antes = (await auditoria(store)).length
+    await expect(cerrar(service, gh, 'PR_ABIERTO')).rejects.toMatchObject({ code: 'pr-no-fusionado' })
+    expect((await orden(store, 'ORD-POS-901')).ESTADO).toBe('PR_ABIERTO')
+    expect((await auditoria(store)).length).toBe(antes)
+  })
+
+  it('sin PR, sin token o con GitHub caído no cierra; el cliente no puede dictar la URL', async () => {
+    const { store, service, gh } = await enviada()
+    await expect(cerrar(service, gh, 'ENVIADA')).rejects.toMatchObject({ code: 'pr-no-fusionado' })
+    await expect(transitionWithDispatch(service, parseOrderTransition('ORD-POS-901', { accion: 'CERRAR_FUSIONADO', expectedEstado: 'ENVIADA', requestId: uuid() }), ACTOR, null)).rejects.toMatchObject({ code: 'github-no-disponible' })
+    const caido = createGitHubClient('t', (async () => new Response('{}', { status: 502 })) as unknown as typeof fetch)
+    await expect(transitionWithDispatch(service, parseOrderTransition('ORD-POS-901', { accion: 'CERRAR_FUSIONADO', expectedEstado: 'ENVIADA', requestId: uuid() }), ACTOR, caido)).rejects.toMatchObject({ code: 'github-no-disponible' })
+    expect(() => parseOrderTransition('ORD-POS-901', { accion: 'CERRAR_FUSIONADO', expectedEstado: 'ENVIADA', url: PR, requestId: uuid() })).toThrow()
+    expect((await orden(store, 'ORD-POS-901')).ESTADO).toBe('ENVIADA')
+  })
+})
 
 describe('ejecución automática con Claude (F5a)', () => {
   const approve = () => parseOrderTransition('ORD-POS-901', { accion: 'APROBAR', expectedEstado: 'BORRADOR', requestId: uuid() })

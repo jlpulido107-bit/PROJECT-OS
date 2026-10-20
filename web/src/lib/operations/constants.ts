@@ -54,6 +54,8 @@ export const ORIGIN_PREFIX = 'dashboard-v1.4'
 export type OperationName =
   | 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'
   | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
+  /** Cierre asistido de una orden cuyo PR ya se fusionó (ORD-POS-046). */
+  | 'orden.cerrar_fusionado'
   /** No escribe en la hoja: lanza la rutina de Claude (F5a). */
   | 'orden.ejecutar'
   /** No escriben en la entidad: lanzan una rutina de revisión o de corrección y dejan constancia en AUDITORIA (ORD-POS-037). */
