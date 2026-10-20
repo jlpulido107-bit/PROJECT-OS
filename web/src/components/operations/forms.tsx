@@ -664,7 +664,7 @@ function SupervisionStatus({ supervision }: { supervision?: EjecucionResult }) {
 }
 
 /** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
-export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude, supervision }: {
+export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude, supervision, prFusionado }: {
   /** Revisión o corrección que toca (ORD-POS-037) y el head del PR que se vio al cargar. */
   supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean; sesionInvalida?: boolean }
   ordenId: string
@@ -674,6 +674,8 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude,
   claude?: { configurada: boolean; sesion?: string | null }
   /** URL del PR de la orden detectado en GitHub (solo en ENVIADA). */
   prDetectado?: string
+  /** El PR de la orden ya está fusionado (ORD-POS-046): un solo botón cierra; el servidor lo vuelve a comprobar. */
+  prFusionado?: boolean
 }) {
   const op = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}`, 'PATCH')
   const run = useOperation(`/api/operaciones/ordenes/${encodeURIComponent(ordenId)}/ejecutar`, 'POST')
@@ -708,6 +710,9 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude,
       {sending ? busy : label}
     </button>
   )
+  if (prFusionado && ['ENVIADA', 'PR_ABIERTO', 'REVISADA'].includes(estado)) {
+    return <div className="card-actions">{primary('Cerrar (PR fusionado)', 'Cerrando…', () => send('CERRAR_FUSIONADO'))}<Status state={op.state} /></div>
+  }
   return (
     <div className="card-actions">
       {mode === 'idle' ? (

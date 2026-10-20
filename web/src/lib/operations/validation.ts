@@ -86,7 +86,7 @@ export interface CreateOrderCommand {
   riesgo: string
 }
 
-export type OrderAction = 'aprobar' | 'cancelar' | 'enviar' | 'registrar_pr' | 'revisar' | 'cerrar'
+export type OrderAction = 'aprobar' | 'cancelar' | 'enviar' | 'registrar_pr' | 'revisar' | 'cerrar' | 'cerrar_fusionado'
 
 export interface OrderTransitionCommand {
   requestId: string
@@ -95,7 +95,7 @@ export interface OrderTransitionCommand {
   /** Estado que el propietario vio al decidir (control de concurrencia: ORDENES_CODEX no tiene VERSION). */
   expectedEstado: string
   motivo: string | null
-  /** ISSUE_URL (enviar) o PR_URL (registrar_pr): solo de los repositorios permitidos. */
+  /** ISSUE_URL (enviar) o PR_URL (registrar_pr; en cerrar_fusionado la pone el servidor tras releer GitHub). */
   url: string | null
 }
 
@@ -390,7 +390,7 @@ function motivoCriterios(texto: string): string | null {
   return r.criterios.length < 2 ? 'hay menos de 2 criterios numerados en líneas separadas' : null
 }
 
-const ACCIONES = ['APROBAR', 'CANCELAR', 'ENVIAR', 'REGISTRAR_PR', 'REVISAR', 'CERRAR'] as const
+const ACCIONES = ['APROBAR', 'CANCELAR', 'ENVIAR', 'REGISTRAR_PR', 'REVISAR', 'CERRAR', 'CERRAR_FUSIONADO'] as const
 
 export function parseOrderTransition(ordenId: string, body: unknown): OrderTransitionCommand {
   const input = asObject(body)

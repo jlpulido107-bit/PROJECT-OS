@@ -44,8 +44,8 @@ function botonSupervision(ordenId: string, ev: EvaluacionDictamen | null | undef
   return { accion, etiqueta, headSha: plan.headSha, sesion: previo?.tipo === 'lanzada' ? previo.sesion : undefined, incierto: previo?.tipo === 'reservada', sesionInvalida: previo?.tipo === 'sesion-invalida' }
 }
 
-function OrdenCard({ v, canWrite, prDetectado, falloPr, falloLanzamiento, claude, dictamen, supervision }: {
-  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }; falloPr?: string; falloLanzamiento?: string
+function OrdenCard({ v, canWrite, prDetectado, falloPr, falloLanzamiento, claude, dictamen, supervision, prFusionado }: {
+  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }; falloPr?: string; falloLanzamiento?: string; prFusionado?: boolean
   dictamen?: EvaluacionDictamen | null
   supervision?: Supervision
   claude?: { configurada: boolean; sesion?: string | null }
@@ -90,7 +90,7 @@ function OrdenCard({ v, canWrite, prDetectado, falloPr, falloLanzamiento, claude
       </details>
       {textoOrden ? <CopiarParaClaude ordenId={o.id} texto={textoOrden} /> : null}
       {canWrite && v.estado && v.estado !== 'CERRADA' && v.estado !== 'CANCELADA' ? (
-        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} claude={claude} supervision={supervision} />
+        <OrderActions ordenId={o.id} estado={v.estado} canApprove={v.estado === 'BORRADOR' && v.problemas.length === 0} prDetectado={prDetectado?.url} claude={claude} supervision={supervision} prFusionado={prFusionado} />
       ) : null}
       {v.problemas.length > 0 ? (
         <ul className="list" aria-label={`Problemas de ${o.id}`}>
@@ -121,14 +121,21 @@ export default async function OrdenesPage() {
     mapa.set(id, codigoFalloGitHub(error))
     console.warn(`[project-os] ${texto}: ${mapa.get(id)}`)
   }
+  // Cierre asistido (ORD-POS-046): órdenes cuyo PR (detectado o registrado) ya está fusionado y lleva su ID en el título.
+  const cierres = new Set<string>()
   if (client) {
     await Promise.all(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId).map(async (o) => {
       // Si falla la detección queda undefined (no null): no se lee el lanzamiento y la tarjeta dice cuál de las dos falló.
       const pr = await client.prDeOrden(o.proyectoId!, o.id).catch((e) => registrarFallo(fallos, o.id, 'detección de PR fallida', e))
+      if (pr?.estado === 'fusionado') cierres.add(o.id)
       if (pr) prs.set(o.id, pr)
       else if (pr === null && rutina && o.issueUrl) {
         await client.lanzamientoPrevio(o.proyectoId!, o.issueUrl).then((s) => { sesiones.set(o.id, s) }, (e) => registrarFallo(fallosLanzamiento, o.id, 'lectura de lanzamientos fallida', e))
       }
+    }))
+    await Promise.all(data.ordenes.filter((o) => o.proyectoId && o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
+      const pr = await client.prParaCierre(o.proyectoId!, o.id, o.prUrl!).catch(() => null)
+      if (pr?.fusionado && pr.deLaOrden) cierres.add(o.id)
     }))
   }
 
@@ -166,7 +173,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} falloPr={fallos.get(v.orden.id)} falloLanzamiento={fallosLanzamiento.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} falloPr={fallos.get(v.orden.id)} falloLanzamiento={fallosLanzamiento.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} prFusionado={cierres.has(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}
