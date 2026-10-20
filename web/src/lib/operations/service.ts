@@ -12,7 +12,7 @@ import {
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
-  payloadHash, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
+  derivedRequestId, payloadHash, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
   type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
 
@@ -454,13 +454,18 @@ export class OperationsService {
     })
   }
 
-  /** Libera la reserva de la clave cuando la rutina rechazó la petición (4xx) y no se lanzó nada (ORD-POS-045). */
+  /**
+   * Libera la reserva de la clave cuando la rutina rechazó la petición (4xx) y no se lanzó nada (ORD-POS-045). El
+   * requestId se deriva de la clave y de la reserva que libera: repetirla no añade filas en AUDITORIA (ORD-POS-052).
+   */
   liberarLanzamiento(ordenId: string, clave: string, ctx: OperationContext): Promise<void> {
     return this.exclusive(async () => {
       const audit = await readView(this.store, 'AUDITORIA')
       const now = this.clock()
+      const ultima = parseAudit(audit).filter((o) => o.integridad === 'completa' && o.fields.get('CLAVE')?.despues === clave && /^orden\.supervision_(reservar|liberar)$/.test(o.operacion)).at(-1)
+      if (ultima?.operacion !== 'orden.supervision_reservar') return
       const diff = new Map([['CLAVE', { antes: '', despues: clave }], ['LIBERA', { antes: '', despues: now.toISOString() }]])
-      await this.auditFirst('orden.supervision_liberar', payloadHash('orden.supervision_liberar', { clave }), randomUUID(), ctx, 'ORDENES_CODEX', ordenId, diff, now, audit)
+      await this.auditFirst('orden.supervision_liberar', payloadHash('orden.supervision_liberar', { clave }), derivedRequestId(ultima.requestId, `liberar:${clave}`), ctx, 'ORDENES_CODEX', ordenId, diff, now, audit)
     })
   }
 

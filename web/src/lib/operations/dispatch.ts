@@ -1,11 +1,10 @@
 import 'server-only'
 
-import { createHash } from 'node:crypto'
 import { OperationError } from './errors'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
 import { createGitHubClient, GitHubError, type GitHubClient } from './github'
 import type { OperationContext, OperationResult, OperationsService } from './service'
-import type { OrderTransitionCommand } from './validation'
+import { derivedRequestId, type OrderTransitionCommand } from './validation'
 
 /**
  * Aprobar y crear el issue en un paso (V1.8 F4). La aprobación se guarda primero; si el envío a GitHub falla, la orden
@@ -37,11 +36,7 @@ export function githubClient(env: NodeJS.ProcessEnv = process.env): GitHubClient
   return token ? createGitHubClient(token) : null
 }
 
-/** requestId v4 determinista derivado de otro (para que reintentar el envío no duplique la transición). */
-export function derivedRequestId(requestId: string, salt: string): string {
-  const h = createHash('sha256').update(`${salt}:${requestId}`).digest('hex')
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16]!, 16) % 4]}${h.slice(17, 20)}-${h.slice(20, 32)}`
-}
+export { derivedRequestId }
 
 /**
  * Un solo envío en curso por orden en este proceso (maxScale 1 ⇒ escritor único): un reintento o una segunda pestaña
@@ -169,9 +164,10 @@ async function prFusionado(service: OperationsService, ordenId: string, client: 
   if (!client) throw new OperationError('github-no-disponible')
   const o = await service.readOrder(ordenId)
   if (!o) throw new OperationError('orden-inexistente')
+  if (!o.PROYECTO_ID) throw new OperationError('orden-sin-proyecto')
   let pr: Awaited<ReturnType<GitHubClient['prParaCierre']>>
   try {
-    pr = await client.prParaCierre(o.PROYECTO_ID ?? '', ordenId, o.PR_URL || null)
+    pr = await client.prParaCierre(o.PROYECTO_ID, ordenId, o.PR_URL || null)
   } catch (error) {
     if (!(error instanceof GitHubError)) throw error
     console.warn(`[project-os] lectura del PR para el cierre fallida: ${typeof error.status === 'number' ? `http-${error.status}` : error.status}`)

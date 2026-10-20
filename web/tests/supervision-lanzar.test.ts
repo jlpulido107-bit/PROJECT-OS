@@ -214,6 +214,25 @@ describe('una sola sesión por paso (ORD-POS-039)', () => {
     expect((await e.service.reconcile()).pendientes).toEqual([])
   })
 
+  it('repetir la liberación no añade filas en AUDITORIA: requestId derivado de la clave (ORD-POS-052)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const e = escenario({ rutinaStatus: 429 })
+    const clave = `ORD-POS-099|revisar|${HEAD}|1`
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'http-429' })
+    const filas = e.auditoria().length
+    const req = (f: unknown[]) => /req=([0-9a-f-]{36})/.exec(String(f[8]))?.[1]
+    const primera = req(e.auditoria().find((f) => String(f[8]).includes('orden.supervision_liberar'))!)
+    for (let i = 0; i < 2; i++) await e.service.liberarLanzamiento('ORD-POS-099', clave, { actor: 'x@example.com' })
+    expect(e.auditoria()).toHaveLength(filas)
+    // Una nueva reserva de la misma clave se libera con otro requestId, también derivado y estable.
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'http-429' })
+    const reqs = e.auditoria().filter((f) => String(f[8]).includes('orden.supervision_liberar')).map(req)
+    expect(new Set(reqs).size).toBe(2)
+    expect(reqs).toContain(primera)
+    expect([...(await e.service.lanzamientosPorClave([clave])).values()]).toEqual([{ tipo: 'libre' }])
+    expect((await e.service.reconcile()).pendientes).toEqual([])
+  })
+
   it('4xx y falla la escritura de la liberación: la reserva sigue y el segundo clic no dispara (ORD-POS-050)', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const e = escenario({ rutinaStatus: 429 })

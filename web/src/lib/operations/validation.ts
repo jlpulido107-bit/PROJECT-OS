@@ -455,6 +455,12 @@ export function payloadHash(operation: string, command: object): string {
   return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
 }
 
+/** requestId v4 determinista derivado de otro (para que reintentar el envío no duplique la transición). */
+export function derivedRequestId(requestId: string, salt: string): string {
+  const h = createHash('sha256').update(`${salt}:${requestId}`).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16]!, 16) % 4]}${h.slice(17, 20)}-${h.slice(20, 32)}`
+}
+
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys)
   if (value && typeof value === 'object') {

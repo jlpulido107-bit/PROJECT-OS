@@ -309,8 +309,11 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       const repo = repoDe(proyectoId)
       const n = /\/pull\/(\d{1,7})$/.exec(prUrl)?.[1]
       if (repoDeUrl(prUrl, 'pull') !== repo || !n) throw new GitHubError('repo-no-permitido')
-      const pr = await call<{ title?: unknown; merged_at?: unknown }>('GET', `/repos/${repo}/pulls/${n}`)
+      const pr = await call<{ title?: unknown; merged_at?: unknown; head?: { repo?: { full_name?: unknown } | null } }>('GET', `/repos/${repo}/pulls/${n}`)
       if (typeof pr.title !== 'string') throw new GitHubError('respuesta-invalida')
+      // Como en prDeOrden: el head debe ser del mismo repositorio, nunca de un fork (ORD-POS-052).
+      const head = pr.head?.repo?.full_name
+      if (typeof head !== 'string' || head.toLowerCase() !== repo.toLowerCase()) throw new GitHubError('repo-no-permitido')
       return { url: prUrl, fusionado: typeof pr.merged_at === 'string' && pr.merged_at !== '', deLaOrden: pr.title.startsWith(`[${ordenId}]`) }
     },
   }
