@@ -214,6 +214,21 @@ describe('una sola sesión por paso (ORD-POS-039)', () => {
     expect((await e.service.reconcile()).pendientes).toEqual([])
   })
 
+  it('4xx y falla la escritura de la liberación: la reserva sigue y el segundo clic no dispara (ORD-POS-050)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const e = escenario({ rutinaStatus: 429 })
+    const append = e.store.appendRows.bind(e.store)
+    vi.spyOn(e.store, 'appendRows').mockImplementation(async (tabla, filas) => {
+      if (JSON.stringify(filas).includes('orden.supervision_liberar')) throw new Error('cuota')
+      return append(tabla, filas)
+    })
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'http-429' })
+    expect(e.auditoria().some((f) => f.includes('LIBERA'))).toBe(false)
+    expect([...(await e.service.lanzamientosPorClave([`ORD-POS-099|revisar|${HEAD}|1`])).values()]).toEqual([{ tipo: 'reservada' }])
+    expect(await e.lanzar('revisar')).toEqual({ ok: false, codigo: 'resultado-incierto' })
+    expect(e.fires).toHaveLength(1)
+  })
+
   it('500: la reserva sigue y el reintento da «Resultado incierto» sin disparar', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const e = escenario({ rutinaStatus: 500 })

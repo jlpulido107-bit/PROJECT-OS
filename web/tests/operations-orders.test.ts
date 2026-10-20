@@ -143,6 +143,17 @@ describe('validación de órdenes', () => {
     }
     expect(motivo('1. npm test pasa\n2. Lint sin errores\n   detalle del 2 con versión 3.5')).toBe('ok')
     expect(motivo('1. npm test pasa 2. Lint sin errores 3. Build')).toMatch(/^Un criterio por línea.*el criterio 1 contiene «2\.»/)
+    // ORD-POS-050: números con punto dentro del texto que no son otro criterio.
+    for (const valido of [
+      '1. Falla con el paso 2. luego reintenta\n2. Lint sin errores',
+      '1. Tarda 1.5 horas como máximo\n2. Lint sin errores',
+      '1. Compatible con la versión 2. de la API\n2. Lint sin errores',
+      '1. Falla con el paso 3. Luego reintenta\n2. Lint sin errores',
+    ]) expect(motivo(valido)).toBe('ok')
+    for (const [invalido, n] of [
+      ['1. npm test pasa\n2. Lint sin errores 3. Build', '3'],
+      ['1. npm test pasa\n2. lint 4. build 5. typecheck', '4'],
+    ]) expect(motivo(invalido!)).toMatch(new RegExp(`contiene «${n}\\.»`))
     expect(motivo('npm test pasa\nLint sin errores')).toMatch(/^Un criterio por línea.*no hay IDs explícitos/)
     expect(motivo('1. npm test pasa')).toMatch(/menos de 2 criterios/)
   })

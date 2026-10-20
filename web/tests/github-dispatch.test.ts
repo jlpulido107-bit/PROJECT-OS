@@ -289,6 +289,12 @@ describe('cierre asistido de una orden con el PR fusionado (ORD-POS-046)', () =>
     // Repetir el requestId no duplica filas ni cambia nada.
     expect(await cerrar(service, gh, 'ENVIADA', requestId)).toMatchObject({ repetida: true })
     expect((await auditoria(store)).length).toBe(antes + filas.length)
+    // Con GitHub caído o sin token, el mismo requestId responde repetida=true sin leer GitHub (ORD-POS-050).
+    const caido = createGitHubClient('t', (async () => new Response('{}', { status: 502 })) as unknown as typeof fetch)
+    for (const gh2 of [caido, null]) {
+      expect(await transitionWithDispatch(service, parseOrderTransition('ORD-POS-901', { accion: 'CERRAR_FUSIONADO', expectedEstado: 'ENVIADA', requestId }), ACTOR, gh2)).toMatchObject({ repetida: true })
+    }
+    expect((await auditoria(store)).length).toBe(antes + filas.length)
   })
 
   it('fusionado y registrado: cierra desde PR_ABIERTO o REVISADA releyendo el PR registrado', async () => {

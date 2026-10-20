@@ -150,7 +150,10 @@ export async function transitionWithDispatch(
     if (!envio.ok && envio.codigo === 'orden-no-aprobada') throw new OperationError('transicion-no-permitida')
     return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
   }
-  if (cmd.accion === 'cerrar_fusionado') return service.transitionOrder({ ...cmd, url: await prFusionado(service, cmd.ordenId, client) }, ctx)
+  if (cmd.accion === 'cerrar_fusionado') {
+    const url = (await service.prUrlCierreAuditado(cmd.requestId, cmd.ordenId)) ?? (await prFusionado(service, cmd.ordenId, client))
+    return service.transitionOrder({ ...cmd, url }, ctx)
+  }
   const result = await service.transitionOrder(cmd, ctx)
   if (cmd.accion !== 'aprobar') return result
   if (!client) return { ...result, envio: { ok: false, codigo: 'sin-token' } }

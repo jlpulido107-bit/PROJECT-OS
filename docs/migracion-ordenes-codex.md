@@ -46,6 +46,7 @@ ORDEN_ID	PROYECTO_ID	TAREA_ID	TITULO	OBJETIVO	CONTEXTO	CRITERIOS_ACEPTACION	FUER
 | `ENVIADA` | `PR_ABIERTO` | Propietario, con el `PR_URL` | Claude abrió el PR |
 | `PR_ABIERTO` | `REVISADA` | Propietario, tras revisar el PR contra los criterios | Cada criterio tiene evidencia en el PR |
 | `REVISADA` | `CERRADA` | Propietario | PR fusionado o cerrado con decisión |
+| `ENVIADA`, `PR_ABIERTO` o `REVISADA` | `CERRADA` | Propietario, con **cerrar fusionado** (`orden.cerrar_fusionado`, ORD-POS-046) | El servidor relee en GitHub un PR fusionado `[ORDEN_ID]` y guarda su `PR_URL` |
 | Cualquiera | `CANCELADA` | Propietario | Con motivo en `NOTAS` |
 
 **Desde el dashboard (V1.8 F3)**, con la escritura activa ([escritura-v1-8.md](escritura-v1-8.md)), el propietario

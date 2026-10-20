@@ -393,6 +393,16 @@ export class OperationsService {
     })
   }
 
+  /**
+   * PR_URL de un cierre asistido ya auditado con este requestId, o null (ORD-POS-050): el reintento repite la transición
+   * sin releer GitHub. Sin PR_URL en el diff, la URL no cambió y es la de la fila.
+   */
+  async prUrlCierreAuditado(requestId: string, ordenId: string): Promise<string | null> {
+    const found = this.findAudited(await readView(this.store, 'AUDITORIA'), requestId)
+    if (!found || found.op.operacion !== 'orden.cerrar_fusionado' || found.op.id !== ordenId) return null
+    return found.op.fields.get('PR_URL')?.despues ?? (await this.readOrder(ordenId))?.PR_URL ?? null
+  }
+
   /** Fila actual de una orden (para enviarla a GitHub), o null si no existe. */
   async readOrder(ordenId: string): Promise<Record<string, string> | null> {
     const view = await readView(this.store, 'ORDENES_CODEX')
