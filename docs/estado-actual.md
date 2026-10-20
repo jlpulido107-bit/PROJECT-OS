@@ -1,6 +1,6 @@
 # Estado actual — PROJECT-OS
 
-Foto breve para arrancar una sesión. Fecha: 2026-10-17. Memoria duradera: [`brief-proyecto.md`](brief-proyecto.md).
+Foto breve para arrancar una sesión. Fecha: 2026-10-20. Memoria duradera: [`brief-proyecto.md`](brief-proyecto.md).
 Todo dato lleva su fuente; lo que no pude verificar va como **hipótesis**.
 Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](operacion.md).
 
@@ -15,40 +15,46 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
 - **DEC-POS-008** (2026-10-17, APROBADA): sin auditoría de ChatGPT. BAJO: revisor Claude con otro modelo; BAJO solo docs: sin revisor;
   MEDIO: Sonnet completo, delta tras corrección y segundo revisor Fable 5.1; ALTO no se delega; máximo 2 rondas; vale el «sí» del
   propietario dado al PM y reenviado al escritor. Fuente: pestaña DECISIONES, según el PM; [delegación](delegacion-codex.md) ([PR #95](https://github.com/jlpulido107-bit/PROJECT-OS/pull/95)).
+- **DEC-POS-009** (PENDIENTE del propietario): el dictamen vive solo en el PR y sustituye a D1 a D3 de DEC-POS-004; con ella se
+  retirarían POS-012 a 018. Fuente: [migración](migracion-supervision.md); su aprobación no consta en el repositorio.
+- **DEC-POS-010** (PENDIENTE del propietario): citada en el [issue #134](https://github.com/jlpulido107-bit/PROJECT-OS/issues/134); **hipótesis:** su contenido vive solo en DECISIONES.
 
 ## En curso
 
-- Órdenes: sin issues abiertos (GitHub, 2026-10-17). ORD-POS-027 a ORD-POS-038 fusionadas en los PRs #87, #89, #91, #93, #95, #97, #100, #101,
-  [#104](https://github.com/jlpulido107-bit/PROJECT-OS/pull/104), [#107](https://github.com/jlpulido107-bit/PROJECT-OS/pull/107),
-  [#108](https://github.com/jlpulido107-bit/PROJECT-OS/pull/108) y [#110](https://github.com/jlpulido107-bit/PROJECT-OS/pull/110).
-- PR abierto: [#51](https://github.com/jlpulido107-bit/PROJECT-OS/pull/51), skills de terceros (sin orden en el título).
-- Despliegue, según el PM (pestaña ORDENES_CODEX): ORD-POS-035 y 036 desplegadas (036 el 2026-10-17); la imagen con ORD-POS-037
-  está pendiente de desplegar por el propietario. Los botones de /ordenes aparecen solo cuando el propietario cree las 3 rutinas de API
-  (revisar con Sonnet, segundo revisor con Fable, corregir) y sus secretos ([`rutina-claude.md`](rutina-claude.md)).
-- Operación, según el PM: el agente PM escribe por la API con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh) desde el entorno POS · PM
-  (token por secreto de red, hash en Secret Manager versión 10); se despliega con
-  [`deploy.sh --desde-activa`](../web/deploy/cloudrun/deploy.sh) (revisión activa `project-os-dashboard-00017-5hm`, 2026-10-17; **hipótesis:** ya cambió con los despliegues de ORD-POS-035 y 036).
-- Modelos, según el PM: implementar con Opus (pendiente de que el propietario cambie la rutina de ejecución), primer revisor Sonnet,
-  segundo revisor Fable 5.1.
-- Hitos, según el PM (pestaña HITOS): **POS-H1** «Estado y delegación» vence 2026-10-31; **POS-025** «Dictámenes visibles en /ordenes»
-  sigue PENDIENTE en TAREAS y sustituiría a POS-012 a 018 (DEC-POS-009, pendiente de aprobación del propietario);
-  **POS-H2** «V2 operada por Claude» vence 2026-11-14 (faltan la evidencia de la Puerta R y la medición POS-021).
-- Limpieza pendiente, según el PM: ORD-POS-004 aparece en dos filas de ORDENES_CODEX.
+- Fusionadas desde el último estado (GitHub, 2026-10-20; 027 a 038 en [PR #111](https://github.com/jlpulido107-bit/PROJECT-OS/pull/111)):
+  - [#114](https://github.com/jlpulido107-bit/PROJECT-OS/pull/114) ORD-POS-039, reserva auditada: una sola revisión o corrección por paso.
+  - [#115](https://github.com/jlpulido107-bit/PROJECT-OS/pull/115) ORD-POS-040, lote de mejoras menores (segundo revisor, `server-only`, correlativo, `pm-alta.sh`).
+  - [#118](https://github.com/jlpulido107-bit/PROJECT-OS/pull/118) ORD-POS-041, valida la URL de sesión de AUDITORIA antes de enlazarla.
+  - [#123](https://github.com/jlpulido107-bit/PROJECT-OS/pull/123) ORD-POS-042, diagnóstico visible si falla la lectura de GitHub en /ordenes.
+  - [#122](https://github.com/jlpulido107-bit/PROJECT-OS/pull/122) ORD-POS-043, `revisar-orden` y `corregir-pr` para SIGSAH y RADAROS.
+  - [#124](https://github.com/jlpulido107-bit/PROJECT-OS/pull/124) ORD-POS-044, criterios numerados uno por línea al crear una orden.
+  - [#127](https://github.com/jlpulido107-bit/PROJECT-OS/pull/127) ORD-POS-045, ajustes de la reserva de lanzamiento.
+  - [#128](https://github.com/jlpulido107-bit/PROJECT-OS/pull/128) ORD-POS-046, cierre asistido desde /ordenes con el PR fusionado.
+  - [#131](https://github.com/jlpulido107-bit/PROJECT-OS/pull/131) ORD-POS-047, guía de operación ([`operacion.md`](operacion.md)).
+  - [#132](https://github.com/jlpulido107-bit/PROJECT-OS/pull/132) ORD-POS-048, hallazgos menores de 041, 042 y 043.
+- Órdenes abiertas (GitHub, 2026-10-20): ORD-POS-049 ([#134](https://github.com/jlpulido107-bit/PROJECT-OS/issues/134), este estado) y
+  ORD-POS-050 ([#133](https://github.com/jlpulido107-bit/PROJECT-OS/issues/133), hallazgos menores de 044, 045 y 046).
+- PRs abiertos: [#51](https://github.com/jlpulido107-bit/PROJECT-OS/pull/51), skills de terceros (sin orden en el título), y
+  [#116](https://github.com/jlpulido107-bit/PROJECT-OS/pull/116), estado tras 039 y 040, desfasado por este; cerrarlo lo decide el propietario.
+- Despliegue: revisión activa `project-os-dashboard-00022-vgt` (2026-10-20, con ORD-POS-041 a 048; fuente: [issue #134](https://github.com/jlpulido107-bit/PROJECT-OS/issues/134));
+  **hipótesis:** 039 y 040 ya estaban desplegadas. El propietario despliega con [`deploy.sh --desde-activa`](../web/deploy/cloudrun/deploy.sh).
+- Rutinas: las 3 existen y están configuradas desde la revisión 00021 ([`rutina-claude.md`](rutina-claude.md)). Prueba real de
+  «Lanzar revisión» el 2026-10-19 con ORD-POS-041: dictamen en el [PR #118](https://github.com/jlpulido107-bit/PROJECT-OS/pull/118),
+  reserva y lanzamiento en AUDITORIA. Modelos: implementa y corrige Opus, revisa Sonnet, segundo revisor Fable 5.1 ([operación](operacion.md)).
+- Riesgo conocido: la reserva supone una sola instancia (`maxScale: 1`); sin deduplicación multiinstancia ([migración](migracion-supervision.md)).
+- Hitos, según el PM (pestaña HITOS): **POS-H1** «Estado y delegación» vence 2026-10-31; **POS-H2** «V2 operada por Claude» vence
+  2026-11-14 (faltan la Puerta R y la medición POS-021); ORD-POS-004 está en dos filas de ORDENES_CODEX. **Hipótesis:** sin dato nuevo del PM.
 - Verificación E1 de V1.6 el 2026-11-11: el [brief](brief-proyecto.md#riesgos) la cita, pero el issue
   [#22](https://github.com/jlpulido107-bit/PROJECT-OS/issues/22) se cerró como «not planned»; **hipótesis:** sigue pendiente.
 
 ## Siguiente
 
-- Aprobar DEC-POS-009 (decisión del propietario) y, con ella, retirar POS-012 a 018. Fuente: según el PM.
-- Orden MEDIO para impedir lanzar dos veces la revisión de una orden (hallazgo H1 de los revisores del #108); en borrador por el PM.
-  Fuente: según el PM.
-- Orden BAJO de mejoras menores (`revisar-orden` «Qué lees» para el segundo revisor, `server-only` en `claude-routine.ts`, mensaje del
-  correlativo 999, `pm-alta.sh`); en borrador por el PM. Fuente: según el PM.
+- Decidir DEC-POS-009 y DEC-POS-010 (propietario); con la 009, retirar POS-012 a 018. Fuente: pestaña DECISIONES, según el PM.
+- Ejecutar ORD-POS-050 ([#133](https://github.com/jlpulido107-bit/PROJECT-OS/issues/133)) y decidir el destino del PR #116.
+- Prueba real de «Cerrar (PR fusionado)» en /ordenes (ORD-POS-046, desplegada en 00022). Fuente: hallazgos del PM en el PR #135.
 - Puerta R y medición POS-021 para POS-H2. Fuente: según el PM.
-- Implementar DEC-POS-004 con una orden por decisión. Fuente: [migración](migracion-supervision.md).
 
 ## Cómo se actualiza
 
-Al cerrar cada orden se reescribe este archivo con la skill `cerrar-orden`. **Hipótesis:** esa skill aún no existe en
-`.claude/skills/`; hasta entonces se actualiza en un PR aparte después de fusionar, no dentro de cada orden (evita
-conflictos entre PRs en paralelo).
+Después de fusionar, en un PR aparte (evita conflictos entre PRs en paralelo), con la skill
+[`cerrar-orden`](../.claude/skills/cerrar-orden/SKILL.md).
