@@ -1,4 +1,5 @@
 import { extraerCriterios } from './criterios'
+import { politicaDeRepo, repoSinCi } from './politica'
 import { validarReporte, type ReporteRevision } from './report'
 import type { Veredicto } from './types'
 
@@ -24,6 +25,8 @@ export interface DictamenVigente {
   noBloquean: number
   sha: string
   comentarioId: number
+  /** Repositorio sin CI (politica.ts) con CI_AUSENTE: las comprobaciones son las pruebas propias del revisor. */
+  sinCi?: true
 }
 
 export type EstadoDictamen =
@@ -56,7 +59,7 @@ function leer(body: string, orden: OrdenDictamen, pr: PrDictamen): ReporteRevisi
   const json = BLOQUE_JSON.exec(body)?.[1]
   if (!extraidos.ok || json === undefined) return null
   try {
-    const r = validarReporte(JSON.parse(json), { ciRequerida: true, criteriosEsperados: extraidos.criteriosEsperados })
+    const r = validarReporte(JSON.parse(json), politicaDeRepo(pr.repo, extraidos.criteriosEsperados))
     if (!r.ok) return null
     const { reporte } = r
     // El dictamen debe ser de esta orden y de este PR: uno copiado de otro PR no cuenta.
@@ -131,7 +134,7 @@ function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): Evaluaci
   const r = elegido!.reporte
   const bloquean = r.hallazgos.filter((h) => h.bloquea).length
   return {
-    estado: { tipo: 'vigente', dictamen: { veredicto: r.veredicto, ronda: r.ronda, bloquean, noBloquean: r.hallazgos.length - bloquean, sha: r.headSha.slice(0, 7), comentarioId: elegido!.id } },
+    estado: { tipo: 'vigente', dictamen: { veredicto: r.veredicto, ronda: r.ronda, bloquean, noBloquean: r.hallazgos.length - bloquean, sha: r.headSha.slice(0, 7), comentarioId: elegido!.id, ...(repoSinCi(pr.repo) && r.evidencia.ci.estado === 'CI_AUSENTE' ? { sinCi: true as const } : {}) } },
     siguiente: texto,
     plan: planDe(texto, validos, vigentes, elegido, datos.headSha, orden),
   }
