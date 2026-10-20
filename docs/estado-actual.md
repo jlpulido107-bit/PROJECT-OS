@@ -2,6 +2,7 @@
 
 Foto breve para arrancar una sesión. Fecha: 2026-10-17. Memoria duradera: [`brief-proyecto.md`](brief-proyecto.md).
 Todo dato lleva su fuente; lo que no pude verificar va como **hipótesis**.
+Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](operacion.md).
 
 ## Decisiones vigentes
 

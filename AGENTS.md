@@ -11,6 +11,7 @@
 Ciclo: implementación y autocontrol de Claude → revisión ciega de otra sesión de Claude según el riesgo (en MEDIO, con
 segundo revisor) → decisión del propietario. Las correcciones vuelven a Claude, en el mismo PR, con máximo 2 rondas.
 Política por riesgo: [`docs/delegacion-codex.md`](docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) (vigente con DEC-POS-008).
+Guía de operación (roles, modelos, entornos, rutinas y flujo por riesgo en una página): [`docs/operacion.md`](docs/operacion.md).
 Un dictamen favorable no autoriza fusión, despliegue ni cierre.
 
 ## Reglas
