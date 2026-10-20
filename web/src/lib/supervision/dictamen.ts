@@ -25,7 +25,7 @@ export interface DictamenVigente {
   noBloquean: number
   sha: string
   comentarioId: number
-  /** Repositorio sin CI (politica.ts) con CI_AUSENTE: las comprobaciones son las pruebas propias del revisor. */
+  /** Repositorio sin CI (politica.ts) con CI_AUSENTE y al menos una prueba propia con código 0 (ORD-POS-052). */
   sinCi?: true
 }
 
@@ -45,7 +45,11 @@ export interface PlanLanzamiento {
   comentarioId?: number
 }
 
-export interface EvaluacionDictamen { estado: EstadoDictamen; siguiente: string; plan: PlanLanzamiento | null; agotado?: true }
+export interface EvaluacionDictamen {
+  estado: EstadoDictamen; siguiente: string; plan: PlanLanzamiento | null; agotado?: true
+  /** Repo de REPOS_SIN_CI con un dictamen del head que sería válido con CI EXITO: hay que sacarlo de la lista (ORD-POS-052). */
+  ciDetectada?: true
+}
 
 export interface OrdenDictamen { id: string; riesgo: string | null; criterios: string | null }
 export interface PrDictamen { repo: string; numero: number }
@@ -54,12 +58,12 @@ interface Valido { indice: number; id: number; reporte: ReporteRevision }
 
 const tieneMarca = (body: string) => body.split('\n', 1)[0]!.replace(/\r$/, '') === MARCA_DICTAMEN
 
-function leer(body: string, orden: OrdenDictamen, pr: PrDictamen): ReporteRevision | null {
+function leer(body: string, orden: OrdenDictamen, pr: PrDictamen, ciRequerida = !repoSinCi(pr.repo)): ReporteRevision | null {
   const extraidos = extraerCriterios(orden.criterios ?? '')
   const json = BLOQUE_JSON.exec(body)?.[1]
   if (!extraidos.ok || json === undefined) return null
   try {
-    const r = validarReporte(JSON.parse(json), politicaDeRepo(pr.repo, extraidos.criteriosEsperados))
+    const r = validarReporte(JSON.parse(json), { ...politicaDeRepo(pr.repo, extraidos.criteriosEsperados), ciRequerida })
     if (!r.ok) return null
     const { reporte } = r
     // El dictamen debe ser de esta orden y de este PR: uno copiado de otro PR no cuenta.
@@ -117,24 +121,34 @@ export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDict
 function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
   const marcados = datos.comentarios.filter((c) => tieneMarca(c.body))
   const validos: Valido[] = []
+  let ciDetectada = false
   marcados.forEach((c, indice) => {
     const reporte = leer(c.body, orden, pr)
     if (reporte) validos.push({ indice, id: c.id, reporte })
+    else if (repoSinCi(pr.repo)) {
+      const conCi = leer(c.body, orden, pr, true)
+      ciDetectada ||= conCi?.headSha === datos.headSha && conCi.evidencia.ci.estado === 'EXITO'
+    }
   })
+  const ev = evaluarValidos(datos, orden, pr, marcados.length, validos)
+  return ciDetectada ? { ...ev, ciDetectada: true } : ev
+}
+
+function evaluarValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, marcados: number, validos: Valido[]): EvaluacionDictamen {
   const delHead = validos.filter((v) => v.reporte.headSha === datos.headSha)
   // Del head actual, el último válido por revisionId.
   const porRevision = new Map<string, Valido>()
   for (const v of delHead) porRevision.set(v.reporte.revisionId, v)
   const vigentes = [...porRevision.values()].sort((a, b) => a.indice - b.indice)
   if (vigentes.length === 0) {
-    const tipo = validos.length > 0 ? 'anterior' : marcados.length > 0 ? 'invalido' : 'ninguno'
+    const tipo = validos.length > 0 ? 'anterior' : marcados > 0 ? 'invalido' : 'ninguno'
     return { estado: { tipo }, siguiente: 'Lanzar revisión', plan: planDe('Lanzar revisión', validos, vigentes, null, datos.headSha, orden) }
   }
   const { elegido, texto } = siguientePaso(vigentes, orden.riesgo)
   const r = elegido!.reporte
   const bloquean = r.hallazgos.filter((h) => h.bloquea).length
   return {
-    estado: { tipo: 'vigente', dictamen: { veredicto: r.veredicto, ronda: r.ronda, bloquean, noBloquean: r.hallazgos.length - bloquean, sha: r.headSha.slice(0, 7), comentarioId: elegido!.id, ...(repoSinCi(pr.repo) && r.evidencia.ci.estado === 'CI_AUSENTE' ? { sinCi: true as const } : {}) } },
+    estado: { tipo: 'vigente', dictamen: { veredicto: r.veredicto, ronda: r.ronda, bloquean, noBloquean: r.hallazgos.length - bloquean, sha: r.headSha.slice(0, 7), comentarioId: elegido!.id, ...(repoSinCi(pr.repo) && r.evidencia.ci.estado === 'CI_AUSENTE' && r.evidencia.propias.some((t) => t.codigoSalida === 0) ? { sinCi: true as const } : {}) } },
     siguiente: texto,
     plan: planDe(texto, validos, vigentes, elegido, datos.headSha, orden),
   }

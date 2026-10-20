@@ -51,6 +51,26 @@ describe('política de CI por repositorio', () => {
     expect(evaluar(inconcluso, repo)).toMatchObject({ siguiente: 'Revisar entradas del dictamen', estado: { dictamen: { veredicto: 'INCONCLUSO' } } })
   })
 
+  it('«sin CI · pruebas del revisor» solo con al menos una prueba propia con código 0 (ORD-POS-052)', () => {
+    const repo = 'jlpulido107-bit/SIGSAH'
+    const inconcluso = (propias: unknown[]) => evaluar(reporte(repo, { evidencia: { propias, ci: { estado: 'CI_AUSENTE' }, autor: [] }, criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'x' }], veredicto: 'INCONCLUSO' }), repo)
+    const sinCi = (ev: ReturnType<typeof evaluar>) => ev.estado.tipo === 'vigente' && ev.estado.dictamen.sinCi === true
+    expect(sinCi(inconcluso([]))).toBe(false)
+    expect(sinCi(inconcluso([{ comando: 'x', sha: HEAD, codigoSalida: 1 }]))).toBe(false)
+    expect(sinCi(inconcluso([{ comando: 'x', sha: HEAD, codigoSalida: 1 }, { comando: 'y', sha: HEAD, codigoSalida: 0 }]))).toBe(true)
+  })
+
+  it('repo de REPOS_SIN_CI con un dictamen con CI EXITO: /ordenes avisa de quitarlo de la lista (ORD-POS-052)', () => {
+    const repo = 'jlpulido107-bit/SIGSAH'
+    const conCi = reporte(repo, { evidencia: { propias: [{ comando: 'x', sha: HEAD, codigoSalida: 0 }], ci: { estado: 'EXITO', sha: HEAD }, autor: [] } })
+    const ev = evaluar(conCi, repo)
+    expect(ev).toMatchObject({ estado: { tipo: 'invalido' }, ciDetectada: true })
+    expect(renderToStaticMarkup(createElement(DictamenFila, { prUrl: `https://github.com/${repo}/pull/7`, ev }))).toContain('este repo ya tiene CI: quítalo de REPOS_SIN_CI')
+    expect(evaluar(reporte(repo), repo).ciDetectada).toBeUndefined()
+    expect(evaluar(reporte(repo, { headSha: 'c'.repeat(40), evidencia: conCi.evidencia }), repo).ciDetectada).toBeUndefined()
+    expect(evaluar(conCi, 'jlpulido107-bit/PROJECT-OS').ciDetectada).toBeUndefined()
+  })
+
   it('PROJECT-OS con CI_AUSENTE sigue sin poder ser CONFORME, aunque el dictamen lo pida', () => {
     const repo = 'jlpulido107-bit/PROJECT-OS'
     expect(evaluar(reporte(repo), repo).estado.tipo).toBe('invalido')

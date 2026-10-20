@@ -323,6 +323,30 @@ describe('cierre asistido de una orden con el PR fusionado (ORD-POS-046)', () =>
     expect((await auditoria(store)).length).toBe(antes)
   })
 
+  it('PR registrado con el head en un fork: no cierra ni escribe (ORD-POS-052)', async () => {
+    const { store, service, gh } = await enviada()
+    gh.prs.push(pr({ head: { sha: HEAD, repo: { full_name: 'otro/PROJECT-OS' } } } as never))
+    await service.transitionOrder(parseOrderTransition('ORD-POS-901', { accion: 'REGISTRAR_PR', expectedEstado: 'ENVIADA', url: PR, requestId: uuid() }), ACTOR)
+    const antes = (await auditoria(store)).length
+    await expect(gh.client.prParaCierre('POS', 'ORD-POS-901', PR)).rejects.toMatchObject({ status: 'repo-no-permitido' })
+    await expect(cerrar(service, gh, 'PR_ABIERTO')).rejects.toBeDefined()
+    expect((await orden(store, 'ORD-POS-901')).ESTADO).toBe('PR_ABIERTO')
+    expect((await auditoria(store)).length).toBe(antes)
+  })
+
+  it('orden sin PROYECTO_ID: error de validación propio, sin leer GitHub ni escribir (ORD-POS-052)', async () => {
+    const { store, service, gh } = await enviada()
+    gh.prs.push(pr())
+    const view = await readView(store, 'ORDENES_CODEX')
+    const fila = findById(view, 'ORDEN_ID', 'ORD-POS-901')[0]!
+    await store.writeRow('ORDENES_CODEX', fila.sheetRow, fila.cells.map((c, i) => (i === view.index.get('PROYECTO_ID') ? '' : c)))
+    const antes = (await auditoria(store)).length
+    gh.calls.length = 0
+    await expect(cerrar(service, gh, 'ENVIADA')).rejects.toMatchObject({ code: 'orden-sin-proyecto', status: 422 })
+    expect(gh.calls).toEqual([])
+    expect((await auditoria(store)).length).toBe(antes)
+  })
+
   it('sin PR, sin token o con GitHub caído no cierra; el cliente no puede dictar la URL', async () => {
     const { store, service, gh } = await enviada()
     await expect(cerrar(service, gh, 'ENVIADA')).rejects.toMatchObject({ code: 'pr-no-fusionado' })

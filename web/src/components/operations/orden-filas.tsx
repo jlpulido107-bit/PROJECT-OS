@@ -8,12 +8,13 @@ const repoPr = (url: string) => url.replace(/^https:\/\/github\.com\//, '')
 /** Dictamen vigente del PR (texto plano: solo campos validados, nunca el contenido del comentario). */
 export function DictamenFila({ prUrl, ev, fallo }: { prUrl: string; ev: EvaluacionDictamen | null | undefined; fallo?: string | null }) {
   if (!ev) return <>Sin datos de GitHub{fallo ? ` (${fallo})` : ''}</>
-  if (ev.estado.tipo !== 'vigente') return <>{SIN_DICTAMEN[ev.estado.tipo]}</>
+  const aviso = ev.ciDetectada ? ' · este repo ya tiene CI: quítalo de REPOS_SIN_CI' : ''
+  if (ev.estado.tipo !== 'vigente') return <>{SIN_DICTAMEN[ev.estado.tipo]}{aviso}</>
   const d = ev.estado.dictamen
   const href = urlComentario(prUrl, d.comentarioId)
   return (
     <>
-      {d.veredicto} · ronda {d.ronda} · {d.bloquean} bloquean, {d.noBloquean} no{d.sinCi ? ' · sin CI · pruebas del revisor' : ''} · <span className="mono">{d.sha}</span>
+      {d.veredicto} · ronda {d.ronda} · {d.bloquean} bloquean, {d.noBloquean} no{d.sinCi ? ' · sin CI · pruebas del revisor' : ''} · <span className="mono">{d.sha}</span>{aviso}
       {href ? <> · <ExternalLink href={href}>Ver dictamen</ExternalLink></> : null}
     </>
   )
