@@ -38,9 +38,9 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
   [#116](https://github.com/jlpulido107-bit/PROJECT-OS/pull/116), estado tras 039 y 040, desfasado por este; cerrarlo lo decide el propietario.
 - Despliegue: revisión activa `project-os-dashboard-00022-vgt` (2026-10-20, con ORD-POS-041 a 048; fuente: [issue #134](https://github.com/jlpulido107-bit/PROJECT-OS/issues/134));
   **hipótesis:** 039 y 040 ya estaban desplegadas. El propietario despliega con [`deploy.sh --desde-activa`](../web/deploy/cloudrun/deploy.sh).
-- Rutinas: los botones de revisión y corrección de /ordenes aparecen solo si el propietario creó sus rutinas y secretos
-  ([`rutina-claude.md`](rutina-claude.md)); **hipótesis:** no consta que existan ni que se probaran en real. Modelos: implementa y corrige
-  Opus, revisa Sonnet, segundo revisor Fable 5.1 ([operación](operacion.md)).
+- Rutinas: las 3 existen y están configuradas desde la revisión 00021 ([`rutina-claude.md`](rutina-claude.md)). Prueba real de
+  «Lanzar revisión» el 2026-10-19 con ORD-POS-041: dictamen en el [PR #118](https://github.com/jlpulido107-bit/PROJECT-OS/pull/118),
+  reserva y lanzamiento en AUDITORIA. Modelos: implementa y corrige Opus, revisa Sonnet, segundo revisor Fable 5.1 ([operación](operacion.md)).
 - Riesgo conocido: la reserva supone una sola instancia (`maxScale: 1`); sin deduplicación multiinstancia ([migración](migracion-supervision.md)).
 - Hitos, según el PM (pestaña HITOS): **POS-H1** «Estado y delegación» vence 2026-10-31; **POS-H2** «V2 operada por Claude» vence
   2026-11-14 (faltan la Puerta R y la medición POS-021); ORD-POS-004 está en dos filas de ORDENES_CODEX. **Hipótesis:** sin dato nuevo del PM.
@@ -51,7 +51,7 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
 
 - Decidir DEC-POS-009 y DEC-POS-010 (propietario); con la 009, retirar POS-012 a 018. Fuente: pestaña DECISIONES, según el PM.
 - Ejecutar ORD-POS-050 ([#133](https://github.com/jlpulido107-bit/PROJECT-OS/issues/133)) y decidir el destino del PR #116.
-- Prueba real de «Lanzar revisión» con las rutinas creadas (POS-H1). **Hipótesis:** pendiente.
+- Prueba real de «Cerrar (PR fusionado)» en /ordenes (ORD-POS-046, desplegada en 00022). Fuente: hallazgos del PM en el PR #135.
 - Puerta R y medición POS-021 para POS-H2. Fuente: según el PM.
 
 ## Cómo se actualiza
