@@ -81,7 +81,8 @@ Lee, en este orden:
 
 1. **El issue de la orden** (título `[ORDEN_ID]…`, creado por la cuenta del propietario): objetivo, criterios de
    aceptación, fuera de alcance y cómo probar. El issue es la orden.
-2. **El diff** de `HEAD_ESPERADO` contra la base (`baseSha` = merge-base con la rama base).
+2. **El diff** de `HEAD_ESPERADO` contra la base (`baseSha` = merge-base con la rama base), calculado en `REPO_DIR`
+   (`git -C REPO_DIR diff baseSha HEAD_ESPERADO`), no en PROJECT-OS si la orden es de otro repositorio.
 3. **El contrato** (arriba).
 4. **Del PR, solo título, diff, checks y comentarios.** Usa `pull_request_read` con los métodos `get_diff`,
    `get_files`, `get_check_runs` y `get_comments` / `get_review_comments`. **Nunca uses el método `get`** (ni otra

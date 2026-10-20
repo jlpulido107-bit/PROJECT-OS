@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { Badge, DateText, Empty, ExternalLink, humanize, Section, StateBadge, Text } from '@/components/ui'
 import { CopiarParaClaude, OrderActions } from '@/components/operations/forms'
+import { DictamenFila, PrFila } from '@/components/operations/orden-filas'
 import { githubClient } from '@/lib/operations/dispatch'
 import { routineClient, rutinasSupervision, type RutinasSupervision } from '@/lib/operations/claude-routine'
-import { dictamenDeOrden, falloDictamen, urlComentario } from '@/lib/operations/dictamenes'
+import { dictamenDeOrden, falloDictamen } from '@/lib/operations/dictamenes'
 import { codigoFalloGitHub, textoParaEjecutarDeOrden } from '@/lib/operations/github'
 import { claveLanzamiento } from '@/lib/operations/revision'
 import { operationsService } from '@/lib/operations/runtime'
@@ -26,27 +27,11 @@ const GRUPOS: Array<{ id: GrupoOrden; titulo: string; vacio: string }> = [
 
 const RIESGO_TONE = { BAJO: 'ok', MEDIO: 'warn', ALTO: 'danger' } as const
 
-const SIN_DICTAMEN = { anterior: 'Dictamen de un head anterior', invalido: 'Dictamen no válido', ninguno: 'Sin dictamen del head actual' } as const
-
-/** Dictamen vigente del PR (texto plano: solo campos validados, nunca el contenido del comentario). */
-function DictamenFila({ prUrl, ev, fallo }: { prUrl: string; ev: EvaluacionDictamen | null | undefined; fallo?: string | null }) {
-  if (!ev) return <>Sin datos de GitHub{fallo ? ` (${fallo})` : ''}</>
-  if (ev.estado.tipo !== 'vigente') return <>{SIN_DICTAMEN[ev.estado.tipo]}</>
-  const d = ev.estado.dictamen
-  const href = urlComentario(prUrl, d.comentarioId)
-  return (
-    <>
-      {d.veredicto} · ronda {d.ronda} · {d.bloquean} bloquean, {d.noBloquean} no · <span className="mono">{d.sha}</span>
-      {href ? <> · <ExternalLink href={href}>Ver dictamen</ExternalLink></> : null}
-    </>
-  )
-}
-
-type Supervision = { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean }
+type Supervision = { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean; sesionInvalida?: boolean }
 
 /**
  * Un solo botón según el dictamen del PR (ORD-POS-037); sin la rutina configurada o con riesgo ALTO no aparece. Si el
- * paso ya tiene lanzamiento o reserva vigente en AUDITORIA (ORD-POS-039), en lugar del botón va la sesión o «incierto».
+ * paso ya tiene lanzamiento o reserva vigente en AUDITORIA (ORD-POS-039), en lugar del botón va la sesión, «incierto» o «sesión no válida».
  */
 function botonSupervision(ordenId: string, ev: EvaluacionDictamen | null | undefined, rutinas: RutinasSupervision, lanzamientos: Map<string, EstadoLanzamiento>): Supervision | undefined {
   const plan = ev?.plan
@@ -56,11 +41,11 @@ function botonSupervision(ordenId: string, ev: EvaluacionDictamen | null | undef
     : ['revisar', 'Lanzar revisión', rutinas.revisar] as const
   if (!rutina) return undefined
   const previo = lanzamientos.get(claveLanzamiento(ordenId, plan))
-  return { accion, etiqueta, headSha: plan.headSha, sesion: previo?.tipo === 'lanzada' ? previo.sesion : undefined, incierto: previo?.tipo === 'reservada' }
+  return { accion, etiqueta, headSha: plan.headSha, sesion: previo?.tipo === 'lanzada' ? previo.sesion : undefined, incierto: previo?.tipo === 'reservada', sesionInvalida: previo?.tipo === 'sesion-invalida' }
 }
 
-function OrdenCard({ v, canWrite, prDetectado, falloPr, claude, dictamen, supervision, prFusionado }: {
-  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }; falloPr?: string; prFusionado?: boolean
+function OrdenCard({ v, canWrite, prDetectado, falloPr, falloLanzamiento, claude, dictamen, supervision, prFusionado }: {
+  v: OrdenVista; canWrite: boolean; prDetectado?: { url: string; estado: string }; falloPr?: string; falloLanzamiento?: string; prFusionado?: boolean
   dictamen?: EvaluacionDictamen | null
   supervision?: Supervision
   claude?: { configurada: boolean; sesion?: string | null }
@@ -90,7 +75,7 @@ function OrdenCard({ v, canWrite, prDetectado, falloPr, claude, dictamen, superv
         ) : null}
         <div><dt>Actualizada</dt><dd><DateText value={o.actualizadoEn} /></dd></div>
         <div><dt>Issue</dt><dd>{o.issueUrl ? <ExternalLink href={o.issueUrl}>{o.issueUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : <span className="muted">Sin issue</span>}</dd></div>
-        <div><dt>PR</dt><dd>{!o.prUrl && prDetectado ? <><ExternalLink href={prDetectado.url}>{prDetectado.url.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> <Badge tone="info">Detectado: {prDetectado.estado}</Badge></> : o.prUrl ? <ExternalLink href={o.prUrl}>{o.prUrl.replace(/^https:\/\/github\.com\//, '')}</ExternalLink> : falloPr ? <span className="muted">Detección de PR fallida ({falloPr})</span> : <span className="muted">Sin PR</span>}</dd></div>
+        <div><dt>PR</dt><dd><PrFila prUrl={o.prUrl} prDetectado={prDetectado} falloPr={falloPr} falloLanzamiento={falloLanzamiento} /></dd></div>
       </dl>
       <details>
         <summary>Detalle de la orden</summary>
@@ -130,20 +115,22 @@ export default async function OrdenesPage() {
   const rutina = canWrite && routineClient() !== null
   const sesiones = new Map<string, string | null>()
   const fallos = new Map<string, string>()
+  const fallosLanzamiento = new Map<string, string>()
+  // El panel sigue funcionando sin la detección; queda el código, nunca el token ni el cuerpo.
+  const registrarFallo = (mapa: Map<string, string>, id: string, texto: string, error: unknown): undefined => {
+    mapa.set(id, codigoFalloGitHub(error))
+    console.warn(`[project-os] ${texto}: ${mapa.get(id)}`)
+  }
   // Cierre asistido (ORD-POS-046): órdenes cuyo PR (detectado o registrado) ya está fusionado y lleva su ID en el título.
   const cierres = new Set<string>()
   if (client) {
     await Promise.all(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId).map(async (o) => {
-      try {
-        const pr = await client.prDeOrden(o.proyectoId!, o.id)
-        if (pr?.estado === 'fusionado') cierres.add(o.id)
-        if (pr) prs.set(o.id, pr)
-        else if (rutina && o.issueUrl) sesiones.set(o.id, await client.lanzamientoPrevio(o.proyectoId!, o.issueUrl))
-      } catch (error) {
-        // El panel sigue funcionando sin la detección; queda el código, nunca el token ni el cuerpo.
-        const codigo = codigoFalloGitHub(error)
-        console.warn(`[project-os] detección de PR fallida: ${codigo}`)
-        fallos.set(o.id, codigo)
+      // Si falla la detección queda undefined (no null): no se lee el lanzamiento y la tarjeta dice cuál de las dos falló.
+      const pr = await client.prDeOrden(o.proyectoId!, o.id).catch((e) => registrarFallo(fallos, o.id, 'detección de PR fallida', e))
+      if (pr?.estado === 'fusionado') cierres.add(o.id)
+      if (pr) prs.set(o.id, pr)
+      else if (pr === null && rutina && o.issueUrl) {
+        await client.lanzamientoPrevio(o.proyectoId!, o.issueUrl).then((s) => { sesiones.set(o.id, s) }, (e) => registrarFallo(fallosLanzamiento, o.id, 'lectura de lanzamientos fallida', e))
       }
     }))
     await Promise.all(data.ordenes.filter((o) => o.proyectoId && o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
@@ -186,7 +173,7 @@ export default async function OrdenesPage() {
         if (items.length === 0 && !g.vacio) return null
         return (
           <Section key={g.id} id={g.id} title={`${g.titulo} (${items.length})`}>
-            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} falloPr={fallos.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} prFusionado={cierres.has(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
+            {items.length === 0 ? <Empty>{g.vacio}</Empty> : <div className="stack">{items.map((v) => <OrdenCard key={v.orden.id} v={v} canWrite={canWrite} prDetectado={prs.get(v.orden.id)} falloPr={fallos.get(v.orden.id)} falloLanzamiento={fallosLanzamiento.get(v.orden.id)} dictamen={dictamenes.get(v.orden.id)} prFusionado={cierres.has(v.orden.id)} supervision={botonSupervision(v.orden.id, dictamenes.get(v.orden.id), rutinas, lanzamientos)} claude={rutina ? { configurada: true, sesion: sesiones.get(v.orden.id) ?? null } : undefined} />)}</div>}
           </Section>
         )
       })}

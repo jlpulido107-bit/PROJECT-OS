@@ -767,7 +767,7 @@ export function parseAudit(audit: TableView): AuditedOperation[] {
   })
 }
 
-export type EstadoLanzamiento = { tipo: 'lanzada'; sesion: string } | { tipo: 'reservada' } | { tipo: 'libre' }
+export type EstadoLanzamiento = { tipo: 'lanzada'; sesion: string } | { tipo: 'reservada' } | { tipo: 'sesion-invalida' } | { tipo: 'libre' }
 /** Una reserva sin lanzamiento caduca a las 2 horas (ORD-POS-039). */
 export const RESERVA_MS = 2 * 60 * 60 * 1000
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/
@@ -775,8 +775,8 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/
 function estadoLanzamiento(ops: AuditedOperation[], clave: string, now: Date): EstadoLanzamiento {
   const conClave = ops.filter((o) => o.integridad === 'completa' && o.fields.get('CLAVE')?.despues === clave)
   const lanzada = conClave.find((o) => /^orden\.(revisar|corregir)_lanzar$/.test(o.operacion) && o.fields.get('SESION')?.despues)
-  // Una SESION que no es de claude.ai/code (p. ej. editada a mano en la hoja) no se enlaza ni libera el paso (ORD-POS-041).
-  if (lanzada) return esSesionClaude(lanzada.fields.get('SESION')!.despues) ? { tipo: 'lanzada', sesion: lanzada.fields.get('SESION')!.despues } : { tipo: 'reservada' }
+  // Una SESION que no es de claude.ai/code (p. ej. editada a mano en la hoja) no se enlaza, no caduca ni libera el paso (ORD-POS-041, 048).
+  if (lanzada) return esSesionClaude(lanzada.fields.get('SESION')!.despues) ? { tipo: 'lanzada', sesion: lanzada.fields.get('SESION')!.despues } : { tipo: 'sesion-invalida' }
   // Manda la última reserva o liberación de la clave (ORD-POS-045).
   const ultima = conClave.filter((o) => /^orden\.supervision_(reservar|liberar)$/.test(o.operacion)).at(-1)
   if (!ultima || ultima.operacion === 'orden.supervision_liberar') return { tipo: 'libre' }

@@ -666,7 +666,7 @@ function SupervisionStatus({ supervision }: { supervision?: EjecucionResult }) {
 /** Acciones sobre una orden. El servidor exige el estado que se vio (si cambió, pide recargar). */
 export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude, supervision, prFusionado }: {
   /** Revisión o corrección que toca (ORD-POS-037) y el head del PR que se vio al cargar. */
-  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean }
+  supervision?: { accion: 'revisar' | 'corregir'; etiqueta: string; headSha: string; sesion?: string; incierto?: boolean; sesionInvalida?: boolean }
   ordenId: string
   estado: string
   canApprove: boolean
@@ -735,6 +735,7 @@ export function OrderActions({ ordenId, estado, canApprove, prDetectado, claude,
           {supervision && (estado === 'PR_ABIERTO' || estado === 'REVISADA')
             ? supervision.sesion
               ? <a className="button" href={supervision.sesion} target="_blank" rel="noopener noreferrer nofollow">{supervision.accion === 'corregir' ? 'Corrección en curso' : 'Revisión en curso'}: ver sesión</a>
+              : supervision.sesionInvalida ? <span className="small"><strong>Sesión no válida en AUDITORIA: revísala</strong></span>
               : supervision.incierto ? <span className="small"><strong>Resultado incierto</strong> (reserva sin sesión registrada; caduca a las 2 horas)</span>
               : primary(supervision.etiqueta, 'Lanzando…', () => void sup.submit({ accion: supervision.accion.toUpperCase(), headEsperado: supervision.headSha }))
             : null}
