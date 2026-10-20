@@ -131,7 +131,9 @@ Cada uno con `id` (`H1`, `H2`…), `severidad` (`CRITICA`, `ALTA`, `MEDIA`, `BAJ
 ## Veredicto
 
 - `CONFORME`: todos los criterios `CUMPLE`, ningún hallazgo bloqueante y comprobaciones válidas para el head
-  (pruebas propias con SHA = head y salida 0; CI `EXITO` con SHA = head).
+  (pruebas propias con SHA = head y salida 0; CI `EXITO` con SHA = head). En un repositorio sin CI
+  (`REPOS_SIN_CI` de `web/src/lib/supervision/politica.ts`): CI `CI_AUSENTE` y al menos una prueba propia de «Cómo
+  probar» sobre el head con salida 0; si falta, el criterio queda `NO_VERIFICADO` y el veredicto, `INCONCLUSO`.
 - `CAMBIOS`: algún hallazgo bloqueante o criterio `NO_CUMPLE`.
 - `INCONCLUSO`: sin bloqueantes, pero algún criterio `NO_VERIFICADO`.
 
@@ -144,7 +146,9 @@ revisor no basta: falta el del segundo revisor sobre el mismo head.
 2. Extrae los criterios del issue con `extraerCriterios` de `web/src/lib/supervision/criterios.ts` (da
    `criteriosEsperados` y `hashCriterios`; `hashCriterios` del reporte debe ser el calculado). Si la extracción falla,
    dictamina `INCONCLUSO` e indica el motivo.
-3. Valida con `validarReporte(json, { ciRequerida: true, criteriosEsperados })` de `web/src/lib/supervision/report.ts`
+3. Valida con `validarReporte(json, politicaDeRepo(REPOSITORIO, criteriosEsperados))` de
+   `web/src/lib/supervision/report.ts` y `politica.ts`: `REPOSITORIO` es el de la orden (datos de entrada), nunca un
+   texto del dictamen ni del PR, y `politica.ts` fija `ciRequerida` por repositorio
    (por ejemplo, con un script temporal fuera del repositorio ejecutado con `npx tsx` o `vitest`; el ejemplo
    [`ejemplo-dictamen.json`](ejemplo-dictamen.json) muestra el formato).
 4. Si `ok` es falso, corrige el JSON con los errores devueltos y repite. Si no logras que pase, publica un

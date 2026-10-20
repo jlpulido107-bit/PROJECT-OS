@@ -13,7 +13,7 @@ export function DictamenFila({ prUrl, ev, fallo }: { prUrl: string; ev: Evaluaci
   const href = urlComentario(prUrl, d.comentarioId)
   return (
     <>
-      {d.veredicto} · ronda {d.ronda} · {d.bloquean} bloquean, {d.noBloquean} no · <span className="mono">{d.sha}</span>
+      {d.veredicto} · ronda {d.ronda} · {d.bloquean} bloquean, {d.noBloquean} no{d.sinCi ? ' · sin CI · pruebas del revisor' : ''} · <span className="mono">{d.sha}</span>
       {href ? <> · <ExternalLink href={href}>Ver dictamen</ExternalLink></> : null}
     </>
   )

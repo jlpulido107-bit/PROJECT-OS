@@ -68,7 +68,7 @@ export interface ReporteRevision {
 
 /** Política de la orden que decide qué comprobaciones exige. */
 export interface PoliticaReporte {
-  /** Si es false, `CI_AUSENTE` puede ser CONFORME dejando constancia (nunca éxito implícito). */
+  /** Si es false (repositorio sin CI, `politica.ts`), CONFORME exige `CI_AUSENTE` y pruebas propias (nunca éxito implícito). */
   ciRequerida: boolean
   /** IDs de los criterios de aceptación de la orden: el reporte debe traer exactamente uno por cada ID. */
   criteriosEsperados: readonly string[]
@@ -267,7 +267,8 @@ function problemasComprobaciones(r: ReporteRevision, politica: PoliticaReporte):
   }
   switch (ci.estado) {
     case 'EXITO':
-      if (ci.sha !== r.headSha) p.push('la CI exitosa no es del head revisado')
+      if (!politica.ciRequerida) p.push('CI EXITO en un repositorio declarado sin CI')
+      else if (ci.sha !== r.headSha) p.push('la CI exitosa no es del head revisado')
       break
     case 'CI_AUSENTE':
       if (politica.ciRequerida) p.push('CI_AUSENTE con CI requerida por la política')
