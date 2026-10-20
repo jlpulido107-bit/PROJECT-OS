@@ -87,7 +87,7 @@ describe('agente PM: proxy → ruta → servicio', () => {
 
   it('orden.crear con todos los criterios en una línea → 422 con el mismo error de campo que el formulario (ORD-POS-044)', async () => {
     const before = await rows()
-    const request = build('POST', '/api/operaciones/ordenes', { ...order, requestId: uuid(), criterios: '1. npm test 2. lint' })
+    const request = build('POST', '/api/operaciones/ordenes', { ...order, requestId: uuid(), criterios: '1. npm test 2. Lint' })
     const r = await through(postOrden as Handler, request)
     expect(r).toMatchObject({ passed: true, status: 422, json: { error: { codigo: 'validacion' } } })
     expect(JSON.stringify(r.json)).toContain('el criterio 1 contiene «2.» en la misma línea')

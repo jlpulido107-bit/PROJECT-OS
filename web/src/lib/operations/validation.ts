@@ -382,9 +382,12 @@ function motivoCriterios(texto: string): string | null {
   const r = extraerCriterios(texto)
   if (!r.ok) return r.motivo
   for (const { numero, texto: t } of r.criterios) {
-    // « 2. » o « 2) » dentro del texto con un número mayor: otro criterio pegado en la misma línea.
-    for (const [, n, delim] of t.matchAll(/(?:^|\s)([1-9]\d{0,2})([.)])\s+\S/g)) {
-      if (Number(n) > numero) return `el criterio ${numero} contiene «${n}${delim}» en la misma línea`
+    // Otro criterio pegado en la misma línea (ORD-POS-050): « N+1. » seguido de mayúscula, o dos marcas consecutivas
+    // (« 3. … 4. »). «el paso 2. luego», «1.5 horas» o «versión 2. de» son texto válido.
+    for (const linea of t.split('\n')) {
+      const marcas = [...linea.matchAll(/(?:^|\s)([1-9]\d{0,2})([.)])\s+(\S)/g)].map(([, n, delim, c]) => ({ n: Number(n), delim, c: c! }))
+      const pegada = marcas.find((m, i) => (m.n === numero + 1 && /\p{Lu}/u.test(m.c)) || marcas[i + 1]?.n === m.n + 1)
+      if (pegada) return `el criterio ${numero} contiene «${pegada.n}${pegada.delim}» en la misma línea`
     }
   }
   return r.criterios.length < 2 ? 'hay menos de 2 criterios numerados en líneas separadas' : null
