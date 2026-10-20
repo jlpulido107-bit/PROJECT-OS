@@ -21,6 +21,8 @@ Si te llama una rutina o el propietario, no hay nadie a quien preguntar: si algo
 - **Delta tras corrección:** el PR ya tuvo un dictamen `CAMBIOS` y `corregir-pr` empujó un commit nuevo. Revisa el diff
   entre el head ya dictaminado y `HEAD_ESPERADO`, comprueba que cada hallazgo bloqueante previo quedó resuelto y que no
   hay regresión en los criterios que ya cumplían. El dictamen sigue siendo uno por head y lleva `ronda` (máximo 2).
+  También tras una **ronda de solo fusión** de `corregir-pr` (un PR `CONFORME` que quedó en conflicto con su base): el
+  delta es el merge commit; comprueba que solo trae la base y que la resolución conserva ambos comportamientos.
 - **Segundo revisor** (solo órdenes MEDIO, antes de fusionar; Fable 5.1): revisión completa e independiente. No leas el
   dictamen del primer revisor antes de fijar el tuyo; tu dictamen no lo sustituye ni lo hereda.
 
