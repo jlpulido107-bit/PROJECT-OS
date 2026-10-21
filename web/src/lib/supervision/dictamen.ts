@@ -15,6 +15,7 @@ const RONDAS_MAX = 2
 /** REV-/EJE-<orden>-<n> llega hasta 999 (textoSupervision rechaza más). */
 const N_MAX = 999
 export const CORRELATIVO_AGOTADO = 'Correlativo de revisión agotado (máximo 999)'
+export const LISTO_PARA_DECISION = 'Listo para tu decisión'
 
 export interface DatosPr { headSha: string; comentarios: Array<{ id: number; body: string }> }
 
@@ -93,7 +94,7 @@ function siguientePaso(vigentes: Valido[], riesgo: string | null): { elegido: Va
   const dobleRevision = conformes.some((p) =>
     (p.reporte.rol === 'PRIMERO' || p.reporte.rol === 'DELTA') &&
     conformes.some((s) => s.reporte.rol === 'SEGUNDO' && modelo(s) !== undefined && modelo(s) !== modelo(p)))
-  return { elegido: conforme, texto: riesgo === 'BAJO' || dobleRevision ? 'Listo para tu decisión' : 'Falta segundo revisor' }
+  return { elegido: conforme, texto: riesgo === 'BAJO' || dobleRevision ? LISTO_PARA_DECISION : 'Falta segundo revisor' }
 }
 
 function planDe(
@@ -111,6 +112,14 @@ function planDe(
   const delta = previo?.veredicto === 'CAMBIOS'
   const ronda = (previo?.ronda ?? 0) + (delta ? 1 : 0)
   return ronda > RONDAS_MAX ? null : { ...base, tipo: delta ? 'DELTA' : 'PRIMERO', ronda, intento: 1 }
+}
+
+/**
+ * DEC-POS-011: el dictamen basta para REVISADA solo si /ordenes lo da por listo: CONFORME de PRIMERO o DELTA del head
+ * actual y, salvo en BAJO, un SEGUNDO CONFORME de otro modelo. CAMBIOS, INCONCLUSO o riesgo ALTO no bastan.
+ */
+export function dictamenSuficiente(ev: EvaluacionDictamen): boolean {
+  return ev.estado.tipo === 'vigente' && ev.estado.dictamen.veredicto === 'CONFORME' && ev.siguiente === LISTO_PARA_DECISION
 }
 
 export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
