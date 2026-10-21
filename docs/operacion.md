@@ -23,6 +23,7 @@ Cada función corre en una sesión separada; el revisor nunca es la sesión que 
 | --- | --- | --- | --- |
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
 | POS · PM | Solo el escritor PM: altas por la API con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh) | Implementar, revisar o corregir; aprobar, enviar, cancelar o cerrar; cambiar `ESTADO` o `BLOQUEO` | DEC-POS-005; [estado actual](estado-actual.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
+| POS · Ideas | Conversar las ideas con el propietario y entregar paquetes al PM; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS; escribir en la hoja | Orden ORD-POS-056; [notas](notas.md) |
 | Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
 
 El token de la API lo añade el proxy del entorno POS · PM; nadie lo lee, imprime ni pide
