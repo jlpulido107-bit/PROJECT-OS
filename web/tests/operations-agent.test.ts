@@ -79,10 +79,17 @@ describe('lista blanca de operaciones (criterio 2)', () => {
   })
 
   it.each([
-    'orden.aprobar', 'orden.enviar', 'orden.cancelar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar',
+    'orden.enviar', 'orden.cancelar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar',
     'orden.ejecutar', 'tiempo.registrar',
   ] as const)('%s → 403', async (op) => {
     expect(await fails(evaluateWriteRequest(req({}), ctx(op)))).toEqual(['operacion-no-permitida', 403])
+  })
+
+  it('orden.aprobar (PATCH de una orden) solo con APROBAR, ENVIAR o REVISAR (DEC-POS-011)', async () => {
+    for (const accion of ['APROBAR', 'ENVIAR', 'REVISAR']) expect((await evaluateWriteRequest(req({ accion }), ctx('orden.aprobar'))).actor).toBe(AGENT_ACTOR)
+    for (const body of [{ accion: 'CERRAR' }, { accion: 'CANCELAR' }, { accion: 'CERRAR_FUSIONADO' }, {}]) {
+      expect(await fails(evaluateWriteRequest(req(body), ctx('orden.aprobar')))).toEqual(['transicion-reservada-pm', 403])
+    }
   })
 
   it('sin operación declarada → 403 (falla cerrada)', async () => {

@@ -1,8 +1,10 @@
 import 'server-only'
 
+import { evaluarDictamen } from '../supervision/dictamen'
+import { ORDER_RISKS } from './constants'
 import { OperationError } from './errors'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
-import { createGitHubClient, GitHubError, type GitHubClient } from './github'
+import { createGitHubClient, GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
 import type { OperationContext, OperationResult, OperationsService } from './service'
 import { derivedRequestId, type OrderTransitionCommand } from './validation'
 
@@ -138,6 +140,7 @@ export async function transitionWithDispatch(
   client: GitHubClient | null = githubClient(),
   rutina: RoutineClient | null = routineClient(),
 ): Promise<ResultadoConEnvio> {
+  if (ctx.agent) ctx = { ...ctx, autorizacion: await autorizacionPm(service, cmd, client) }
   if (cmd.accion === 'enviar' && !cmd.url) {
     // Reintento manual del envío: la orden debe estar APROBADA.
     if (!client) return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio: { ok: false, codigo: 'sin-token' } }
@@ -154,6 +157,35 @@ export async function transitionWithDispatch(
   if (!client) return { ...result, envio: { ok: false, codigo: 'sin-token' } }
   const envio = await enviar(service, client, cmd.ordenId, cmd.requestId, ctx)
   return { ...result, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
+}
+
+/**
+ * DEC-POS-011: el agente PM aprueba o envía solo con el «sí» citado y nunca una orden de riesgo ALTO; marca REVISADA solo
+ * con un dictamen válido del head actual, releído en GitHub. Devuelve lo que se audita como AUTORIZACION; no escribe.
+ */
+async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCommand, client: GitHubClient | null): Promise<string> {
+  if (cmd.accion !== 'aprobar' && cmd.accion !== 'enviar' && cmd.accion !== 'revisar') throw new OperationError('transicion-reservada-pm')
+  const o = await service.readOrder(cmd.ordenId)
+  if (!o) throw new OperationError('orden-inexistente')
+  if (cmd.accion !== 'revisar') {
+    if (!cmd.autorizacion) throw new OperationError('validacion', { fields: { autorizacion: 'Requerido para el agente PM' } })
+    if (!(ORDER_RISKS as readonly string[]).includes((o.RIESGO ?? '').toUpperCase())) throw new OperationError('riesgo-alto-pm')
+    return cmd.autorizacion
+  }
+  const repo = REPOSITORIOS[o.PROYECTO_ID ?? '']
+  const numero = /\/pull\/(\d+)$/.exec(o.PR_URL ?? '')?.[1]
+  if (!repo || !numero || repoDeUrl(o.PR_URL ?? '', 'pull') !== repo) throw new OperationError('dictamen-no-valido')
+  if (!client) throw new OperationError('github-no-disponible')
+  let datos: Awaited<ReturnType<GitHubClient['datosDictamen']>>
+  try {
+    datos = await client.datosDictamen(o.PROYECTO_ID!, o.PR_URL!)
+  } catch (error) {
+    if (!(error instanceof GitHubError)) throw error
+    throw new OperationError('github-no-disponible')
+  }
+  const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null }, { repo, numero: Number(numero) })
+  if (ev.estado.tipo !== 'vigente') throw new OperationError('dictamen-no-valido')
+  return `dictamen ${ev.estado.dictamen.veredicto} head ${datos.headSha} comentario ${ev.estado.dictamen.comentarioId}`
 }
 
 /**

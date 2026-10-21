@@ -27,6 +27,8 @@ export interface OperationContext {
   actor: string
   /** Petición del agente PM (token propio): la auditoría añade `;agente=pm` a ORIGEN. */
   agent?: boolean
+  /** Agente PM (DEC-POS-011): «sí» citado del propietario o dictamen; se audita como CAMPO AUTORIZACION. */
+  autorizacion?: string
 }
 
 export interface OperationResult {
@@ -344,9 +346,10 @@ export class OperationsService {
         }
         if (estado !== change.antes) throw new OperationError('estado-divergente')
         const next = { ...current }
-        for (const [column, { despues }] of audited.fields) next[column] = despues
+        const columns = [...audited.fields.keys()].filter((c) => c !== 'AUTORIZACION')
+        for (const column of columns) next[column] = audited.fields.get(column)!.despues
         await this.writeGuarded(ordenes, row.sheetRow, row.cells, { column: 'ORDEN_ID', value: cmd.ordenId }, { column: 'ESTADO', value: current.ESTADO ?? '' }, next)
-        await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, [...audited.fields.keys()]))
+        await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, columns))
         return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: true }
       }
 
@@ -386,9 +389,11 @@ export class OperationsService {
       for (const column of ['ESTADO', 'ISSUE_URL', 'PR_URL', 'NOTAS', 'ACTUALIZADO_EN']) {
         if ((next[column] ?? '') !== (current[column] ?? '')) diff.set(column, { antes: current[column] ?? '', despues: next[column] ?? '' })
       }
+      const columns = [...diff.keys()]
+      if (ctx.agent && ctx.autorizacion) diff.set('AUTORIZACION', { antes: '', despues: ctx.autorizacion })
       await this.auditFirst(op, hash, cmd.requestId, ctx, 'ORDENES_CODEX', cmd.ordenId, diff, now, audit)
       await this.writeGuarded(ordenes, row.sheetRow, row.cells, { column: 'ORDEN_ID', value: cmd.ordenId }, { column: 'ESTADO', value: current.ESTADO ?? '' }, next)
-      await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, [...diff.keys()]))
+      await this.verifyCreated('ORDENES_CODEX', cmd.ordenId, pick(next, columns))
       return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false }
     })
   }

@@ -33,10 +33,10 @@ export async function decide(
   return { action: 'allow', email: token.email }
 }
 
-/** Únicas rutas que el agente PM puede alcanzar sin sesión: POST de altas y PATCH de una tarea. */
+/** Únicas rutas que el agente PM puede alcanzar sin sesión: POST de altas y PATCH de una tarea o de una orden (DEC-POS-011). */
 const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
   ['POST', /^\/api\/operaciones\/(tareas|decisiones|ordenes)\/?$/],
-  ['PATCH', /^\/api\/operaciones\/tareas\/[^/]+\/?$/],
+  ['PATCH', /^\/api\/operaciones\/(tareas|ordenes)\/[^/]+\/?$/],
 ]
 
 /** Comparación en tiempo constante de dos cadenas hex del mismo largo. */

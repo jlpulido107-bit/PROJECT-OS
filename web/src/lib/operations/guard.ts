@@ -1,6 +1,6 @@
 import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, LIMITS, type OperationName } from './constants'
+import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, LIMITS, type OperationName } from './constants'
 import { isWriter, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
@@ -70,6 +70,11 @@ async function evaluateAgentRequest(
   if (ctx.operation === 'tarea.crear' && body && typeof body === 'object' && !Array.isArray(body)) {
     // DEC-POS-005: el PM no fija bloqueos de tareas, tampoco al crearlas.
     if (Object.keys(body).some((key) => key.toLowerCase() === 'bloqueo')) throw new OperationError('operacion-no-permitida')
+  }
+  if (ctx.operation === 'orden.aprobar') {
+    // DEC-POS-011: cerrar, cancelar y las demás transiciones son del propietario, antes de validar nada más.
+    const accion = body && typeof body === 'object' ? (body as Record<string, unknown>).accion : undefined
+    if (typeof accion !== 'string' || !AGENT_ORDER_ACTIONS.includes(accion)) throw new OperationError('transicion-reservada-pm')
   }
   if (ctx.operation === 'tarea.editar') {
     const changes = body && typeof body === 'object' ? (body as Record<string, unknown>).changes : undefined

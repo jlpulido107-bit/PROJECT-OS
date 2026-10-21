@@ -23,8 +23,9 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   escriben en Sheets reales ni usan el conector de Google Sheets.
 - Escritura del PM (DEC-POS-005): solo la sesión PM (Claude) escribe, únicamente por la API de operaciones del dashboard
   (tareas, decisiones PENDIENTE y órdenes BORRADOR), con la skill `pm-escribir-api` y tras el «sí» explícito del
-  propietario; nunca aprueba, envía, cancela ni cierra nada ni cambia ESTADO o BLOQUEO. Nadie escribe en Sheets con el
-  conector. Un solo escritor.
+  propietario; nunca cancela ni cierra nada ni cambia ESTADO o BLOQUEO de tareas. DEC-POS-011 (2026-10-21): con el «sí»
+  citado y su fecha puede aprobar y enviar órdenes (nunca de riesgo ALTO) y marcar REVISADA con un dictamen válido del
+  head actual; CERRADA y CANCELADA siguen siendo del propietario. Nadie escribe en Sheets con el conector. Un solo escritor.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.

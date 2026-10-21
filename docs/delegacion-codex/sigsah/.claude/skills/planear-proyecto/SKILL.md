@@ -115,7 +115,8 @@ propietario. En una sesión sin esa skill, da las filas TSV para que el propieta
 
 ### Estados
 
-Nunca cambies uno. Si algo parece hecho, dilo y deja que el propietario lo marque.
+Nunca cambies uno por tu cuenta. Con el «sí» literal del propietario, `pm-escribir-api` puede aprobar y enviar una orden
+(no de riesgo ALTO) y marcarla REVISADA con un dictamen válido del head actual (DEC-POS-011); CERRADA y CANCELADA, nunca.
 
 ## 5. Memoria del proyecto
 

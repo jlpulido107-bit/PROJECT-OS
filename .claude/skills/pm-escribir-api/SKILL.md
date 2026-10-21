@@ -16,9 +16,13 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 
 ## Qué puede y qué no
 
-- Solo **altas**: tarea (`PENDIENTE`), decisión (`PENDIENTE`) u orden (`BORRADOR`, riesgo `BAJO` o `MEDIO`).
-- Nunca intentes aprobar, enviar, cancelar, registrar PR, revisar, cerrar ni ejecutar órdenes, ni cambiar `ESTADO` o
-  `BLOQUEO`, ni crear una tarea con bloqueo, ni borrar o editar filas.
+- **Altas**: tarea (`PENDIENTE`), decisión (`PENDIENTE`) u orden (`BORRADOR`, riesgo `BAJO` o `MEDIO`).
+- **Transiciones de orden (DEC-POS-011)**: `PATCH /api/operaciones/ordenes/<ID>` con `requestId` (UUID v4 generado una
+  vez y guardado), `accion` y `expectedEstado`. `APROBAR` (BORRADOR → APROBADA → ENVIADA, lanza la rutina) y `ENVIAR`
+  exigen `autorizacion` = `«<sí literal del propietario>» AAAA-MM-DD`; nunca riesgo `ALTO`. `REVISAR` (PR_ABIERTO →
+  REVISADA) solo pasa con un dictamen válido del head actual. Cada una queda en `AUDITORIA` con `AUTORIZACION`.
+- Nunca intentes cancelar, registrar PR, cerrar ni ejecutar órdenes (la API responde `transicion-reservada-pm`), ni
+  cambiar `ESTADO` o `BLOQUEO` de tareas, ni crear una tarea con bloqueo, ni borrar o editar filas.
 - Nunca escribas en Sheets con el conector. Sin secretos, correos ni datos personales, clínicos o de pacientes.
 
 ## Pasos
