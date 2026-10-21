@@ -35,6 +35,9 @@ export type OperationErrorCode =
   | 'pr-no-fusionado'
   | 'orden-sin-proyecto'
   | 'github-no-disponible'
+  | 'transicion-reservada-pm'
+  | 'riesgo-alto-pm'
+  | 'dictamen-no-valido'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -72,6 +75,9 @@ const STATUS: Record<OperationErrorCode, number> = {
   'pr-no-fusionado': 422,
   'orden-sin-proyecto': 422,
   'github-no-disponible': 503,
+  'transicion-reservada-pm': 403,
+  'riesgo-alto-pm': 422,
+  'dictamen-no-valido': 422,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -110,6 +116,9 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'orden-sin-proyecto': 'La orden no tiene PROYECTO_ID; no se consultó GitHub ni se cerró nada.',
   'pr-no-fusionado': 'GitHub no confirma un PR fusionado con el ID de la orden en el título; no se cerró nada.',
   'github-no-disponible': 'No se pudo leer el PR en GitHub; no se cerró nada.',
+  'transicion-reservada-pm': 'El agente PM solo aprueba, envía y marca REVISADA; esa transición es del propietario.',
+  'riesgo-alto-pm': 'El agente PM no aprueba ni envía órdenes de riesgo ALTO; no se escribió nada.',
+  'dictamen-no-valido': 'No hay un dictamen válido del head actual del PR; no se marcó REVISADA.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

@@ -97,6 +97,8 @@ export interface OrderTransitionCommand {
   motivo: string | null
   /** ISSUE_URL (enviar) o PR_URL (registrar_pr; en cerrar_fusionado la pone el servidor tras releer GitHub). */
   url: string | null
+  /** Solo el agente PM al aprobar o enviar (DEC-POS-011): «sí» literal del propietario y fecha, `«…» AAAA-MM-DD`. */
+  autorizacion?: string
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -397,7 +399,7 @@ const ACCIONES = ['APROBAR', 'CANCELAR', 'ENVIAR', 'REGISTRAR_PR', 'REVISAR', 'C
 
 export function parseOrderTransition(ordenId: string, body: unknown): OrderTransitionCommand {
   const input = asObject(body)
-  const c = new Checker(input, ['requestId', 'accion', 'expectedEstado', 'motivo', 'url'])
+  const c = new Checker(input, ['requestId', 'accion', 'expectedEstado', 'motivo', 'url', 'autorizacion'])
   const id = ordenId.trim().toUpperCase()
   if (!ORDER_ID.test(id)) c.setError('ordenId', 'ID de orden no válido')
   const accion = c.oneOf('accion', ACCIONES, true)
@@ -418,8 +420,19 @@ export function parseOrderTransition(ordenId: string, body: unknown): OrderTrans
     url: needsUrl ? rawUrl : null,
   }
   if (accion !== 'CANCELAR' && cmd.motivo) c.setError('motivo', 'Solo se usa al cancelar')
+  const autorizacion = c.text('autorizacion', { required: false, max: LIMITS.motivo })
+  if (autorizacion && accion !== 'APROBAR' && accion !== 'ENVIAR') c.setError('autorizacion', 'Solo se usa al aprobar o enviar')
+  else if (autorizacion && !autorizacionValida(autorizacion)) c.setError('autorizacion', 'Cita el «sí» literal del propietario y la fecha: «…» AAAA-MM-DD')
+  if (autorizacion) cmd.autorizacion = autorizacion
   c.done()
   return cmd
+}
+
+/** `«cita» AAAA-MM-DD`: la cita contiene la palabra «sí» y la fecha existe. */
+function autorizacionValida(texto: string): boolean {
+  const m = /^«([^«»]+)» (\d{4}-\d{2}-\d{2})$/u.exec(texto)
+  const fecha = m && Date.parse(`${m[2]}T00:00:00Z`)
+  return !!m && /(?:^|\P{L})s[ií](?:\P{L}|$)/iu.test(m[1]!) && !Number.isNaN(fecha) && new Date(fecha as number).toISOString().startsWith(m[2]!)
 }
 
 /** «Ejecutar con Claude» (F5a): solo el ID de la orden y, para volver a lanzar, forzar = 'SI'. */

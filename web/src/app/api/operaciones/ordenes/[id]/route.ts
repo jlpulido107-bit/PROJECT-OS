@@ -13,5 +13,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
     return transitionWithDispatch(service, parseOrderTransition(decodeURIComponent(id), body), ctx)
-  }, 200, 'orden.aprobar') // el agente PM no tiene ninguna transición: cualquier acción es 403
+  }, 200, 'orden.aprobar') // el agente PM solo aprueba, envía y marca REVISADA (DEC-POS-011, guard y dispatch)
 }

@@ -169,7 +169,6 @@ describe('agente PM: proxy → ruta → servicio', () => {
     const before = await rows()
     const cases: Array<[Handler, string, string, string]> = [
       [postTiempo as Handler, 'POST', '/api/operaciones/tiempos', 'X'],
-      [patchOrden as Handler, 'PATCH', '/api/operaciones/ordenes/ORD-POS-901', 'ORD-POS-901'],
       [ejecutarOrden as Handler, 'POST', '/api/operaciones/ordenes/ORD-POS-901/ejecutar', 'ORD-POS-901'],
     ]
     for (const [handler, method, path, id] of cases) {
@@ -180,12 +179,13 @@ describe('agente PM: proxy → ruta → servicio', () => {
     expect(await rows()).toBe(before)
   })
 
-  it('el agente PM no puede usar el cierre asistido (ORD-POS-046): 403 operacion-no-permitida sin filas', async () => {
+  it('cerrar, cancelar y demás transiciones reservadas → 403 transicion-reservada-pm sin filas (DEC-POS-011)', async () => {
     const before = await rows()
-    const request = build('PATCH', '/api/operaciones/ordenes/ORD-POS-902', { requestId: uuid(), accion: 'CERRAR_FUSIONADO', expectedEstado: 'PR_ABIERTO' })
-    expect(await patchOrden(request, params('ORD-POS-902'))).toMatchObject({ status: 403 })
-    const again = build('PATCH', '/api/operaciones/ordenes/ORD-POS-902', { requestId: uuid(), accion: 'CERRAR_FUSIONADO', expectedEstado: 'PR_ABIERTO' })
-    expect(await (await patchOrden(again, params('ORD-POS-902'))).json()).toMatchObject({ error: { codigo: 'operacion-no-permitida' } })
+    for (const accion of ['CERRAR', 'CERRAR_FUSIONADO', 'CANCELAR', 'REGISTRAR_PR', 'OTRA']) {
+      const request = build('PATCH', '/api/operaciones/ordenes/ORD-POS-902', { requestId: uuid(), accion, expectedEstado: 'PR_ABIERTO' })
+      const r = await through(patchOrden as Handler, request, 'ORD-POS-902')
+      expect(r, accion).toMatchObject({ passed: true, status: 403, json: { error: { codigo: 'transicion-reservada-pm' } } })
+    }
     expect(await rows()).toBe(before)
   })
 

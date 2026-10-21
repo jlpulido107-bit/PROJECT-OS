@@ -70,7 +70,9 @@ export const ORDER_TERMINAL_STATES = ['CERRADA', 'CANCELADA'] as const
 
 /** Acceso del agente PM (DEC-POS-005, docs/escritura-v1-8.md): solo estas operaciones y solo estos campos de tarea. */
 export const AGENT_ACTOR = 'agente-pm'
-export const AGENT_OPERATIONS: readonly OperationName[] = ['tarea.crear', 'tarea.editar', 'decision.crear', 'orden.crear']
+export const AGENT_OPERATIONS: readonly OperationName[] = ['tarea.crear', 'tarea.editar', 'decision.crear', 'orden.crear', 'orden.aprobar']
+/** DEC-POS-011: en PATCH de una orden (operación 'orden.aprobar') el PM solo usa estas acciones; el resto es del propietario. */
+export const AGENT_ORDER_ACTIONS: readonly string[] = ['APROBAR', 'ENVIAR', 'REVISAR']
 export const AGENT_EDITABLE_TASK_FIELDS = [
   'titulo', 'descripcion', 'prioridad', 'hitoId', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'criterioTerminado',
 ] as const
