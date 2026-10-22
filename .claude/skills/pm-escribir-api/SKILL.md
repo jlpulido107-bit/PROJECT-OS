@@ -74,34 +74,41 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 
 ## Edición y transiciones
 
-`scripts/pm-alta.sh` solo hace altas (`POST`); la edición de una tarea y las transiciones de orden (`PATCH`) siguen
-este procedimiento a mano, con el mismo patrón: `requestId` generado una vez y guardado, un solo `curl`, sin cabecera
-`Authorization`.
+Las transiciones de orden (`APROBAR`, `ENVIAR`, `REVISAR`) van con el script fijo
+[`scripts/pm-transicion.sh`](../../../scripts/pm-transicion.sh) (ORD-POS-062); la edición de una tarea sigue a mano,
+con el mismo patrón: `requestId` generado una vez y guardado, un solo `curl`, sin cabecera `Authorization`.
 
 1. **Releer.** Lee la fila con el conector de Drive, **solo lectura**: `VERSION` de la tarea, o `ESTADO`, `RIESGO` y
    `PR_URL` de la orden. Si la orden es `ALTO`, o ya está en el estado destino, detente y dilo.
 2. **Proponer y esperar.** Muestra el cuerpo completo y espera el «sí» literal (paso 2 de Pasos). Para `APROBAR` o
    `ENVIAR`, la `autorizacion` cita ese «sí» con el ID de la orden y su fecha; `REVISAR` no lleva `autorizacion`.
-3. **Guardar.** Escribe el cuerpo con un `requestId` nuevo en `<archivo>.enviado.json` **antes** de enviar; si ese
-   archivo ya existe, no generes otro:
+3. **Orden: script.** Escribe en un archivo JSON (sin `requestId`) solo `accion`, `expectedEstado` y, si toca,
+   `autorizacion`:
+   `{"accion": "APROBAR", "expectedEstado": "BORRADOR", "autorizacion": "<ORDEN_ID> «<sí>» AAAA-MM-DD"}`; `ENVIAR` con
+   `"expectedEstado": "APROBADA"` y la misma `autorizacion`, sin `url`; `REVISAR` con `"expectedEstado": "PR_ABIERTO"`.
+   Envíalo una sola vez:
+
+   ```bash
+   bash scripts/pm-transicion.sh <ORDEN_ID> <archivo.json>
+   ```
+
+   El script rechaza sin enviar otra acción, un ID que no sea `ORD-PRY-NNN`, un `url`, otro campo, un `requestId`, o
+   una `autorizacion` ausente, mal formada o con otro ID; genera el `requestId` (UUID v4), guarda el cuerpo en
+   `<archivo>.enviado.json` **antes** de enviar y hace un solo `PATCH` a `ordenes/<ORDEN_ID>`. Anota `requestId` y la
+   ruta del `.enviado.json` en la conversación. Los demás chequeos (estado, riesgo, «sí», fecha, dictamen) los hace el servidor.
+4. **Tarea: a mano.** Escribe `{"expectedVersion": <VERSION>, "changes": {<solo campos permitidos>}}` con un
+   `requestId` nuevo en `<archivo>.enviado.json` **antes** de enviar (si ese archivo ya existe, no generes otro), anota
+   `requestId` y ruta, y envía una sola vez:
 
    ```bash
    jq --arg r "$(python3 -c 'import uuid; print(uuid.uuid4())')" '. + {requestId: $r}' <archivo.json> > <archivo>.enviado.json
-   ```
-
-   - Tarea: `{"expectedVersion": <VERSION>, "changes": {<solo campos permitidos>}}` a `tareas/<ID>`.
-   - Orden: `{"accion": "APROBAR", "expectedEstado": "BORRADOR", "autorizacion": "<ORDEN_ID> «<sí>» AAAA-MM-DD"}`;
-     `ENVIAR` con `"expectedEstado": "APROBADA"` y la misma `autorizacion`, sin `url`; `REVISAR` con
-     `"expectedEstado": "PR_ABIERTO"`. Ruta `ordenes/<ID>`.
-4. **PATCH.** Anota `requestId` y la ruta del `.enviado.json` en la conversación y envía una sola vez:
-
-   ```bash
    curl -sS --max-time 60 -w '\nHTTP %{http_code}\n' -X PATCH \
-     "https://project-os-dashboard-235975889400.northamerica-south1.run.app/api/operaciones/<tareas|ordenes>/<ID>" \
+     "https://project-os-dashboard-235975889400.northamerica-south1.run.app/api/operaciones/tareas/<ID>" \
      -H 'Content-Type: application/json' --data-binary @<archivo>.enviado.json
    ```
 
 5. **Verificar y errores.** Igual que los pasos 4 a 7 de Pasos: solo un 2xx es éxito; relee la fila y `AUDITORIA`
-   (`AUTORIZACION` en las transiciones). Un 4xx salvo 409 no escribió nada (renombra a `.rechazado.json`); un 409, un
-   5xx o un fallo de transporte es incierto: relee antes de nada y, solo si el propietario lo autoriza, reenvía el
-   **mismo** `.enviado.json` con el mismo `curl`.
+   (`AUTORIZACION` en las transiciones). Un 4xx salvo 409 no escribió nada (el script renombra a `.rechazado.json`;
+   a mano, renómbralo tú); un 409, un 5xx o un fallo de transporte es incierto: relee antes de nada y, solo si el
+   propietario lo autoriza, reenvía el **mismo** `.enviado.json`
+   (`bash scripts/pm-transicion.sh <ORDEN_ID> <archivo.json> --repetir`, o el mismo `curl` en una tarea).
