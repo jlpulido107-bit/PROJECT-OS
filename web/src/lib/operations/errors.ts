@@ -38,6 +38,7 @@ export type OperationErrorCode =
   | 'transicion-reservada-pm'
   | 'riesgo-alto-pm'
   | 'dictamen-no-valido'
+  | 'dictamen-insuficiente'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -78,6 +79,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'transicion-reservada-pm': 403,
   'riesgo-alto-pm': 422,
   'dictamen-no-valido': 422,
+  'dictamen-insuficiente': 422,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -119,6 +121,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'transicion-reservada-pm': 'El agente PM solo aprueba, envía y marca REVISADA; esa transición es del propietario.',
   'riesgo-alto-pm': 'El agente PM no aprueba ni envía órdenes de riesgo ALTO; no se escribió nada.',
   'dictamen-no-valido': 'No hay un dictamen válido del head actual del PR; no se marcó REVISADA.',
+  'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011: en MEDIO, también SEGUNDO de otro modelo); no se marcó REVISADA.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

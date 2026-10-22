@@ -22,16 +22,16 @@ if (!crit.ok) throw new Error('criterios de prueba inválidos')
 let seq = 0
 const uuid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`
 
-const reporte = (headSha = HEAD) => ({
-  versionContrato: '2', rol: 'PRIMERO', modelo: 'claude-sonnet-5-5', versionPolitica: 'DEC-POS-008', ordenId: 'ORD-POS-902', tareaId: 'DEMO-002',
+const reporte = (headSha = HEAD, rol = 'PRIMERO', modelo = 'claude-sonnet-5-5', n = 1) => ({
+  versionContrato: '2', rol, modelo, versionPolitica: 'DEC-POS-008', ordenId: 'ORD-POS-902', tareaId: 'DEMO-002',
   proyectoId: 'POS', repo: 'jlpulido107-bit/PROJECT-OS', issue: 49, pr: 50, headSha, baseSha: 'b'.repeat(40), hashCriterios: crit.hashCriterios,
-  revisionId: 'REV-ORD-POS-902-1', ejecucionId: 'EJE-ORD-POS-902-1', intento: 1, ronda: 0,
+  revisionId: `REV-ORD-POS-902-${n}`, ejecucionId: `EJE-ORD-POS-902-${n}`, intento: 1, ronda: 0,
   autorizacion: { otorgadaPor: 'propietario', orden: 'ORD-POS-902', desde: '2026-10-21' }, limiteConsumo: { presupuesto: '1 USD', tiempoMaximo: '30 min' },
   criterios: [{ id: '1', resultado: 'CUMPLE', evidencia: 'ok' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }],
   evidencia: { propias: [{ comando: 'npm test', sha: headSha, codigoSalida: 0 }], ci: { estado: 'EXITO', ejecucion: 'r1', sha: headSha }, autor: [] },
   hallazgos: [], veredicto: 'CONFORME',
 })
-const comentario = (body: string) => ({ id: 7, body: `${MARCA_DICTAMEN}\n\n\`\`\`json\n${body}\n\`\`\`` })
+const comentario = (body: string, id = 7) => ({ id, body: `${MARCA_DICTAMEN}\n\n\`\`\`json\n${body}\n\`\`\`` })
 
 async function setup(cambios: Record<string, Record<string, string>> = {}, comentarios = [comentario(JSON.stringify(reporte()))]) {
   const store = new InMemoryTableStore({ ...(buildFixtureTabs('2026-10-21') as Record<string, unknown[][]>), AUDITORIA: [[...WRITE_HEADERS.AUDITORIA]] })
@@ -107,5 +107,30 @@ describe('agente PM: marcar REVISADA (criterio 2)', () => {
     const e = await setup(conPr, [comentario(body)])
     await expect(e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })).rejects.toMatchObject({ code: 'dictamen-no-valido' })
     expect([e.auditoria(), await e.estado('ORD-POS-902')]).toEqual([[], 'PR_ABIERTO'])
+  })
+})
+
+describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS-011)', () => {
+  const bloqueante = { id: 'H1', severidad: 'ALTA', ubicacion: 'a.ts:1', condicion: 'falla', impacto: 'rompe', bloquea: true, justificacion: 'npm test' }
+  const medio = { 'ORD-POS-902': { ...conPr['ORD-POS-902'], RIESGO: 'MEDIO' } }
+  const segundo = (modelo: string) => comentario(JSON.stringify(reporte(HEAD, 'SEGUNDO', modelo, 2)), 8)
+  const primero = comentario(JSON.stringify(reporte()))
+
+  it.each([
+    ['CAMBIOS', conPr, [comentario(JSON.stringify({ ...reporte(), veredicto: 'CAMBIOS', hallazgos: [bloqueante], criterios: [{ id: '1', resultado: 'NO_CUMPLE', evidencia: 'x' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }] }))]],
+    ['INCONCLUSO', conPr, [comentario(JSON.stringify({ ...reporte(), veredicto: 'INCONCLUSO', criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'x' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }] }))]],
+    ['MEDIO sin SEGUNDO', medio, [primero]],
+    ['MEDIO con SEGUNDO del mismo modelo', medio, [primero, segundo('claude-sonnet-5-5')]],
+    ['ALTO', { 'ORD-POS-902': { ...conPr['ORD-POS-902'], RIESGO: 'ALTO' } }, [primero]],
+  ])('con %s responde dictamen-insuficiente sin escribir', async (_n, cambios, comentarios) => {
+    const e = await setup(cambios, comentarios)
+    await expect(e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })).rejects.toMatchObject({ code: 'dictamen-insuficiente' })
+    expect([e.auditoria(), await e.estado('ORD-POS-902')]).toEqual([[], 'PR_ABIERTO'])
+  })
+
+  it('MEDIO con PRIMERO y SEGUNDO CONFORME de otro modelo pasa a REVISADA', async () => {
+    const e = await setup(medio, [primero, segundo('claude-fable-5-1')])
+    await e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })
+    expect(await e.estado('ORD-POS-902')).toBe('REVISADA')
   })
 })

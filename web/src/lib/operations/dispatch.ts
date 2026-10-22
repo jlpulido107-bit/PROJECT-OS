@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { evaluarDictamen } from '../supervision/dictamen'
+import { dictamenSuficiente, evaluarDictamen } from '../supervision/dictamen'
 import { ORDER_RISKS } from './constants'
 import { OperationError } from './errors'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
@@ -161,7 +161,7 @@ export async function transitionWithDispatch(
 
 /**
  * DEC-POS-011: el agente PM aprueba o envía solo con el «sí» citado y nunca una orden de riesgo ALTO; marca REVISADA solo
- * con un dictamen válido del head actual, releído en GitHub. Devuelve lo que se audita como AUTORIZACION; no escribe.
+ * con un dictamen CONFORME suficiente del head actual (el que /ordenes da por listo), releído en GitHub. Devuelve lo que se audita como AUTORIZACION; no escribe.
  */
 async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCommand, client: GitHubClient | null): Promise<string> {
   if (cmd.accion !== 'aprobar' && cmd.accion !== 'enviar' && cmd.accion !== 'revisar') throw new OperationError('transicion-reservada-pm')
@@ -185,6 +185,7 @@ async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCo
   }
   const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null }, { repo, numero: Number(numero) })
   if (ev.estado.tipo !== 'vigente') throw new OperationError('dictamen-no-valido')
+  if (!dictamenSuficiente(ev)) throw new OperationError('dictamen-insuficiente')
   return `dictamen ${ev.estado.dictamen.veredicto} head ${datos.headSha} comentario ${ev.estado.dictamen.comentarioId}`
 }
 

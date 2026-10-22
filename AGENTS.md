@@ -26,6 +26,7 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   propietario; nunca cancela ni cierra nada ni cambia ESTADO o BLOQUEO de tareas. DEC-POS-011 (2026-10-21): con el «sí»
   citado y su fecha puede aprobar y enviar órdenes (nunca de riesgo ALTO) y marcar REVISADA con un dictamen válido del
   head actual; CERRADA y CANCELADA siguen siendo del propietario. Nadie escribe en Sheets con el conector. Un solo escritor.
+  REVISADA exige CONFORME según DEC-POS-011: de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.

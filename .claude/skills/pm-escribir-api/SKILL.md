@@ -21,6 +21,7 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
   vez y guardado), `accion` y `expectedEstado`. `APROBAR` (BORRADOR → APROBADA → ENVIADA, lanza la rutina) y `ENVIAR`
   exigen `autorizacion` = `«<sí literal del propietario>» AAAA-MM-DD`; nunca riesgo `ALTO`. `REVISAR` (PR_ABIERTO →
   REVISADA) solo pasa con un dictamen válido del head actual. Cada una queda en `AUDITORIA` con `AUTORIZACION`.
+- REVISADA exige CONFORME según DEC-POS-011 (PRIMERO o DELTA y, en MEDIO, SEGUNDO de otro modelo); si no, `dictamen-insuficiente`.
 - Nunca intentes cancelar, registrar PR, cerrar ni ejecutar órdenes (la API responde `transicion-reservada-pm`), ni
   cambiar `ESTADO` o `BLOQUEO` de tareas, ni crear una tarea con bloqueo, ni borrar o editar filas.
 - Nunca escribas en Sheets con el conector. Sin secretos, correos ni datos personales, clínicos o de pacientes.
