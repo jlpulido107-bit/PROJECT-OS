@@ -28,7 +28,7 @@ class TestHookDependencias(unittest.TestCase):
     def test_settings_solo_tiene_el_hook_session_start_y_el_permiso_de_pm_alta(self):
         ajustes = json.loads(SETTINGS.read_text(encoding="utf-8"))
         self.assertEqual(list(ajustes), ["permissions", "hooks"])
-        self.assertEqual(ajustes["permissions"], {"allow": ["Bash(bash scripts/pm-alta.sh:*)"]})
+        self.assertEqual(ajustes["permissions"], {"allow": ["Bash(bash scripts/pm-alta.sh:*)", "Bash(bash scripts/pm-transicion.sh:*)"]})
         self.assertEqual(list(ajustes["hooks"]), ["SessionStart"])
         comandos = [h["command"] for g in ajustes["hooks"]["SessionStart"] for h in g["hooks"]]
         self.assertEqual(len(comandos), 1)
