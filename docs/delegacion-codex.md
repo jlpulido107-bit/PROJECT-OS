@@ -82,7 +82,22 @@ DEC-POS-008 retiró el muestreo de 1 de cada 5 y toda auditoría externa.
 | BAJO | Revisor Claude a ciegas, con modelo distinto al que implementó | Sí, hasta 2 rondas |
 | BAJO solo documentación | Sin revisor automático | — |
 | MEDIO | Revisión completa a ciegas (Sonnet); tras cada corrección, re-revisión del delta; segundo revisor Fable 5.1 antes de fusionar | Hasta 2 rondas y luego escala |
-| ALTO | No se delega | — |
+| ALTO | No se delega tal cual (DEC-POS-014): se descompone en una orden MEDIO de código inerte por defecto más la activación del propietario; si no se puede, va en vivo con el propietario y se registra en DECISIONES | — (la orden MEDIO sigue su fila) |
+
+**Carril ALTO (DEC-POS-014).** ALTO es el código que cambia en tiempo de ejecución la autorización o los permisos de
+agentes, la escritura en la hoja o datos clínicos; los cambios solo de documentación o skills sobre esos temas son
+MEDIO con doble revisor. Un ALTO nunca se reclasifica como MEDIO: se parte en
+1. una orden **MEDIO** cuyo mecanismo queda **inerte por defecto** (apagado mientras falte una bandera, variable o
+   secreto que solo pone el propietario; con la configuración actual nada cambia), con una prueba de que lo está;
+2. la **activación del propietario**: el script exacto (comandos, comprobación y cómo revertir) que el propietario
+   corre por su cuenta. Ningún agente la aplica: no despliega, no enciende la bandera en producción ni crea o monta
+   secretos.
+
+Precedentes: `WRITE_MODE` ([escritura V1.8](escritura-v1-8.md)) y ORD-POS-027 / ORD-POS-028
+([acceso del agente PM](escritura-v1-8.md#6-acceso-del-agente-pm-ord-pos-027-dec-pos-005-dec-pos-011)). Si el
+mecanismo no puede quedar inerte, no hay orden: el cambio se hace en vivo con el propietario y se registra en
+DECISIONES. El revisor marca «riesgo mal clasificado» cuando una orden MEDIO debió ser ALTO o su código no queda
+inerte por defecto ([`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md#riesgo-mal-clasificado-dec-pos-014)).
 
 El máximo es de 2 rondas de corrección por orden. El segundo revisor de MEDIO revisa a ciegas, sin el dictamen del
 primero. Ningún dictamen autoriza fusión, despliegue ni cierre.

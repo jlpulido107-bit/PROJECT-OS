@@ -95,7 +95,16 @@ https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-c
     automático.
   - `MEDIO`: revisión completa a ciegas, re-revisión del delta tras cada corrección y segundo revisor (Fable 5.1)
     antes de fusionar.
-  - `ALTO`: no se delega; no redactes la orden, explica por qué.
+  - `ALTO` (DEC-POS-014): código que cambie en tiempo de ejecución la autorización o los permisos de agentes, la
+    escritura en la hoja o datos clínicos. Los cambios solo de documentación o skills sobre esos temas son `MEDIO`
+    con doble revisor. Nunca reclasifiques un ALTO como `MEDIO`: propón la descomposición
+    ([carril ALTO](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)):
+    1. la orden `MEDIO` con su mecanismo **inerte por defecto** (apagado mientras falte una bandera, variable o
+       secreto que solo pone el propietario) y un criterio que pruebe que con la configuración actual nada cambia;
+    2. el paso de activación del propietario con su script (comandos exactos, comprobación y cómo revertir), que
+       corre solo el propietario: ningún agente despliega, enciende la bandera en producción ni toca secretos.
+    Precedentes: `WRITE_MODE` y ORD-POS-027 / ORD-POS-028. Si no puede quedar inerte, no redactes la orden: propón
+    hacerlo en vivo con el propietario y la fila de DECISIONES que lo registra.
   - Cambios de esquema, comportamiento visible para usuarios y workflows, secretos o permisos suben el riesgo.
 - **Tamaño.** Una orden = un PR pequeño (menos de 300 líneas previstas). Si el trabajo es mayor, propón la división en
   órdenes con dependencias claras.

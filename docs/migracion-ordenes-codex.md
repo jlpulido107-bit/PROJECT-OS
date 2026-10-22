@@ -31,7 +31,7 @@ ORDEN_ID	PROYECTO_ID	TAREA_ID	TITULO	OBJETIVO	CONTEXTO	CRITERIOS_ACEPTACION	FUER
 | `PROYECTO_ID` | Un ID de PROYECTOS con repositorio: `SIG`, `ECO` o `POS` |
 | `TAREA_ID` | La tarea de TAREAS que avanza esta orden. Obligatoria |
 | `TITULO` … `COMO_PROBAR` | Texto de la orden. Sin secretos, correos, datos de pacientes ni datos personales |
-| `RIESGO` | `BAJO`, `MEDIO` o `ALTO`. `ALTO` no se delega |
+| `RIESGO` | `BAJO`, `MEDIO` o `ALTO`. Una fila `ALTO` no se aprueba desde el dashboard: se trata según DEC-POS-014 (se descompone en una orden `MEDIO` inerte por defecto más la activación del propietario, o va en vivo con él y se registra en DECISIONES; [carril ALTO](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)) |
 | `ESTADO` | Ver la tabla de estados |
 | `ISSUE_URL`, `PR_URL` | Las pega el propietario con lo que informe `/orden-codex` |
 | `ACTUALIZADO_EN` | Fecha `AAAA-MM-DD` del último cambio |
