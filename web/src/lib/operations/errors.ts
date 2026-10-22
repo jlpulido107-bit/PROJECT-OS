@@ -39,6 +39,7 @@ export type OperationErrorCode =
   | 'riesgo-alto-pm'
   | 'dictamen-no-valido'
   | 'dictamen-insuficiente'
+  | 'autorizacion-no-valida'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -80,6 +81,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'riesgo-alto-pm': 422,
   'dictamen-no-valido': 422,
   'dictamen-insuficiente': 422,
+  'autorizacion-no-valida': 422,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -122,6 +124,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'riesgo-alto-pm': 'El agente PM no aprueba ni envía órdenes de riesgo ALTO; no se escribió nada.',
   'dictamen-no-valido': 'No hay un dictamen válido del head actual del PR; no se marcó REVISADA.',
   'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011: en MEDIO, también SEGUNDO de otro modelo); no se marcó REVISADA.',
+  'autorizacion-no-valida': 'La autorización no lleva el ID de esta orden, la palabra «sí» y la fecha de hoy, o ya se usó para otra orden; no se escribió nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

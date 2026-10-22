@@ -74,7 +74,8 @@ async function evaluateAgentRequest(
   if (ctx.operation === 'orden.aprobar') {
     // DEC-POS-011: cerrar, cancelar y las demás transiciones son del propietario, antes de validar nada más.
     const accion = body && typeof body === 'object' ? (body as Record<string, unknown>).accion : undefined
-    if (typeof accion !== 'string' || !AGENT_ORDER_ACTIONS.includes(accion)) throw new OperationError('transicion-reservada-pm')
+    // El parser normaliza la acción; el guard también, para no rechazar « revisar » ni dejar pasar otra grafía (ORD-POS-059).
+    if (typeof accion !== 'string' || !AGENT_ORDER_ACTIONS.includes(accion.trim().toUpperCase())) throw new OperationError('transicion-reservada-pm')
   }
   if (ctx.operation === 'tarea.editar') {
     const changes = body && typeof body === 'object' ? (body as Record<string, unknown>).changes : undefined

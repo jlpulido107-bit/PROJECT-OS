@@ -19,8 +19,13 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 - **Altas**: tarea (`PENDIENTE`), decisión (`PENDIENTE`) u orden (`BORRADOR`, riesgo `BAJO` o `MEDIO`).
 - **Transiciones de orden (DEC-POS-011)**: `PATCH /api/operaciones/ordenes/<ID>` con `requestId` (UUID v4 generado una
   vez y guardado), `accion` y `expectedEstado`. `APROBAR` (BORRADOR → APROBADA → ENVIADA, lanza la rutina) y `ENVIAR`
-  exigen `autorizacion` = `«<sí literal del propietario>» AAAA-MM-DD`; nunca riesgo `ALTO`. `REVISAR` (PR_ABIERTO →
-  REVISADA) solo pasa con un dictamen válido del head actual. Cada una queda en `AUDITORIA` con `AUTORIZACION`.
+  exigen `autorizacion` = `<ORDEN_ID> «<sí literal del propietario>» AAAA-MM-DD`; nunca riesgo `ALTO`. `REVISAR`
+  (PR_ABIERTO → REVISADA) solo pasa con un dictamen válido del head actual. Cada una queda en `AUDITORIA` con `AUTORIZACION`.
+- Formato de la autorización (ORD-POS-059): `ORDEN_ID` igual al de la ruta; la cita contiene «sí» con tilde como palabra
+  («si quieres» no vale); la fecha es la del «sí», hoy en Mérida con un día de margen. Una cita y fecha valen para una
+  sola orden: si el propietario aprueba varias, pide un «sí» por orden. Si no, `autorizacion-no-valida`. Ejemplo:
+  `ORD-POS-059 «sí, apruébala» 2026-10-22`. `ENVIAR` con `url` es del propietario (`transicion-reservada-pm`).
+- Reintentar con el mismo `requestId` y el mismo cuerpo devuelve `repetida=true` sin reevaluar la autorización ni el dictamen.
 - REVISADA exige CONFORME según DEC-POS-011 (PRIMERO o DELTA y, en MEDIO, SEGUNDO de otro modelo); si no, `dictamen-insuficiente`.
 - Nunca intentes cancelar, registrar PR, cerrar ni ejecutar órdenes (la API responde `transicion-reservada-pm`), ni
   cambiar `ESTADO` o `BLOQUEO` de tareas, ni crear una tarea con bloqueo, ni borrar o editar filas.
