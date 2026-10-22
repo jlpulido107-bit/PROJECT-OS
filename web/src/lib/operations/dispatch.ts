@@ -151,7 +151,7 @@ export async function transitionWithDispatch(
   }
   if (cmd.accion === 'enviar' && !cmd.url) {
     // Reintento manual del envío: la orden debe estar APROBADA.
-    if (!client) return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio: { ok: false, codigo: 'sin-token' } }
+    if (!client) return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: repetidaPm, envio: { ok: false, codigo: 'sin-token' } }
     const envio = await enviar(service, client, cmd.ordenId, cmd.requestId, ctx)
     if (!envio.ok && envio.codigo === 'orden-no-aprobada') throw new OperationError('transicion-no-permitida')
     return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: repetidaPm, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }

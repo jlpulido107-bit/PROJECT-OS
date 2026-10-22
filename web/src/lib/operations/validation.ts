@@ -422,21 +422,28 @@ export function parseOrderTransition(ordenId: string, body: unknown): OrderTrans
   if (accion !== 'CANCELAR' && cmd.motivo) c.setError('motivo', 'Solo se usa al cancelar')
   const autorizacion = c.text('autorizacion', { required: false, max: LIMITS.motivo })
   if (autorizacion && accion !== 'APROBAR' && accion !== 'ENVIAR') c.setError('autorizacion', 'Solo se usa al aprobar o enviar')
-  else if (autorizacion && !partesAutorizacion(autorizacion)) c.setError('autorizacion', 'Formato: ORD-PRY-NNN «sí literal del propietario» AAAA-MM-DD')
-  if (autorizacion) cmd.autorizacion = autorizacion.normalize('NFC')
+  else if (autorizacion && !autorizacionValida(autorizacion)) c.setError('autorizacion', 'Formato: ORD-PRY-NNN «sí literal del propietario» AAAA-MM-DD')
+  if (autorizacion) cmd.autorizacion = autorizacion
   c.done()
   return cmd
 }
 
+/** Lo que el parser exigía antes de ORD-POS-059 (camino del propietario sin cambios): la cita contiene «sí» o «si». */
+function autorizacionValida(texto: string): boolean {
+  const a = partesAutorizacion(texto)
+  return !!a && /(?:^|\P{L})s[ií](?:\P{L}|$)/iu.test(a.cita)
+}
+
 /**
- * Forma de la autorización del agente PM (ORD-POS-059): `ORD-PRY-NNN «cita» AAAA-MM-DD`, con una fecha que existe.
- * El ID, el «sí» y la fecha de hoy los comprueba el despacho, que conoce la orden de la ruta y el reloj del servicio.
+ * Forma de la autorización: `[ORD-PRY-NNN ]«cita» AAAA-MM-DD`, con una fecha que existe. El ID es opcional en el
+ * parser (el propietario conserva el formato anterior); el despacho del agente PM exige el ID de la orden de la ruta,
+ * «sí» con tilde y la fecha de hoy (ORD-POS-059). Sin ID, ordenId es ''.
  */
 export function partesAutorizacion(texto: string): { ordenId: string; cita: string; fecha: string } | null {
-  const m = /^(ORD-[A-Z0-9]+-\d+) «([^«»]+)» (\d{4}-\d{2}-\d{2})$/u.exec(texto.normalize('NFC'))
+  const m = /^(?:(ORD-[A-Z0-9]+-\d+) )?«([^«»]+)» (\d{4}-\d{2}-\d{2})$/u.exec(texto.normalize('NFC'))
   const fecha = m && Date.parse(`${m[3]}T00:00:00Z`)
   if (!m || Number.isNaN(fecha) || !new Date(fecha as number).toISOString().startsWith(m[3]!)) return null
-  return { ordenId: m[1]!, cita: m[2]!, fecha: m[3]! }
+  return { ordenId: m[1] ?? '', cita: m[2]!, fecha: m[3]! }
 }
 
 /** «Ejecutar con Claude» (F5a): solo el ID de la orden y, para volver a lanzar, forzar = 'SI'. */

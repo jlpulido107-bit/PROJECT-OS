@@ -50,7 +50,7 @@ async function setup(cambios: Record<string, Record<string, string>> = {}, comen
   const auditoria = () => store.snapshot().AUDITORIA!.slice(1)
   const estado = async (id = 'ORD-POS-901') => (await service.readOrder(id))?.ESTADO
   const run = (id: string, body: Record<string, unknown>) => transitionWithDispatch(service, parseOrderTransition(id, body), PM, github, rutina)
-  return { run, auditoria, lanzadas, estado, ctl }
+  return { run, auditoria, lanzadas, estado, ctl, service, github }
 }
 
 const conPr = { 'ORD-POS-902': { PR_URL, CRITERIOS_ACEPTACION: CRITERIOS } }
@@ -166,7 +166,18 @@ describe('agente PM: autorización ligada a la orden y a la fecha (ORD-POS-059)'
     await run(e, aprobar('ORD-POS-901 «sí, las dos» 2026-10-21'))
     const filas = e.auditoria().length
     await expect(run(e, aprobar('ORD-POS-902 «sí, las dos» 2026-10-21', 'ORD-POS-902'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    // Mayúsculas y espacios no evaden la comparación (H2 de la revisión).
+    await expect(run(e, aprobar('ORD-POS-902 «  Sí,  las DOS » 2026-10-21', 'ORD-POS-902'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
     expect([e.auditoria().length, await e.estado('ORD-POS-902')]).toEqual([filas, 'BORRADOR'])
+  })
+
+  it('el camino del propietario no cambia: el parser acepta el formato anterior y exige «sí» o «si»; el PM necesita el ID', async () => {
+    const parse = (autorizacion: string) => parseOrderTransition('ORD-POS-901', { requestId: uuid(), accion: 'APROBAR', expectedEstado: 'BORRADOR', autorizacion })
+    for (const ok of ['«sí, apruébala» 2026-10-21', '«si» 2026-10-21', SI]) expect(parse(ok).autorizacion, ok).toBe(ok)
+    for (const mal of ['ORD-POS-901 «adelante» 2026-10-21', '«adelante» 2026-10-21']) expect(() => parse(mal), mal).toThrow()
+    const e = await setup()
+    await expect(run(e, aprobar('«sí, apruébala» 2026-10-21'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    expect([e.auditoria(), await e.estado()]).toEqual([[], 'BORRADOR'])
   })
 
   it('ENVIAR con url es del propietario: se rechaza sin escribir (criterio 3)', async () => {
@@ -186,6 +197,16 @@ describe('agente PM: autorización ligada a la orden y a la fecha (ORD-POS-059)'
     Object.assign(e.ctl, { ahora: '2026-10-30T16:00:00Z', fallaGitHub: true })
     expect((await run(e, ap)).repetida).toBe(true)
     expect((await e.run('ORD-POS-902', env)).repetida).toBe(true)
+    expect(e.auditoria()).toHaveLength(filas)
+  })
+
+  it('el reintento de ENVIAR auditado sin cliente de GitHub (sin token) devuelve repetida=true (criterio 4, H1)', async () => {
+    const e = await setup({ 'ORD-POS-902': { ESTADO: 'APROBADA', ISSUE_URL: '', PR_URL: '' } })
+    const env = { requestId: uuid(), accion: 'ENVIAR', expectedEstado: 'APROBADA', autorizacion: 'ORD-POS-902 «sí, envíala» 2026-10-21' }
+    await e.run('ORD-POS-902', env)
+    const filas = e.auditoria().length
+    const r = await transitionWithDispatch(e.service, parseOrderTransition('ORD-POS-902', env), PM, null, null)
+    expect(r).toMatchObject({ repetida: true, envio: { ok: false, codigo: 'sin-token' } })
     expect(e.auditoria()).toHaveLength(filas)
   })
 
