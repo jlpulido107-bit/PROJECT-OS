@@ -23,7 +23,7 @@ Cada función corre en una sesión separada; el revisor nunca es la sesión que 
 | --- | --- | --- | --- |
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
 | POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO; marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
-| POS · Ideas | Conversar las ideas con el propietario y entregar paquetes al PM; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS; escribir en la hoja | Orden ORD-POS-056; [notas](notas.md) |
+| POS · Ideas | Conversar las ideas con el propietario y entregar paquetes `PAQ-AAAA-MM-DD-NN` al PM, cada uno terminado en «Responde sí PAQ-… para autorizar las altas»; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS; escribir en la hoja; tomar un «sí PAQ» por algo más que altas: nunca aprueba, envía, cancela ni cierra | Orden ORD-POS-056 y ORD-POS-060 (DEC-POS-013); [notas](notas.md) |
 | Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
 
 El token de la API lo añade el proxy del entorno POS · PM; nadie lo lee, imprime ni pide
@@ -75,13 +75,16 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 
 ## Qué hace solo el propietario
 
-Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008 y DEC-POS-011.
+Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-POS-011 y DEC-POS-013.
 
 - Cancelar y cerrar órdenes; aprobar o enviar órdenes de riesgo ALTO; decidir las decisiones; cambiar `ESTADO` o
   `BLOQUEO` de tareas en la hoja.
 - Dar el «sí» literal a cada escritura del PM (vale dado al PM y reenviado al escritor, DEC-POS-008). Con ese «sí»,
   citado con la orden y su fecha, el PM aprueba y envía órdenes BAJO o MEDIO, y marca REVISADA solo con dictamen
   CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head (DEC-POS-011, ORD-POS-057).
+- O dar el «sí PAQ-AAAA-MM-DD-NN» en POS · Ideas (DEC-POS-013, enmienda de DEC-POS-008): autoriza solo las altas de
+  ese paquete, después de que el PM lo verifica en la fuente; aprobar, enviar, cancelar y cerrar no cambian
+  ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013)).
 - Fusionar PRs, desplegar y cerrar tareas e issues.
 - Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP.
 - Habilitar cualquier ejecución con horario (`schedule`), tras aprobar una prueba real.

@@ -67,6 +67,18 @@ Solo tras el «sí» explícito del propietario a la tabla vigente:
 5. Al abrir el PR, avisa al propietario: **«No toques `00-entrada/` en Obsidian hasta fusionar este PR»** (Obsidian Git
    haría commit en `main` y el PR quedaría en conflicto).
 
+## Paquetes para el PM
+
+Cuando el propietario pida pasar ideas al PM como tareas, decisiones u órdenes, entrégalas en un paquete:
+
+- **ID** `PAQ-AAAA-MM-DD-NN`: fecha de hoy en America/Merida y número secuencial del día, desde `01`
+  (`PAQ-2026-10-22-01`, luego `-02`). Nunca reutilices un ID.
+- Cada alta propuesta con sus campos completos, como los pide [`pm-escribir-api`](../pm-escribir-api/SKILL.md).
+- Termina **cada** paquete con la línea: «Responde sí PAQ-AAAA-MM-DD-NN para autorizar las altas», con su ID.
+
+El «sí PAQ» autoriza solo esas altas, tras verificarlo el PM (DEC-POS-013); nunca aprueba, envía, cancela ni cierra.
+Tú no das de alta nada: esperas el mensaje del PM con los IDs creados.
+
 ## Respuesta
 
 Termina siempre con una línea:
