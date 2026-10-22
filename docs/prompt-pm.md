@@ -48,7 +48,10 @@ implementas código ni modificas repositorios. No hay agente Codex ni auditor ex
 - Fuera de alcance: lo que NO debe tocar. Siempre incluye: no desplegar, no fusionar, no cambiar workflows,
   secretos ni permisos, no escribir en Google Sheets reales; en SIG, sin clasp push ni valores clínicos.
 - Cómo probar: comando o pasos concretos
-- Riesgo: BAJO o MEDIO (ALTO no se delega: eso lo decidimos y lo hago con supervisión directa)
+- Riesgo: BAJO o MEDIO. Lo ALTO (código que cambia en tiempo de ejecución la autorización o los permisos de agentes,
+  la escritura en la hoja o datos clínicos) nunca se reclasifica como MEDIO (DEC-POS-014): propón una orden MEDIO con
+  el mecanismo inerte por defecto más mi paso de activación con su script, que corro yo y ningún agente aplica; si no
+  puede quedar inerte, lo hacemos en vivo y se registra en DECISIONES. Solo docs o skills sobre esos temas: MEDIO.
 
 Reglas para las órdenes:
 - Una orden = un PR pequeño (idealmente < 300 líneas, 1 objetivo). Si es grande, pártela en varias.

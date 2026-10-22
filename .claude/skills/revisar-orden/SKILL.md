@@ -122,6 +122,20 @@ Para **cada** criterio de la orden:
 Cada uno con `id` (`H1`, `H2`…), `severidad` (`CRITICA`, `ALTA`, `MEDIA`, `BAJA`), `ubicacion` (`archivo:línea`),
 `condicion`, `impacto`, `bloquea` (booleano) y `justificacion` (obligatoria si bloquea).
 
+#### Riesgo mal clasificado (DEC-POS-014)
+
+Comprueba el riesgo de la orden contra el diff. Es un hallazgo bloqueante (lleva a `CAMBIOS`), con `condicion` que
+empiece por «Riesgo mal clasificado:», cuando:
+- una orden `BAJO` o `MEDIO` debió ser `ALTO`: su código cambia en tiempo de ejecución la autorización o los permisos
+  de agentes, la escritura en la hoja o datos clínicos, y no queda inerte por defecto; o
+- una orden `MEDIO` del carril ALTO trae código que **no queda inerte por defecto**: actúa sin la bandera, variable o
+  secreto que solo pone el propietario, o el PR aplica la activación (despliega, enciende la bandera en producción,
+  crea o monta secretos).
+
+Los cambios solo de documentación o skills sobre esos temas son `MEDIO`; si llegan como `BAJO`, también es este
+hallazgo. Un `ALTO` no se reclasifica como `MEDIO`: el hallazgo pide descomponer, nunca bajar el riesgo
+([carril ALTO](../../../docs/delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)).
+
 ### Consumo acotado de pruebas
 
 - Corre solo las pruebas **relacionadas con el diff**; si toca `web/`, también `npx tsc --noEmit` y `npm run lint`

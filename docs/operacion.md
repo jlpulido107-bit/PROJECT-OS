@@ -63,7 +63,7 @@ propietario decide. Fuente: [delegación](delegacion-codex.md#ciclo) y la
 | BAJO | Un revisor Claude a ciegas, con modelo distinto al que implementó | **Lanzar revisión** → si `CAMBIOS`, **Pedir corrección** → **Lanzar revisión** (delta); hasta 2 rondas |
 | BAJO solo docs | Sin revisor automático | Ninguno: decide el propietario con el PR |
 | MEDIO | Sonnet completo; re-revisión del delta tras cada corrección; Fable 5.1 antes de fusionar | **Lanzar revisión** → **Pedir corrección** ↔ **Lanzar revisión** (delta), máx. 2 rondas → **Lanzar segundo revisor**; luego escala al propietario |
-| ALTO | No se delega | Ninguno |
+| ALTO | No se delega tal cual: se descompone en una orden MEDIO de código inerte por defecto (sigue la fila MEDIO) más la activación del propietario; si no se puede, en vivo con el propietario y registrado en DECISIONES ([carril ALTO](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003), DEC-POS-014) | Ninguno para la fila ALTO |
 
 Ningún dictamen autoriza fusión, despliegue ni cierre, y un PR fusionado no cierra la tarea por sí solo
 ([delegación](delegacion-codex.md#ciclo)).
@@ -80,7 +80,7 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 
 ## Qué hace solo el propietario
 
-Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-POS-011 y DEC-POS-013.
+Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-POS-011, DEC-POS-013 y DEC-POS-014.
 
 - Cancelar y cerrar órdenes; aprobar o enviar órdenes de riesgo ALTO; decidir las decisiones; cambiar `ESTADO` o
   `BLOQUEO` de tareas en la hoja.
@@ -91,5 +91,7 @@ Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-
   ese paquete, después de que el PM lo verifica en la fuente; aprobar, enviar, cancelar y cerrar no cambian
   ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013)).
 - Fusionar PRs, desplegar y cerrar tareas e issues.
+- Aplicar la activación del carril ALTO (DEC-POS-014): correr el script que enciende el mecanismo inerte (desplegar,
+  encender la bandera en producción, crear o montar secretos). Ningún agente la aplica.
 - Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP.
 - Habilitar cualquier ejecución con horario (`schedule`), tras aprobar una prueba real.
