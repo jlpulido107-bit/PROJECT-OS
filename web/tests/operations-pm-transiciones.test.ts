@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildFixtureTabs } from '@/lib/fixtures'
 import { WRITE_HEADERS } from '@/lib/operations/constants'
 import { transitionWithDispatch } from '@/lib/operations/dispatch'
-import type { GitHubClient } from '@/lib/operations/github'
+import { GitHubError, type GitHubClient } from '@/lib/operations/github'
 import type { RoutineClient } from '@/lib/operations/claude-routine'
 import { OperationsService } from '@/lib/operations/service'
 import { findById, InMemoryTableStore, readView } from '@/lib/operations/table-store'
@@ -13,7 +13,7 @@ import { MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
 /** DEC-POS-011 (ORD-POS-055): el agente PM aprueba y envía con el «sí» citado y marca REVISADA con dictamen válido. */
 
 const PM = { actor: 'agente-pm', agent: true }
-const SI = '«sí, apruébala» 2026-10-21'
+const SI = 'ORD-POS-901 «sí, apruébala» 2026-10-21'
 const HEAD = 'a'.repeat(40)
 const PR_URL = 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/50'
 const CRITERIOS = '1. Uno\n2. Dos'
@@ -40,15 +40,17 @@ async function setup(cambios: Record<string, Record<string, string>> = {}, comen
     const fila = findById(view, 'ORDEN_ID', id)[0]!
     await store.writeRow('ORDENES_CODEX', fila.sheetRow, fila.cells.map((c, i) => campos[view.header[i]!] ?? c))
   }
-  const service = new OperationsService(store, { mode: 'mock', clock: () => new Date('2026-10-21T16:00:00Z') })
+  const ctl = { ahora: '2026-10-21T16:00:00Z', head: HEAD, fallaGitHub: false }
+  const service = new OperationsService(store, { mode: 'mock', clock: () => new Date(ctl.ahora) })
   const lanzadas: string[] = []
-  const github = { enviar: async () => ({ issueUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/100', creado: true }), lanzamientoPrevio: async () => null,
-    registrarLanzamiento: async () => undefined, datosDictamen: async () => ({ headSha: HEAD, comentarios }) } as unknown as GitHubClient
+  const gh = <T>(v: T) => async () => { if (ctl.fallaGitHub) throw new GitHubError(503); return v }
+  const github = { enviar: gh({ issueUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/100', creado: true }), lanzamientoPrevio: gh(null),
+    registrarLanzamiento: gh(undefined), datosDictamen: async () => gh({ headSha: ctl.head, comentarios })() } as unknown as GitHubClient
   const rutina = { ejecutar: async ({ ordenId }: { ordenId: string }) => (lanzadas.push(ordenId), { sessionUrl: 'https://claude.ai/code/session_1' }) } as unknown as RoutineClient
   const auditoria = () => store.snapshot().AUDITORIA!.slice(1)
   const estado = async (id = 'ORD-POS-901') => (await service.readOrder(id))?.ESTADO
   const run = (id: string, body: Record<string, unknown>) => transitionWithDispatch(service, parseOrderTransition(id, body), PM, github, rutina)
-  return { run, auditoria, lanzadas, estado }
+  return { run, auditoria, lanzadas, estado, ctl, service, github }
 }
 
 const conPr = { 'ORD-POS-902': { PR_URL, CRITERIOS_ACEPTACION: CRITERIOS } }
@@ -132,5 +134,91 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
     const e = await setup(medio, [primero, segundo('claude-fable-5-1')])
     await e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })
     expect(await e.estado('ORD-POS-902')).toBe('REVISADA')
+  })
+})
+
+describe('agente PM: autorización ligada a la orden y a la fecha (ORD-POS-059)', () => {
+  const aprobar = (autorizacion: string, id = 'ORD-POS-901') => ({ requestId: uuid(), accion: 'APROBAR', expectedEstado: 'BORRADOR', autorizacion, _id: id })
+  const run = (e: Awaited<ReturnType<typeof setup>>, { _id, ...body }: ReturnType<typeof aprobar>) => e.run(_id, body)
+
+  it.each([
+    ['«si quieres»', 'ORD-POS-901 «si quieres» 2026-10-21'],
+    ['fecha de 1999', 'ORD-POS-901 «sí» 1999-10-21'],
+    ['fecha de 2099', 'ORD-POS-901 «sí» 2099-10-21'],
+    ['ID de otra orden', 'ORD-POS-902 «sí» 2026-10-21'],
+    ['ID que solo empieza igual', 'ORD-POS-9010 «sí» 2026-10-21'],
+  ])('con %s responde autorizacion-no-valida sin escribir (criterio 1)', async (_n, autorizacion) => {
+    const e = await setup()
+    await expect(run(e, aprobar(autorizacion))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    expect([e.auditoria(), await e.estado()]).toEqual([[], 'BORRADOR'])
+  })
+
+  it('la fecha admite un día de margen en Mérida, con el reloj del servicio', async () => {
+    const e = await setup()
+    await expect(run(e, aprobar('ORD-POS-901 «Sí, adelante» 2026-10-23'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    e.ctl.ahora = '2026-10-22T05:00:00Z' // aún 21 en Mérida (UTC−6): el 22 es mañana, dentro del margen
+    await run(e, aprobar('ORD-POS-901 «Sí, adelante» 2026-10-22'))
+    expect(await e.estado()).toBe('ENVIADA')
+  })
+
+  it('una autorización ya auditada para otra orden se rechaza sin escribir (criterio 2)', async () => {
+    const e = await setup({ 'ORD-POS-902': { ESTADO: 'BORRADOR', ISSUE_URL: '', PR_URL: '' } })
+    await run(e, aprobar('ORD-POS-901 «sí, las dos» 2026-10-21'))
+    const filas = e.auditoria().length
+    await expect(run(e, aprobar('ORD-POS-902 «sí, las dos» 2026-10-21', 'ORD-POS-902'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    // Mayúsculas y espacios no evaden la comparación (H2 de la revisión).
+    await expect(run(e, aprobar('ORD-POS-902 «  Sí,  las DOS » 2026-10-21', 'ORD-POS-902'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    expect([e.auditoria().length, await e.estado('ORD-POS-902')]).toEqual([filas, 'BORRADOR'])
+  })
+
+  it('el camino del propietario no cambia: el parser acepta el formato anterior y exige «sí» o «si»; el PM necesita el ID', async () => {
+    const parse = (autorizacion: string) => parseOrderTransition('ORD-POS-901', { requestId: uuid(), accion: 'APROBAR', expectedEstado: 'BORRADOR', autorizacion })
+    for (const ok of ['«sí, apruébala» 2026-10-21', '«si» 2026-10-21', SI]) expect(parse(ok).autorizacion, ok).toBe(ok)
+    for (const mal of ['ORD-POS-901 «adelante» 2026-10-21', '«adelante» 2026-10-21']) expect(() => parse(mal), mal).toThrow()
+    const e = await setup()
+    await expect(run(e, aprobar('«sí, apruébala» 2026-10-21'))).rejects.toMatchObject({ code: 'autorizacion-no-valida' })
+    expect([e.auditoria(), await e.estado()]).toEqual([[], 'BORRADOR'])
+  })
+
+  it('ENVIAR con url es del propietario: se rechaza sin escribir (criterio 3)', async () => {
+    const e = await setup({ 'ORD-POS-901': { ESTADO: 'APROBADA' } })
+    const body = { requestId: uuid(), accion: 'ENVIAR', expectedEstado: 'APROBADA', autorizacion: SI, url: 'https://github.com/jlpulido107-bit/PROJECT-OS/issues/7' }
+    await expect(e.run('ORD-POS-901', body)).rejects.toMatchObject({ code: 'transicion-reservada-pm' })
+    expect([e.auditoria(), await e.estado(), e.lanzadas]).toEqual([[], 'APROBADA', []])
+  })
+
+  it('el reintento de APROBAR y ENVIAR devuelve repetida=true aunque la fecha ya no valga y GitHub falle (criterio 4)', async () => {
+    const e = await setup({ 'ORD-POS-902': { ESTADO: 'APROBADA', ISSUE_URL: '', PR_URL: '' } })
+    const ap = aprobar(SI)
+    const env = { requestId: uuid(), accion: 'ENVIAR', expectedEstado: 'APROBADA', autorizacion: 'ORD-POS-902 «sí, envíala» 2026-10-21' }
+    await run(e, ap)
+    await e.run('ORD-POS-902', env)
+    const filas = e.auditoria().length
+    Object.assign(e.ctl, { ahora: '2026-10-30T16:00:00Z', fallaGitHub: true })
+    expect((await run(e, ap)).repetida).toBe(true)
+    expect((await e.run('ORD-POS-902', env)).repetida).toBe(true)
+    expect(e.auditoria()).toHaveLength(filas)
+  })
+
+  it('el reintento de ENVIAR auditado sin cliente de GitHub (sin token) devuelve repetida=true (criterio 4, H1)', async () => {
+    const e = await setup({ 'ORD-POS-902': { ESTADO: 'APROBADA', ISSUE_URL: '', PR_URL: '' } })
+    const env = { requestId: uuid(), accion: 'ENVIAR', expectedEstado: 'APROBADA', autorizacion: 'ORD-POS-902 «sí, envíala» 2026-10-21' }
+    await e.run('ORD-POS-902', env)
+    const filas = e.auditoria().length
+    const r = await transitionWithDispatch(e.service, parseOrderTransition('ORD-POS-902', env), PM, null, null)
+    expect(r).toMatchObject({ repetida: true, envio: { ok: false, codigo: 'sin-token' } })
+    expect(e.auditoria()).toHaveLength(filas)
+  })
+
+  it('el reintento de REVISAR devuelve repetida=true aunque el head cambie o GitHub falle (criterio 4)', async () => {
+    const e = await setup(conPr)
+    const body = { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' }
+    await e.run('ORD-POS-902', body)
+    const filas = e.auditoria().length
+    e.ctl.head = 'c'.repeat(40)
+    expect((await e.run('ORD-POS-902', body)).repetida).toBe(true)
+    e.ctl.fallaGitHub = true
+    expect((await e.run('ORD-POS-902', body)).repetida).toBe(true)
+    expect(e.auditoria()).toHaveLength(filas)
   })
 })

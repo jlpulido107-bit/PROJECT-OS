@@ -92,6 +92,13 @@ describe('lista blanca de operaciones (criterio 2)', () => {
     }
   })
 
+  it('orden.aprobar normaliza la acción (trim y mayúsculas) antes de la lista del PM (ORD-POS-059)', async () => {
+    for (const accion of [' revisar ', 'Enviar', 'aprobar\t']) expect((await evaluateWriteRequest(req({ accion }), ctx('orden.aprobar'))).actor).toBe(AGENT_ACTOR)
+    for (const accion of [' cerrar ', 'Cancelar']) {
+      expect(await fails(evaluateWriteRequest(req({ accion }), ctx('orden.aprobar')))).toEqual(['transicion-reservada-pm', 403])
+    }
+  })
+
   it('sin operación declarada → 403 (falla cerrada)', async () => {
     const c = { ...ctx('tarea.crear'), operation: undefined }
     expect(await fails(evaluateWriteRequest(req({}), c))).toEqual(['operacion-no-permitida', 403])

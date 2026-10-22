@@ -6,7 +6,7 @@ import { OperationError } from './errors'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
 import { createGitHubClient, GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
 import type { OperationContext, OperationResult, OperationsService } from './service'
-import { derivedRequestId, type OrderTransitionCommand } from './validation'
+import { derivedRequestId, partesAutorizacion, type OrderTransitionCommand } from './validation'
 
 /**
  * Aprobar y crear el issue en un paso (V1.8 F4). La aprobación se guarda primero; si el envío a GitHub falla, la orden
@@ -140,13 +140,21 @@ export async function transitionWithDispatch(
   client: GitHubClient | null = githubClient(),
   rutina: RoutineClient | null = routineClient(),
 ): Promise<ResultadoConEnvio> {
-  if (ctx.agent) ctx = { ...ctx, autorizacion: await autorizacionPm(service, cmd, client) }
+  let repetidaPm = false
+  if (ctx.agent) {
+    // El registro manual de un issue (ENVIAR con url) es del propietario (ORD-POS-059).
+    if (cmd.accion === 'enviar' && cmd.url) throw new OperationError('transicion-reservada-pm')
+    // Un reintento con el mismo requestId se repite sin reevaluar autorización ni dictamen (ORD-POS-059).
+    const auditada = await service.autorizacionAuditada(cmd)
+    repetidaPm = auditada !== null
+    ctx = { ...ctx, autorizacion: auditada ?? await autorizacionPm(service, cmd, client) }
+  }
   if (cmd.accion === 'enviar' && !cmd.url) {
     // Reintento manual del envío: la orden debe estar APROBADA.
-    if (!client) return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio: { ok: false, codigo: 'sin-token' } }
+    if (!client) return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: repetidaPm, envio: { ok: false, codigo: 'sin-token' } }
     const envio = await enviar(service, client, cmd.ordenId, cmd.requestId, ctx)
     if (!envio.ok && envio.codigo === 'orden-no-aprobada') throw new OperationError('transicion-no-permitida')
-    return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
+    return { operacion: 'orden.enviar', entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: repetidaPm, envio, ...(await alEnviar(service, cmd.ordenId, envio, client, rutina)) }
   }
   if (cmd.accion === 'cerrar_fusionado') {
     const url = (await service.prUrlCierreAuditado(cmd.requestId, cmd.ordenId)) ?? (await prFusionado(service, cmd.ordenId, client))
@@ -170,6 +178,11 @@ async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCo
   if (cmd.accion !== 'revisar') {
     if (!cmd.autorizacion) throw new OperationError('validacion', { fields: { autorizacion: 'Requerido para el agente PM' } })
     if (!(ORDER_RISKS as readonly string[]).includes((o.RIESGO ?? '').toUpperCase())) throw new OperationError('riesgo-alto-pm')
+    // ORD-POS-059: el ID de esta orden, «sí» con tilde como palabra y la fecha de hoy en Mérida con un día de margen.
+    const a = partesAutorizacion(cmd.autorizacion)
+    const dias = a ? Math.abs(Date.parse(`${a.fecha}T00:00:00Z`) - Date.parse(`${service.hoy()}T00:00:00Z`)) / 86_400_000 : Infinity
+    if (!a || a.ordenId !== cmd.ordenId || !/(?:^|\P{L})sí(?:\P{L}|$)/iu.test(a.cita) || dias > 1) throw new OperationError('autorizacion-no-valida')
+    if (await service.citaUsadaEnOtraOrden(`«${a.cita}» ${a.fecha}`, cmd.ordenId)) throw new OperationError('autorizacion-no-valida')
     return cmd.autorizacion
   }
   const repo = REPOSITORIOS[o.PROYECTO_ID ?? '']

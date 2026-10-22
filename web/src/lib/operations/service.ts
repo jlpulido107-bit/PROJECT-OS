@@ -408,6 +408,40 @@ export class OperationsService {
     return found.op.fields.get('PR_URL')?.despues ?? (await this.readOrder(ordenId))?.PR_URL ?? null
   }
 
+  /** Hoy en Mérida según el reloj del servicio (fecha de la autorización del agente PM, ORD-POS-059). */
+  hoy(): string {
+    return todayInMerida(this.clock())
+  }
+
+  /**
+   * Reintento del agente PM (ORD-POS-059): la AUTORIZACION ya auditada con este requestId para esta orden, '' si no la
+   * llevaba, o null si la solicitud es nueva. El envío desde APROBADA se audita con el requestId derivado de 'enviar'.
+   */
+  async autorizacionAuditada(cmd: OrderTransitionCommand): Promise<string | null> {
+    const audit = await readView(this.store, 'AUDITORIA')
+    const envio = cmd.accion === 'enviar' && !cmd.url
+    const op = ORDER_TRANSITIONS[cmd.accion].op
+    const found = this.findAudited(audit, envio ? derivedRequestId(cmd.requestId, 'enviar') : cmd.requestId)
+    if (!found) return null
+    if (found.op.operacion !== op || found.op.id !== cmd.ordenId || (!envio && found.op.hash !== payloadHash(op, cmd))) {
+      throw new OperationError('conflicto-idempotencia')
+    }
+    return found.op.fields.get('AUTORIZACION')?.despues ?? ''
+  }
+
+  /**
+   * true si la misma cita y fecha ya autorizaron otra orden (ORD-POS-059): un «sí» vale para una sola orden. Compara sin
+   * distinguir mayúsculas ni espacios repetidos o en los extremos, para que «Sí, las dos» no evada a «sí, las dos».
+   */
+  async citaUsadaEnOtraOrden(citaYFecha: string, ordenId: string): Promise<boolean> {
+    const norm = (t: string) => t.normalize('NFC').toLowerCase().replace(/\s+/gu, ' ').replace(/« /gu, '«').replace(/ »/gu, '»').trim()
+    const buscada = norm(citaYFecha)
+    return parseAudit(await readView(this.store, 'AUDITORIA')).some((o) => {
+      const m = /«[^«»]+»\s+\d{4}-\d{2}-\d{2}\s*$/u.exec((o.fields.get('AUTORIZACION')?.despues ?? '').normalize('NFC'))
+      return o.id !== ordenId && !!m && norm(m[0]) === buscada
+    })
+  }
+
   /** Fila actual de una orden (para enviarla a GitHub), o null si no existe. */
   async readOrder(ordenId: string): Promise<Record<string, string> | null> {
     const view = await readView(this.store, 'ORDENES_CODEX')
