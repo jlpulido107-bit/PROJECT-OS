@@ -129,7 +129,7 @@ Si acabas de quitar un permiso, el token anterior puede seguir en uso hasta 10 m
    `gcloud iam service-accounts disable "$WRITE_SA" --project="$PROJECT_ID"`.
 4. Para corregir datos, usa `AUDITORIA` como guía. El panel no borra registros.
 
-## 6. Acceso del agente PM (ORD-POS-027, DEC-POS-005)
+## 6. Acceso del agente PM (ORD-POS-027, DEC-POS-005, DEC-POS-011)
 
 Una sesión PM de Claude escribe por la misma API de operaciones con `Authorization: Bearer <token>`, sin cookie de sesión.
 Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una orden aparte tras desplegar.
@@ -138,12 +138,23 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
   variable, o con token inválido, responde 401 sin decir el motivo. Token y cookie de sesión a la vez: 400. Generar el
   token, guardar el hash en Cloud Run y desplegar lo hace el propietario (riesgo ALTO, fuera de esta orden).
 - **Proxy.** Sin sesión, el proxy (`web/src/lib/authz.ts`) solo deja pasar `POST` a `/api/operaciones/{tareas,decisiones,ordenes}`
-  y `PATCH` a `/api/operaciones/tareas/<id>` con `Bearer` cuyo SHA-256 (Web Crypto) coincide con la variable. Cualquier otra
-  ruta, método (incluido `GET`) o token sigue exigiendo sesión; la API vuelve a verificar token, operación y campos.
-- **Permitido** (lista blanca): `tarea.crear`, `tarea.editar`, `decision.crear` (siempre PENDIENTE) y `orden.crear`
-  (siempre BORRADOR, nunca ALTO). `tarea.editar` solo cambia `titulo`, `descripcion`, `prioridad`, `hitoId`,
-  `fechaPlan`, `fechaLimite`, `horasEstimadas` y `criterioTerminado`, con control de VERSION.
-- **Prohibido (403, no escribe nada):** aprobar, enviar, cancelar, registrar PR, revisar, cerrar y ejecutar órdenes,
+  y `PATCH` a `/api/operaciones/tareas/<id>` y `/api/operaciones/ordenes/<id>` (DEC-POS-011) con `Bearer` cuyo SHA-256
+  (Web Crypto) coincide con la variable. Cualquier otra ruta, método (incluido `GET`) o token sigue exigiendo sesión; la
+  API vuelve a verificar token, operación, acción y campos.
+- **Permitido** (lista blanca, `AGENT_OPERATIONS` y `AGENT_ORDER_ACTIONS` en `constants.ts`): `tarea.crear`,
+  `tarea.editar`, `decision.crear` (siempre PENDIENTE), `orden.crear` (siempre BORRADOR, nunca ALTO) y, en el `PATCH` de
+  una orden, las acciones `APROBAR`, `ENVIAR` y `REVISAR` (DEC-POS-011, ORD-POS-055, 057 y 059). `tarea.editar` solo
+  cambia `titulo`, `descripcion`, `prioridad`, `hitoId`, `fechaPlan`, `fechaLimite`, `horasEstimadas` y
+  `criterioTerminado`, con control de VERSION.
+  - `APROBAR` (BORRADOR → APROBADA y envío del issue) y `ENVIAR` (reintento del envío de una APROBADA, sin `url`) exigen
+    `autorizacion` = `ORD-PRY-NNN «cita» AAAA-MM-DD`: el ID igual al de la ruta, la cita con «sí» como palabra y la fecha
+    de hoy en Mérida con un día de margen; una cita y fecha valen para una sola orden. Nunca con riesgo ALTO
+    (`riesgo-alto-pm`); si no, `autorizacion-no-valida`. `ENVIAR` con `url` (registro manual) es del propietario.
+  - `REVISAR` (PR_ABIERTO → REVISADA) relee el PR en GitHub y solo pasa con un dictamen vigente del head actual y
+    suficiente: CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head (ORD-POS-057);
+    si no, `dictamen-no-valido` o `dictamen-insuficiente`.
+  - Cada transición del PM queda en `AUDITORIA` con `AUTORIZACION` (la cita o el dictamen con head y comentario).
+- **Prohibido (403, no escribe nada):** cancelar, registrar PR, cerrar y ejecutar órdenes (`transicion-reservada-pm`),
   registrar tiempos y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`). Tampoco puede fijar `bloqueo` al crear una tarea (403).
 - **Auditoría.** `ACTOR=agente-pm` y `;agente=pm` al final de `ORIGEN`. La idempotencia por `requestId` es la de siempre.
 - **Frecuencia.** Límite propio (clave `agente-pm`): ráfaga de 5 y 1 operación por minuto; al excederlo, 429.

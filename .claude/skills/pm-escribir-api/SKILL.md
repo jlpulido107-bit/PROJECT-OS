@@ -1,10 +1,10 @@
 ---
 name: pm-escribir-api
-description: Da de alta una tarea, una decisión PENDIENTE o una orden BORRADOR de PROJECT-OS por la API de operaciones del dashboard (agente-pm, DEC-POS-005), tras el «sí» explícito del propietario. Solo la sesión PM, solo cuando el propietario lo pide.
+description: Da de alta una tarea, una decisión PENDIENTE o una orden BORRADOR de PROJECT-OS, edita los campos permitidos de una tarea y aprueba, envía o marca REVISADA una orden por la API de operaciones del dashboard (agente-pm, DEC-POS-005 y DEC-POS-011), tras el «sí» explícito del propietario. Solo la sesión PM, solo cuando el propietario lo pide.
 disable-model-invocation: true
 ---
 
-# PM escribe por la API de operaciones (DEC-POS-005)
+# PM escribe por la API de operaciones (DEC-POS-005, DEC-POS-011)
 
 Hoja: `16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic`. Dashboard: `https://project-os-dashboard-235975889400.northamerica-south1.run.app`.
 Campos, límites y permisos: [`docs/escritura-v1-8.md`](../../../docs/escritura-v1-8.md) (§6) y `web/src/lib/operations/validation.ts`.
@@ -17,6 +17,9 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 ## Qué puede y qué no
 
 - **Altas**: tarea (`PENDIENTE`), decisión (`PENDIENTE`) u orden (`BORRADOR`, riesgo `BAJO` o `MEDIO`).
+- **Edición de tareas** (`tarea.editar`): `PATCH /api/operaciones/tareas/<ID>` solo con `titulo`, `descripcion`,
+  `prioridad`, `hitoId`, `fechaPlan`, `fechaLimite`, `horasEstimadas` y `criterioTerminado` (§6), con `expectedVersion`
+  (control de VERSION) y el «sí» literal del propietario. Procedimiento: [Edición y transiciones](#edición-y-transiciones).
 - **Transiciones de orden (DEC-POS-011)**: `PATCH /api/operaciones/ordenes/<ID>` con `requestId` (UUID v4 generado una
   vez y guardado), `accion` y `expectedEstado`. `APROBAR` (BORRADOR → APROBADA → ENVIADA, lanza la rutina) y `ENVIAR`
   exigen `autorizacion` = `<ORDEN_ID> «<sí literal del propietario>» AAAA-MM-DD`; nunca riesgo `ALTO`. `REVISAR`
@@ -28,7 +31,8 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 - Reintentar con el mismo `requestId` y el mismo cuerpo devuelve `repetida=true` sin reevaluar la autorización ni el dictamen.
 - REVISADA exige CONFORME según DEC-POS-011 (PRIMERO o DELTA y, en MEDIO, SEGUNDO de otro modelo); si no, `dictamen-insuficiente`.
 - Nunca intentes cancelar, registrar PR, cerrar ni ejecutar órdenes (la API responde `transicion-reservada-pm`), ni
-  cambiar `ESTADO` o `BLOQUEO` de tareas, ni crear una tarea con bloqueo, ni borrar o editar filas.
+  borrar filas, ni crear una tarea con bloqueo, ni editar de una tarea `estado`, `bloqueo`, `tipo`, `responsable` u otro
+  campo fuera de la lista de arriba (403).
 - Nunca escribas en Sheets con el conector. Sin secretos, correos ni datos personales, clínicos o de pacientes.
 
 ## Pasos
@@ -67,3 +71,37 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 7. **Repetir.** Nunca generes otro `requestId` ni otro cuerpo para la misma alta. Solo si el propietario autoriza
    repetir, usa `bash scripts/pm-alta.sh <tipo> <archivo.json> --repetir`, que reenvía el **mismo** `.enviado.json`
    (mismo `requestId`, idempotente); si se perdió, vuelve al paso 1.
+
+## Edición y transiciones
+
+`scripts/pm-alta.sh` solo hace altas (`POST`); la edición de una tarea y las transiciones de orden (`PATCH`) siguen
+este procedimiento a mano, con el mismo patrón: `requestId` generado una vez y guardado, un solo `curl`, sin cabecera
+`Authorization`.
+
+1. **Releer.** Lee la fila con el conector de Drive, **solo lectura**: `VERSION` de la tarea, o `ESTADO`, `RIESGO` y
+   `PR_URL` de la orden. Si la orden es `ALTO`, o ya está en el estado destino, detente y dilo.
+2. **Proponer y esperar.** Muestra el cuerpo completo y espera el «sí» literal (paso 2 de Pasos). Para `APROBAR` o
+   `ENVIAR`, la `autorizacion` cita ese «sí» con el ID de la orden y su fecha; `REVISAR` no lleva `autorizacion`.
+3. **Guardar.** Escribe el cuerpo con un `requestId` nuevo en `<archivo>.enviado.json` **antes** de enviar; si ese
+   archivo ya existe, no generes otro:
+
+   ```bash
+   jq --arg r "$(python3 -c 'import uuid; print(uuid.uuid4())')" '. + {requestId: $r}' <archivo.json> > <archivo>.enviado.json
+   ```
+
+   - Tarea: `{"expectedVersion": <VERSION>, "changes": {<solo campos permitidos>}}` a `tareas/<ID>`.
+   - Orden: `{"accion": "APROBAR", "expectedEstado": "BORRADOR", "autorizacion": "<ORDEN_ID> «<sí>» AAAA-MM-DD"}`;
+     `ENVIAR` con `"expectedEstado": "APROBADA"` y la misma `autorizacion`, sin `url`; `REVISAR` con
+     `"expectedEstado": "PR_ABIERTO"`. Ruta `ordenes/<ID>`.
+4. **PATCH.** Anota `requestId` y la ruta del `.enviado.json` en la conversación y envía una sola vez:
+
+   ```bash
+   curl -sS --max-time 60 -w '\nHTTP %{http_code}\n' -X PATCH \
+     "https://project-os-dashboard-235975889400.northamerica-south1.run.app/api/operaciones/<tareas|ordenes>/<ID>" \
+     -H 'Content-Type: application/json' --data-binary @<archivo>.enviado.json
+   ```
+
+5. **Verificar y errores.** Igual que los pasos 4 a 7 de Pasos: solo un 2xx es éxito; relee la fila y `AUDITORIA`
+   (`AUTORIZACION` en las transiciones). Un 4xx salvo 409 no escribió nada (renombra a `.rechazado.json`); un 409, un
+   5xx o un fallo de transporte es incierto: relee antes de nada y, solo si el propietario lo autoriza, reenvía el
+   **mismo** `.enviado.json` con el mismo `curl`.

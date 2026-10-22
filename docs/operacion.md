@@ -1,7 +1,7 @@
 # Guía de operación — PROJECT-OS
 
 Una página para saber quién hace qué, en qué entorno y cómo fluye una orden de punta a punta. No cambia reglas ni
-decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-19. Si algo aquí contradice la fuente, manda la fuente.
+decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-22. Si algo aquí contradice la fuente, manda la fuente.
 
 ## Roles y modelos
 
@@ -22,7 +22,7 @@ Cada función corre en una sesión separada; el revisor nunca es la sesión que 
 | Entorno | Qué corre ahí | Qué nunca corre ahí | Fuente |
 | --- | --- | --- | --- |
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
-| POS · PM | Solo el escritor PM: altas por la API con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh) | Implementar, revisar o corregir; aprobar, enviar, cancelar o cerrar; cambiar `ESTADO` o `BLOQUEO` | DEC-POS-005; [estado actual](estado-actual.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
+| POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO; marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
 | POS · Ideas | Conversar las ideas con el propietario y entregar paquetes al PM; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS; escribir en la hoja | Orden ORD-POS-056; [notas](notas.md) |
 | Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
 
@@ -75,10 +75,13 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 
 ## Qué hace solo el propietario
 
-Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005 y DEC-POS-008.
+Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008 y DEC-POS-011.
 
-- Aprobar, enviar o cancelar órdenes y decisiones; cambiar `ESTADO` o `BLOQUEO` en la hoja.
-- Dar el «sí» literal a cada alta del PM (vale dado al PM y reenviado al escritor, DEC-POS-008).
+- Cancelar y cerrar órdenes; aprobar o enviar órdenes de riesgo ALTO; decidir las decisiones; cambiar `ESTADO` o
+  `BLOQUEO` de tareas en la hoja.
+- Dar el «sí» literal a cada escritura del PM (vale dado al PM y reenviado al escritor, DEC-POS-008). Con ese «sí»,
+  citado con la orden y su fecha, el PM aprueba y envía órdenes BAJO o MEDIO, y marca REVISADA solo con dictamen
+  CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head (DEC-POS-011, ORD-POS-057).
 - Fusionar PRs, desplegar y cerrar tareas e issues.
 - Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP.
 - Habilitar cualquier ejecución con horario (`schedule`), tras aprobar una prueba real.
