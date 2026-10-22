@@ -276,6 +276,11 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
 
     /** PR cuyo título empieza por `[ORDEN_ID]` (el más reciente), o null. Solo lectura. */
     async prDeOrden(proyectoId: string, ordenId: string): Promise<PrDeOrden | null> {
+      return (await this.prDetectadoDeOrden(proyectoId, ordenId)).pr
+    },
+
+    /** El PR que prDeOrden detecta y cuántos PR de la orden pasan su filtro (ORD-POS-063: el PM exige uno solo). */
+    async prDetectadoDeOrden(proyectoId: string, ordenId: string): Promise<{ pr: PrDeOrden | null; total: number }> {
       const repo = repoDe(proyectoId)
       const login = await cuentaPropia()
       const prs = await call<Array<{
@@ -283,18 +288,20 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
         head?: { sha?: unknown; repo?: { full_name?: string } | null }; base?: { sha?: unknown }
       }>>('GET', `/repos/${repo}/pulls?state=all&sort=created&direction=desc&per_page=50`)
       // Solo PRs de la cuenta del propietario o del conector de Codex, desde el mismo repositorio (nunca de un fork).
-      const pr = prs.find((p) =>
+      const candidatos = prs.filter((p) =>
         p.title.startsWith(`[${ordenId}]`) &&
         (esPropio(p.user, login) || (p.user?.login ?? '').toLowerCase() === CODEX_BOT) &&
         (p.head?.repo?.full_name ?? '').toLowerCase() === repo.toLowerCase())
-      if (!pr) return null
+      const pr = candidatos[0]
+      if (!pr) return { pr: null, total: 0 }
       // Un PR identificado sin SHA válidos es una respuesta inválida, no «sin PR»: nunca se fabrican valores.
       const { sha: headSha } = pr.head ?? {}
       const { sha: baseSha } = pr.base ?? {}
       if (typeof headSha !== 'string' || typeof baseSha !== 'string' || !SHA_COMPLETO.test(headSha) || !SHA_COMPLETO.test(baseSha)) {
         throw new GitHubError('respuesta-invalida')
       }
-      return { url: pr.html_url, number: pr.number, estado: pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado', headSha, baseSha }
+      const estado = pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado'
+      return { pr: { url: pr.html_url, number: pr.number, estado, headSha, baseSha }, total: candidatos.length }
     },
 
     /**

@@ -2,6 +2,7 @@ import 'server-only'
 
 import { dictamenSuficiente, evaluarDictamen } from '../supervision/dictamen'
 import { ORDER_RISKS } from './constants'
+import { pmPuedeRegistrarPr } from './config'
 import { OperationError } from './errors'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
 import { createGitHubClient, GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
@@ -144,10 +145,14 @@ export async function transitionWithDispatch(
   if (ctx.agent) {
     // El registro manual de un issue (ENVIAR con url) es del propietario (ORD-POS-059).
     if (cmd.accion === 'enviar' && cmd.url) throw new OperationError('transicion-reservada-pm')
+    // ORD-POS-063: REGISTRAR_PR del PM solo con la bandera del propietario y sin url libre (también lo filtra el guard).
+    if (cmd.accion === 'registrar_pr' && (cmd.url || !pmPuedeRegistrarPr())) throw new OperationError('transicion-reservada-pm')
     // Un reintento con el mismo requestId se repite sin reevaluar autorización ni dictamen (ORD-POS-059).
     const auditada = await service.autorizacionAuditada(cmd)
     repetidaPm = auditada !== null
     ctx = { ...ctx, autorizacion: auditada ?? await autorizacionPm(service, cmd, client) }
+    // El PR registrado es el detectado y auditado en AUTORIZACION (`pr <url> head <sha>`), también al repetir.
+    if (cmd.accion === 'registrar_pr') cmd = { ...cmd, url: /^pr (\S+) head /.exec(ctx.autorizacion ?? '')?.[1] ?? null }
   }
   if (cmd.accion === 'enviar' && !cmd.url) {
     // Reintento manual del envío: la orden debe estar APROBADA.
@@ -172,9 +177,10 @@ export async function transitionWithDispatch(
  * con un dictamen CONFORME suficiente del head actual (el que /ordenes da por listo), releído en GitHub. Devuelve lo que se audita como AUTORIZACION; no escribe.
  */
 async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCommand, client: GitHubClient | null): Promise<string> {
-  if (cmd.accion !== 'aprobar' && cmd.accion !== 'enviar' && cmd.accion !== 'revisar') throw new OperationError('transicion-reservada-pm')
+  if (!['aprobar', 'enviar', 'revisar', 'registrar_pr'].includes(cmd.accion)) throw new OperationError('transicion-reservada-pm')
   const o = await service.readOrder(cmd.ordenId)
   if (!o) throw new OperationError('orden-inexistente')
+  if (cmd.accion === 'registrar_pr') return prDetectadoPm(o.PROYECTO_ID ?? '', cmd.ordenId, client)
   if (cmd.accion !== 'revisar') {
     if (!cmd.autorizacion) throw new OperationError('validacion', { fields: { autorizacion: 'Requerido para el agente PM' } })
     if (!(ORDER_RISKS as readonly string[]).includes((o.RIESGO ?? '').toUpperCase())) throw new OperationError('riesgo-alto-pm')
@@ -200,6 +206,24 @@ async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCo
   if (ev.estado.tipo !== 'vigente') throw new OperationError('dictamen-no-valido')
   if (!dictamenSuficiente(ev)) throw new OperationError('dictamen-insuficiente')
   return `dictamen ${ev.estado.dictamen.veredicto} head ${datos.headSha} comentario ${ev.estado.dictamen.comentarioId}`
+}
+
+/**
+ * ORD-POS-063: el PR que /ordenes detecta (prDeOrden), solo si es el único de la orden y está abierto. Devuelve lo que se
+ * audita como AUTORIZACION, con la URL y el head; no escribe. El estado ENVIADA lo exige la transición.
+ */
+async function prDetectadoPm(proyectoId: string, ordenId: string, client: GitHubClient | null): Promise<string> {
+  if (!proyectoId) throw new OperationError('orden-sin-proyecto')
+  if (!client) throw new OperationError('github-no-disponible')
+  let r: Awaited<ReturnType<GitHubClient['prDetectadoDeOrden']>>
+  try {
+    r = await client.prDetectadoDeOrden(proyectoId, ordenId)
+  } catch (error) {
+    if (!(error instanceof GitHubError)) throw error
+    throw new OperationError('github-no-disponible')
+  }
+  if (!r.pr || r.total !== 1 || r.pr.estado !== 'abierto') throw new OperationError('pr-no-detectado')
+  return `pr ${r.pr.url} head ${r.pr.headSha}`
 }
 
 /**

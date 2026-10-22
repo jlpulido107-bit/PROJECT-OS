@@ -189,6 +189,19 @@ describe('deploy.sh', () => {
       expect(sin.calls).not.toContain('replace')
     })
 
+    it('PM_PUEDE_REGISTRAR_PR (ORD-POS-063): se conserva de la activa y se apaga con --quitar', () => {
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push(
+        { name: 'GITHUB_DISPATCH_TOKEN', valueFrom: { secretKeyRef: { name: 'g', key: '1' } } }, { name: 'PM_PUEDE_REGISTRAR_PR', value: 'true' })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('PM_PUEDE_REGISTRAR_PR')
+      const apagada = run(['--desde-activa', '--quitar', 'PM_PUEDE_REGISTRAR_PR', '--dry-run'], { raw, env: min })
+      expect(apagada.code).toBe(0)
+      expect(apagada.out).toMatch(/Variables quitadas:\n  - PM_PUEDE_REGISTRAR_PR\n/)
+    })
+
     it('IMAGE exportada vacía: el render falla sin aplicar', () => {
       const r = run(['--desde-activa'], { raw: full, env: { ...min, IMAGE: '' }, input: 'desplegar\n' })
       expect(r.code).toBe(1)

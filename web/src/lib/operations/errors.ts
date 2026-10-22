@@ -40,6 +40,7 @@ export type OperationErrorCode =
   | 'dictamen-no-valido'
   | 'dictamen-insuficiente'
   | 'autorizacion-no-valida'
+  | 'pr-no-detectado'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -82,6 +83,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'dictamen-no-valido': 422,
   'dictamen-insuficiente': 422,
   'autorizacion-no-valida': 422,
+  'pr-no-detectado': 422,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -125,6 +127,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'dictamen-no-valido': 'No hay un dictamen válido del head actual del PR; no se marcó REVISADA.',
   'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011: en MEDIO, también SEGUNDO de otro modelo); no se marcó REVISADA.',
   'autorizacion-no-valida': 'La autorización no lleva el ID de esta orden, la palabra «sí» y la fecha de hoy, o ya se usó para otra orden; no se escribió nada.',
+  'pr-no-detectado': 'No hay un único PR abierto de la orden detectado en GitHub; el agente PM no registró nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')
