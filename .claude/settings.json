@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bash scripts/pm-alta.sh:*)"
+      "Bash(bash scripts/pm-alta.sh:*)",
+      "Bash(bash scripts/pm-transicion.sh:*)"
     ]
   },
   "hooks": {
