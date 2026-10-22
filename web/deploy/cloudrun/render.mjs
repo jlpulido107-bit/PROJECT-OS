@@ -57,6 +57,8 @@ export function render(template, env) {
  * Habilitan los botones «Lanzar revisión», «Lanzar segundo revisor» y «Pedir corrección» de /ordenes.
  * Opcional (ORD-POS-028, docs/escritura-v1-8.md §6): SECRET_VERSION_PM_AGENT, versión fijada del secreto
  * project-os-pm-agent-token-sha256 (hash del token del agente PM). Solo con WRITE_MODE=sheets; nunca el hash ni el token literal.
+ * Opcional (ORD-POS-063, DEC-POS-014): PM_PUEDE_REGISTRAR_PR=true habilita REGISTRAR_PR del agente PM con el PR detectado.
+ * Solo la exporta el propietario; exige SECRET_VERSION_PM_AGENT y SECRET_VERSION_GITHUB. Sin ella, el permiso queda apagado.
  */
 const ROUTINE_ID = /^[A-Za-z0-9_-]{8,80}$/
 const WRITE_SA = /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/
@@ -66,6 +68,9 @@ function escritura(env, problems) {
   const pmAgent = (env.SECRET_VERSION_PM_AGENT ?? '').trim()
   if (pmAgent && !/^[1-9][0-9]*$/.test(pmAgent)) problems.push('SECRET_VERSION_PM_AGENT no tiene el formato esperado')
   else if (pmAgent && mode !== 'sheets') problems.push('SECRET_VERSION_PM_AGENT exige WRITE_MODE=sheets')
+  const registrarPr = (env.PM_PUEDE_REGISTRAR_PR ?? '').trim()
+  if (registrarPr && registrarPr !== 'true') problems.push('PM_PUEDE_REGISTRAR_PR solo admite true')
+  else if (registrarPr && (!pmAgent || !(env.SECRET_VERSION_GITHUB ?? '').trim())) problems.push('PM_PUEDE_REGISTRAR_PR exige SECRET_VERSION_PM_AGENT y SECRET_VERSION_GITHUB')
   if (mode === '' || mode === 'disabled') return ''
   if (mode !== 'sheets') {
     problems.push('WRITE_MODE debe ser disabled o sheets')
@@ -113,6 +118,7 @@ function escritura(env, problems) {
       '              valueFrom:', '                secretKeyRef:', `                  name: project-os-claude-routine-${nombre.toLowerCase()}-token`, `                  key: '${version}'`,
     ] : []
   })
+  const registrarPrLines = registrarPr === 'true' ? ['            - name: PM_PUEDE_REGISTRAR_PR', "              value: 'true'"] : []
   const pmAgentLines = pmAgent ? [
     '            - name: PM_AGENT_TOKEN_SHA256',
     '              valueFrom:',
@@ -134,6 +140,7 @@ function escritura(env, problems) {
     ...routineLines,
     ...supervisionLines,
     ...pmAgentLines,
+    ...registrarPrLines,
     '',
   ].join('\n')
 }

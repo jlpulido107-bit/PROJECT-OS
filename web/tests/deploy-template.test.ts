@@ -194,6 +194,15 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     }
     expect(() => render(template, { ...VARS, SECRET_VERSION_PM_AGENT: '4' })).toThrow('exige WRITE_MODE=sheets')
     expect(() => render(template, { ...VARS, WRITE_MODE: 'disabled', SECRET_VERSION_PM_AGENT: '4' })).toThrow('exige WRITE_MODE=sheets')
+    // ORD-POS-063: PM_PUEDE_REGISTRAR_PR apagada por defecto; solo `true`, con el acceso del PM y el token de GitHub.
+    expect(withPm).not.toContain('PM_PUEDE_REGISTRAR_PR')
+    const conPmYGithub = { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: '4', SECRET_VERSION_GITHUB: '1' }
+    expect(render(template, { ...conPmYGithub, PM_PUEDE_REGISTRAR_PR: 'true' })).toMatch(/- name: PM_PUEDE_REGISTRAR_PR\n\s+value: 'true'\n/)
+    for (const bad of ['false', 'TRUE', '1']) {
+      expect(() => render(template, { ...conPmYGithub, PM_PUEDE_REGISTRAR_PR: bad }), bad).toThrow('PM_PUEDE_REGISTRAR_PR solo admite true')
+    }
+    expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: '1', PM_PUEDE_REGISTRAR_PR: 'true' })).toThrow('exige SECRET_VERSION_PM_AGENT')
+    expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: '4', PM_PUEDE_REGISTRAR_PR: 'true' })).toThrow('exige SECRET_VERSION_PM_AGENT')
     // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
     expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })

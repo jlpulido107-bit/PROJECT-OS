@@ -22,7 +22,7 @@ Cada función corre en una sesión separada; el revisor nunca es la sesión que 
 | Entorno | Qué corre ahí | Qué nunca corre ahí | Fuente |
 | --- | --- | --- | --- |
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
-| POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO con [`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh); marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
+| POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO con [`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh); marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head; registrar el PR detectado (ENVIADA → PR_ABIERTO) solo si el propietario encendió `PM_PUEDE_REGISTRAR_PR` (ORD-POS-063) | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
 | POS · Ideas | Conversar las ideas con el propietario y entregar paquetes `PAQ-AAAA-MM-DD-NN` al PM, cada uno terminado en «Responde sí PAQ-… para autorizar las altas»; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS; escribir en la hoja; tomar un «sí PAQ» por algo más que altas: nunca aprueba, envía, cancela ni cierra | Orden ORD-POS-056 y ORD-POS-060 (DEC-POS-013); [notas](notas.md) |
 | Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
 
@@ -92,6 +92,8 @@ Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-
   ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013)).
 - Fusionar PRs, desplegar y cerrar tareas e issues.
 - Aplicar la activación del carril ALTO (DEC-POS-014): correr el script que enciende el mecanismo inerte (desplegar,
-  encender la bandera en producción, crear o montar secretos). Ningún agente la aplica.
+  encender la bandera en producción, crear o montar secretos). Ningún agente la aplica. Ejemplo: `PM_PUEDE_REGISTRAR_PR`
+  (ORD-POS-063), que deja al PM registrar el PR detectado, la enciende solo el propietario con `deploy.sh`, después de
+  registrar la decisión que amplía DEC-POS-011 ([`escritura-v1-8.md` §6](escritura-v1-8.md)).
 - Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP.
 - Habilitar cualquier ejecución con horario (`schedule`), tras aprobar una prueba real.

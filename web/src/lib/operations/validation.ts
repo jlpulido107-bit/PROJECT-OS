@@ -397,7 +397,8 @@ function motivoCriterios(texto: string): string | null {
 
 const ACCIONES = ['APROBAR', 'CANCELAR', 'ENVIAR', 'REGISTRAR_PR', 'REVISAR', 'CERRAR', 'CERRAR_FUSIONADO'] as const
 
-export function parseOrderTransition(ordenId: string, body: unknown): OrderTransitionCommand {
+/** `agente`: el PM registra solo el PR detectado (ORD-POS-063); su REGISTRAR_PR no lleva url. */
+export function parseOrderTransition(ordenId: string, body: unknown, { agente = false }: { agente?: boolean } = {}): OrderTransitionCommand {
   const input = asObject(body)
   const c = new Checker(input, ['requestId', 'accion', 'expectedEstado', 'motivo', 'url', 'autorizacion'])
   const id = ordenId.trim().toUpperCase()
@@ -406,7 +407,9 @@ export function parseOrderTransition(ordenId: string, body: unknown): OrderTrans
   // ENVIAR sin URL: el servidor crea el issue en GitHub (F4). Con URL: registro manual de un issue existente.
   const needsUrl = accion === 'ENVIAR' || accion === 'REGISTRAR_PR'
   const rawUrl = c.has('url') ? c.url('url') : null
-  if (accion === 'REGISTRAR_PR' && !rawUrl && !c.errors.url) c.setError('url', 'Requerido')
+  if (agente && accion === 'REGISTRAR_PR') {
+    if (c.has('url')) c.setError('url', 'El agente PM no envía url: se registra el PR detectado')
+  } else if (accion === 'REGISTRAR_PR' && !rawUrl && !c.errors.url) c.setError('url', 'Requerido')
   if (rawUrl && !needsUrl) c.setError('url', 'Solo se usa al enviar o al registrar el PR')
   if (rawUrl && needsUrl && !urlGitHubPermitida(rawUrl, accion === 'ENVIAR' ? 'issues' : 'pull')) {
     c.setError('url', accion === 'ENVIAR' ? 'Debe ser un issue de PROJECT-OS, SIGSAH o RADAROS' : 'Debe ser un PR de PROJECT-OS, SIGSAH o RADAROS')

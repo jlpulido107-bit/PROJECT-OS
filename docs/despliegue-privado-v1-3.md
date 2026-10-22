@@ -532,6 +532,10 @@ Acceso del agente PM (opcional, solo con `WRITE_MODE=sheets`): `export SECRET_VE
 `render.mjs`; compruébalo con `grep -c PM_AGENT_TOKEN_SHA256 /tmp/project-os-service.yaml` (`1` = activo). Para revocarlo,
 despliega sin esa variable. Detalle en [`escritura-v1-8.md` §6](escritura-v1-8.md).
 
+Registro del PR por el PM (ORD-POS-063, apagado por defecto): solo el propietario lo enciende, tras registrar la decisión
+que amplía DEC-POS-011, con `PM_PUEDE_REGISTRAR_PR=true web/deploy/cloudrun/deploy.sh --desde-activa`, y lo apaga con
+`--quitar PM_PUEDE_REGISTRAR_PR`. Ningún agente la enciende. Detalle en [`escritura-v1-8.md` §6](escritura-v1-8.md).
+
 ```bash
 cd web
 node deploy/cloudrun/render.mjs > /tmp/project-os-service.yaml   # valida formatos; falla si falta algo

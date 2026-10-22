@@ -1,7 +1,7 @@
 import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, LIMITS, type OperationName } from './constants'
-import { isWriter, writeModeStatus } from './config'
+import { isWriter, pmPuedeRegistrarPr, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
 
@@ -75,7 +75,10 @@ async function evaluateAgentRequest(
     // DEC-POS-011: cerrar, cancelar y las demás transiciones son del propietario, antes de validar nada más.
     const accion = body && typeof body === 'object' ? (body as Record<string, unknown>).accion : undefined
     // El parser normaliza la acción; el guard también, para no rechazar « revisar » ni dejar pasar otra grafía (ORD-POS-059).
-    if (typeof accion !== 'string' || !AGENT_ORDER_ACTIONS.includes(accion.trim().toUpperCase())) throw new OperationError('transicion-reservada-pm')
+    const normalizada = typeof accion === 'string' ? accion.trim().toUpperCase() : ''
+    // ORD-POS-063: REGISTRAR_PR solo con la bandera del propietario encendida; apagada, sigue reservada.
+    const registrar = normalizada === 'REGISTRAR_PR' && pmPuedeRegistrarPr(ctx.env)
+    if (!registrar && !AGENT_ORDER_ACTIONS.includes(normalizada)) throw new OperationError('transicion-reservada-pm')
   }
   if (ctx.operation === 'tarea.editar') {
     const changes = body && typeof body === 'object' ? (body as Record<string, unknown>).changes : undefined

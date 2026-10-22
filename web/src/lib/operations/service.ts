@@ -419,9 +419,10 @@ export class OperationsService {
    */
   async autorizacionAuditada(cmd: OrderTransitionCommand): Promise<string | null> {
     const audit = await readView(this.store, 'AUDITORIA')
-    const envio = cmd.accion === 'enviar' && !cmd.url
+    // ENVIAR del PM y su REGISTRAR_PR (ORD-POS-063) llegan sin url: lo auditado lleva la del issue o la del PR detectado.
+    const envio = (cmd.accion === 'enviar' || cmd.accion === 'registrar_pr') && !cmd.url
     const op = ORDER_TRANSITIONS[cmd.accion].op
-    const found = this.findAudited(audit, envio ? derivedRequestId(cmd.requestId, 'enviar') : cmd.requestId)
+    const found = this.findAudited(audit, envio && cmd.accion === 'enviar' ? derivedRequestId(cmd.requestId, 'enviar') : cmd.requestId)
     if (!found) return null
     if (found.op.operacion !== op || found.op.id !== cmd.ordenId || (!envio && found.op.hash !== payloadHash(op, cmd))) {
       throw new OperationError('conflicto-idempotencia')

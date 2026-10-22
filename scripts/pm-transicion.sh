@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Transición de orden del PM por la API de operaciones del dashboard (pm-escribir-api, DEC-POS-011).
 # Uso: bash scripts/pm-transicion.sh <ORD-PRY-NNN> <archivo.json> [--repetir]
-# Solo APROBAR, ENVIAR y REVISAR; el servidor valida estado, riesgo, «sí», fecha y dictamen.
+# Solo APROBAR, ENVIAR, REVISAR y REGISTRAR_PR; el servidor valida estado, riesgo, «sí», fecha, dictamen y el PR detectado.
+# REGISTRAR_PR responde 403 mientras el propietario no encienda PM_PUEDE_REGISTRAR_PR en Cloud Run (ORD-POS-063).
 # El host y la ruta son fijos. El token lo añade el proxy del entorno: aquí no se lee ni se envía ninguna cabecera Authorization.
 set -euo pipefail
 
 DASHBOARD=https://project-os-dashboard-235975889400.northamerica-south1.run.app
 USO="Uso: bash scripts/pm-transicion.sh <ORD-PRY-NNN> <archivo.json> [--repetir]
-  archivo.json: {\"accion\": \"APROBAR|ENVIAR|REVISAR\", \"expectedEstado\": \"...\", \"autorizacion\": \"ORD-PRY-NNN «sí…» AAAA-MM-DD\"}
-  APROBAR y ENVIAR exigen autorizacion con el ID de la orden; REVISAR no la lleva. Sin url ni requestId (lo genera el script)."
+  archivo.json: {\"accion\": \"APROBAR|ENVIAR|REVISAR|REGISTRAR_PR\", \"expectedEstado\": \"...\", \"autorizacion\": \"ORD-PRY-NNN «sí…» AAAA-MM-DD\"}
+  APROBAR y ENVIAR exigen autorizacion con el ID de la orden; REVISAR y REGISTRAR_PR no la llevan.
+  Sin url ni requestId (lo genera el script): REGISTRAR_PR registra el PR que el dashboard detecta."
 uso() { echo "$USO" >&2; exit 2; }
 falla() { echo "$1" >&2; exit 2; }
 
@@ -27,13 +29,13 @@ enviado="${archivo%.enviado.json}"; enviado="${enviado%.json}.enviado.json"
 validar() {
   jq -r --arg id "$orden" '
     if type != "object" then "El JSON debe ser un objeto"
-    elif has("url") then "El cuerpo no debe traer url: ENVIAR con url es del propietario"
+    elif has("url") then "El cuerpo no debe traer url: ENVIAR o REGISTRAR_PR con url es del propietario"
     elif (keys - ["accion", "expectedEstado", "autorizacion", "requestId"]) != [] then
       "Campos no permitidos: \(keys - ["accion", "expectedEstado", "autorizacion", "requestId"] | join(", "))"
-    elif (.accion | IN("APROBAR", "ENVIAR", "REVISAR") | not) then
-      "Acción no permitida: \(.accion) (solo APROBAR, ENVIAR o REVISAR)"
+    elif (.accion | IN("APROBAR", "ENVIAR", "REVISAR", "REGISTRAR_PR") | not) then
+      "Acción no permitida: \(.accion) (solo APROBAR, ENVIAR, REVISAR o REGISTRAR_PR)"
     elif (.expectedEstado | type) != "string" then "Falta expectedEstado"
-    elif .accion == "REVISAR" then (if has("autorizacion") then "REVISAR no lleva autorizacion" else empty end)
+    elif (.accion | IN("REVISAR", "REGISTRAR_PR")) then (if has("autorizacion") then "\(.accion) no lleva autorizacion" else empty end)
     elif (.autorizacion | type) != "string" then "\(.accion) exige autorizacion: ORD-PRY-NNN «cita» AAAA-MM-DD"
     elif (.autorizacion | test("^ORD-[A-Z]{3}-[0-9]{3} «[^«»]+» [0-9]{4}-[0-9]{2}-[0-9]{2}$") | not) then
       "autorizacion no válida: formato ORD-PRY-NNN «cita» AAAA-MM-DD"

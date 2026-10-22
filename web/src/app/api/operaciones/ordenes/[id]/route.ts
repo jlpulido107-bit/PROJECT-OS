@@ -12,6 +12,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return handleWrite(request, (body, ctx) => {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
-    return transitionWithDispatch(service, parseOrderTransition(decodeURIComponent(id), body), ctx)
-  }, 200, 'orden.aprobar') // el agente PM solo aprueba, envía y marca REVISADA (DEC-POS-011, guard y dispatch)
+    return transitionWithDispatch(service, parseOrderTransition(decodeURIComponent(id), body, { agente: ctx.agent }), ctx)
+  }, 200, 'orden.aprobar') // el agente PM solo aprueba, envía y marca REVISADA (DEC-POS-011) y, con la bandera, registra el PR detectado (ORD-POS-063)
 }

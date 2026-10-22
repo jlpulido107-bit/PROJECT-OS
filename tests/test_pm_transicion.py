@@ -50,7 +50,7 @@ class TestPmTransicion(unittest.TestCase):
 
     # Criterio 2: acciones, ruta, formato del ID y url.
     def test_acciones_no_permitidas(self):
-        for accion in ["CANCELAR", "CERRAR", "CERRAR_FUSIONADO", "REGISTRAR_PR", "EJECUTAR", "APRO", "aprobar", None]:
+        for accion in ["CANCELAR", "CERRAR", "CERRAR_FUSIONADO", "registrar_pr", "EJECUTAR", "APRO", "aprobar", None]:
             with self.subTest(accion=accion):
                 self.escribir({"accion": accion, "expectedEstado": "PR_ABIERTO"})
                 self.rechaza("Acción no permitida")
@@ -112,6 +112,19 @@ class TestPmTransicion(unittest.TestCase):
         self.assertIn("HTTP 200", r.stdout)
         self.assertIn(f"requestId={self.enviado()['requestId']}", r.stdout)
         self.assertIn('{"estado":"ENVIADA"}', r.stdout)
+
+    # ORD-POS-063: REGISTRAR_PR sin autorizacion ni url; el servidor lo rechaza mientras la bandera esté apagada.
+    def test_registrar_pr_sin_autorizacion_ni_url_pasa(self):
+        self.escribir({"accion": "REGISTRAR_PR", "expectedEstado": "ENVIADA"})
+        self.assertEqual(self.ejecutar().returncode, 0)
+        self.assertEqual(self.enviado()["accion"], "REGISTRAR_PR")
+
+    def test_registrar_pr_con_autorizacion_o_url(self):
+        self.escribir({"accion": "REGISTRAR_PR", "expectedEstado": "ENVIADA", "autorizacion": APROBAR["autorizacion"]})
+        self.rechaza("REGISTRAR_PR no lleva autorizacion")
+        self.escribir({"accion": "REGISTRAR_PR", "expectedEstado": "ENVIADA",
+                       "url": "https://github.com/jlpulido107-bit/PROJECT-OS/pull/1"})
+        self.rechaza("no debe traer url")
 
     def test_revisar_sin_autorizacion_pasa(self):
         self.escribir(REVISAR)

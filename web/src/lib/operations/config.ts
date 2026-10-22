@@ -72,3 +72,11 @@ export function isWriter(email: unknown, env: NodeJS.ProcessEnv = process.env): 
 export function canWrite(email: unknown, env: NodeJS.ProcessEnv = process.env): boolean {
   return writeModeStatus(env).mode !== 'disabled' && isWriter(email, env)
 }
+
+/**
+ * ORD-POS-063 (DEC-POS-014): REGISTRAR_PR del agente PM, apagado por defecto. Solo el valor exacto `true` lo enciende,
+ * y solo el propietario lo pone en Cloud Run con deploy.sh tras registrar la decisión que amplía DEC-POS-011.
+ */
+export function pmPuedeRegistrarPr(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PM_PUEDE_REGISTRAR_PR === 'true'
+}
