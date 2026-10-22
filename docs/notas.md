@@ -6,41 +6,74 @@ usa como contexto leyendo solo un índice corto por proyecto, para ahorrar token
 [`plantilla-notas/`](plantilla-notas/README.md).
 
 La operativa sigue en la hoja y la memoria duradera de cada repositorio en `docs/brief-proyecto.md`: una idea en NOTAS
-no es una tarea ni una decisión.
+no es una tarea ni una decisión. Desde NOTAS#4, además de ideas guarda decisiones en borrador, hallazgos, revisiones
+semanales y referencia, cada tipo en su subcarpeta y con su plantilla.
 
 ## Estructura
+
+Organizada por tipo de nota desde NOTAS#4 (2026-10-22).
 
 | Carpeta | Contenido | ¿La leen los agentes? |
 | --- | --- | --- |
 | `00-entrada/` | Captura rápida, sin clasificar | Solo si el propietario lo pide |
-| `POS/`, `SIG/`, `ECO/`, `DEV/` | `indice.md` y una nota por idea del proyecto | Sí: `indice.md` y, si es relevante, una nota |
+| `_plantillas/` | Captura, Idea, Decision, Hallazgo, Revision y Referencia | Sí, `revisar-ideas` |
+| `POS/`, `SIG/`, `ECO/`, `DEV/` | `indice.md` y una subcarpeta por tipo (abajo) | Sí: `indice.md` y, si es relevante, una nota |
 | `privado/` | Lo que no es para agentes | Nunca |
+
+Dentro de cada proyecto:
+
+| Subcarpeta | Qué va | Destino |
+| --- | --- | --- |
+| `ideas/` | ¿Qué podríamos hacer? (plantilla Idea) | Tarea u orden |
+| `decisiones/` | ¿Qué hay que decidir y por qué? (Decision) | Fila PENDIENTE en DECISIONES |
+| `hallazgos/` | ¿Qué está fallando? (Hallazgo) | P-xx del repositorio u orden |
+| `revisiones/` | ¿Cómo fue la semana? (Revision) | Prioridad de la semana siguiente; no entran al índice |
+| `referencia/` | ¿Cómo funciona hoy? (Referencia) | Foto con fecha; si no coincide, manda la fuente |
+
+## Frontmatter y estados
+
+Frontmatter común: `tipo`, `proyecto`, `estado`, `fecha` y `tarea` (el ID de la hoja cuando se da de alta). Por tipo,
+como en `_plantillas/`:
+
+| Tipo | Estados | `tarea:` | Campos propios |
+| --- | --- | --- | --- |
+| `captura` | — (sin clasificar) | — | `proyecto: ?` si no se sabe |
+| `idea` | `idea` · `propuesta` · `descartada` | POS-NNN u ORD-POS-NNN | `urgencia` (alta, media, baja) |
+| `decision` | `borrador` · `enviada` · `aprobada` · `descartada` | DEC-PRY-NNN | — |
+| `hallazgo` | `abierto` · `confirmado` · `en-orden` · `resuelto` · `descartado` | P-xx u ORD-PRY-NNN | `prioridad` (alta, media, baja) |
+| `revision` | — | — | `semana` en lugar de `fecha` |
+| `referencia` | — (caduca) | — | `actualizado` en lugar de `fecha`, `fuente`, `caduca` |
 
 ## `indice.md`
 
-- Una línea por idea viva, con enlace a su nota: `- [Título](nota.md) — estado: resumen breve`.
-- Como máximo unas 40 líneas; las descartadas salen del índice (su nota se queda).
-- Es lo único que el PM lee siempre; debe bastar para saber si conviene abrir una nota.
+Una línea por nota viva, en la sección de su tipo, con enlace relativo a la nota; como máximo unas 40 líneas:
 
-## Nota de idea
-
-Frontmatter de cada nota:
-
-```yaml
----
-estado: idea        # idea | propuesta | descartada
-tarea: POS-NNN      # opcional: tarea u orden que la recoge (POS-NNN, ORD-POS-NNN)
----
+```markdown
+## Ideas
+- [Título](ideas/titulo.md) — idea · alta: la línea «En una línea».
+## Decisiones en borrador
+- [Título](decisiones/titulo.md) — borrador: la pregunta a decidir.
+## Hallazgos abiertos
+- [Título](hallazgos/titulo.md) — abierto · alta: qué pasa, en una línea.
+## Referencia
+- [Título](referencia/titulo.md) — foto AAAA-MM-DD: de qué trata.
 ```
+
+- Las revisiones no entran al índice. Lo descartado o resuelto sale del índice; la nota se queda con su estado.
+- Se escribe a mano (o en un PR del agente): los agentes leen el texto crudo, así que Dataview no sirve.
+- Es lo único que el PM lee siempre (`<PROYECTO_ID>/indice.md`); debe bastar para saber si conviene abrir una nota.
 
 ## Flujo idea → tarea u orden
 
-1. El propietario la anota (`00-entrada/` o la carpeta del proyecto) y la añade a `indice.md` con `estado: idea`.
-   Para ordenar la bandeja, en la sesión POS · Ideas: «revisa mis ideas» o `/revisar-ideas`
-   ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)); propone una tabla y, solo con el «sí», abre un PR en NOTAS.
-2. En una planeación, el PM la lee en el índice y, si encaja, redacta la tarea u orden (`planear-proyecto`, sección 4).
-3. Solo con el «sí» explícito del propietario se da de alta (skill `pm-escribir-api`); el propietario cambia la nota a
-   `propuesta` y anota `tarea:`. Si no prospera, la marca `descartada` y la quita del índice.
+1. El propietario la anota en `00-entrada/` o en la subcarpeta de su tipo y, si está fuera de `00-entrada/`, agrega su
+   línea al `indice.md`. Para ordenar la bandeja, en la sesión POS · Ideas: «revisa mis ideas» o `/revisar-ideas`
+   ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)); propone una tabla con proyecto y tipo y, solo con el
+   «sí», abre un PR en NOTAS que mueve cada nota a su subcarpeta y la registra en el índice.
+2. En una planeación, el PM la lee en el índice y, si encaja, redacta la tarea, la decisión o la orden
+   (`planear-proyecto`, sección 4).
+3. Solo con el «sí» explícito del propietario se da de alta (skill `pm-escribir-api`); el propietario cambia el estado
+   de la nota (`propuesta`, `enviada`, `en-orden`) y anota `tarea:`. Si no prospera, la marca `descartada` (o
+   `descartado`) y la quita del índice.
 
 ## Reglas
 
