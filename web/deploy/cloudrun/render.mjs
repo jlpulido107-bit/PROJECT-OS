@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura ni RADAROS_SHEET_ID')
   return output.replace(marker, writeBlock)
 }
 
@@ -143,6 +143,24 @@ function escritura(env, problems) {
     ...registrarPrLines,
     '',
   ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-067, docs/diseno-eco-radaros.md §2 y §6): RADAROS_SHEET_ID, ID del libro de RADAROS para /eco.
+ * Literal (no es credencial), con el formato de SHEETS_SPREADSHEET_ID y distinto de él; nunca se imprime el valor.
+ * Sin ella, el YAML no cambia y /eco queda inerte. Es independiente de WRITE_MODE: /eco solo lee.
+ */
+const SPREADSHEET_ID = /^[A-Za-z0-9_-]{20,100}$/
+
+function radaros(template, env, problems) {
+  const id = (env.RADAROS_SHEET_ID ?? '').trim()
+  if (!id) return ''
+  const propia = /^ *- name: SHEETS_SPREADSHEET_ID\n *value: '?([A-Za-z0-9_-]+)'?$/m.exec(template)?.[1]
+  if (!SPREADSHEET_ID.test(id)) problems.push('RADAROS_SHEET_ID no tiene el formato esperado')
+  else if (!propia) problems.push('la plantilla no tiene SHEETS_SPREADSHEET_ID: no se puede validar RADAROS_SHEET_ID')
+  else if (id === propia) problems.push('RADAROS_SHEET_ID no puede ser la hoja de PROJECT-OS')
+  // Entre comillas: un ID solo de dígitos no debe leerse como número.
+  return [`            - name: RADAROS_SHEET_ID`, `              value: '${id}'`, ''].join('\n')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

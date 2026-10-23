@@ -14,16 +14,17 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 const read = (rel: string) => readFileSync(path.join(SRC, rel), 'utf8')
 
 const PAGES = [
-  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'estado', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
+  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'estado', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
   'tareas', 'tareas/[id]/editar', 'tareas/nueva', 'tiempos/nuevo',
 ]
 
 describe('árbol integrado V1.3–V1.6', () => {
-  it('las 16 páginas privadas existen y verifican la sesión antes de leer datos', () => {
+  it('las 17 páginas privadas existen y verifican la sesión antes de leer datos', () => {
     const found = files(path.join(SRC, 'app', '(private)')).filter((f) => f.endsWith('page.tsx'))
       .map((f) => path.relative(path.join(SRC, 'app', '(private)'), path.dirname(f)).split(path.sep).join('/')).sort()
     expect(found).toEqual([...PAGES].sort())
-    for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toContain('privateData(')
+    // /eco (ORD-POS-067): privateEco verifica la sesión y solo después lee RADAROS.
+    for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toMatch(page === 'eco' ? /privateEco\(/ : /privateData\(/)
   })
 
   it('toda API (salvo NextAuth y la sonda pública) exige sesión en el servidor antes de leer o escribir', () => {
@@ -53,7 +54,8 @@ describe('árbol integrado V1.3–V1.6', () => {
     expect(base).toContain("'/planificacion'")
     expect(base).toContain("'/control'")
     expect(base).not.toContain('/operaciones')
-    expect(nav).toMatch(/showOperations \? \[\.\.\.LINKS, \{ href: '\/operaciones'/)
+    expect(nav).toMatch(/showOperations \? \[\{ href: '\/operaciones'/)
+    expect(nav).toMatch(/showEco \? \[\{ href: '\/eco'/)
     const layout = read(path.join('app', '(private)', 'layout.tsx'))
     expect(layout).toMatch(/showOperations=\{/)
   })

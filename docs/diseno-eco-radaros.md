@@ -37,9 +37,9 @@ Reglas (criterio 2):
    formato: muestra «RADAROS no está configurado en este despliegue» (con «valor no válido» si lo hay) y termina:
    cero peticiones a Google, cero tokens. El valor nunca se muestra ni se registra.
 2. Si coincide con `SHEETS_SPREADSHEET_ID`, se trata como no válido: /eco nunca lee la hoja de PROJECT-OS.
-3. La orden de construcción (§8) hará que `render.mjs` rechace al desplegar un valor con formato no válido y que
-   `deploy.sh --desde-activa` la conserve como literal, igual que `PM_PUEDE_REGISTRAR_PR`. Hoy (main) ninguno de los
-   dos conoce `RADAROS_SHEET_ID`.
+3. `render.mjs` rechaza al desplegar un valor con formato no válido o igual al de PROJECT-OS (sin imprimirlo) y
+   `deploy.sh --desde-activa` la conserva como literal, igual que `PM_PUEDE_REGISTRAR_PR` (✅ ORD-POS-067). Sin la
+   variable, el YAML renderizado no cambia.
 4. Con la variable válida, cada carga hace como máximo **2 lecturas**: una de metadatos (`?fields=sheets.properties.title`,
    como `sheetTitles()`) y un `values:batchGet` solo con las pestañas de §3 que existen. Caché en memoria de
    `DASHBOARD_CACHE_SECONDS` (60 s por defecto), separada de la caché de PROJECT-OS. Con 1 o 2 usuarios queda muy
@@ -71,8 +71,11 @@ esta semana». Obligatorias: `SEMANA`, `INICIO`, `ESTADO`; las demás, si faltan
 | `AMZ_RESUMEN` | `SEMANA`, `MARKETPLACE`, `IDEA_ID`, `ASINS_USADOS`, `ESTADO` | Por idea: estado de la última semana y cuántas semanas tiene historial (no recalcula nada; los valores ya están en SCORING) |
 
 Reglas: la página **no ordena por su cuenta con otro criterio**; sin columna de puntuación, el bloque muestra las
-ideas por ID con el aviso «SCORING no tiene columna de puntuación reconocida». Las dos ❓ se fijan en la orden de
-construcción leyendo los encabezados reales (solo lectura) y quedan como constantes con su prueba.
+ideas por ID con el aviso «SCORING no tiene columna de puntuación reconocida». Las dos ❓ quedan como constantes en
+[`web/src/lib/radaros/eco.ts`](../web/src/lib/radaros/eco.ts) (ORD-POS-067), **por confirmar en la activación** con los
+encabezados reales: `COLUMNA_ID_IDEA = IDEA_ID` (hipótesis: el nombre de `AMZ_IDEA_ASIN` y `AMZ_RESUMEN`, V1.2 §5) y
+`COLUMNAS_PUNTUACION` (la primera que exista de `PUNTUACION_FINAL`, `PUNTUACION`, `SCORE_FINAL`, `SCORE`). Si el
+nombre real es otro, se cambia la constante y su prueba.
 
 ### 3.3 Unit economics — `UNIT_ECONOMICS` (📄 V1.2 §2.2)
 
@@ -89,8 +92,8 @@ existen, la orden de construcción puede añadirlas por nombre, pero este diseñ
 | --- | --- |
 | **Hipótesis** (bosquejo V1.2 §7: «los mismos insumos de §2 y `DECISION_HUMANA`»): `SEMANA`, `ASIN`, las columnas de §2.1 y §2.2 sin el prefijo `AMZ_` y `DECISION_HUMANA` | Candidatos de la última semana, con `DECISION_HUMANA` vacía primero (pendientes de decidir). Promover un candidato es del propietario en la hoja; /eco no tiene botones |
 
-La lista exacta la fija el diseño de V1.3 (ORD-ECO-008). La orden de construcción copia esa lista; si para entonces
-cambia, se actualiza esta tabla en el mismo PR.
+La lista exacta la fija el diseño de V1.3. Mientras no exista, /eco **no pide** `AMZ_CANDIDATOS` en el `batchGet` y el
+bloque muestra «pendiente de V1.3» (ORD-POS-067); la orden que lo complete copia esa lista y actualiza esta tabla.
 
 ### 3.5 Tendencias — `ML_TRENDS_ANALISIS_AUTO` (✅ código V1.1)
 

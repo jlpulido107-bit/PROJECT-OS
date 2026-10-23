@@ -1,8 +1,7 @@
 import 'server-only'
 
 import { ConfigError } from './config'
-import { MAX_DATA_ROWS, type TabName } from './schema'
-import type { RawTabs } from './types'
+import { MAX_DATA_ROWS } from './schema'
 
 /**
  * Cliente de SOLO LECTURA de Google Sheets API v4.
@@ -122,10 +121,10 @@ export function createSheetsReader(options: SheetsReaderOptions) {
    * Lee las pestañas indicadas en una sola petición batchGet.
    * Las pestañas inexistentes se devuelven como `undefined` (se reportan como error de esquema).
    */
-  async function readTabs(tabs: readonly TabName[]): Promise<RawTabs> {
+  async function readTabs<T extends string>(tabs: readonly T[]): Promise<Partial<Record<T, unknown[][]>>> {
     const titles = await sheetTitles()
     const present = tabs.filter((t) => titles.has(t))
-    const result: RawTabs = {}
+    const result: Partial<Record<T, unknown[][]>> = {}
     if (present.length === 0) return result
     const params = new URLSearchParams()
     for (const tab of present) params.append('ranges', tabRange(tab))

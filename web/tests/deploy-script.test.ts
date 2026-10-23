@@ -202,6 +202,28 @@ describe('deploy.sh', () => {
       expect(apagada.out).toMatch(/Variables quitadas:\n  - PM_PUEDE_REGISTRAR_PR\n/)
     })
 
+    it('RADAROS_SHEET_ID (ORD-POS-067): se conserva de la activa como literal, sin imprimir el valor, y se quita con --quitar', () => {
+      const activa = JSON.parse(full)
+      const id = 'LIBRO_RADAROS_SINTETICO_0123456789'
+      activa.spec.template.spec.containers[0].env.push({ name: 'RADAROS_SHEET_ID', value: id })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('RADAROS_SHEET_ID')
+      expect(sigue.out).not.toContain(id)
+      const apagada = run(['--desde-activa', '--quitar', 'RADAROS_SHEET_ID', '--dry-run'], { raw, env: min })
+      expect(apagada.code).toBe(0)
+      expect(apagada.out).toMatch(/Variables quitadas:\n  - RADAROS_SHEET_ID\n/)
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, RADAROS_SHEET_ID: id } })
+      expect(nueva.code).toBe(0)
+      expect(nueva.out).toMatch(/Variables nuevas:\n(  \+ [A-Z_]+\n)*  \+ RADAROS_SHEET_ID\n/)
+      expect(nueva.out).not.toContain(id)
+      const mala = run(['--desde-activa'], { raw: full, env: { ...min, RADAROS_SHEET_ID: '16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.out).toContain('RADAROS_SHEET_ID no puede ser la hoja de PROJECT-OS')
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('IMAGE exportada vacía: el render falla sin aplicar', () => {
       const r = run(['--desde-activa'], { raw: full, env: { ...min, IMAGE: '' }, input: 'desplegar\n' })
       expect(r.code).toBe(1)
