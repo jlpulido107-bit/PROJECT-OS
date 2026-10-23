@@ -8,7 +8,7 @@ Fuentes: diseño V1.2 de RADAROS ([`RADAROS/docs/diseno-v1-2.md`](https://github
 PR #13, fusionado), código V1.1 de RADAROS (`src/legacy/RadarV11.gs`, función `radarV11ConstruirAnalisis_`), cliente
 de lectura del dashboard ([`web/src/lib/sheets-client.ts`](../web/src/lib/sheets-client.ts)), riesgo R3 de la
 [preparación V1.6](despliegue-v1-6-preparacion.md#5-riesgos-de-seguridad-y-costos) y el carril ALTO de
-[DEC-POS-014](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003). Marcas: ✅ verificado en el código o
+[DEC-POS-014](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003-vigente-con-dec-pos-008). Marcas: ✅ verificado en el código o
 la hoja · 📄 según un diseño fusionado · ❓ por confirmar al construir.
 
 ## 1. Qué es y qué no es
@@ -37,8 +37,9 @@ Reglas (criterio 2):
    formato: muestra «RADAROS no está configurado en este despliegue» (con «valor no válido» si lo hay) y termina:
    cero peticiones a Google, cero tokens. El valor nunca se muestra ni se registra.
 2. Si coincide con `SHEETS_SPREADSHEET_ID`, se trata como no válido: /eco nunca lee la hoja de PROJECT-OS.
-3. `render.mjs` rechaza al desplegar un valor con formato no válido; `deploy.sh --desde-activa` la conserva como
-   literal, igual que `PM_PUEDE_REGISTRAR_PR`.
+3. La orden de construcción (§8) hará que `render.mjs` rechace al desplegar un valor con formato no válido y que
+   `deploy.sh --desde-activa` la conserve como literal, igual que `PM_PUEDE_REGISTRAR_PR`. Hoy (main) ninguno de los
+   dos conoce `RADAROS_SHEET_ID`.
 4. Con la variable válida, cada carga hace como máximo **2 lecturas**: una de metadatos (`?fields=sheets.properties.title`,
    como `sheetTitles()`) y un `values:batchGet` solo con las pestañas de §3 que existen. Caché en memoria de
    `DASHBOARD_CACHE_SECONDS` (60 s por defecto), separada de la caché de PROJECT-OS. Con 1 o 2 usuarios queda muy
@@ -119,6 +120,9 @@ siempre se pinta. Las pruebas de la construcción cubren cada fila de esta tabla
 
 - La cuenta de lectura **solo gana Lector sobre la hoja de RADAROS**, compartida desde la propia hoja. Nada más: ni
   Editor ni Comentador, ni roles de proyecto, ni cambios en IAM, en la cuenta de escritura ni en las credenciales guardadas en GCP.
+- **Alcance real: todo el libro.** Compartir como Lector es por documento, no por pestaña: la cuenta podrá leer todas
+  las pestañas de RADAROS, incluidas `AMZ_KEEPA_RAW` y `AMZ_SPAPI_RAW`, aunque /eco solo pida las de §3. Sigue
+  siendo solo lectura; quien aprueba la activación (§6) acepta ese alcance.
 - La cuenta de escritura (`project-os-writer`) **no** se comparte con RADAROS: el dashboard nunca escribe allí.
 - El alcance OAuth sigue siendo `spreadsheets.readonly`: aunque alguien diera Editor por error, el cliente no puede
   escribir. Aun así, Editor sería un permiso de más y la verificación de §6 lo detecta.
