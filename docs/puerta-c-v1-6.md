@@ -390,7 +390,10 @@ export BUILD_SA="project-os-build@${PROJECT_ID}.iam.gserviceaccount.com"
   - desmarcar *Notificar*;
   - **Acceso general: Restringido**.
 - **Precondiciones:** la cuenta runtime existe (Puerta B). No se comparten carpetas ni otros documentos.
-- **Impacto:** la cuenta runtime puede **leer** ese único documento. Sin costo.
+- **Impacto:** la cuenta runtime puede **leer** ese único documento. Sin costo. **Excepción /eco** (ORD-POS-067,
+  [diseño de /eco](diseno-eco-radaros.md#6-activación-del-propietario)): si el propietario activa /eco, la misma cuenta
+  gana **Lector** sobre un segundo documento, el libro de RADAROS, compartido igual (sin carpetas, sin Editor); son dos
+  documentos como máximo y solo lectura.
 - **Verificación:** el diálogo *Compartir* muestra la cuenta runtime como **Lector** y el acceso general
   *Restringido* (checklist D2). La lectura real solo se prueba tras el despliegue (checklist C1).
 - **Si falla:** si se eligió *Editor* por error, cambiarlo a *Lector* de inmediato. Para revertir, quitar a la cuenta

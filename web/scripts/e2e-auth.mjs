@@ -48,6 +48,8 @@ const env = {
 delete env.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON
 delete env.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_FILE
 delete env.K_SERVICE
+// /eco (ORD-POS-067) inerte: sin RADAROS_SHEET_ID no lee nada.
+delete env.RADAROS_SHEET_ID
 
 const server = EXTERNAL
   ? null
@@ -163,6 +165,18 @@ try {
     const missing = await get('/proyectos/NO-EXISTE', allowed)
     const missingBody = await missing.text()
     check('proyecto inexistente → página "No encontrado"', missingBody.includes('No encontrado') && !missingBody.includes('Hitos ('), `${missing.status}`)
+  }
+
+  // /eco (ORD-POS-067): privada; sin RADAROS_SHEET_ID muestra «no configurado» y no aparece en la navegación.
+  {
+    const sin = await get('/eco')
+    check('sin sesión /eco → redirección a /login', [302, 303, 307, 308].includes(sin.status) && (sin.headers.get('location') ?? '').includes('/login'), `${sin.status}`)
+    if (!EXTERNAL) {
+      const res = await get('/eco', allowed)
+      const body = await res.text()
+      check('sesión permitida /eco sin RADAROS_SHEET_ID → «no configurado»', res.status === 200 && body.includes('RADAROS no está configurado en este despliegue'), `${res.status}`)
+      check('sin RADAROS_SHEET_ID la navegación no enlaza /eco', !body.includes('href="/eco"'))
+    }
   }
 
   // 8) Sonda de salud pública: sin sesión, sin datos, sin detalles de configuración.

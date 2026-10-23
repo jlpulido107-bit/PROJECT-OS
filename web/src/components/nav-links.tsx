@@ -15,9 +15,14 @@ const LINKS = [
   { href: '/planificacion', label: 'Planificación' },
 ]
 
-export function NavLinks({ showOperations = false }: { showOperations?: boolean }) {
+export function NavLinks({ showOperations = false, showEco = false }: { showOperations?: boolean; showEco?: boolean }) {
   const pathname = usePathname()
-  const links = showOperations ? [...LINKS, { href: '/operaciones', label: 'Operaciones' }] : LINKS
+  const links = [
+    ...LINKS,
+    // /eco solo aparece con RADAROS_SHEET_ID configurada (ORD-POS-067); el layout pasa solo el booleano.
+    ...(showEco ? [{ href: '/eco', label: 'RADAROS' }] : []),
+    ...(showOperations ? [{ href: '/operaciones', label: 'Operaciones' }] : []),
+  ]
   return (
     <ul className="nav-links">
       {links.map(({ href, label }) => {

@@ -42,6 +42,25 @@ export function spreadsheetId(env: NodeJS.ProcessEnv = process.env): string {
   return id
 }
 
+/**
+ * Libro de RADAROS para /eco (ORD-POS-067, docs/diseno-eco-radaros.md §2). Opcional e inerte por defecto: sin
+ * RADAROS_SHEET_ID, vacía, con formato no válido o igual a SHEETS_SPREADSHEET_ID no hay libro y /eco no lee nada.
+ * Nunca lanza ni devuelve el valor en un mensaje.
+ */
+export type RadarosConfig = { id: string } | { id: null; motivo: 'ausente' | 'no-valido' }
+
+export function radarosConfig(env: NodeJS.ProcessEnv = process.env): RadarosConfig {
+  const id = env.RADAROS_SHEET_ID?.trim()
+  if (!id) return { id: null, motivo: 'ausente' }
+  // /eco nunca lee la hoja de PROJECT-OS (diseño §2, regla 2).
+  if (!SPREADSHEET_ID.test(id) || id === env.SHEETS_SPREADSHEET_ID?.trim()) return { id: null, motivo: 'no-valido' }
+  return { id }
+}
+
+export function radarosSheetId(env: NodeJS.ProcessEnv = process.env): string | null {
+  return radarosConfig(env).id
+}
+
 export interface ServiceAccount {
   clientEmail: string
   privateKey: string
