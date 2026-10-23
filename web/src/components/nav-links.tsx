@@ -7,6 +7,7 @@ const LINKS = [
   { href: '/', label: 'Inicio' },
   { href: '/estado', label: 'Estado' },
   { href: '/ordenes', label: 'Órdenes' },
+  { href: '/metricas', label: 'Métricas' },
   { href: '/control', label: 'Control' },
   { href: '/proyectos', label: 'Proyectos' },
   { href: '/tareas', label: 'Tareas' },
