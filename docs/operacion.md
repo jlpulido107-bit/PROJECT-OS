@@ -1,7 +1,7 @@
 # Guía de operación — PROJECT-OS
 
 Una página para saber quién hace qué, en qué entorno y cómo fluye una orden de punta a punta. No cambia reglas ni
-decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-22. Si algo aquí contradice la fuente, manda la fuente.
+decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-23. Si algo aquí contradice la fuente, manda la fuente.
 
 ## Roles y modelos
 
@@ -77,6 +77,50 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 ([rutina de Claude](rutina-claude.md#botones-revisar-y-corregir-en-ordenes-ord-pos-037);
 [despliegue privado](despliegue-privado-v1-3.md)). Claude da el script; nunca lo ejecuta
 ([delegación](delegacion-codex.md#ciclo)).
+
+### Cuándo se despliega (DEC-POS-017, PENDIENTE)
+
+**DEC-POS-017 está PENDIENTE de aprobación del propietario; no es vigente.** Texto de la decisión (paquete
+PAQ-2026-10-23-03), tal como lo dio el PM en el [issue #174](https://github.com/jlpulido107-bit/PROJECT-OS/issues/174):
+
+1. El propietario despliega en menos de 24 horas cuando: (a) se fusiona una orden que desbloquea una capacidad (permisos
+   del PM, vistas nuevas); o (b) se acumulan 5 o más órdenes fusionadas sin desplegar; o (c) pasan 7 días sin desplegar
+   (red de seguridad).
+2. Tras cada fusión, el PM prepara la nota de despliegue: qué entra, qué probar y cómo revertir.
+3. Desplegar sigue siendo solo del propietario.
+
+Justificación: hay órdenes fusionadas que llevan días sin desplegar, entre ellas capacidades como ORD-POS-063
+(REGISTRAR_PR del PM) y /eco (ORD-POS-067); desplegar en lotes chicos y con nota reduce el riesgo y la espera.
+Responsable: propietario.
+
+### Nota de despliegue
+
+La redacta el PM tras cada fusión (DEC-POS-017, punto 2) y la deja como comentario en el PR fusionado o en el issue de
+la orden; no escribe en la hoja ni despliega. Formato:
+
+```text
+Nota de despliegue · AAAA-MM-DD
+Revisión activa (antes): project-os-dashboard-NNNNN-xxx (fuente: <issue o PR donde consta>)
+Disparador (DEC-POS-017): (a) capacidad <cuál> | (b) N órdenes sin desplegar | (c) 7 días sin desplegar
+Órdenes incluidas: ORD-POS-NNN (PR #N, fusionado AAAA-MM-DD), …
+Riesgos: por orden, qué cambia para el usuario o el PM; variables o banderas nuevas que debe exportar el propietario
+  (solo el nombre, nunca el valor); qué queda inerte hasta que el propietario lo active.
+Pruebas de humo tras deploy.sh --desde-activa:
+  1. desde web/: npm run smoke:remote -- --url "$SERVICE_URL"  (esperado: /api/health 200, privadas 307 o 401)
+  2. con sesión: la página o acción de cada orden incluida, una por una
+  3. Cloud Run → Registros: sin tokens, correos ni datos
+Cómo revertir a la revisión anterior (sin reconstruir):
+  gcloud run revisions list --service "$SERVICE_NAME" --region "$REGION"
+  gcloud run services update-traffic "$SERVICE_NAME" --region "$REGION" --to-revisions=<REVISION_ANTERIOR>=100
+```
+
+Las pruebas de humo y la reversión son las del [runbook de despliegue](despliegue-privado-v1-3.md) (§6 «Rollback»);
+las corre solo el propietario.
+
+Dónde consta la revisión desplegada: la fuente con autoridad es la revisión activa del servicio de Cloud Run, que solo
+consulta el propietario (`deploy.sh --desde-activa` parte de ella). En el repositorio queda la que el propietario registra
+en el issue o PR del despliegue (p. ej. 00022 en el [issue #134](https://github.com/jlpulido107-bit/PROJECT-OS/issues/134)),
+copiada a [estado actual](estado-actual.md) con [`cerrar-orden`](../.claude/skills/cerrar-orden/SKILL.md).
 
 ## Qué hace solo el propietario
 
