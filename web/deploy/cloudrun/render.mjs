@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura ni RADAROS_SHEET_ID')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID ni FINANZAS_SHEET_ID')
   return output.replace(marker, writeBlock)
 }
 
@@ -161,6 +161,22 @@ function radaros(template, env, problems) {
   else if (id === propia) problems.push('RADAROS_SHEET_ID no puede ser la hoja de PROJECT-OS')
   // Entre comillas: un ID solo de dígitos no debe leerse como número.
   return [`            - name: RADAROS_SHEET_ID`, `              value: '${id}'`, ''].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-074, docs/diseno-finanzas.md §3 y §6): FINANZAS_SHEET_ID, ID del libro FINANZAS para /finanzas.
+ * Literal, con el formato de SHEETS_SPREADSHEET_ID y distinto de ella y de RADAROS_SHEET_ID; nunca se imprime el valor.
+ * Sin ella, el YAML no cambia y /finanzas queda inerte.
+ */
+function finanzas(template, env, problems) {
+  const id = (env.FINANZAS_SHEET_ID ?? '').trim()
+  if (!id) return ''
+  const propia = /^ *- name: SHEETS_SPREADSHEET_ID\n *value: '?([A-Za-z0-9_-]+)'?$/m.exec(template)?.[1]
+  if (!SPREADSHEET_ID.test(id)) problems.push('FINANZAS_SHEET_ID no tiene el formato esperado')
+  else if (!propia) problems.push('la plantilla no tiene SHEETS_SPREADSHEET_ID: no se puede validar FINANZAS_SHEET_ID')
+  else if (id === propia) problems.push('FINANZAS_SHEET_ID no puede ser la hoja de PROJECT-OS')
+  else if (id === (env.RADAROS_SHEET_ID ?? '').trim()) problems.push('FINANZAS_SHEET_ID no puede ser la hoja de RADAROS')
+  return [`            - name: FINANZAS_SHEET_ID`, `              value: '${id}'`, ''].join('\n')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

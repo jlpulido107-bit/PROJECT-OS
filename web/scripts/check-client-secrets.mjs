@@ -48,7 +48,8 @@ const patterns = [
 
 // Valores reales de configuración presentes en el entorno: no deben aparecer literalmente.
 const envValues = []
-for (const name of ['NEXTAUTH_SECRET', 'GOOGLE_CLIENT_SECRET', 'SHEETS_SPREADSHEET_ID']) {
+// FINANZAS_SHEET_ID (ORD-POS-074): el ID del libro FINANZAS solo vive en el servidor.
+for (const name of ['NEXTAUTH_SECRET', 'GOOGLE_CLIENT_SECRET', 'SHEETS_SPREADSHEET_ID', 'FINANZAS_SHEET_ID']) {
   const value = process.env[name]?.trim()
   if (value && value.length >= 8) envValues.push([name, value])
 }

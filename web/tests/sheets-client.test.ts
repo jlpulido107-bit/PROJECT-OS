@@ -51,6 +51,21 @@ describe('cliente de Google Sheets (solo lectura)', () => {
     expect(batch.searchParams.get('valueRenderOption')).toBe('FORMATTED_VALUE')
   })
 
+  it('valueRenderOption opcional (ORD-POS-074): por defecto FORMATTED_VALUE; UNFORMATTED_VALUE solo si se pide', async () => {
+    const urls: string[] = []
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      urls.push(String(url))
+      if (String(url).includes('values:batchGet')) return jsonResponse({ valueRanges: [{ values: [['X']] }] })
+      return jsonResponse({ sheets: [{ properties: { title: 'PROYECTOS' } }] })
+    }) as unknown as typeof fetch
+    await reader(fetchImpl).readTabs(['PROYECTOS'], {})
+    await reader(fetchImpl).readTabs(['PROYECTOS'], { valueRenderOption: 'UNFORMATTED_VALUE' })
+    const [porDefecto, sinFormato] = urls.filter((u) => u.includes('values:batchGet')).map((u) => new URL(u).searchParams)
+    expect(porDefecto!.get('valueRenderOption')).toBe('FORMATTED_VALUE')
+    expect(sinFormato!.get('valueRenderOption')).toBe('UNFORMATTED_VALUE')
+    expect(sinFormato!.get('dateTimeRenderOption')).toBe('FORMATTED_STRING')
+  })
+
   it.each([
     [401, 'auth'],
     [403, 'permission'],

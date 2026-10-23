@@ -300,6 +300,16 @@ describe('check:client-secrets: autoprueba con valores canario inventados', () =
     expect(r.stdout + r.stderr).not.toContain(value)
   })
 
+  it('FINANZAS_SHEET_ID (ORD-POS-074): se compara si está en el entorno y su fuga se detecta sin imprimirla', () => {
+    const value = 'canario-finanzas-0000-no-real'
+    const limpio = check(assets(''), { ...CANARIO, FINANZAS_SHEET_ID: value })
+    expect(limpio.stdout).toContain('Valores de entorno comparados: 5.')
+    const r = check(assets(`var x="${value}";`), { FINANZAS_SHEET_ID: value })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('valor de FINANZAS_SHEET_ID')
+    expect(r.stdout + r.stderr).not.toContain(value)
+  })
+
   it('detecta un token y un correo de persona por patrón, sin imprimirlos', () => {
     const token = `ya29.${'a'.repeat(30)}`
     const r = check(assets(`var t="${token}";var m="persona.inventada@dominio-falso.test";`), {})

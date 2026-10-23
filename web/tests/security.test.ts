@@ -112,8 +112,8 @@ describe('garantías de seguridad del código', () => {
   it('cada página privada verifica la sesión antes de leer datos', () => {
     const pages = sources.filter((s) => s.file.startsWith(path.join('app', '(private)')) && s.file.endsWith('page.tsx'))
     expect(pages.length).toBeGreaterThanOrEqual(6)
-    // /eco (ORD-POS-067) usa privateEco: la misma verificación de sesión antes de leer RADAROS.
-    for (const { file, text } of pages) expect(text, file).toMatch(/privateData\(|privateEco\(/)
+    // /eco (ORD-POS-067) y /finanzas (ORD-POS-074) usan privateEco y privateFinanzas: la misma verificación de sesión.
+    for (const { file, text } of pages) expect(text, file).toMatch(/privateData\(|privateEco\(|privateFinanzas\(/)
     const api = sources.find((s) => s.file === path.join('app', 'api', 'resumen', 'route.ts'))!.text
     expect(api.indexOf('currentUser()')).toBeLessThan(api.indexOf('getDataset()'))
   })

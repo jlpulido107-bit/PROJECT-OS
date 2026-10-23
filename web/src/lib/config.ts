@@ -61,6 +61,26 @@ export function radarosSheetId(env: NodeJS.ProcessEnv = process.env): string | n
   return radarosConfig(env).id
 }
 
+/**
+ * Libro FINANZAS para /finanzas (ORD-POS-074, docs/diseno-finanzas.md §3). Opcional e inerte por defecto: sin
+ * FINANZAS_SHEET_ID, vacía, con formato no válido o igual a SHEETS_SPREADSHEET_ID o a RADAROS_SHEET_ID no hay libro y
+ * /finanzas no lee nada. Nunca lanza ni devuelve el valor en un mensaje.
+ */
+export type FinanzasConfig = { id: string } | { id: null; motivo: 'ausente' | 'no-valido' }
+
+export function finanzasConfig(env: NodeJS.ProcessEnv = process.env): FinanzasConfig {
+  const id = env.FINANZAS_SHEET_ID?.trim()
+  if (!id) return { id: null, motivo: 'ausente' }
+  // FINANZAS es un libro aparte: nunca la hoja de PROJECT-OS ni la de RADAROS (diseño §3, regla 1).
+  const otras = [env.SHEETS_SPREADSHEET_ID?.trim(), env.RADAROS_SHEET_ID?.trim()]
+  if (!SPREADSHEET_ID.test(id) || otras.includes(id)) return { id: null, motivo: 'no-valido' }
+  return { id }
+}
+
+export function finanzasSheetId(env: NodeJS.ProcessEnv = process.env): string | null {
+  return finanzasConfig(env).id
+}
+
 export interface ServiceAccount {
   clientEmail: string
   privateKey: string

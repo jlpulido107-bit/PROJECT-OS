@@ -28,6 +28,8 @@ const MESSAGES: Record<SheetsErrorCode, string> = {
   'invalid-response': 'Google Sheets devolvió una respuesta inesperada.',
 }
 
+export type ValueRenderOption = 'FORMATTED_VALUE' | 'UNFORMATTED_VALUE'
+
 export class SheetsReadError extends Error {
   readonly code: SheetsErrorCode
   constructor(code: SheetsErrorCode, message: string = MESSAGES[code]) {
@@ -120,8 +122,12 @@ export function createSheetsReader(options: SheetsReaderOptions) {
   /**
    * Lee las pestañas indicadas en una sola petición batchGet.
    * Las pestañas inexistentes se devuelven como `undefined` (se reportan como error de esquema).
+   * `valueRenderOption` por defecto `FORMATTED_VALUE`; /finanzas pide `UNFORMATTED_VALUE` para sumar montos como números
+   * (ORD-POS-074, docs/diseno-finanzas.md §3, regla 3). Las fechas siguen como texto formateado.
    */
-  async function readTabs<T extends string>(tabs: readonly T[]): Promise<Partial<Record<T, unknown[][]>>> {
+  async function readTabs<T extends string>(
+    tabs: readonly T[], options: { valueRenderOption?: ValueRenderOption } = {},
+  ): Promise<Partial<Record<T, unknown[][]>>> {
     const titles = await sheetTitles()
     const present = tabs.filter((t) => titles.has(t))
     const result: Partial<Record<T, unknown[][]>> = {}
@@ -129,7 +135,7 @@ export function createSheetsReader(options: SheetsReaderOptions) {
     const params = new URLSearchParams()
     for (const tab of present) params.append('ranges', tabRange(tab))
     params.set('majorDimension', 'ROWS')
-    params.set('valueRenderOption', 'FORMATTED_VALUE')
+    params.set('valueRenderOption', options.valueRenderOption ?? 'FORMATTED_VALUE')
     params.set('dateTimeRenderOption', 'FORMATTED_STRING')
     const data = (await getJson(`${base}/values:batchGet?${params.toString()}`)) as {
       valueRanges?: Array<{ values?: unknown }>
