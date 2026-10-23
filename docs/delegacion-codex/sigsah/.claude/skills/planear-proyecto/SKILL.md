@@ -110,6 +110,33 @@ https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-c
   órdenes con dependencias claras.
 - Máximo 2 rondas de corrección por orden.
 
+### Plan semanal (cada lunes)
+
+En la revisión de los lunes, o cuando el propietario lo pida, propón el plan de órdenes de la semana. Es una propuesta:
+no aprueba, no envía ni escribe nada. Una tabla, en el orden de envío:
+
+| # | Orden | Riesgo | Depende de | Ejecuta | Revisa | Corrige | `fechaPlan` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+
+- **Orden de envío.** La columna `#` es el orden en que se envían; una orden va después de las que la desbloquean
+  (columna «Depende de», con su `ORD-` o `PRJ-`).
+- **Máximo 4 órdenes abiertas a la vez** (enviadas y aún sin fusionar ni cancelar, contadas en ORDENES_CODEX y en los
+  PRs abiertos). La siguiente se envía cuando se libera un lugar.
+- **Quién.** Ejecuta: rutina de ejecución (Opus). Revisa según el riesgo: `BAJO`, un revisor Claude con otro modelo
+  (Sonnet); `BAJO` solo docs, nadie (decide el propietario); `MEDIO`, Sonnet y luego Fable 5.1. Corrige: rutina de
+  corrección (Opus), máximo 2 rondas. Fuente:
+  [operación](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md#roles-y-modelos).
+- **Calendario.** Solo con campos que ya existen: el orden de envío de la tabla y la `fechaPlan` de la tarea de cada
+  orden. Si hay que cambiarla, propón la edición `tarea.editar` con `fechaPlan` para `pm-escribir-api`, que necesita el
+  «sí» del propietario. Sin rutinas con horario (`schedule`) ni campos nuevos.
+- **Ventana de despliegue con fecha.** Di qué día se desplegaría lo que se fusione y por qué regla. En PROJECT-OS aplica
+  DEC-POS-017; mientras siga PENDIENTE, dilo así en el plan ([despliegue](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md#cuándo-se-despliega-dec-pos-017-pendiente)).
+  Desplegar es solo del propietario.
+- **Aprobación.** El plan no autoriza nada. Cada aprobación y cada envío necesitan su propio «sí» del propietario con el
+  `ORDEN_ID` y la fecha (DEC-POS-011, ORD-POS-059): un «sí» con varios IDs no vale. Para aprobar el plan de una vez, el
+  propietario escribe en un mensaje un «sí» por orden (`ORD-PRJ-NNN sí, apruébala y envíala`), y `pm-escribir-api` las
+  envía una por una en el orden de la tabla, sin pasar del máximo de 4 abiertas.
+
 ### Tareas y decisiones
 
 - **Tareas nuevas.** Con las 16 columnas de TAREAS en su orden, enlazadas a una meta y con `HORAS_ESTIMADAS`. La suma de
