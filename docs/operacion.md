@@ -23,7 +23,7 @@ Cada función corre en una sesión separada; el revisor nunca es la sesión que 
 | --- | --- | --- | --- |
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
 | POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO con [`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh); marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head; registrar el PR detectado (ENVIADA → PR_ABIERTO) solo si el propietario encendió `PM_PUEDE_REGISTRAR_PR` (ORD-POS-063) | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
-| POS · Ideas | Conversar las ideas con el propietario y entregar paquetes `PAQ-AAAA-MM-DD-NN` al PM, cada uno terminado en «Responde sí PAQ-… para autorizar las altas»; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS; escribir en la hoja; tomar un «sí PAQ» por algo más que altas: nunca aprueba, envía, cancela ni cierra | Orden ORD-POS-056 y ORD-POS-060 (DEC-POS-013); [notas](notas.md) |
+| POS · Ideas | Conversar las ideas con el propietario y entregar paquetes `PAQ-AAAA-MM-DD-NN` al PM, cada uno terminado en «Responde sí PAQ-… para autorizar las altas»; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS, salvo la escritura directa limitada en `_contexto/`, `*/contexto.md`, `*/referencia/` y la sección `## Referencia` de los `indice.md` ([notas](notas.md#escritura-directa-limitada-pos--ideas)); escribir en la hoja; tomar un «sí PAQ» por algo más que altas: nunca aprueba, envía, cancela ni cierra | Orden ORD-POS-056 y ORD-POS-060 (DEC-POS-013); [notas](notas.md) |
 | Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
 
 El token de la API lo añade el proxy del entorno POS · PM; nadie lo lee, imprime ni pide
@@ -78,9 +78,9 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 [despliegue privado](despliegue-privado-v1-3.md)). Claude da el script; nunca lo ejecuta
 ([delegación](delegacion-codex.md#ciclo)).
 
-### Cuándo se despliega (DEC-POS-017, PENDIENTE)
+### Cuándo se despliega (DEC-POS-017, APROBADA)
 
-**DEC-POS-017 está PENDIENTE de aprobación del propietario; no es vigente.** Texto de la decisión (paquete
+**DEC-POS-017 está APROBADA y vigente** (aprobada por el propietario el 2026-10-23; fuente: orden ORD-POS-073, issue #178). Texto de la decisión (paquete
 PAQ-2026-10-23-03), tal como lo dio el PM en el [issue #174](https://github.com/jlpulido107-bit/PROJECT-OS/issues/174):
 
 1. El propietario despliega en menos de 24 horas cuando: (a) se fusiona una orden que desbloquea una capacidad (permisos

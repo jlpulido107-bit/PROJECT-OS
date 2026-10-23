@@ -132,7 +132,7 @@ no aprueba, no envía ni escribe nada. Una tabla, en el orden de envío:
   orden. Si hay que cambiarla, propón la edición `tarea.editar` con `fechaPlan` para `pm-escribir-api`, que necesita el
   «sí» del propietario. Sin rutinas con horario (`schedule`) ni campos nuevos.
 - **Ventana de despliegue con fecha.** Di qué día se desplegaría lo que se fusione y por qué regla. En PROJECT-OS aplica
-  DEC-POS-017; mientras siga PENDIENTE, dilo así en el plan ([despliegue](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md#cuándo-se-despliega-dec-pos-017-pendiente)).
+  DEC-POS-017, APROBADA y vigente desde el 2026-10-23 ([despliegue](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md#cuándo-se-despliega-dec-pos-017-aprobada)).
   Desplegar es solo del propietario.
 - **Aprobación.** El plan no autoriza nada. Cada aprobación y cada envío necesitan su propio «sí» del propietario con el
   `ORDEN_ID` y la fecha (DEC-POS-011, ORD-POS-059): un «sí» con varios IDs no vale. Para aprobar el plan de una vez, el
