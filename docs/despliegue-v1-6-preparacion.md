@@ -61,14 +61,14 @@ desplegar.
 | Identidad esperada | ✅ | `SHEETS_EXPECTED_SERVICE_ACCOUNT` obligatorio en Cloud Run. Si la identidad del servidor no coincide, no se lee nada |
 | Alcance y método | ✅ | Token con `spreadsheets.readonly`; el cliente HTTP solo emite `GET` (`sheets-client.ts`) |
 | Escritura | ✅ | V1.4: `mock` prohibido con `K_SERVICE` y `sheets` bloqueado. Sonda 503 si hay variables de escritura (`deployment.ts`). Plantilla sin esas variables (prueba) |
-| Permiso real | ⏳ | Rol **Lector** en un único documento (runbook §5.4); checklist D1 y D2 |
+| Permiso real | ⏳ | Rol **Lector** en un único documento (runbook §5.4), o en dos si el propietario activa /eco (la hoja de RADAROS, solo Lector; [diseño /eco §5](diseno-eco-radaros.md#5-permisos-y-riesgo-r3-criterio-4)); checklist D1 y D2 |
 | Token en el metadata server | ⏳ | Ver [§4.6](#46-otros-límites-y-referencias) |
 
 ### 3.3 IAM de mínimo privilegio
 
 | Identidad | Permisos | Estado |
 | --- | --- | --- |
-| `project-os-dashboard-run@PROJECT_ID.iam.gserviceaccount.com` (runtime) | **Ningún** rol de proyecto; `secretAccessor` solo en los 3 secretos; Lector de la hoja | ✅ diseño · ⏳ checklist A5, A6 y D2 |
+| `project-os-dashboard-run@PROJECT_ID.iam.gserviceaccount.com` (runtime) | **Ningún** rol de proyecto; `secretAccessor` solo en los 3 secretos; Lector de la hoja (y de la de RADAROS solo si el propietario activa /eco, [diseño /eco §5](diseno-eco-radaros.md#5-permisos-y-riesgo-r3-criterio-4)) | ✅ diseño · ⏳ checklist A5, A6 y D2 |
 | Cuenta por defecto de Compute | No se usa: la plantilla fija `serviceAccountName` | ✅ |
 | Persona que despliega | Propietario en el alta. Después: `run.admin`, `iam.serviceAccountUser` **sobre la cuenta runtime**, `artifactregistry.writer`, `secretmanager.secretVersionAdder` y, solo con Cloud Build, `cloudbuild.builds.editor` | ✅ runbook §3.2 |
 | GitHub Actions | Sin credenciales de Google Cloud | ✅ |
@@ -271,7 +271,7 @@ la puerta 3, el propietario debe revisar la calculadora oficial con la región e
 | --- | --- | --- | --- | --- | --- |
 | R1 | Login público alcanzable desde Internet (fuerza bruta o bots) | Media | Bajo | Lista explícita, correo verificado, sesión de 8 h, HSTS, `__Secure-`; las peticiones rechazadas no leen Sheets | Ruido en registros y algunas solicitudes facturables; IAP como mejora (§3.6) |
 | R2 | Correo de la lista comprometido | Baja | Alto (lectura de la hoja) | Lista mínima (D5); revocar con nueva versión del secreto y redespliegue; rotar `NEXTAUTH_SECRET` | Ventana hasta la revocación |
-| R3 | Cuenta de servicio con más permisos de los previstos | Baja | Alto | Sin roles de proyecto; Lector de un solo documento; identidad esperada verificada; checklist A5 y D2 | Depende de que el propietario no comparta otros documentos con ella |
+| R3 | Cuenta de servicio con más permisos de los previstos | Baja | Alto | Sin roles de proyecto; Lector de un solo documento, o de dos si el propietario activa /eco (la hoja de RADAROS, solo Lector, que da lectura de todo ese libro, incluidas `AMZ_KEEPA_RAW` y `AMZ_SPAPI_RAW`; [diseño /eco](diseno-eco-radaros.md#5-permisos-y-riesgo-r3-criterio-4), ORD-POS-066); alcance `spreadsheets.readonly`; identidad esperada verificada; checklist A5 y D2 y verificación del diseño /eco §6 | Depende de que el propietario no comparta otros documentos con ella ni le dé más que Lector en la de RADAROS |
 | R4 | Escritura accidental | Muy baja | Alto | Token de solo lectura, cliente solo `GET`, rol Lector, `mock` prohibido en Cloud Run, sonda 503 con variables de escritura, prueba de plantilla | Ninguno conocido en esta versión |
 | R5 | Gasto inesperado | Baja | Bajo–medio | `maxScale 1`, facturación por solicitud, limpieza de imágenes, alertas (D7), checklist F, apagado (runbook §7) | Un presupuesto **no es un corte**: hay retraso y no hay tope automático. El gasto puede superar USD 1 o USD 5 (escenarios E3 y E4 de §4.3) |
 | R6 | Datos personales en registros | Baja | Medio | Solo códigos en los `console.*`; sin registro de peticiones de `/api/auth/*`; checklist E | Errores de terceros (NextAuth, Google) sin revisar hasta la prueba real |
