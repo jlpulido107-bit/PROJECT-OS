@@ -393,7 +393,9 @@ export BUILD_SA="project-os-build@${PROJECT_ID}.iam.gserviceaccount.com"
 - **Impacto:** la cuenta runtime puede **leer** ese único documento. Sin costo. **Excepción /eco** (ORD-POS-067,
   [diseño de /eco](diseno-eco-radaros.md#6-activación-del-propietario)): si el propietario activa /eco, la misma cuenta
   gana **Lector** sobre un segundo documento, el libro de RADAROS, compartido igual (sin carpetas, sin Editor); son dos
-  documentos como máximo y solo lectura.
+  documentos como máximo y solo lectura. Igual con /finanzas (ORD-POS-070,
+  [diseño de /finanzas](diseno-finanzas.md#6-activación-del-propietario-criterios-4-y-6)): un tercer documento, el libro
+  FINANZAS, solo Lector; tres documentos como máximo.
 - **Verificación:** el diálogo *Compartir* muestra la cuenta runtime como **Lector** y el acceso general
   *Restringido* (checklist D2). La lectura real solo se prueba tras el despliegue (checklist C1).
 - **Si falla:** si se eligió *Editor* por error, cambiarlo a *Lector* de inmediato. Para revertir, quitar a la cuenta

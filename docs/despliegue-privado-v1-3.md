@@ -114,7 +114,8 @@ Google OAuth ◀──── /api/auth/callback/google (redirect URI HTTPS regis
   solo una caché en memoria de 60 s por instancia.
 - **Solo lectura, en tres capas:** cliente HTTP que solo emite `GET`, token con alcance
   `spreadsheets.readonly` y la cuenta de servicio con rol **Lector** en un único documento (o en dos si el
-  propietario activa /eco: la hoja de RADAROS, solo Lector; [diseño /eco §5](diseno-eco-radaros.md#5-permisos-y-riesgo-r3-criterio-4)).
+  propietario activa /eco: la hoja de RADAROS, solo Lector; [diseño /eco §5](diseno-eco-radaros.md#5-permisos-y-riesgo-r3-criterio-4); o en tres si también activa
+  /finanzas: la hoja FINANZAS, solo Lector; [diseño /finanzas §6](diseno-finanzas.md#6-activación-del-propietario-criterios-4-y-6)).
 - **Imagen:** `web/Dockerfile`, multi-stage, Next.js `standalone`, Node 22 fijado por digest, usuario `node`
   (uid 1000) y código de solo lectura. Sin `.env`, claves, pruebas ni `.git` (`.dockerignore` con lista de
   permitidos). Unos 104 MB comprimida.
