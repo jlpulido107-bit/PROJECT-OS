@@ -44,12 +44,12 @@ sin una orden de migración explícita (`AGENTS.md`).
 | `CATEGORIA` | sí | lista cerrada (§2.3) | Validación de datos en la hoja |
 | `CONCEPTO` | sí | texto corto | Qué fue (p. ej. «Suscripción Claude», «Muestras»). Sin datos personales ni bancarios |
 | `PRODUCTO_ID` | no | texto | ID de la idea o producto de RADAROS (❓ mismo formato que `IDEA_ID`, p. ej. `EC-004`); vacío si no aplica |
-| `MONTO_MXN` | sí | número > 0, 2 decimales | Monto en pesos, **siempre positivo**; el signo lo da `TIPO` |
+| `MONTO_MXN` | sí | número > 0, 2 decimales | Monto en pesos, **siempre positivo**; el signo lo da `TIPO`. v2 §8: negativo solo en un ajuste (`AJUSTE_DE`) |
 | `MONEDA_ORIG` | no | código ISO 4217 (`MXN`, `USD`) | Vacío = `MXN` |
 | `MONTO_ORIG` | no | número > 0 | Monto en la moneda original; vacío si es `MXN` |
 | `TIPO_CAMBIO` | no | número > 0 | MXN por unidad de `MONEDA_ORIG`; vacío = el de PARAMETROS. `MONTO_MXN` ya viene convertido |
 | `IVA_MXN` | no | número ≥ 0 | IVA incluido en `MONTO_MXN` (informativo; no se resta) |
-| `FUENTE` | sí | `manual` \| `sp-api` \| `anthropic` | Debe cuadrar con el prefijo de `MOV_ID` (§2.2) |
+| `FUENTE` | sí | `manual` \| `sp-api` \| `anthropic` \| `recurrente` (v2 §8) | Debe cuadrar con el prefijo de `MOV_ID` (§2.2) |
 | `COMPROBANTE` | sí | `sí` \| `no` | Si existe factura o recibo. **Sin enlaces, rutas ni números de factura** |
 
 Una fila con `MOV_ID` vacío, duplicado o que no cuadra con `FUENTE`, `PROYECTO`/`TIPO`/`CATEGORIA` fuera de la lista
@@ -58,11 +58,17 @@ de fila) y la columna, sin mostrar el monto. Así un error de captura se ve y no
 
 ### 2.2 Regla de `MOV_ID` estable por fuente (idempotencia)
 
+> **Esquema v2** ([diseño v2](diseno-finanzas-v2.md) §8, vista desde ORD-POS-076): se añaden la fuente `recurrente`
+> con `MOV_ID` `REC-<ID>-AAAA-MM` (cargos de la pestaña RECURRENTES, v2 §4), la columna opcional `AJUSTE_DE` al final
+> de MOVIMIENTOS y los montos negativos, solo en un ajuste (v2 §3.4). Cuando la escritura de finanzas está activa
+> (v2 §7), el `MAN-NNNN` **lo asigna el servidor** al dar de alta desde /finanzas (v2 §3.2), no el propietario a mano.
+
 | Fuente | Formato | Quién lo genera | Ejemplo |
 | --- | --- | --- | --- |
-| `manual` | `MAN-NNNN` (4 dígitos, consecutivo) | El propietario, a mano | `MAN-0001` |
+| `manual` | `MAN-NNNN` (4 dígitos, consecutivo) | El propietario, a mano; con la escritura activa, el servidor (v2 §3.2) | `MAN-0001` |
 | `sp-api` | `SPAPI-<id>` | La automatización de §9.1, con el ID del evento financiero de Amazon | `SPAPI-<id del evento>` |
-| `anthropic` | `CLAUDE-AAAA-MM` | La automatización de §9.2, una fila por mes | `CLAUDE-2026-10` |
+| `anthropic` | `CLAUDE-AAAA-MM` | Reservado para una fuente automática de Anthropic (v2 §4.4) | `CLAUDE-2026-10` |
+| `recurrente` | `REC-<ID>-AAAA-MM` | La confirmación de un cargo de RECURRENTES (v2 §4.3) | `REC-<ID>-AAAA-MM` |
 
 Reglas:
 
@@ -295,6 +301,10 @@ si el `MOV_ID` no existe) y ninguna la hace el dashboard: su lectura sigue siend
   identidad del script de RADAROS y encender la bandera). Esa escritura es de RADAROS, no del dashboard.
 
 ### 9.2 ORD-POS: filas recurrentes de herramientas
+
+> **Sustituida por el [diseño v2](diseno-finanzas-v2.md) §4** (RECURRENTES y `REC-<ID>-AAAA-MM`): Claude y Keepa se
+> cargan como recurrentes; `CLAUDE-` queda reservado para una fuente automática (v2 §4.4). La vista de pendientes del
+> mes es de ORD-POS-076; la confirmación desde /finanzas, de la orden F-2 (v2 §9.2). Lo de abajo queda como historia.
 
 - **Qué:** una fila mensual por herramienta con costo fijo conocido (Claude, Keepa; GCP según su factura):
   `MOV_ID` = `CLAUDE-AAAA-MM` para Claude (y un prefijo por herramienta, p. ej. `KEEPA-AAAA-MM`, ❓ a fijar en esa

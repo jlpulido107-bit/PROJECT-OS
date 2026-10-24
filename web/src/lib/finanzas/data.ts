@@ -42,8 +42,8 @@ export function createFinanzasLoader(deps: FinanzasLoaderDeps = {}) {
     const fetchedAt = now()
     try {
       const reader = createSheetsReader({ spreadsheetId: id, getAccessToken, fetchImpl: deps.fetchImpl, sleep: deps.sleep })
-      // Metadatos + un batchGet solo con MOVIMIENTOS y PARAMETROS si existen: como máximo 2 lecturas. Montos sin
-      // formato (números), fechas como texto (§3, regla 3).
+      // Metadatos + un batchGet solo con MOVIMIENTOS, PARAMETROS y RECURRENTES (v2 §4.2) si existen: como máximo 2
+      // lecturas. Montos sin formato (números), fechas como texto (§3, regla 3).
       const raw = await reader.readTabs(FINANZAS_TABS, { valueRenderOption: 'UNFORMATTED_VALUE' })
       return { estado: 'ok', vista: construirFinanzas(raw, fetchedAt), fetchedAt }
     } catch (error) {
