@@ -5,6 +5,8 @@ código en `web/`, no se crea ni se comparte ninguna hoja, no se despliega y no 
 automatización van en otras órdenes (§8 y §9). Sigue el patrón de /eco ([diseño](diseno-eco-radaros.md), ORD-POS-066;
 construcción ORD-POS-067).
 
+Escritura del propietario (alta de movimientos y cargos recurrentes): [diseño v2](diseno-finanzas-v2.md), ORD-POS-075.
+
 Fuentes: diseño de /eco, cliente de lectura del dashboard ([`web/src/lib/sheets-client.ts`](../web/src/lib/sheets-client.ts)),
 lector de /eco ([`web/src/lib/radaros/data.ts`](../web/src/lib/radaros/data.ts)), configuración
 ([`web/src/lib/config.ts`](../web/src/lib/config.ts)), riesgo R3 de la
