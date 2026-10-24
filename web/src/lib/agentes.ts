@@ -118,14 +118,17 @@ export function conteoOrdenes(base: Indicador<{ ordenes: Orden[]; sinFecha: numb
 
 export type FusionProyecto =
   | { proyecto: string; estado: 'sin-datos'; motivo: string }
-  | { proyecto: string; estado: 'ok'; n: number; medianaDias: number | null }
+  /** `truncado`: la lista de PRs llegó al límite de paginación; la mediana solo usa los PRs leídos (ORD-POS-080). */
+  | { proyecto: string; estado: 'ok'; n: number; medianaDias: number | null; truncado: boolean }
 
 /**
  * Indicador 2: mediana de días desde ENVIADA (`orden.enviar` en AUDITORIA) hasta la fusión del PR (GitHub), por
  * proyecto. El rango filtra por la fecha de envío. `prs` por proyecto: null si GitHub falló o no hay repositorio.
+ * `truncados`: proyectos cuya lista de PRs llegó al límite de paginación.
  */
 export function tiempoAFusion(
   ordenes: Orden[], eventos: EventosOrden[] | null, prs: Partial<Record<string, Map<string, PrFusion> | null>> | null, f: FiltroAgentes,
+  truncados: readonly string[] = [],
 ): Indicador<FusionProyecto[]> {
   if (!eventos) return sinDatos('Falta AUDITORIA: sin ella no se sabe cuándo se envió cada orden.')
   if (!prs) return sinDatos('Sin datos de GitHub: no se sabe cuándo se fusionó cada PR.')
@@ -142,7 +145,7 @@ export function tiempoAFusion(
         if (env === null || fusion === null || fusion < env || !enRango(fechaMs(env), f)) return []
         return [(fusion - env) / DIA_MS]
       })
-      return { proyecto, estado: 'ok', n: dias.length, medianaDias: redondea(percentil(dias, 50)) }
+      return { proyecto, estado: 'ok', n: dias.length, medianaDias: redondea(percentil(dias, 50)), truncado: truncados.includes(proyecto) }
     }),
   }
 }
@@ -150,14 +153,22 @@ export function tiempoAFusion(
 /** Dictámenes válidos de un PR (dictamenesValidos), o null si no se pudo leer. */
 export type DictamenesPr = Array<{ revisionId: string; veredicto: Veredicto }> | null
 
+/** Estados cuyas órdenes ya no cambian de dictamen: /agentes no los pide a GitHub (ORD-POS-080). */
+export const ESTADOS_SIN_DICTAMEN: readonly string[] = ['CERRADA', 'CANCELADA']
+
+/** ¿Se leen los dictámenes de la orden? No en CERRADA ni CANCELADA. */
+export const leeDictamen = (o: Pick<Orden, 'estado'>): boolean => !ESTADOS_SIN_DICTAMEN.includes(o.estado ?? '')
+
 export interface FilaDictamenes {
   ordenId: string
   prUrl: string
   /** Rondas de corrección lanzadas desde el dashboard (eventosOrdenes); null sin AUDITORIA. */
   rondas: number | null
-  /** null si GitHub no respondió para este PR. */
+  /** null si GitHub no respondió para este PR o no se leyó (`omitida`). */
   conforme: number | null
   cambios: number | null
+  /** Orden CERRADA o CANCELADA: sus dictámenes no se piden a GitHub; fuera de los totales y de `sinLeer`. */
+  omitida: boolean
 }
 
 export interface Dictamenes {
@@ -166,10 +177,15 @@ export interface Dictamenes {
   totalCambios: number
   /** PRs cuyos comentarios no se pudieron leer: fuera de los totales. */
   sinLeer: number
+  /** Órdenes CERRADA o CANCELADA con PR: no se leen. */
+  omitidas: number
   rondasSinDatos: boolean
 }
 
-/** Indicador 3: rondas de corrección por orden y dictámenes CONFORME y CAMBIOS de su PR (GitHub). */
+/**
+ * Indicador 3: rondas de corrección por orden y dictámenes CONFORME y CAMBIOS de su PR (GitHub). Las órdenes CERRADA y
+ * CANCELADA conservan su fila (rondas) pero sus dictámenes no se leen (ORD-POS-080).
+ */
 export function dictamenesPorOrden(
   base: Indicador<{ ordenes: Orden[]; sinFecha: number }>, eventos: EventosOrden[] | null,
   prs: Partial<Record<string, Map<string, PrFusion> | null>> | null, dictamenes: Map<string, DictamenesPr> | null,
@@ -180,9 +196,10 @@ export function dictamenesPorOrden(
   const filas = base.datos.ordenes.flatMap((o): FilaDictamenes[] => {
     const pr = prs[proyectoDeOrden(o) ?? '']?.get(o.id)
     if (!pr) return []
-    const d = dictamenes.get(o.id) ?? null
+    const omitida = !leeDictamen(o)
+    const d = omitida ? null : dictamenes.get(o.id) ?? null
     const n = (v: Veredicto) => (d === null ? null : d.filter((x) => x.veredicto === v).length)
-    return [{ ordenId: o.id, prUrl: pr.url, rondas: rondas ? rondas.get(o.id) ?? 0 : null, conforme: n('CONFORME'), cambios: n('CAMBIOS') }]
+    return [{ ordenId: o.id, prUrl: pr.url, rondas: rondas ? rondas.get(o.id) ?? 0 : null, conforme: n('CONFORME'), cambios: n('CAMBIOS'), omitida }]
   }).sort((a, b) => b.ordenId.localeCompare(a.ordenId))
   if (filas.length === 0) return sinDatos('Ninguna orden del filtro tiene un PR detectado en GitHub.')
   return {
@@ -191,7 +208,8 @@ export function dictamenesPorOrden(
       filas,
       totalConforme: filas.reduce((s, x) => s + (x.conforme ?? 0), 0),
       totalCambios: filas.reduce((s, x) => s + (x.cambios ?? 0), 0),
-      sinLeer: filas.filter((x) => x.conforme === null).length,
+      sinLeer: filas.filter((x) => !x.omitida && x.conforme === null).length,
+      omitidas: filas.filter((x) => x.omitida).length,
       rondasSinDatos: rondas === null,
     },
   }

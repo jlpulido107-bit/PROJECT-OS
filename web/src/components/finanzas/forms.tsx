@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useRef, useState, type FormEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { CONCEPTO_MAX, prefijoAjuste } from '@/lib/finanzas/escritura-validacion'
-import { CODIGOS_PENDIENTES, cuerpoEnvio, estadoInicial, trasRespuesta, type EnvioEstado, type Respuesta } from '@/lib/finanzas/envio'
+import { ajusteMostrado, CODIGOS_PENDIENTES, cuerpoEnvio, estadoInicial, trasRespuesta, type EnvioEstado, type Respuesta } from '@/lib/finanzas/envio'
 
 /* --------------------------------------------------------------------------------------------
  * Formularios de escritura de /finanzas (ORD-POS-077, docs/diseno-finanzas-v2.md §3 y §4.3). Solo UI: el servidor
@@ -41,7 +41,8 @@ function nuevoId(): string {
 function useEnvio(endpoint: string) {
   const router = useRouter()
   const [estado, setEstado] = useState<Estado>({ status: 'idle' })
-  const [congelado, setCongelado] = useState(false)
+  // Copia del estado de envío para pintar (el ref no repinta): congelado y, en Ajustar, el original congelado.
+  const [envioVisible, setEnvioVisible] = useState<EnvioEstado | null>(null)
   const envio = useRef<EnvioEstado | null>(null)
 
   /** Al abrir el formulario: si no hay un requestId pendiente, se crea uno. */
@@ -77,11 +78,11 @@ function useEnvio(endpoint: string) {
       respuesta = { ok: false, codigo: 'red' }
     }
     envio.current = trasRespuesta(actual, cuerpo, respuesta, nuevoId)
-    setCongelado(envio.current.congelado !== null)
+    setEnvioVisible(envio.current)
     if (respuesta.ok) router.refresh()
   }
 
-  return { estado, enviar, abrir, congelado }
+  return { estado, enviar, abrir, congelado: envioVisible?.congelado != null, envioVisible }
 }
 
 function valores(form: HTMLFormElement): Record<string, string> {
@@ -224,13 +225,16 @@ export function NuevoMovimientoForm({ hoy, tipoCambioDefecto }: { hoy: string; t
 
 /** «Ajustar» (§3.4): otro movimiento con `AJUSTE_DE`; PROYECTO, TIPO y CATEGORIA copiados del original y bloqueados. */
 export function AjustarForm({ ajustables, hoy, tipoCambioDefecto }: { ajustables: AjustableOpcion[]; hoy: string; tipoCambioDefecto: string | null }) {
-  const { estado, enviar, abrir, congelado } = useEnvio(ENDPOINT_MOVIMIENTOS)
+  const { estado, enviar, abrir, congelado, envioVisible } = useEnvio(ENDPOINT_MOVIMIENTOS)
   const [movId, setMovId] = useState('')
-  const original = ajustables.find((a) => a.movId === movId) ?? null
+  // Congelado: se muestra (y se reenvía) el original congelado, con la lista bloqueada (ORD-POS-080).
+  const mostrado = ajusteMostrado(envioVisible, movId)
+  const original = ajustables.find((a) => a.movId === mostrado.movId) ?? null
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!original) return
-    await enviar({ ...valores(e.currentTarget), ajusteDe: original.movId, proyecto: original.proyecto, tipo: original.tipo, categoria: original.categoria })
+    // Congelado, el cuerpo que se reenvía es el congelado aunque el original ya no esté en la lista.
+    if (!original && !mostrado.bloqueado) return
+    await enviar({ ...valores(e.currentTarget), ...(original ? { ajusteDe: original.movId, proyecto: original.proyecto, tipo: original.tipo, categoria: original.categoria } : {}) })
   }
   return (
     <details onToggle={(e: SyntheticEvent<HTMLDetailsElement>) => { if (e.currentTarget.open) abrir() }}>
@@ -238,7 +242,7 @@ export function AjustarForm({ ajustables, hoy, tipoCambioDefecto }: { ajustables
       <form onSubmit={onSubmit} className="form" aria-label="Ajustar un movimiento">
         <p className="small">El original nunca se edita ni se borra: el ajuste es otro movimiento que lo corrige. Anular = ajuste por el monto completo en negativo.</p>
         <Campo label="Movimiento a ajustar" error={campo(estado, 'ajusteDe')}>
-          <select required value={movId} onChange={(e) => setMovId(e.target.value)}>
+          <select required value={mostrado.movId} disabled={mostrado.bloqueado} onChange={(e) => setMovId(e.target.value)}>
             <option value="" disabled>Elige…</option>
             {ajustables.map((a) => <option key={a.movId} value={a.movId}>{a.movId} · {a.concepto}</option>)}
           </select>

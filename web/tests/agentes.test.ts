@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -6,13 +8,13 @@ import {
   conteoOrdenes, dictamenesPorOrden, gastoClaude, mapaLanzamientos, ordenesDelFiltro, parseFiltroAgentes, tiempoAFusion,
   type FiltroAgentes, type FuenteClaude,
 } from '@/lib/agentes'
-import { dictamenesDeOrdenes, limpiarCacheAgentes, prsPorProyecto } from '@/lib/agentes-data'
+import { githubDeAgentes, limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { civilHourInZone } from '@/lib/dates'
 import { construirFinanzas, gastoClaudeMensual, type Movimiento } from '@/lib/finanzas/finanzas'
 import { eventosOrdenes } from '@/lib/metricas'
 import { WRITE_HEADERS } from '@/lib/operations/constants'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
-import { createGitHubClient, type PrFusion } from '@/lib/operations/github'
+import { createGitHubClient, MAX_PRS_LISTA, type PrFusion } from '@/lib/operations/github'
 import { InMemoryTableStore, readView } from '@/lib/operations/table-store'
 import { extraerCriterios } from '@/lib/supervision/criterios'
 import { dictamenesValidos, MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
@@ -47,6 +49,15 @@ const enviar = (id: string, fecha: string) => op('orden.enviar', id, fecha, { ES
 const lanzar = (accion: 'revisar' | 'corregir', id: string, fecha: string, clave: string, sesion = 'https://claude.ai/code/session_x') =>
   op(`orden.${accion}_lanzar`, id, fecha, { SESION: ['', sesion], CLAVE: ['', clave] })
 const vista = (filas: string[][][]) => readView(new InMemoryTableStore({ AUDITORIA: [[...WRITE_HEADERS.AUDITORIA], ...filas.flat()] }), 'AUDITORIA')
+
+/** Indicadores con todas las fuentes vacías (para pintar una sola tarjeta llena). */
+const vaciasInd = (): IndicadoresAgentes => ({
+  ordenes: conteoOrdenes(ordenesDelFiltro([], null, TODO)),
+  fusion: tiempoAFusion([], null, null, TODO),
+  dictamenes: dictamenesPorOrden(ordenesDelFiltro([], null, TODO), null, null, null),
+  lanzamientos: mapaLanzamientos(null, [], TODO),
+  claude: gastoClaude({ estado: 'sin-fuente', mensaje: 'FINANZAS no está configurado en este despliegue.' }, TODO),
+})
 
 const pr = (n: number, fusion: string | null): PrFusion => ({ url: `https://github.com/jlpulido107-bit/PROJECT-OS/pull/${n}`, number: n, fusionMs: fusion ? Date.parse(fusion) : null })
 
@@ -103,12 +114,12 @@ describe('tiempo de ENVIADA a PR fusionado', () => {
       SIG: null, ECO: new Map(),
     }
     expect(tiempoAFusion(ordenes, eventos, prs, TODO)).toEqual({ estado: 'ok', datos: [
-      { proyecto: 'POS', estado: 'ok', n: 3, medianaDias: 3 },
+      { proyecto: 'POS', estado: 'ok', n: 3, medianaDias: 3, truncado: false },
       { proyecto: 'SIG', estado: 'sin-datos', motivo: 'GitHub no respondió.' },
-      { proyecto: 'ECO', estado: 'ok', n: 0, medianaDias: null },
+      { proyecto: 'ECO', estado: 'ok', n: 0, medianaDias: null, truncado: false },
     ] })
     // El rango filtra por la fecha de envío.
-    expect(tiempoAFusion(ordenes, eventos, prs, { proyecto: 'POS', desde: '2026-10-20', hasta: null })).toEqual({ estado: 'ok', datos: [{ proyecto: 'POS', estado: 'ok', n: 1, medianaDias: 4 }] })
+    expect(tiempoAFusion(ordenes, eventos, prs, { proyecto: 'POS', desde: '2026-10-20', hasta: null })).toEqual({ estado: 'ok', datos: [{ proyecto: 'POS', estado: 'ok', n: 1, medianaDias: 4, truncado: false }] })
     expect(tiempoAFusion(ordenes, eventos, {}, { ...TODO, proyecto: 'DEV' })).toMatchObject({ datos: [{ proyecto: 'DEV', estado: 'sin-datos', motivo: 'Sin repositorio en GitHub.' }] })
   })
 
@@ -180,46 +191,184 @@ describe('rondas y dictámenes', () => {
 
   it('cuenta CONFORME y CAMBIOS del PR detectado y las rondas de AUDITORIA', async () => {
     const { client, llamadas } = github()
-    const prs = await prsPorProyecto(client, 'POS')
+    const ordenes = [orden('ORD-POS-001', 'REVISADA'), orden('ORD-POS-002', 'PR_ABIERTO'), orden('ORD-POS-005', 'BORRADOR')]
+    const gh = await githubDeAgentes(client, 'POS', ordenes)
+    const { prs } = gh
+    expect(gh.vencido).toBe(false)
     expect([...prs.POS!.entries()]).toEqual([
       ['ORD-POS-002', { url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', number: 3, fusionMs: null }],
       ['ORD-POS-001', { url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', number: 1, fusionMs: Date.parse('2026-10-21T10:00:00Z') }],
     ])
-    // Caché: una segunda carga no vuelve a pedir la lista.
-    await prsPorProyecto(client, 'POS')
+    // Caché: una segunda carga no vuelve a llamar a GitHub (ni la lista ni los dictámenes).
+    const antes = llamadas.length
+    await githubDeAgentes(client, 'POS', ordenes)
+    expect(llamadas.length).toBe(antes)
     expect(llamadas.filter((p) => p.endsWith('/pulls'))).toHaveLength(1)
 
-    const ordenes = [orden('ORD-POS-001', 'CERRADA'), orden('ORD-POS-002', 'PR_ABIERTO'), orden('ORD-POS-005', 'BORRADOR')]
     const audit = await vista([lanzar('corregir', 'ORD-POS-001', '2026-10-20T10:00:00-06:00', 'k1')])
     const eventos = eventosOrdenes(ordenes, audit)
     const base = ordenesDelFiltro(ordenes, eventos, TODO)
-    const dictamenes = await dictamenesDeOrdenes(client, base.estado === 'ok' ? base.datos.ordenes : [], prs)
-    expect(dictamenesPorOrden(base, eventos, prs, dictamenes)).toEqual({ estado: 'ok', datos: {
+    expect(dictamenesPorOrden(base, eventos, prs, gh.dictamenes)).toEqual({ estado: 'ok', datos: {
       filas: [
-        { ordenId: 'ORD-POS-002', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: 0, conforme: 0, cambios: 0 },
-        { ordenId: 'ORD-POS-001', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', rondas: 1, conforme: 1, cambios: 1 },
+        { ordenId: 'ORD-POS-002', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: 0, conforme: 0, cambios: 0, omitida: false },
+        { ordenId: 'ORD-POS-001', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', rondas: 1, conforme: 1, cambios: 1, omitida: false },
       ],
-      totalConforme: 1, totalCambios: 1, sinLeer: 0, rondasSinDatos: false,
+      totalConforme: 1, totalCambios: 1, sinLeer: 0, omitidas: 0, rondasSinDatos: false,
     } })
+  })
+
+  it('criterio 1: CERRADA y CANCELADA no piden dictámenes; conservan su fila, fuera de totales y de «sin leer»', async () => {
+    const { client, llamadas } = github()
+    const ordenes = [orden('ORD-POS-001', 'CERRADA'), orden('ORD-POS-002', 'CANCELADA')]
+    const gh = await githubDeAgentes(client, 'POS', ordenes)
+    expect(llamadas.filter((p) => /\/pulls\/\d+$|\/comments$/.test(p))).toEqual([])
+    expect([...gh.dictamenes!.keys()]).toEqual([])
+    const d = dictamenesPorOrden(ordenesDelFiltro(ordenes, null, TODO), null, gh.prs, gh.dictamenes)
+    expect(d).toMatchObject({ estado: 'ok', datos: { totalConforme: 0, totalCambios: 0, sinLeer: 0, omitidas: 2 } })
+    expect(d.estado === 'ok' && d.datos.filas.every((f) => f.omitida && f.conforme === null)).toBe(true)
+    const h = renderToStaticMarkup(createElement(VistaAgentes, { filtro: TODO, ind: { ...vaciasInd(), dictamenes: d } }))
+    expect(h).toContain('No se lee (CERRADA o CANCELADA)')
+    expect(h).toContain('2 órdenes CERRADA o CANCELADA')
   })
 
   it('PR sin leer: «sin datos» en su fila y fuera de los totales; sin AUDITORIA, rondas sin datos', async () => {
     const { client } = github({ fallaComentarios: true })
-    const prs = await prsPorProyecto(client, null)
-    const ordenes = [orden('ORD-POS-001', 'CERRADA'), orden('ORD-POS-002', 'PR_ABIERTO')]
+    const ordenes = [orden('ORD-POS-001', 'REVISADA'), orden('ORD-POS-002', 'PR_ABIERTO')]
+    const gh = await githubDeAgentes(client, null, ordenes)
     const base = ordenesDelFiltro(ordenes, null, TODO)
-    const d = dictamenesPorOrden(base, null, prs, await dictamenesDeOrdenes(client, ordenes, prs))
+    const d = dictamenesPorOrden(base, null, gh.prs, gh.dictamenes)
     expect(d).toMatchObject({ datos: { totalConforme: 1, totalCambios: 1, sinLeer: 1, rondasSinDatos: true } })
-    expect(d.estado === 'ok' && d.datos.filas[0]).toEqual({ ordenId: 'ORD-POS-002', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: null, conforme: null, cambios: null })
+    expect(d.estado === 'ok' && d.datos.filas[0]).toEqual({ ordenId: 'ORD-POS-002', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: null, conforme: null, cambios: null, omitida: false })
   })
 
   it('GitHub caído o sin token: «sin datos»', async () => {
     const { client } = github({ fallaPrs: true })
-    const prs = await prsPorProyecto(client, 'POS')
+    const { prs } = await githubDeAgentes(client, 'POS', null)
     expect(prs).toEqual({ POS: null })
     const base = ordenesDelFiltro([orden('ORD-POS-001', 'CERRADA')], null, TODO)
     expect(dictamenesPorOrden(base, null, prs, new Map())).toEqual({ estado: 'sin-datos', motivo: 'Ninguna orden del filtro tiene un PR detectado en GitHub.' })
     expect(dictamenesPorOrden(base, null, null, null)).toEqual({ estado: 'sin-datos', motivo: 'Sin datos de GitHub: los dictámenes viven en los PRs.' })
+  })
+})
+
+describe('ORD-POS-080: límite de GitHub, tiempo máximo global y paginación', () => {
+  beforeEach(() => { limpiarCacheDictamenes(); limpiarCacheAgentes() })
+  const HEAD = 'c'.repeat(40)
+  const REPOS: Record<string, string> = { POS: 'jlpulido107-bit/PROJECT-OS', SIG: 'jlpulido107-bit/SIGSAH', ECO: 'jlpulido107-bit/RADAROS' }
+
+  /**
+   * GitHub simulado con `paginas` páginas de PRs por repositorio (100 por página, la última con `ultima` PRs); el PR n es
+   * de la orden ORD-<P>-n. `cuelga` deja sin responder las rutas que casan.
+   */
+  function githubGrande({ paginas = 5, ultima = 100, cuelga }: { paginas?: number; ultima?: number; cuelga?: RegExp } = {}) {
+    const llamadas: string[] = []
+    const fetchImpl = (async (url: string) => {
+      const u = new URL(url)
+      llamadas.push(u.pathname)
+      if (cuelga?.test(u.pathname)) return new Promise<Response>(() => {})
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
+      if (u.pathname === '/user') return json({ login: ME })
+      const [, repo, resto] = /^\/repos\/([^/]+\/[^/]+)(\/.*)$/.exec(u.pathname) ?? []
+      const p = Object.keys(REPOS).find((k) => REPOS[k] === repo)
+      if (!p) return new Response('{}', { status: 404 })
+      if (resto === '/pulls') {
+        const page = Number(u.searchParams.get('page'))
+        const n = page > paginas ? 0 : page === paginas ? ultima : 100
+        return json(Array.from({ length: n }, (_, i) => {
+          const num = (page - 1) * 100 + i + 1
+          return { number: num, title: `[ORD-${p}-${String(num).padStart(3, '0')}][X] t`, html_url: `https://github.com/${repo}/pull/${num}`, merged_at: null, user: { login: ME }, head: { repo: { full_name: repo } } }
+        }))
+      }
+      if (/^\/pulls\/\d+$/.test(resto!)) return json({ head: { sha: HEAD } })
+      if (/^\/issues\/\d+\/comments$/.test(resto!)) return json([])
+      return new Response('{}', { status: 404 })
+    }) as unknown as typeof fetch
+    return { cliente: () => createGitHubClient('token-falso', fetchImpl, { maxLlamadas: LLAMADAS_AGENTES }), llamadas }
+  }
+
+  /** 60 órdenes por proyecto con PR: la mitad CERRADA o CANCELADA. */
+  const muchas = () => Object.keys(REPOS).flatMap((p) => Array.from({ length: 60 }, (_, i) =>
+    orden(`ORD-${p}-${String(i + 1).padStart(3, '0')}`, ['CERRADA', 'PR_ABIERTO', 'CANCELADA', 'REVISADA'][i % 4]!)))
+
+  it('criterio 1: una carga en frío hace como máximo 40 llamadas, nunca de CERRADA ni CANCELADA, y la caché avanza', async () => {
+    const gh = githubGrande()
+    const ordenes = muchas()
+    const ahora = Date.now()
+    const r1 = await githubDeAgentes(gh.cliente(), null, ordenes, { ahora })
+    expect(LLAMADAS_AGENTES).toBe(40)
+    expect(gh.llamadas.length).toBeLessThanOrEqual(40)
+    // Sin esta orden: 1 /user + 15 páginas + 2 por dictamen ×(60/2)×3 = 196 llamadas.
+    expect(gh.llamadas.filter((x) => x === '/user')).toHaveLength(1)
+    const cerradas = new Set(ordenes.filter((o) => o.estado === 'CERRADA' || o.estado === 'CANCELADA').map((o) => `${REPOS[o.id.slice(4, 7)]}#${Number(o.id.slice(8))}`))
+    const pedidos = gh.llamadas.flatMap((x) => {
+      const m = /^\/repos\/([^/]+\/[^/]+)\/(?:pulls|issues)\/(\d+)/.exec(x)
+      return m ? [`${m[1]}#${m[2]}`] : []
+    })
+    expect(pedidos.length).toBeGreaterThan(0)
+    expect(pedidos.filter((x) => cerradas.has(x))).toEqual([])
+    const leidas1 = [...r1.dictamenes!.values()].filter((d) => d !== null).length
+    expect(leidas1).toBeGreaterThan(0)
+
+    // Segunda carga (otro cliente, otro tope): lo ya leído sale de la caché; solo pide lo que faltaba, con el mismo tope.
+    const antes = gh.llamadas.length
+    const r2 = await githubDeAgentes(gh.cliente(), null, ordenes, { ahora })
+    const segunda = gh.llamadas.slice(antes)
+    expect(segunda.length).toBeLessThanOrEqual(40)
+    expect(segunda.filter((x) => x.endsWith('/pulls'))).toEqual([])
+    expect([...r2.dictamenes!.values()].filter((d) => d !== null).length).toBeGreaterThan(leidas1)
+  })
+
+  it('criterio 2: al vencer el tiempo global la página responde y lo que no terminó dice «sin datos»', async () => {
+    // Los comentarios de PR no responden nunca: la lista llega, los dictámenes no.
+    const gh = githubGrande({ paginas: 1, ultima: 3, cuelga: /\/comments$/ })
+    const ordenes = [orden('ORD-POS-001', 'PR_ABIERTO'), orden('ORD-POS-002', 'REVISADA')]
+    const t0 = Date.now()
+    const r = await githubDeAgentes(gh.cliente(), 'POS', ordenes, { limiteMs: 50 })
+    expect(Date.now() - t0).toBeLessThan(2000)
+    expect(r.vencido).toBe(true)
+    expect(r.prs.POS!.size).toBe(3)
+    const d = dictamenesPorOrden(ordenesDelFiltro(ordenes, null, TODO), null, r.prs, r.dictamenes)
+    expect(d).toMatchObject({ estado: 'ok', datos: { sinLeer: 2, totalConforme: 0 } })
+    const h = renderToStaticMarkup(createElement(VistaAgentes, { filtro: TODO, ind: { ...vaciasInd(), dictamenes: d } }))
+    expect(h.match(/Sin datos/g)!.length).toBeGreaterThanOrEqual(4)
+
+    // La lista de PRs tampoco responde: fusión «GitHub no respondió» y dictámenes «sin datos».
+    limpiarCacheAgentes()
+    const caido = githubGrande({ cuelga: /\/pulls$/ })
+    const r2 = await githubDeAgentes(caido.cliente(), 'POS', ordenes, { limiteMs: 50 })
+    expect(r2).toEqual({ prs: { POS: null }, truncados: [], dictamenes: null, vencido: true })
+    expect(tiempoAFusion(ordenes, [], r2.prs, TODO)).toMatchObject({ datos: [{ proyecto: 'POS', estado: 'sin-datos', motivo: 'GitHub no respondió.' }] })
+    expect(dictamenesPorOrden(ordenesDelFiltro(ordenes, null, TODO), null, r2.prs, r2.dictamenes)).toEqual({ estado: 'sin-datos', motivo: 'Sin datos de GitHub: los dictámenes viven en los PRs.' })
+  })
+
+  it('la página usa el cliente con tope y muestra el vencimiento', () => {
+    const src = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'agentes', 'page.tsx'), 'utf8')
+    expect(src).toMatch(/githubClient\(process\.env, \{ maxLlamadas: LLAMADAS_AGENTES \}\)/)
+    expect(src).toMatch(/gh\?\.vencido/)
+  })
+
+  it('criterio 3: con la lista en el límite de paginación, la tarjeta de tiempos lo avisa', async () => {
+    const lleno = await githubGrande().cliente().prsDeOrdenes('POS')
+    expect([lleno.prs.size, lleno.truncado]).toEqual([MAX_PRS_LISTA, true])
+    const parcial = await githubGrande({ paginas: 5, ultima: 99 }).cliente().prsDeOrdenes('POS')
+    expect([parcial.prs.size, parcial.truncado]).toEqual([499, false])
+
+    const r = await githubDeAgentes(githubGrande().cliente(), 'POS', null)
+    expect(r.truncados).toEqual(['POS'])
+    const ordenes = [orden('ORD-POS-001', 'CERRADA')]
+    const fusion = tiempoAFusion(ordenes, [], r.prs, { ...TODO, proyecto: 'POS' }, r.truncados)
+    expect(fusion).toMatchObject({ datos: [{ proyecto: 'POS', estado: 'ok', truncado: true }] })
+    const h = renderToStaticMarkup(createElement(VistaAgentes, { filtro: TODO, ind: { ...vaciasInd(), fusion } }))
+    expect(h).toContain('Lista incompleta')
+    expect(h).toContain(`llegó al límite de ${MAX_PRS_LISTA} PRs`)
+    const sin = renderToStaticMarkup(createElement(VistaAgentes, { filtro: TODO, ind: { ...vaciasInd(), fusion: tiempoAFusion(ordenes, [], r.prs, { ...TODO, proyecto: 'POS' }) } }))
+    expect(sin).not.toContain('Lista incompleta')
+  })
+
+  it('criterio 5: la regla del gasto de Claude está escrita en la página', () => {
+    const h = renderToStaticMarkup(createElement(VistaAgentes, { filtro: TODO, ind: vaciasInd() }))
+    expect(h).toContain('decisión del propietario del 2026-10-24')
+    expect(h).toContain('categoría Herramientas')
   })
 })
 
@@ -276,7 +425,7 @@ describe('gasto mensual en Claude', () => {
 
 describe('render', () => {
   it('fuentes llenas: las 5 tarjetas con sus valores; fuentes vacías: «Sin datos» y ningún cero inventado', async () => {
-    const ordenes = [orden('ORD-POS-001', 'CERRADA', 'MEDIO')]
+    const ordenes = [orden('ORD-POS-001', 'REVISADA', 'MEDIO')]
     const audit = await vista([enviar('ORD-POS-001', '2026-10-19T10:00:00-06:00'), lanzar('revisar', 'ORD-POS-001', '2026-10-19T09:15:00-06:00', 'k1')])
     const eventos = eventosOrdenes(ordenes, audit)
     const prs = { POS: new Map([['ORD-POS-001', pr(1, '2026-10-21T16:00:00Z')]]) }
@@ -291,7 +440,7 @@ describe('render', () => {
     const h = renderToStaticMarkup(createElement(VistaAgentes, { filtro: { proyecto: 'POS', desde: '2026-10-01', hasta: null }, ind: llenas }))
     expect(h).toContain('action="/agentes"')
     expect(h).toContain('value="2026-10-01"')
-    expect(h).toContain('Cerrada: 1')
+    expect(h).toContain('Revisada: 1')
     expect(h).toContain('MEDIO: 1')
     expect(h).toContain('2 d')
     expect(h).toContain('CONFORME: 1')

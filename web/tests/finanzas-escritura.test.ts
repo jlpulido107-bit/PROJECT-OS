@@ -11,7 +11,7 @@ import { finanzasWrite, type FinanzasHandlerDeps } from '@/lib/finanzas/escritur
 import { FinanzasWriteService, FINANZAS_OPERATIONS } from '@/lib/finanzas/escritura-service'
 import { FinanzasSheetsStore, InMemoryFinanzasStore, type Celda, type FinanzasStore, type FinanzasWriteTab } from '@/lib/finanzas/escritura-store'
 import { conceptoFinal, conceptoProhibido, convertirCentavos, parseConfirmar, parseMovimiento } from '@/lib/finanzas/escritura-validacion'
-import { cuerpoEnvio, estadoInicial, trasRespuesta, type EnvioEstado, type Payload, type Respuesta } from '@/lib/finanzas/envio'
+import { ajusteMostrado, CODIGOS_PERMANENTES, cuerpoEnvio, estadoInicial, trasRespuesta, type EnvioEstado, type Payload, type Respuesta } from '@/lib/finanzas/envio'
 import { AGENT_OPERATIONS } from '@/lib/operations/constants'
 import { OperationError } from '@/lib/operations/errors'
 import { RateLimiter } from '@/lib/operations/rate-limit'
@@ -785,5 +785,63 @@ describe('ORD-POS-079 criterio 3 (H3): reenviar tras escritura-fallida no deja u
     for (const codigo of ['verificacion-fallida', 'auditoria-fallida', 'red', 'error', 'error-interno']) {
       expect(trasRespuesta(antes, { a: 1, requestId: antes.requestId }, { ok: false, codigo }, nuevoId), codigo).toEqual({ requestId: antes.requestId, congelado: { a: 1 } })
     }
+  })
+
+  it('ORD-POS-080 criterio 4: un error permanente descongela; con validacion se conserva el requestId y la corrección entra', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libro())
+    const formulario = { ...base(), requestId: undefined }
+    let estado = estadoInicial(nuevoId)
+    // El primer envío no tuvo respuesta (red) con un concepto que solo rechaza el servidor: queda congelado.
+    estado = trasRespuesta(estado, cuerpoEnvio(estado, { ...formulario, concepto: 'ab' }), { ok: false, codigo: 'red' }, nuevoId)
+    expect(estado.congelado).toMatchObject({ concepto: 'ab' })
+    const requestId = estado.requestId
+    let r: Respuesta
+    // El reenvío del congelado da validacion: se descongela con el mismo requestId.
+    ;[estado, r] = await enviarComoFormulario(servicio(s), estado, { ...formulario, concepto: 'Concepto corregido' })
+    expect(r).toEqual({ ok: false, codigo: 'validacion' })
+    expect(estado).toEqual({ requestId, congelado: null })
+    // Ahora el formulario corregido sí se envía y entra.
+    expect(cuerpoEnvio(estado, { ...formulario, concepto: 'Concepto corregido' }).concepto).toBe('Concepto corregido')
+    ;[estado, r] = await enviarComoFormulario(servicio(s), estado, { ...formulario, concepto: 'Concepto corregido' })
+    expect(r).toEqual({ ok: true })
+    expect(filasMov(s).map((f) => [col(f, 'MOV_ID'), col(f, 'CONCEPTO')]).at(-1)).toEqual(['MAN-0004', 'Concepto corregido'])
+    sinHuerfanosNiHuecos(s)
+  })
+
+  it('ORD-POS-080 criterio 4: auditoria-inconsistente y estado-divergente descongelan y renuevan el requestId; los pendientes no', () => {
+    expect(CODIGOS_PERMANENTES).toEqual(['validacion', 'auditoria-inconsistente', 'estado-divergente'])
+    const congelado: EnvioEstado = { requestId: 'rid-1', congelado: { a: 1 } }
+    for (const codigo of ['auditoria-inconsistente', 'estado-divergente']) {
+      const tras = trasRespuesta(congelado, { a: 1, requestId: 'rid-1' }, { ok: false, codigo }, nuevoId)
+      expect(tras.congelado, codigo).toBeNull()
+      expect(tras.requestId, codigo).not.toBe('rid-1')
+      // Sin congelar también: ese requestId ya no puede entrar.
+      expect(trasRespuesta({ requestId: 'rid-2', congelado: null }, { a: 2, requestId: 'rid-2' }, { ok: false, codigo }, nuevoId).requestId, codigo).not.toBe('rid-2')
+    }
+    for (const codigo of ['escritura-fallida', 'red', 'error', 'conflicto-idempotencia']) {
+      expect(trasRespuesta(congelado, { a: 1, requestId: 'rid-1' }, { ok: false, codigo }, nuevoId), codigo).toBe(congelado)
+    }
+  })
+
+  it('ORD-POS-080 criterio 4: en Ajustar, el ajusteDe enviado es siempre el original que se muestra', () => {
+    const ajuste = { ...base(), requestId: undefined, ajusteDe: 'MAN-0001', montoMxn: '-10' }
+    let estado = estadoInicial(nuevoId)
+    // Sin congelar se muestra (y se envía) el elegido.
+    expect(ajusteMostrado(estado, 'MAN-0001')).toEqual({ movId: 'MAN-0001', bloqueado: false })
+    estado = trasRespuesta(estado, cuerpoEnvio(estado, ajuste), { ok: false, codigo: 'escritura-fallida' }, nuevoId)
+    // Congelado: aunque el usuario elija otro original, se muestra el congelado con la lista bloqueada, y es el que se envía.
+    const mostrado = ajusteMostrado(estado, 'MAN-0003')
+    expect(mostrado).toEqual({ movId: 'MAN-0001', bloqueado: true })
+    expect(cuerpoEnvio(estado, { ...ajuste, ajusteDe: 'MAN-0003' }).ajusteDe).toBe(mostrado.movId)
+    // Al descongelar (error permanente) vuelve a mostrarse el elegido, que es el que se envía.
+    estado = trasRespuesta(estado, cuerpoEnvio(estado, ajuste), { ok: false, codigo: 'validacion' }, nuevoId)
+    expect(ajusteMostrado(estado, 'MAN-0003')).toEqual({ movId: 'MAN-0003', bloqueado: false })
+    expect(cuerpoEnvio(estado, { ...ajuste, ajusteDe: 'MAN-0003' }).ajusteDe).toBe('MAN-0003')
+
+    const src = readFileSync(path.join(__dirname, '..', 'src', 'components', 'finanzas', 'forms.tsx'), 'utf8')
+    expect(src).toMatch(/const mostrado = ajusteMostrado\(envioVisible, movId\)/)
+    expect(src).toMatch(/const original = ajustables\.find\(\(a\) => a\.movId === mostrado\.movId\)/)
+    expect(src).toMatch(/<select required value=\{mostrado\.movId\} disabled=\{mostrado\.bloqueado\}/)
+    expect(src).toMatch(/ajusteDe: original\.movId/)
   })
 })

@@ -46,6 +46,8 @@ export async function datosDePr(client: GitHubClient, o: OrdenConPr, ahora = Dat
       entrada = { hasta: ahora + cacheSeconds() * 1000, datos: leidos }
     } catch (error) {
       const fallo = codigoFalloGitHub(error)
+      // Sin presupuesto de llamadas (/agentes, ORD-POS-080) no se llamó a GitHub: no se guarda como fallo.
+      if (fallo === 'presupuesto') return null
       console.warn(`[project-os] lectura del dictamen fallida: ${fallo}`)
       entrada = { hasta: ahora + FALLO_MS, datos: null, fallo }
     }

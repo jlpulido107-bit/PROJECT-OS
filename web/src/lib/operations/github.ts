@@ -67,10 +67,19 @@ export interface PrFusion {
   fusionMs: number | null
 }
 
+/** PRs de órdenes de un repositorio; `truncado` si la lista llegó al límite de paginación (ORD-POS-080). */
+export interface PrsDeOrdenes {
+  prs: Map<string, PrFusion>
+  truncado: boolean
+}
+
+/** Máximo de PRs que lee prsDeOrdenes por repositorio (MAX_PAGES páginas de 100). */
+export const MAX_PRS_LISTA = MAX_PAGES * 100
+
 const SHA_COMPLETO = /^[0-9a-f]{40}$/
 
 export class GitHubError extends Error {
-  constructor(readonly status: number | 'red' | 'repo-no-permitido' | 'respuesta-invalida') {
+  constructor(readonly status: number | 'red' | 'repo-no-permitido' | 'respuesta-invalida' | 'presupuesto') {
     super(`github ${status}`)
   }
 }
@@ -178,8 +187,15 @@ function issueDeProyecto(proyectoId: string, issueUrl: string): { repo: string; 
   return { repo, number: Number(n) }
 }
 
-export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetch) {
+/**
+ * `maxLlamadas`: tope de llamadas a la API de este cliente (/agentes, ORD-POS-080); al llegar, `presupuesto` sin llamar.
+ * Sin él, sin tope.
+ */
+export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetch, { maxLlamadas }: { maxLlamadas?: number } = {}) {
+  let llamadas = 0
   async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    if (maxLlamadas !== undefined && llamadas >= maxLlamadas) throw new GitHubError('presupuesto')
+    llamadas++
     let response: Response
     try {
       response = await fetchImpl(API + path, {
@@ -212,11 +228,22 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
 
   // Solo cuenta lo que creó la cuenta del token: un issue o comentario ajeno con el mismo prefijo no puede
   // «capturar» una orden ni suprimir la mención (los repositorios podrían recibir issues de terceros).
-  let me: string | null = null
+  // Una sola lectura de /user aunque haya varias lecturas en paralelo; si falla, la siguiente vuelve a intentarlo.
+  let me: Promise<string> | null = null
   async function cuentaPropia(): Promise<string> {
-    me ??= (await call<User>('GET', '/user')).login?.toLowerCase() ?? ''
-    if (!me) throw new GitHubError('respuesta-invalida')
-    return me
+    me ??= call<User>('GET', '/user').then((u) => u.login?.toLowerCase() ?? '')
+    let login: string
+    try {
+      login = await me
+    } catch (error) {
+      me = null
+      throw error
+    }
+    if (!login) {
+      me = null
+      throw new GitHubError('respuesta-invalida')
+    }
+    return login
   }
   const esPropio = (u: User | undefined, login: string) => (u?.login ?? '').toLowerCase() === login
 
@@ -233,6 +260,11 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
   }
 
   return {
+    /** Llamadas que quedan con el tope de `maxLlamadas` (Infinity sin tope). */
+    llamadasRestantes(): number {
+      return maxLlamadas === undefined ? Infinity : Math.max(0, maxLlamadas - llamadas)
+    },
+
     /** Crea (o reutiliza) el issue de la orden. No menciona a nadie. */
     async enviar(o: OrdenParaEnviar): Promise<ResultadoEnvio> {
       const repo = repoDe(o.proyectoId)
@@ -314,8 +346,9 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
     /**
      * PRs de órdenes del repositorio del proyecto (/agentes, ORD-POS-078): por cada `[ORD-…]` del título, el más
      * reciente, con el mismo filtro de autor y de head que prDetectadoDeOrden, y su instante de fusión. Solo lectura.
+     * `truncado` si la última página permitida vino llena: puede haber PRs más antiguos sin leer (ORD-POS-080).
      */
-    async prsDeOrdenes(proyectoId: string): Promise<Map<string, PrFusion>> {
+    async prsDeOrdenes(proyectoId: string): Promise<PrsDeOrdenes> {
       const repo = repoDe(proyectoId)
       const login = await cuentaPropia()
       const salida = new Map<string, PrFusion>()
@@ -333,9 +366,9 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
           if (fusionMs !== null && !Number.isFinite(fusionMs)) throw new GitHubError('respuesta-invalida')
           salida.set(ordenId, { url: p.html_url, number: p.number, fusionMs })
         }
-        if (prs.length < 100) break
+        if (prs.length < 100) return { prs: salida, truncado: false }
       }
-      return salida
+      return { prs: salida, truncado: true }
     },
 
     /**

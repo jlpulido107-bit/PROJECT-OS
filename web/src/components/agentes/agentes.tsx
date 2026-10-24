@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
 import { Badge, Empty, ExternalLink, humanize } from '@/components/ui'
 import {
-  PROYECTOS_AGENTES, type ConteoOrdenes, type Dictamenes, type FiltroAgentes, type FusionProyecto, type GastoClaude,
+  ESTADOS_SIN_DICTAMEN, PROYECTOS_AGENTES, type ConteoOrdenes, type Dictamenes, type FiltroAgentes, type FusionProyecto, type GastoClaude,
   type Indicador, type MapaLanzamientos,
 } from '@/lib/agentes'
 import { formatoMxn } from '@/lib/finanzas/finanzas'
+import { MAX_PRS_LISTA } from '@/lib/operations/github'
 import styles from './agentes.module.css'
 
 /** Tarjetas de /agentes (ORD-POS-078). Solo pintan lo que calcula lib/agentes.ts; «sin datos» nunca es un cero. */
@@ -59,7 +60,13 @@ export function TarjetaOrdenes({ c }: { c: ConteoOrdenes }) {
 }
 
 export function TarjetaFusion({ filas }: { filas: FusionProyecto[] }) {
+  const truncados = filas.filter((f) => f.estado === 'ok' && f.truncado).map((f) => f.proyecto)
   return (
+    <>
+    {truncados.length ? (
+      <p role="note"><Badge tone="warn">Lista incompleta</Badge> La lista de PRs de {truncados.join(', ')} llegó al límite de {MAX_PRS_LISTA} PRs:
+        la mediana solo usa los más recientes y puede estar sesgada.</p>
+    ) : null}
     <div className="table-wrap">
       <table aria-label="Tiempo de ENVIADA a PR fusionado por proyecto">
         <thead><tr><th scope="col">Proyecto</th><th scope="col">Mediana ENVIADA → fusionado</th><th scope="col">Órdenes medidas</th></tr></thead>
@@ -68,13 +75,14 @@ export function TarjetaFusion({ filas }: { filas: FusionProyecto[] }) {
             <tr key={f.proyecto}>
               <th scope="row">{f.proyecto}</th>
               {f.estado === 'ok' ? (
-                <><td>{f.medianaDias === null ? <span className="muted">Sin fusiones medibles</span> : `${f.medianaDias} d`}</td><td>{f.n}</td></>
+                <><td>{f.medianaDias === null ? <span className="muted">Sin fusiones medibles</span> : `${f.medianaDias} d`}{f.truncado ? <span className="muted small"> (lista incompleta)</span> : null}</td><td>{f.n}</td></>
               ) : <td colSpan={2}><Badge tone="muted">Sin datos</Badge> {f.motivo}</td>}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 
@@ -88,6 +96,7 @@ export function TarjetaDictamenes({ d }: { d: Dictamenes }) {
         <Badge tone="warn">CAMBIOS: {d.totalCambios}</Badge>
         {d.sinLeer ? <Badge tone="muted">{d.sinLeer} PR sin leer en GitHub (fuera de los totales)</Badge> : null}
       </div>
+      {d.omitidas ? <p className="muted small">{d.omitidas} órdenes {ESTADOS_SIN_DICTAMEN.join(' o ')}: sus dictámenes no se leen de GitHub (fuera de los totales).</p> : null}
       {d.rondasSinDatos ? <p className="muted small">Sin AUDITORIA no se cuentan las rondas de corrección.</p> : null}
       <div className="table-wrap">
         <table aria-label="Rondas y dictámenes por orden">
@@ -96,7 +105,8 @@ export function TarjetaDictamenes({ d }: { d: Dictamenes }) {
             {d.filas.map((f) => (
               <tr key={f.ordenId}>
                 <th scope="row"><ExternalLink href={f.prUrl}>{f.ordenId}</ExternalLink></th>
-                <td>{valor(f.rondas)}</td><td>{valor(f.conforme)}</td><td>{valor(f.cambios)}</td>
+                <td>{valor(f.rondas)}</td>
+                {f.omitida ? <td colSpan={2} className="muted">No se lee (CERRADA o CANCELADA)</td> : <><td>{valor(f.conforme)}</td><td>{valor(f.cambios)}</td></>}
               </tr>
             ))}
           </tbody>
@@ -180,7 +190,10 @@ export function VistaAgentes({ filtro, ind }: { filtro: FiltroAgentes; ind: Indi
         <Tarjeta indicador={ind.lanzamientos}>{(m) => <TarjetaMapa m={m} />}</Tarjeta>
       </section>
       <section className="section" aria-labelledby="ag-claude"><h2 id="ag-claude">Gasto mensual en Claude</h2>
-        <p className="muted small">FINANZAS: Herramientas de Claude (concepto «Claude» o MOV_ID CLAUDE-/REC-CLAUDE-), Gasto + Inversión.</p>
+        <p className="muted small">
+          Regla (decisión del propietario del 2026-10-24): el gasto de Claude se toma de FINANZAS, categoría Herramientas,
+          de los movimientos con «Claude» en el concepto o MOV_ID CLAUDE- o REC-CLAUDE- (Gasto + Inversión).
+        </p>
         <Tarjeta indicador={ind.claude}>{(g) => <TarjetaClaude g={g} />}</Tarjeta>
       </section>
     </>

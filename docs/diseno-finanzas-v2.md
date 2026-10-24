@@ -126,6 +126,10 @@ en centavos enteros, como la vista (✅ `finanzas.ts`).
   `auditoria-fallida`, `conflicto-concurrente`, error interno o sin respuesta), el formulario reenvía el **mismo** cuerpo
   con el mismo requestId aunque se haya editado, hasta completar ese `MAN` (✅ ORD-POS-079, `finanzas/envio.ts`): ningún
   `MAN` queda auditado sin fila por un reenvío ni deja hueco. Lo que estuviera mal se corrige después con «Ajustar».
+- Un error permanente al reenviar ese cuerpo (`validacion`, `auditoria-inconsistente`, `estado-divergente`) lo
+  descongela para corregir el formulario (✅ ORD-POS-080): con `validacion` se conserva el requestId; con los otros dos,
+  cuya auditoría queda para revisión manual, se renueva. En «Ajustar», mientras está congelado, la lista del original se
+  bloquea y muestra el `ajusteDe` congelado: el original enviado es siempre el que se ve.
 
 ### 3.4 Sin borrar ni editar: correcciones con otro movimiento
 
