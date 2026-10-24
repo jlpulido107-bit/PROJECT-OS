@@ -8,6 +8,7 @@ const LINKS = [
   { href: '/estado', label: 'Estado' },
   { href: '/ordenes', label: 'Órdenes' },
   { href: '/metricas', label: 'Métricas' },
+  { href: '/agentes', label: 'Agentes' },
   { href: '/control', label: 'Control' },
   { href: '/proyectos', label: 'Proyectos' },
   { href: '/tareas', label: 'Tareas' },

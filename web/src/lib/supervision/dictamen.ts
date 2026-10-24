@@ -122,6 +122,19 @@ export function dictamenSuficiente(ev: EvaluacionDictamen): boolean {
   return ev.estado.tipo === 'vigente' && ev.estado.dictamen.veredicto === 'CONFORME' && ev.siguiente === LISTO_PARA_DECISION
 }
 
+/**
+ * Dictámenes válidos del PR para la orden (ORD-POS-078, /agentes): los mismos que cuenta /ordenes, de cualquier head,
+ * el último de cada revisionId. Solo veredicto, rol y ronda; nunca el texto del comentario.
+ */
+export function dictamenesValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): Array<Pick<ReporteRevision, 'revisionId' | 'veredicto' | 'ronda' | 'headSha'>> {
+  const porRevision = new Map<string, ReporteRevision>()
+  for (const c of datos.comentarios) {
+    const r = tieneMarca(c.body) ? leer(c.body, orden, pr) : null
+    if (r) porRevision.set(r.revisionId, r)
+  }
+  return [...porRevision.values()].map(({ revisionId, veredicto, ronda, headSha }) => ({ revisionId, veredicto, ronda, headSha }))
+}
+
 export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
   const ev = evaluar(datos, orden, pr)
   return ev.plan && ev.plan.n > N_MAX ? { ...ev, siguiente: CORRELATIVO_AGOTADO, plan: null, agotado: true } : ev

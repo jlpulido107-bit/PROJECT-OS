@@ -60,6 +60,13 @@ export interface PrDeOrden {
   baseSha: string
 }
 
+/** PR de una orden con su instante de fusión (epoch ms), o null si no está fusionado (ORD-POS-078). */
+export interface PrFusion {
+  url: string
+  number: number
+  fusionMs: number | null
+}
+
 const SHA_COMPLETO = /^[0-9a-f]{40}$/
 
 export class GitHubError extends Error {
@@ -302,6 +309,33 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       }
       const estado = pr.merged_at ? 'fusionado' : pr.state === 'open' ? 'abierto' : 'cerrado'
       return { pr: { url: pr.html_url, number: pr.number, estado, headSha, baseSha }, total: candidatos.length }
+    },
+
+    /**
+     * PRs de órdenes del repositorio del proyecto (/agentes, ORD-POS-078): por cada `[ORD-…]` del título, el más
+     * reciente, con el mismo filtro de autor y de head que prDetectadoDeOrden, y su instante de fusión. Solo lectura.
+     */
+    async prsDeOrdenes(proyectoId: string): Promise<Map<string, PrFusion>> {
+      const repo = repoDe(proyectoId)
+      const login = await cuentaPropia()
+      const salida = new Map<string, PrFusion>()
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const prs = await call<Array<{
+          number: number; title: string; html_url: string; merged_at: string | null; user?: User; head?: { repo?: { full_name?: string } | null }
+        }>>('GET', `/repos/${repo}/pulls?state=all&sort=created&direction=desc&per_page=100&page=${page}`)
+        for (const p of prs) {
+          const ordenId = /^\[(ORD-[A-Z]{3}-\d{3})\]/.exec(p.title ?? '')?.[1]
+          if (!ordenId || salida.has(ordenId)) continue
+          if (!(esPropio(p.user, login) || (p.user?.login ?? '').toLowerCase() === CODEX_BOT)) continue
+          if ((p.head?.repo?.full_name ?? '').toLowerCase() !== repo.toLowerCase()) continue
+          const fusionMs = p.merged_at ? Date.parse(p.merged_at) : null
+          // Una fecha de fusión ilegible es una respuesta inválida, no «sin fusionar».
+          if (fusionMs !== null && !Number.isFinite(fusionMs)) throw new GitHubError('respuesta-invalida')
+          salida.set(ordenId, { url: p.html_url, number: p.number, fusionMs })
+        }
+        if (prs.length < 100) break
+      }
+      return salida
     },
 
     /**
