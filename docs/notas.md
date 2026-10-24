@@ -110,6 +110,13 @@ El resto de los agentes (PM, implementación, revisión) no escriben en NOTAS.
    de la nota (`propuesta`, `enviada`, `en-orden`) y anota `tarea:`. Si no prospera, la marca `descartada` (o
    `descartado`) y la quita del índice.
 
+## Revisión de salud
+
+`python scripts/notas-salud.py <checkout-de-NOTAS> [--estricto]` (ORD-POS-081) reporta en markdown enlaces rotos,
+notas fuera de su `indice.md`, frontmatter incompleto según la plantilla de su tipo y secciones vacías. Solo lee: nunca
+lista, lee ni busca en `privado/`, no abre el contenido de `00-entrada/` y no corrige nada. Con `--estricto` sale con 1
+si hay hallazgos. Bóveda de ejemplo: `tests/fixtures/notas-ejemplo/`.
+
 ## Reglas
 
 - En NOTAS no van datos clínicos, de pacientes, personales ni secretos.
