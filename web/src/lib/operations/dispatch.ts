@@ -34,9 +34,9 @@ export interface EjecucionInfo {
 
 export type ResultadoConEnvio = OperationResult & { envio?: EnvioInfo; ejecucion?: EjecucionInfo }
 
-export function githubClient(env: NodeJS.ProcessEnv = process.env): GitHubClient | null {
+export function githubClient(env: NodeJS.ProcessEnv = process.env, opciones: { maxLlamadas?: number } = {}): GitHubClient | null {
   const token = env.GITHUB_DISPATCH_TOKEN?.trim()
-  return token ? createGitHubClient(token) : null
+  return token ? createGitHubClient(token, fetch, opciones) : null
 }
 
 export { derivedRequestId }
