@@ -90,7 +90,7 @@ nueva de §8. Lo que no captura el propietario lo pone el servidor.
 | `PROYECTO` | sí, lista | `ECO` \| `POS` |
 | `TIPO` | sí, lista | `Gasto` \| `Ingreso` \| `Inversión` |
 | `CATEGORIA` | sí, lista | Lista cerrada de [v1 §2.3](diseno-finanzas.md#23-categorías-lista-cerrada) |
-| `CONCEPTO` | sí, texto | 3 a 80 caracteres, saneado como los textos de operaciones (✅ `sanitize.ts`); rechaza lo que parezca correo, CLABE (18 dígitos), tarjeta (13 a 19 dígitos), RFC o URL |
+| `CONCEPTO` | sí, texto | 3 a 80 caracteres en el texto final de la celda, prefijo de un ajuste incluido (§3.4; ✅ ORD-POS-079), saneado como los textos de operaciones (✅ `sanitize.ts`); rechaza lo que parezca correo, CLABE (18 dígitos), tarjeta (13 a 19 dígitos), RFC o URL |
 | `PRODUCTO_ID` | no, texto | Vacío o `^EC-\d{3,4}$` (❓ mismo formato que `IDEA_ID` de RADAROS, v1) |
 | `MONEDA_ORIG` | sí, lista | `MXN` (por defecto) \| `USD` |
 | `MONTO_ORIG` | sí si `USD` | Número > 0, hasta 2 decimales |
@@ -122,6 +122,10 @@ en centavos enteros, como la vista (✅ `finanzas.ts`).
   - mismo requestId y mismo hash, auditado pero sin fila (caída a medias) → completa la fila (roll-forward) y 200;
   - mismo requestId con otro hash → 409 `conflicto-idempotencia`, sin escribir.
 - Doble clic, recarga o red lenta no duplican: el botón se desactiva al enviar y el servidor decide por requestId.
+- Tras una respuesta que pudo dejar la auditoría sin su fila (`escritura-fallida`, `verificacion-fallida`,
+  `auditoria-fallida`, `conflicto-concurrente`, error interno o sin respuesta), el formulario reenvía el **mismo** cuerpo
+  con el mismo requestId aunque se haya editado, hasta completar ese `MAN` (✅ ORD-POS-079, `finanzas/envio.ts`): ningún
+  `MAN` queda auditado sin fila por un reenvío ni deja hueco. Lo que estuviera mal se corrige después con «Ajustar».
 
 ### 3.4 Sin borrar ni editar: correcciones con otro movimiento
 
@@ -280,7 +284,8 @@ en la [preparación V1.6](despliegue-v1-6-preparacion.md#5-riesgos-de-seguridad-
 
 - `FINANZAS_WRITE_MODE` = `sheets` exacto (cualquier otro valor, o ausente: deshabilitada);
 - `finanzasConfig` válido (📄 v1 §3: `FINANZAS_SHEET_ID` presente, con formato y distinto de las otras hojas);
-- `FINANZAS_WRITE_SERVICE_ACCOUNT` válida y distinta de la de lectura y de la de escritura de PROJECT-OS (§6);
+- `FINANZAS_WRITE_SERVICE_ACCOUNT` válida y distinta de la de lectura y de la de escritura de PROJECT-OS (§6); sin
+  `SHEETS_EXPECTED_SERVICE_ACCOUNT` no se puede comprobar y queda deshabilitada (`sin-cuenta-de-lectura`, ✅ ORD-POS-079);
 - escritor único `FINANZAS_WRITER_EMAIL`, presente en `AUTH_ALLOWED_EMAILS` (§2.2).
 
 No depende de `PROJECT_OS_WRITE_MODE`: la escritura de finanzas se enciende y se apaga sola.

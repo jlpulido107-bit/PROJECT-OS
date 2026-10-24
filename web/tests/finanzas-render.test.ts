@@ -98,6 +98,7 @@ describe('/finanzas: render', () => {
       AUTH_ALLOWED_EMAILS: 'revisor@example.com', FINANZAS_SHEET_ID: 'LIBRO_FINANZAS_SINTETICO_0123456789',
       FINANZAS_WRITE_MODE: 'sheets', FINANZAS_WRITE_SERVICE_ACCOUNT: 'project-os-finanzas@project-os-511102.iam.gserviceaccount.com',
       FINANZAS_WRITER_EMAIL: 'revisor@example.com',
+      SHEETS_EXPECTED_SERVICE_ACCOUNT: 'project-os-dashboard-run@project-os-511102.iam.gserviceaccount.com',
     }
     const REC = [
       ['ID', 'CONCEPTO', 'PROYECTO', 'CATEGORIA', 'MONTO', 'MONEDA', 'DIA_COBRO', 'DESDE', 'HASTA'],
@@ -138,9 +139,12 @@ describe('/finanzas: render', () => {
       const src = readFileSync(path.join(__dirname, '..', 'src', 'components', 'finanzas', 'forms.tsx'), 'utf8')
       expect(src.startsWith("'use client'")).toBe(true)
       expect(src).toContain('crypto.randomUUID()')
-      expect(src).toMatch(/function abrir\(\) \{\n\s+requestId\.current \?\?= nuevoId\(\)/)
+      expect(src).toMatch(/function abrir\(\) \{\n\s+envio\.current \?\?= estadoInicial\(nuevoId\)/)
       expect(src).toMatch(/if \(e\.currentTarget\.open\) abrir\(\)/)
-      expect(src).toMatch(/if \(json && json\.ok\) \{\n\s+requestId\.current = nuevoId\(\)/)
+      // ORD-POS-079: cuerpo y requestId según lib/finanzas/envio.ts (probado en finanzas-escritura.test.ts).
+      expect(src).toMatch(/const cuerpo = cuerpoEnvio\(actual, formulario\)/)
+      expect(src).toMatch(/body: JSON\.stringify\(cuerpo\)/)
+      expect(src).toMatch(/envio\.current = trasRespuesta\(actual, cuerpo, respuesta, nuevoId\)/)
       expect(src).toMatch(/disabled=\{sending\}/)
       expect(src).toMatch(/if \(estado\.status === 'sending'\) return/)
       expect(src).toContain("'/api/finanzas/movimientos'")
