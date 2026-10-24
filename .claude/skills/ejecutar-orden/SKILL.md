@@ -26,11 +26,27 @@ respuesta: no hay nadie para preguntar. Si falta algo o la orden es ambigua, com
    - `RIESGO` `BAJO` o `MEDIO`; `ALTO` no se ejecuta.
    - Sin secretos, correos ni datos personales o de pacientes.
 5. **Ejecutar.** En la rama de la sesión, nunca en `main`. Lee `AGENTS.md` y `CLAUDE.md` del repositorio. Haz solo lo
-   que piden los criterios y respeta «Fuera de alcance». Corre las pruebas del repositorio.
+   que piden los criterios y respeta «Fuera de alcance». Antes de escribir código sube la
+   [escalera](#escalera-antes-de-escribir-código). Corre las pruebas del repositorio.
 6. **PR.** Título `[ORDEN_ID][TAREA_ID] TITULO`. Descripción con `Closes #N` (el issue), cada criterio con su evidencia
-   y la salida de las pruebas. Lleva la CI a verde. No fusiones ni despliegues.
+   y la salida de las pruebas. Ciérrala con una o dos líneas: qué no revisaste y qué riesgos quedan. Lleva la CI a
+   verde. No fusiones ni despliegues.
 7. **Informar.** Devuelve un TSV con `ORDEN_ID`, `ESTADO` sugerido (`PR_ABIERTO`) y `PR_URL`. El propietario lo registra
    en el dashboard (**Registrar el PR detectado**).
+
+### Escalera antes de escribir código
+
+Menos código y más pruebas donde importa (adaptado de [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail),
+licencia MIT). Para cada pieza, en orden, y para en el primer «sí»:
+
+1. ¿Hace falta? Si ningún criterio la pide, no la escribas.
+2. ¿Ya existe en el repositorio? Reúsala.
+3. ¿La da la biblioteca estándar o la plataforma? Úsala.
+4. ¿La da una dependencia ya instalada? Úsala; no añadas dependencias.
+5. ¿Cabe en una línea? Escríbela así.
+
+Solo entonces escribe lo mínimo, con una prueba si hay lógica. **Nunca** recortes validación, manejo de errores,
+seguridad ni accesibilidad. Un atajo con límite conocido lleva el comentario `atajo: <límite>, <cuándo mejorarlo>`.
 
 ## B. Revisar los PRs de órdenes (por la mañana o a pedido)
 

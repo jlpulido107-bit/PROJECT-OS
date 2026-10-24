@@ -84,7 +84,11 @@ alcance» son los que mandan.
 ## Aplicar
 
 1. En `REPO_DIR`, haz checkout de la rama del PR en `HEAD_ESPERADO` (verifica `git -C REPO_DIR rev-parse HEAD`).
-2. Aplica solo las correcciones atendidas; sigue `AGENTS.md` y `CLAUDE.md` de `REPO_DIR` y de PROJECT-OS.
+2. Aplica solo las correcciones atendidas; sigue `AGENTS.md` y `CLAUDE.md` de `REPO_DIR` y de PROJECT-OS. Antes de
+   escribir código sube la [escalera](../ejecutar-orden/SKILL.md#escalera-antes-de-escribir-código): ¿hace falta?,
+   ¿ya existe en el repositorio?, ¿lo da la biblioteca estándar o la plataforma?, ¿una dependencia ya instalada?, ¿una
+   línea?; solo entonces lo mínimo, con una prueba si hay lógica. Nunca recortes validación, manejo de errores,
+   seguridad ni accesibilidad. Un atajo con límite conocido lleva el comentario `atajo: <límite>, <cuándo mejorarlo>`.
 3. Corre en `REPO_DIR` las pruebas que indica «Cómo probar» de la orden (en PROJECT-OS:
    `python -m unittest discover -s tests` y, si tocas `web/`, `npm test` en `web/`). Si fallan por tu cambio,
    corrígelo antes de terminar.
@@ -107,7 +111,8 @@ No atiendes hallazgos ni cambias nada fuera de los conflictos: el dictamen CONFO
 ## Resultado
 
 Comenta en el PR (con el pie de Claude Code): el head anterior y el nuevo (SHA), los hallazgos atendidos, los no
-atendidos (con justificación) y la salida de las pruebas. Si te bloqueas, comenta qué falta y termina.
+atendidos (con justificación) y la salida de las pruebas. Ciérralo con una o dos líneas: qué no revisaste y qué riesgos
+quedan. Si te bloqueas, comenta qué falta y termina.
 
 ## Límites
 
