@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID ni FINANZAS_SHEET_ID')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID ni la escritura de finanzas')
   return output.replace(marker, writeBlock)
 }
 
@@ -177,6 +177,45 @@ function finanzas(template, env, problems) {
   else if (id === propia) problems.push('FINANZAS_SHEET_ID no puede ser la hoja de PROJECT-OS')
   else if (id === (env.RADAROS_SHEET_ID ?? '').trim()) problems.push('FINANZAS_SHEET_ID no puede ser la hoja de RADAROS')
   return [`            - name: FINANZAS_SHEET_ID`, `              value: '${id}'`, ''].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-077, docs/diseno-finanzas-v2.md §7 con la opción C de §6): escritura de finanzas, apagada por
+ * defecto. Las tres variables van juntas y solo las exporta el propietario:
+ * - FINANZAS_WRITE_MODE: solo `sheets`; exige FINANZAS_SHEET_ID.
+ * - FINANZAS_WRITE_SERVICE_ACCOUNT: cuenta exclusiva de FINANZAS, del mismo proyecto, distinta de la runtime (lectura) y
+ *   de WRITE_SERVICE_ACCOUNT (escritura de PROJECT-OS).
+ * - FINANZAS_WRITER_EMAIL: un único correo (el servidor exige además que esté en AUTH_ALLOWED_EMAILS).
+ * Es independiente de WRITE_MODE. Sin ninguna de las tres, el YAML no cambia; nunca se imprime un valor.
+ */
+const UN_CORREO = /^[^@\s,;'"]+@[^@\s,;'"]+\.[^@\s,;'"]+$/
+
+function finanzasEscritura(env, problems) {
+  const mode = (env.FINANZAS_WRITE_MODE ?? '').trim()
+  const account = (env.FINANZAS_WRITE_SERVICE_ACCOUNT ?? '').trim()
+  const writer = (env.FINANZAS_WRITER_EMAIL ?? '').trim()
+  if (!mode && !account && !writer) return ''
+  const antes = problems.length
+  if (mode !== 'sheets') problems.push('FINANZAS_WRITE_MODE solo admite sheets')
+  if (!mode || !account || !writer) problems.push('FINANZAS_WRITE_MODE, FINANZAS_WRITE_SERVICE_ACCOUNT y FINANZAS_WRITER_EMAIL van juntas')
+  if (!(env.FINANZAS_SHEET_ID ?? '').trim()) problems.push('FINANZAS_WRITE_MODE exige FINANZAS_SHEET_ID')
+  if (account) {
+    if (!WRITE_SA.test(account)) problems.push('FINANZAS_WRITE_SERVICE_ACCOUNT no tiene el formato esperado')
+    else if (account === (env.RUNTIME_SA ?? '').trim()) problems.push('FINANZAS_WRITE_SERVICE_ACCOUNT no puede ser la cuenta runtime (lectura)')
+    else if (account === (env.WRITE_SERVICE_ACCOUNT ?? '').trim()) problems.push('FINANZAS_WRITE_SERVICE_ACCOUNT no puede ser la cuenta de escritura de PROJECT-OS')
+    else if (account.split('@')[1] !== `${(env.PROJECT_ID ?? '').trim()}.iam.gserviceaccount.com`) problems.push('FINANZAS_WRITE_SERVICE_ACCOUNT debe pertenecer a PROJECT_ID')
+  }
+  if (writer && !UN_CORREO.test(writer)) problems.push('FINANZAS_WRITER_EMAIL debe ser un único correo')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: FINANZAS_WRITE_MODE',
+    '              value: sheets',
+    '            - name: FINANZAS_WRITE_SERVICE_ACCOUNT',
+    `              value: ${account}`,
+    '            - name: FINANZAS_WRITER_EMAIL',
+    `              value: '${writer}'`,
+    '',
+  ].join('\n')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

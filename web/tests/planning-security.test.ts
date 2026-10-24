@@ -55,7 +55,10 @@ describe('sin escrituras ni aplicación automática', () => {
     for (const file of files(apiDir)) {
       const rel = path.relative(apiDir, file)
       if (rel.startsWith(`auth${path.sep}`) || rel.startsWith(`operaciones${path.sep}`)) continue
-      expect(readFileSync(file, 'utf8'), rel).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE)/)
+      const text = readFileSync(file, 'utf8')
+      // ORD-POS-077: las rutas de finanzas solo exportan POST y siempre por su guard propio.
+      if (rel.startsWith(`finanzas${path.sep}`) && /handleFinanzasWrite\(request,/.test(text)) continue
+      expect(text, rel).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE)/)
     }
   })
 

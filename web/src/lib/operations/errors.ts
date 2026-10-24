@@ -41,6 +41,13 @@ export type OperationErrorCode =
   | 'dictamen-insuficiente'
   | 'autorizacion-no-valida'
   | 'pr-no-detectado'
+  | 'finanzas-esquema-invalido'
+  | 'finanzas-ids-agotados'
+  | 'monto-no-cuadra'
+  | 'ajuste-excede-original'
+  | 'movimiento-inexistente'
+  | 'recurrente-inexistente'
+  | 'recurrente-ya-confirmado'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -84,6 +91,13 @@ const STATUS: Record<OperationErrorCode, number> = {
   'dictamen-insuficiente': 422,
   'autorizacion-no-valida': 422,
   'pr-no-detectado': 422,
+  'finanzas-esquema-invalido': 400,
+  'finanzas-ids-agotados': 409,
+  'monto-no-cuadra': 400,
+  'ajuste-excede-original': 409,
+  'movimiento-inexistente': 422,
+  'recurrente-inexistente': 422,
+  'recurrente-ya-confirmado': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -128,6 +142,13 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011: en MEDIO, también SEGUNDO de otro modelo); no se marcó REVISADA.',
   'autorizacion-no-valida': 'La autorización no lleva el ID de esta orden, la palabra «sí» y la fecha de hoy, o ya se usó para otra orden; no se escribió nada.',
   'pr-no-detectado': 'No hay un único PR abierto de la orden detectado en GitHub; el agente PM no registró nada.',
+  'finanzas-esquema-invalido': 'FINANZAS no tiene las pestañas o columnas que exige la escritura (MOVIMIENTOS, RECURRENTES y AUDITORIA); no se escribió nada.',
+  'finanzas-ids-agotados': 'Se agotaron los MOV_ID MAN-NNNN; hace falta una orden de migración. No se escribió nada.',
+  'monto-no-cuadra': 'MONTO_MXN no cuadra con MONTO_ORIG × TIPO_CAMBIO; no se escribió nada.',
+  'ajuste-excede-original': 'El ajuste dejaría el movimiento original por debajo de 0; no se escribió nada.',
+  'movimiento-inexistente': 'El movimiento que se quiere ajustar no existe o no es un original; no se escribió nada.',
+  'recurrente-inexistente': 'El recurrente no existe, tiene un problema o no está vigente en ese mes; no se escribió nada.',
+  'recurrente-ya-confirmado': 'Ese recurrente ya está confirmado en ese mes; no se escribió nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

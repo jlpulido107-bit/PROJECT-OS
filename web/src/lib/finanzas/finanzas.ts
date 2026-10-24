@@ -146,6 +146,18 @@ export interface FinanzasVista {
   recurrentes: Bloque<RecurrentesMes>
   problemas: FilaProblema[]
   movimientosValidos: number
+  /** Movimientos originales (no ajustes) que «Ajustar» puede referir (v2 §3.4, ORD-POS-077). */
+  ajustables: Ajustable[]
+  /** `TIPO_CAMBIO_DEFECTO` de PARAMETROS para precargar los formularios en USD, o null. */
+  tipoCambioDefecto: string | null
+}
+
+export interface Ajustable {
+  movId: string
+  proyecto: Proyecto
+  tipo: Tipo
+  categoria: Categoria
+  concepto: string
 }
 
 const cero = (): Record<Proyecto, number> => ({ ECO: 0, POS: 0 })
@@ -618,13 +630,36 @@ export function recurrentesDelMes(raw: unknown[][] | undefined, movimientos: Lec
 
 const SIN_MOVIMIENTOS = 'Sin movimientos todavía.'
 
+/** `TIPO_CAMBIO_DEFECTO` de PARAMETROS (v1 §2.4): número mayor que 0 con hasta 4 decimales, como texto; si no, null. */
+export function tipoCambioDefecto(rows: unknown[][] | undefined): string | null {
+  if (rows === undefined) return null
+  const header = (rows[0] ?? []).map(texto)
+  const iClave = header.indexOf('PARAMETRO')
+  const iValor = header.indexOf('VALOR')
+  if (iClave === -1 || iValor === -1) return null
+  const fila = rows.slice(1, MAX_DATA_ROWS + 1).find((row) => texto(row[iClave]) === 'TIPO_CAMBIO_DEFECTO')
+  const n = fila ? numeroCelda(fila[iValor]) : null
+  if (n === null || n <= 0 || n >= 1000) return null
+  const t = String(Number(n.toFixed(4)))
+  return /^\d+(\.\d{1,4})?$/.test(t) ? t : null
+}
+
+function ajustablesDe(movimientos: Movimiento[]): Ajustable[] {
+  return movimientos.filter((m) => m.ajusteDe === null && m.centavos > 0)
+    .map(({ movId, proyecto, tipo, categoria, concepto }) => ({ movId, proyecto, tipo, categoria, concepto }))
+    .sort((a, b) => b.movId.localeCompare(a.movId, 'es'))
+}
+
 /** Arma los bloques de §4 con los estados de §5. Nunca lanza: cada bloque resuelve su estado. */
 export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista {
   const lectura = leerMovimientos(raw.MOVIMIENTOS)
   const recurrentes = recurrentesDelMes(raw.RECURRENTES, lectura, now)
   if (lectura.estado === 'no-disponible') {
     const b = { estado: 'no-disponible', mensaje: lectura.mensaje } as const
-    return { capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, problemas: [], movimientosValidos: 0 }
+    return {
+      capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, problemas: [], movimientosValidos: 0, ajustables: [],
+      tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
+    }
   }
   const { movimientos, problemas } = lectura
   const parametros = raw.PARAMETROS === undefined ? null : leerParametros(raw.PARAMETROS)
@@ -643,7 +678,10 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
     : herr.conceptos.length === 0 ? { estado: 'vacio', mensaje: 'Sin filas de Herramientas en los últimos 12 meses.' }
     : { estado: 'ok', datos: { ...herr, avisos: avisosVentana } }
   const pyl: Bloque<Pyl> = vacio ? vacioBloque : { estado: 'ok', datos: pylPorProducto(movimientos) }
-  return { capital, mensual, herramientas, pyl, recurrentes, problemas, movimientosValidos: movimientos.length }
+  return {
+    capital, mensual, herramientas, pyl, recurrentes, problemas, movimientosValidos: movimientos.length,
+    ajustables: ajustablesDe(movimientos), tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
+  }
 }
 
 const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 })

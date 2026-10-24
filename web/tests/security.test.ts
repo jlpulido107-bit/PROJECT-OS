@@ -23,12 +23,16 @@ describe('garantías de seguridad del código', () => {
   const WRITE_ADAPTER = path.join('lib', 'operations', 'sheets-table-store.ts')
   const WRITE_RUNTIME = path.join('lib', 'operations', 'runtime.ts')
   const WRITE_CREDENTIALS = path.join('lib', 'operations', 'write-credentials.ts')
+  // ORD-POS-077: la escritura de finanzas tiene su propio adaptador, ligado solo al libro FINANZAS, y su propio runtime,
+  // que suplanta a la cuenta exclusiva de FINANZAS con el mismo proveedor de token.
+  const FINANZAS_ADAPTER = path.join('lib', 'finanzas', 'escritura-store.ts')
+  const FINANZAS_RUNTIME = path.join('lib', 'finanzas', 'escritura-runtime.ts')
   // Módulos de V1.4 que solo pueden ejecutarse en el servidor (estado simulado y manejo de escrituras).
-  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http')
+  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http', 'lib/finanzas/escritura-runtime', 'lib/finanzas/escritura-http')
 
   it('ningún código llama endpoints de escritura de Sheets ni usa el alcance de escritura', () => {
     for (const { file, text } of sources) {
-      if (file !== WRITE_ADAPTER) {
+      if (file !== WRITE_ADAPTER && file !== FINANZAS_ADAPTER) {
         expect(text, file).not.toMatch(/:append|:batchUpdate|:clear|values:update|batchUpdateByDataFilter/)
         // Quien hable con las APIs de Google solo puede leer (salvo pedir el token de escritura a IAM Credentials).
         if (/googleapis\.com/.test(text) && file !== WRITE_CREDENTIALS) expect(text, file).not.toMatch(/method:\s*'(PUT|POST|PATCH|DELETE)'/)
@@ -39,16 +43,41 @@ describe('garantías de seguridad del código', () => {
     }
   })
 
-  it('el adaptador de escritura y el token de escritura solo se usan desde runtime.ts', () => {
+  it('el adaptador de escritura y el token de escritura solo se usan desde runtime.ts (y finanzas desde su runtime)', () => {
     for (const { file, text } of sources) {
+      if (file !== FINANZAS_RUNTIME) expect(text, file).not.toMatch(/new FinanzasSheetsStore/)
       if (file === WRITE_ADAPTER || file === WRITE_RUNTIME) continue
-      expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
+      if (file !== FINANZAS_RUNTIME) expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
       expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*sheets-table-store['"]/)
       expect(text, file).not.toMatch(/new SheetsTableStore/)
     }
     const adapter = sources.find((s) => s.file === WRITE_ADAPTER)!.text
     expect(adapter).toMatch(/valueInputOption=RAW/)
     expect(adapter).not.toMatch(/process\.env|google-auth-library|readFileSync/)
+    const finanzas = sources.find((s) => s.file === FINANZAS_ADAPTER)!.text
+    expect(finanzas).toMatch(/valueInputOption=RAW/)
+    expect(finanzas).not.toMatch(/process\.env|google-auth-library|readFileSync|:batchUpdate|:clear|values:update|method:\s*'(PUT|PATCH|DELETE)'/)
+    // El runtime de finanzas solo usa FINANZAS_SHEET_ID y la cuenta exclusiva, nunca la hoja ni la cuenta de PROJECT-OS.
+    const runtime = sources.find((s) => s.file === FINANZAS_RUNTIME)!.text
+    expect(runtime).toMatch(/finanzasSheetId\(env\)/)
+    expect(runtime).toMatch(/finanzasWriteServiceAccount\(env\)/)
+    expect(runtime).not.toMatch(/spreadsheetId\(\)|SHEETS_SPREADSHEET_ID|writeServiceAccount\(|PROJECT_OS_WRITE_SERVICE_ACCOUNT|SheetsTableStore|OperationsService/)
+  })
+
+  it('las rutas de finanzas pasan por su guard propio, que rechaza Authorization antes de la sesión y del cuerpo', () => {
+    const routes = sources.filter((s) => s.file.startsWith(path.join('app', 'api', 'finanzas')) && s.file.endsWith('route.ts'))
+    expect(routes.length).toBe(2)
+    for (const { file, text } of routes) {
+      expect(text, file).toMatch(/handleFinanzasWrite\(request,/)
+      expect(text, file).not.toMatch(/handleWrite\(|operationsService|export async function (GET|PUT|PATCH|DELETE)/)
+    }
+    const handler = sources.find((s) => s.file === path.join('lib', 'finanzas', 'escritura-handler.ts'))!.text
+    expect(handler.indexOf('rejectAuthorization(request)')).toBeGreaterThan(-1)
+    expect(handler.indexOf('rejectAuthorization(request)')).toBeLessThan(handler.indexOf('deps.sessionEmail()'))
+    expect(handler.indexOf('evaluateFinanzasWriteRequest(')).toBeLessThan(handler.indexOf('deps.service()'))
+    expect(handler.indexOf('deps.service()')).toBeLessThan(handler.indexOf('await run('))
+    const guard = sources.find((s) => s.file === path.join('lib', 'finanzas', 'escritura-guard.ts'))!.text
+    expect(guard).not.toMatch(/operations\/guard'|PM_AGENT_TOKEN|agentLimiter|AGENT_|evaluateWriteRequest\(/)
   })
 
   it('todas las rutas de escritura pasan por la guarda del servidor', () => {

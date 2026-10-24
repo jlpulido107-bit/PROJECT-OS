@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { FinanzasResult } from '@/lib/finanzas/data'
@@ -6,6 +8,8 @@ import { construirFinanzas } from '@/lib/finanzas/finanzas'
 /** Render de /finanzas (ORD-POS-074) con el resultado del lector simulado: nunca lee Sheets. Montos inventados. */
 const estado = vi.hoisted(() => ({ result: null as unknown }))
 vi.mock('@/lib/page-data', () => ({ privateFinanzas: async () => ({ user: { email: 'revisor@example.com' }, result: estado.result }) }))
+// Los formularios de escritura (ORD-POS-077) usan el router de Next; en el render estático basta un doble.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh() {} }) }))
 
 const { default: FinanzasPage } = await import('@/app/(private)/finanzas/page')
 
@@ -87,5 +91,61 @@ describe('/finanzas: render', () => {
     expect(sinTab).toContain('La pestaña RECURRENTES todavía no existe.')
     const vacia = await html({ estado: 'ok', vista: construirFinanzas({ MOVIMIENTOS: MOV, PARAMETROS: PARAM(1000), RECURRENTES: [REC[0]!] }, NOW), fetchedAt: NOW })
     expect(vacia).toContain('Sin recurrentes registrados en RECURRENTES.')
+  })
+
+  describe('escritura de finanzas (ORD-POS-077, criterios 8 y 10)', () => {
+    const ACTIVA = {
+      AUTH_ALLOWED_EMAILS: 'revisor@example.com', FINANZAS_SHEET_ID: 'LIBRO_FINANZAS_SINTETICO_0123456789',
+      FINANZAS_WRITE_MODE: 'sheets', FINANZAS_WRITE_SERVICE_ACCOUNT: 'project-os-finanzas@project-os-511102.iam.gserviceaccount.com',
+      FINANZAS_WRITER_EMAIL: 'revisor@example.com',
+    }
+    const REC = [
+      ['ID', 'CONCEPTO', 'PROYECTO', 'CATEGORIA', 'MONTO', 'MONEDA', 'DIA_COBRO', 'DESDE', 'HASTA'],
+      ['CLAUDE', 'Suscripción Claude', 'POS', 'Herramientas', 20, 'USD', 1, '2026-09', ''],
+    ]
+    const vista = () => construirFinanzas({ MOVIMIENTOS: MOV, PARAMETROS: [...PARAM(1000), ['TIPO_CAMBIO_DEFECTO', 18.5]], RECURRENTES: REC }, NOW)
+    const conEnv = async (vars: Record<string, string>) => {
+      for (const [k, v] of Object.entries(vars)) vi.stubEnv(k, v)
+      try {
+        return await html({ estado: 'ok', vista: vista(), fetchedAt: NOW })
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    }
+
+    it('activa y con el escritor en sesión: «Nuevo movimiento», «Ajustar» y «Confirmar» con el tipo de cambio precargado', async () => {
+      const h = await conEnv(ACTIVA)
+      expect(h).toContain('Nuevo movimiento')
+      expect(h).toContain('Ajustar')
+      expect(h).toContain('Confirmar REC-CLAUDE-2026-09')
+      expect(h).toContain('value="18.5"')
+      expect(h).toContain('MAN-0002 · ')
+      expect(h).toContain('Escritura real.')
+      expect(h).toMatch(/<button type="submit"/)
+    })
+
+    it.each([
+      {}, { ...ACTIVA, FINANZAS_WRITE_MODE: '' }, { ...ACTIVA, FINANZAS_WRITER_EMAIL: 'otro@example.com' },
+      { ...ACTIVA, FINANZAS_WRITE_SERVICE_ACCOUNT: '' }, { ...ACTIVA, FINANZAS_SHEET_ID: '' },
+    ])('sin cualquiera de las condiciones (%o): sin botones ni formularios', async (vars) => {
+      const h = await conEnv(vars as Record<string, string>)
+      expect(h).not.toMatch(/<button|<form|Nuevo movimiento|Ajustar|Confirmar/)
+      expect(h).toContain('Solo lectura: esta página no escribe.')
+      expect(h).toContain('REC-CLAUDE-2026-09')
+    })
+
+    it('formularios: requestId por apertura, reutilizado al reintentar, y botón desactivado mientras se envía', () => {
+      const src = readFileSync(path.join(__dirname, '..', 'src', 'components', 'finanzas', 'forms.tsx'), 'utf8')
+      expect(src.startsWith("'use client'")).toBe(true)
+      expect(src).toContain('crypto.randomUUID()')
+      expect(src).toMatch(/function abrir\(\) \{\n\s+requestId\.current \?\?= nuevoId\(\)/)
+      expect(src).toMatch(/if \(e\.currentTarget\.open\) abrir\(\)/)
+      expect(src).toMatch(/if \(json && json\.ok\) \{\n\s+requestId\.current = nuevoId\(\)/)
+      expect(src).toMatch(/disabled=\{sending\}/)
+      expect(src).toMatch(/if \(estado\.status === 'sending'\) return/)
+      expect(src).toContain("'/api/finanzas/movimientos'")
+      expect(src).toContain("'/api/finanzas/recurrentes/confirmar'")
+      expect(src).not.toMatch(/process\.env|Authorization/)
+    })
   })
 })

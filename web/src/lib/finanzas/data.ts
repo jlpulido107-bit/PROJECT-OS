@@ -4,6 +4,7 @@ import { cacheSeconds, ConfigError, finanzasConfig } from '../config'
 import { createTokenProvider, type TokenProvider } from '../credentials'
 import { createSheetsReader, SheetsReadError, type SheetsErrorCode } from '../sheets-client'
 import { construirFinanzas, FINANZAS_TABS, type FinanzasVista } from './finanzas'
+import { generacionFinanzas } from './generacion'
 
 /**
  * Lector de FINANZAS para /finanzas (docs/diseno-finanzas.md §3, ORD-POS-074). Reutiliza el cliente de solo lectura
@@ -35,7 +36,7 @@ export function createFinanzasLoader(deps: FinanzasLoaderDeps = {}) {
     tokenProvider ??= createTokenProvider(env)
     return tokenProvider.getAccessToken()
   })
-  let cached: { id: string; result: FinanzasResult; expiresAt: number } | null = null
+  let cached: { id: string; result: FinanzasResult; expiresAt: number; generacion: number } | null = null
   let inFlight: { id: string; promise: Promise<FinanzasResult> } | null = null
 
   async function read(id: string): Promise<FinanzasResult> {
@@ -73,11 +74,13 @@ export function createFinanzasLoader(deps: FinanzasLoaderDeps = {}) {
     const config = finanzasConfig(env)
     if (config.id === null) return { estado: 'no-configurado', motivo: config.motivo }
     const id = config.id
-    if (cached && cached.id === id && cached.expiresAt > now()) return cached.result
+    // Tras un alta de finanzas en este proceso (ORD-POS-077) la caché se descarta.
+    if (cached && cached.id === id && cached.expiresAt > now() && cached.generacion === generacionFinanzas()) return cached.result
     if (inFlight?.id === id) return inFlight.promise
+    const generacion = generacionFinanzas()
     const promise = read(id)
       .then((result) => {
-        cached = { id, result, expiresAt: now() + ttlMs(result) }
+        cached = { id, result, expiresAt: now() + ttlMs(result), generacion }
         return result
       })
       .finally(() => {

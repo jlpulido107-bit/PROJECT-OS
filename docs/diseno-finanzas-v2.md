@@ -5,6 +5,12 @@ código en `web/`, no se cambian permisos, no se despliega y no se toca ninguna 
 órdenes (§9). Parte de la v1 de /finanzas ([diseño](diseno-finanzas.md), ORD-POS-070; vista de solo lectura
 ORD-POS-074, fusionada y desplegada, inerte sin `FINANZAS_SHEET_ID`).
 
+> **Construcción (ORD-POS-077, F-2) y decisión del propietario del 2026-10-23: opción C de §6.** La escritura usa una
+> cuenta de servicio nueva, exclusiva de FINANZAS (`FINANZAS_WRITE_SERVICE_ACCOUNT`), y un único escritor
+> (`FINANZAS_WRITER_EMAIL`). Ni `project-os-writer` ni la cuenta de lectura ganan acceso a FINANZAS. §2.2, §6, §7, §10 y
+> §11 ya reflejan esa decisión; lo demás se construyó como está escrito. Código: `web/src/lib/finanzas/escritura-*.ts`,
+> `web/src/app/api/finanzas/` y `web/src/components/finanzas/forms.tsx`.
+
 Fuentes: [diseño v1](diseno-finanzas.md), [runbook de escritura V1.8](escritura-v1-8.md), API de operaciones
 ([`web/src/lib/operations/`](../web/src/lib/operations/service.ts): `http.ts`, `guard.ts`, `config.ts`, `service.ts`,
 `write-credentials.ts`), proxy ([`web/src/lib/authz.ts`](../web/src/lib/authz.ts)), vista de /finanzas
@@ -62,10 +68,11 @@ Orden de verificaciones (la de V1.4, ✅ `guard.ts`, sin agente): 401 sin sesió
 `AUTH_ALLOWED_EMAILS` → 403 origen/CSRF (`x-project-os-csrf`) → 403 `escritura-deshabilitada` sin modo (§7) → 403
 escritor → 415 → 413 → 429 → 400 JSON.
 
-- **Escritor de finanzas** = la lista de escritores actual (`writerEmails`: `AUTH_WRITER_EMAILS` ∩ `AUTH_ALLOWED_EMAILS`,
-  ✅ `operations/config.ts`) **con exactamente un correo**. Si la lista tiene cero o más de uno, nadie escribe en
-  finanzas (403 `finanzas-escritor-ambiguo`) y la página lo dice sin mostrar correos. Así no hace falta otro secreto
-  ni otra lista, y añadir un segundo escritor a la hoja de PROJECT-OS no le da finanzas por accidente.
+- **Escritor de finanzas** (ORD-POS-077) = `FINANZAS_WRITER_EMAIL`, **exactamente un correo**, que además debe estar en
+  `AUTH_ALLOWED_EMAILS` (✅ `finanzas/escritura-config.ts`). Vacía, con una lista o fuera de la lista de lectores: la
+  escritura de finanzas queda deshabilitada (403 `escritura-deshabilitada`). No depende de `AUTH_WRITER_EMAILS`: añadir
+  un escritor a la hoja de PROJECT-OS no le da finanzas, y quitarle finanzas al propietario no le quita PROJECT-OS.
+  Con la escritura activa, otra cuenta permitida recibe 403 `sin-permiso-escritura`.
 - Límite de frecuencia propio (clave `finanzas`): ráfaga de 5 y 1 alta cada 10 s; al excederlo, 429.
 - Los botones solo se pintan si `finanzasCanWrite(email)` (modo activo y escritor único); el servidor repite todo.
 
@@ -210,7 +217,7 @@ Mismo orden que ✅ `OperationsService` («referencias → idempotencia → AUDI
    auditoría actual (✅ `AUDIT_ID`, `FECHA_HORA`, `ACTOR`, `ENTIDAD` = `MOVIMIENTOS`, `REGISTRO_ID` = `MOV_ID`, `CAMPO`,
    `VALOR_ANTES` vacío, `VALOR_DESPUES`, `ORIGEN` = `dashboard-finanzas;modo=sheets;req=<requestId>;hash=<hash>`).
 4. **Entidad.** Una fila nueva al final de MOVIMIENTOS, columnas en el orden de los encabezados leídos.
-5. **Verificación.** Relee la fila por `MOV_ID`; si no cuadra con lo auditado, 500 `verificacion-fallida` (el
+5. **Verificación.** Relee la fila por `MOV_ID`; si no cuadra con lo auditado, 409 `verificacion-fallida` (mismo código que operaciones) (el
    reintento con el mismo requestId hace roll-forward).
 
 Por qué la auditoría vive **en FINANZAS** y no en la AUDITORIA de PROJECT-OS: llevaría montos a la hoja que lee el PM
@@ -236,7 +243,7 @@ Nota del PM: comparar dar Editor sobre FINANZAS a la cuenta de escritura (`proje
 | IAM y GCP | Ninguno: el `TokenCreator` de la cuenta de lectura sobre `project-os-writer` ya existe (📄 [escritura V1.8 §1](escritura-v1-8.md#1-cuenta-de-escritura-y-permisos)) | Ninguno, pero rompe la separación lectura/escritura de V1.8 |
 | Riesgo propio | El PM también escribe (en PROJECT-OS) con esta cuenta, y el alcance `spreadsheets` vale para todo libro compartido con ella | Toda petición, incluida la de un lector, corre con una identidad capaz de escribir |
 
-**Elegida: A, `project-os-writer`.** Mantiene la regla de V1.8 —la identidad de lectura nunca escribe; la de escritura
+**Propuesta del diseño (sustituida): A, `project-os-writer`.** Mantenía la regla de V1.8 —la identidad de lectura nunca escribe; la de escritura
 solo existe 10 minutos y solo en una escritura— y no empeora R4. Su riesgo propio (un libro más al alcance de la
 cuenta que también usa el PM) se contiene en el código, no en IAM:
 
@@ -247,59 +254,103 @@ cuenta que también usa el PM) se contiene en el código, no en IAM:
   cruzadas en §9).
 - La lectura de /finanzas sigue con la cuenta de lectura; la cuenta de escritura solo se usa en las dos rutas `POST`.
 
-Descartada también C, una cuenta nueva solo para FINANZAS: aislaría mejor, pero exige crear una cuenta y un
-`TokenCreator` nuevo en IAM (fuera de esta orden y de su riesgo). Queda como endurecimiento posible si el propietario
-lo pide.
+**Decidida por el propietario (2026-10-23): C, una cuenta nueva solo para FINANZAS** (p. ej. `project-os-finanzas`),
+Editor solo de FINANZAS. Aísla mejor que A: el PM escribe en PROJECT-OS con `project-os-writer`, que nunca gana acceso a
+FINANZAS, y ninguna identidad puede escribir en los dos libros. Su costo (crear la cuenta y un `TokenCreator` en IAM) es
+del propietario, en la activación (§7.2). El código lo asegura así (✅ ORD-POS-077):
 
-**R3 y R4 tras activar.** R3: la cuenta de lectura sigue Lector de tres libros como máximo; `project-os-writer` es
-Editor de dos (PROJECT-OS y FINANZAS) y de nada más. R4: sin cambio para la lectura; la escritura en FINANZAS exige
-modo, escritor único y sesión. La orden de construcción actualiza la tabla de la preparación V1.6.
+- `FINANZAS_WRITE_SERVICE_ACCOUNT` es obligatoria, con formato de cuenta de servicio y **distinta** de la cuenta de
+  lectura (`SHEETS_EXPECTED_SERVICE_ACCOUNT`) y de `PROJECT_OS_WRITE_SERVICE_ACCOUNT`; `render.mjs` exige además que sea
+  del mismo proyecto y distinta de la runtime y de `WRITE_SERVICE_ACCOUNT`.
+- El token se pide por suplantación de esa cuenta (✅ `write-credentials.ts`, alcance `spreadsheets`, 10 min) y solo
+  dentro de una petición de escritura que ya pasó el guard.
+- El servicio y el almacén de finanzas solo reciben `FINANZAS_SHEET_ID` y esa cuenta; el de operaciones, solo
+  `SHEETS_SPREADSHEET_ID` y `project-os-writer` (pruebas cruzadas en `tests/finanzas-cruce.test.ts`).
+
+**R3 y R4 tras activar.** R3: la cuenta de lectura sigue Lector de tres libros como máximo; `project-os-writer` sigue
+Editor solo de PROJECT-OS; la cuenta nueva es Editor solo de FINANZAS; ninguna tiene roles de proyecto. R4: sin cambio
+para la lectura; la escritura en FINANZAS exige modo, libro, cuenta propia, escritor único y su sesión. Tabla actualizada
+en la [preparación V1.6](despliegue-v1-6-preparacion.md#5-riesgos-de-seguridad-y-costos).
 
 ## 7. Inercia y activación del propietario (criterio 4, DEC-POS-014)
 
 ### 7.1 Inerte por defecto
 
-`finanzasWriteMode(env)` devuelve `sheets` **solo** si se cumplen todas:
+`finanzasWriteMode(env)` devuelve `sheets` **solo** si se cumplen todas (✅ `finanzas/escritura-config.ts`, opción C):
 
 - `FINANZAS_WRITE_MODE` = `sheets` exacto (cualquier otro valor, o ausente: deshabilitada);
 - `finanzasConfig` válido (📄 v1 §3: `FINANZAS_SHEET_ID` presente, con formato y distinto de las otras hojas);
-- escritura general en modo `sheets` (✅ `writeModeStatus`: datos reales y `PROJECT_OS_WRITE_SERVICE_ACCOUNT` válida y
-  distinta de la de lectura);
-- escritor único (§2.2).
+- `FINANZAS_WRITE_SERVICE_ACCOUNT` válida y distinta de la de lectura y de la de escritura de PROJECT-OS (§6);
+- escritor único `FINANZAS_WRITER_EMAIL`, presente en `AUTH_ALLOWED_EMAILS` (§2.2).
+
+No depende de `PROJECT_OS_WRITE_MODE`: la escritura de finanzas se enciende y se apaga sola.
 
 Sin eso: las rutas responden 403 `escritura-deshabilitada` **antes** de pedir un token (cero llamadas a
 `iamcredentials.googleapis.com` y a Sheets), la página no pinta «Nuevo movimiento» ni «Confirmar» y muestra la lista de
 pendientes solo como lectura. No hay modo `mock` para finanzas en Cloud Run.
 
-`render.mjs` acepta `FINANZAS_WRITE_MODE` opcional: solo el valor `sheets`, y solo junto con `FINANZAS_SHEET_ID` y
-`WRITE_MODE=sheets`; cualquier otra combinación hace fallar el render sin imprimir YAML. Sin la variable, el YAML no
-cambia. `deploy.sh --desde-activa` la conserva y `--quitar FINANZAS_WRITE_MODE` la retira.
+`render.mjs` acepta `FINANZAS_WRITE_MODE`, `FINANZAS_WRITE_SERVICE_ACCOUNT` y `FINANZAS_WRITER_EMAIL`, **las tres juntas**:
+el modo solo `sheets` y con `FINANZAS_SHEET_ID`, la cuenta con formato, del proyecto y distinta de la runtime y de
+`WRITE_SERVICE_ACCOUNT`, y el escritor un único correo. Cualquier otra combinación hace fallar el render sin imprimir
+valores ni YAML. Sin ninguna, el YAML no cambia. `deploy.sh --desde-activa` las conserva y `--quitar` de cualquiera de
+las tres las retira todas.
 
-### 7.2 Activación (solo el propietario, tras fusionar y desplegar §9)
+### 7.2 Activación (solo el propietario, tras fusionar y desplegar F-2) — opción C
 
-1. En la hoja FINANZAS: Archivo → Historial de versiones → nombrar la versión «antes de escritura de finanzas».
-2. Crear las pestañas `RECURRENTES` y `AUDITORIA` y la columna `AJUSTE_DE` al final de MOVIMIENTOS, y añadir
-   `recurrente` a la validación de `FUENTE` (§8).
-3. Compartir FINANZAS → correo de `project-os-writer` → **Editor** → desmarcar «Notificar». La cuenta de lectura sigue
-   **Lector**; no compartir nada más.
-4. En Cloud Shell:
+Ningún agente crea la cuenta, toca IAM, comparte la hoja, pone las variables ni despliega. En Cloud Shell, con
+`PROJECT_ID=project-os-511102`:
+
+1. **Respaldo.** En la hoja FINANZAS: Archivo → Historial de versiones → nombrar la versión «antes de escritura de
+   finanzas».
+2. **Esquema.** Crear las pestañas `RECURRENTES` (§4.1) y `AUDITORIA` (encabezados de §5, paso 3, en la fila 1), la
+   columna `AJUSTE_DE` al final de MOVIMIENTOS y añadir `recurrente` a la validación de `FUENTE` (§8). Sin `RECURRENTES`
+   o sin `AUDITORIA`, las dos rutas responden 400 sin escribir. `FECHA` se escribe como texto `AAAA-MM-DD` (RAW): si
+   alguna fórmula de RESUMEN agrupa por fecha, debe aceptar ese texto (❓ revisar al activar).
+3. **Crear la cuenta exclusiva** (sin claves, sin roles de proyecto):
 
    ```bash
-   FINANZAS_WRITE_MODE=sheets web/deploy/cloudrun/deploy.sh --dry-run --desde-activa   # debe listar FINANZAS_WRITE_MODE
-   FINANZAS_WRITE_MODE=sheets web/deploy/cloudrun/deploy.sh --desde-activa
+   gcloud iam service-accounts create project-os-finanzas --project "$PROJECT_ID" \
+     --display-name "PROJECT-OS escritura de FINANZAS"
    ```
-5. Verificar:
-   - en /finanzas aparecen «Nuevo movimiento» y «Confirmar»;
-   - un alta de prueba crea `MAN-…` en MOVIMIENTOS y sus filas en AUDITORIA de FINANZAS; un ajuste por el monto completo
-     la anula (no se borra);
-   - en Compartir: `project-os-writer` Editor, cuenta de lectura Lector, ninguna otra cuenta de servicio;
-   - `project-os-writer` y la cuenta de lectura siguen sin roles de proyecto (el `gcloud projects get-iam-policy` de v1
-     §6 y de escritura V1.8 §1 debe salir vacío para ambas);
-   - con el token del PM, `POST /api/finanzas/movimientos` responde 401 y no escribe.
-6. **Revertir:** `deploy.sh --desde-activa --quitar FINANZAS_WRITE_MODE` y quitar a `project-os-writer` del Compartir
-   de FINANZAS. La vista de solo lectura sigue igual.
+4. **TokenCreator de la cuenta de lectura sobre ella** (y nada más):
 
-Ningún agente comparte la hoja, pone la variable ni despliega.
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding \
+     "project-os-finanzas@$PROJECT_ID.iam.gserviceaccount.com" --project "$PROJECT_ID" \
+     --member "serviceAccount:project-os-dashboard-run@$PROJECT_ID.iam.gserviceaccount.com" \
+     --role roles/iam.serviceAccountTokenCreator
+   ```
+5. **Compartir FINANZAS** → correo de `project-os-finanzas` → **Editor** → desmarcar «Notificar». La cuenta de lectura
+   sigue **Lector**; `project-os-writer` no se agrega; no compartir nada más con la cuenta nueva.
+6. **Variables** (las tres juntas; el correo es el del propietario y debe estar en la lista de lectores):
+
+   ```bash
+   export FINANZAS_WRITE_MODE=sheets
+   export FINANZAS_WRITE_SERVICE_ACCOUNT="project-os-finanzas@$PROJECT_ID.iam.gserviceaccount.com"
+   export FINANZAS_WRITER_EMAIL='<correo del propietario>'
+   web/deploy/cloudrun/deploy.sh --dry-run --desde-activa   # debe listar las tres como nuevas
+   web/deploy/cloudrun/deploy.sh --desde-activa
+   ```
+7. **Verificar:**
+   - en /finanzas aparecen «Nuevo movimiento», «Ajustar» y «Confirmar» solo con la sesión del propietario; con otra
+     cuenta permitida, no;
+   - un alta de prueba crea `MAN-…` en MOVIMIENTOS y sus filas en la AUDITORIA de FINANZAS; un ajuste por el monto
+     completo la anula (no se borra);
+   - en Compartir de FINANZAS: `project-os-finanzas` Editor, cuenta de lectura Lector, ninguna otra cuenta de servicio;
+     en Compartir de PROJECT-OS, `project-os-finanzas` no aparece;
+   - sin roles de proyecto para la cuenta nueva (debe salir vacío):
+
+     ```bash
+     gcloud projects get-iam-policy "$PROJECT_ID" --flatten="bindings[].members" \
+       --filter="bindings.members:serviceAccount:project-os-finanzas@" --format="value(bindings.role)"
+     ```
+   - en la política de la cuenta nueva, solo `roles/iam.serviceAccountTokenCreator` para la cuenta de lectura
+     (`gcloud iam service-accounts get-iam-policy project-os-finanzas@$PROJECT_ID.iam.gserviceaccount.com`);
+   - con el token del PM, `POST /api/finanzas/movimientos` responde 401 y no escribe.
+8. **Revertir:** `web/deploy/cloudrun/deploy.sh --desde-activa --quitar FINANZAS_WRITE_MODE` (retira las tres
+   variables), quitar a `project-os-finanzas` del Compartir de FINANZAS y, si no se volverá a usar, quitar el
+   `TokenCreator` (`gcloud iam service-accounts remove-iam-policy-binding …` con los mismos argumentos del paso 4) y
+   deshabilitar la cuenta (`gcloud iam service-accounts disable …`). La vista de solo lectura sigue igual.
 
 ## 8. Migración del esquema de FINANZAS
 
@@ -366,8 +417,8 @@ corrección y segundo revisor (DEC-POS-008). La activación de §7.2 es la parte
 
 | Cambia (al construir y activar) | No cambia |
 | --- | --- |
-| Dos rutas `POST` de finanzas, un guard y un servicio propios, formularios en /finanzas, una variable opcional | API de operaciones, `AGENT_ROUTES`, `AGENT_OPERATIONS`, permisos del PM, hoja de PROJECT-OS |
-| `project-os-writer` Editor de FINANZAS (lo comparte el propietario) | Cuenta de lectura (Lector), alcance `spreadsheets.readonly` de la lectura, IAM, credenciales en GCP, `.github/workflows` |
+| Dos rutas `POST` de finanzas, un guard y un servicio propios, formularios en /finanzas, tres variables opcionales que van juntas | API de operaciones, `AGENT_ROUTES`, `AGENT_OPERATIONS`, permisos del PM, hoja de PROJECT-OS |
+| Cuenta nueva `project-os-finanzas`, Editor solo de FINANZAS, con `TokenCreator` de la cuenta de lectura (opción C; la crea el propietario) | Cuenta de lectura (Lector), `project-os-writer` (sin FINANZAS), alcance `spreadsheets.readonly` de la lectura, `.github/workflows` |
 | Esquema de FINANZAS: §8 | RADAROS y /eco |
 
 ## 11. Datos que nunca van al repositorio (criterio 6)
@@ -376,5 +427,5 @@ corrección y segundo revisor (DEC-POS-008). La activación de §7.2 es la parte
   no cifras; las pruebas usan montos sintéticos.
 - Sin datos bancarios (cuentas, CLABE, tarjetas), RFC, razones sociales ni números de factura; el formulario los
   rechaza en `CONCEPTO` (§3.1) y `COMPROBANTE` sigue siendo `sí`/`no`.
-- Sin IDs de libros: `FINANZAS_SHEET_ID` vive solo en Cloud Run. Sin correos: el escritor se resuelve con la lista que
-  ya existe en el secreto de escritores.
+- Sin IDs de libros ni correos: `FINANZAS_SHEET_ID` y `FINANZAS_WRITER_EMAIL` viven solo en Cloud Run (`deploy.sh` nunca
+  imprime sus valores); las pruebas usan correos y cuentas sintéticos.
