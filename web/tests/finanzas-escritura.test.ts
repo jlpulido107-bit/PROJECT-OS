@@ -10,7 +10,8 @@ import { evaluateFinanzasWriteRequest } from '@/lib/finanzas/escritura-guard'
 import { finanzasWrite, type FinanzasHandlerDeps } from '@/lib/finanzas/escritura-handler'
 import { FinanzasWriteService, FINANZAS_OPERATIONS } from '@/lib/finanzas/escritura-service'
 import { FinanzasSheetsStore, InMemoryFinanzasStore, type Celda, type FinanzasStore, type FinanzasWriteTab } from '@/lib/finanzas/escritura-store'
-import { conceptoProhibido, convertirCentavos, parseConfirmar, parseMovimiento } from '@/lib/finanzas/escritura-validacion'
+import { conceptoFinal, conceptoProhibido, convertirCentavos, parseConfirmar, parseMovimiento } from '@/lib/finanzas/escritura-validacion'
+import { cuerpoEnvio, estadoInicial, trasRespuesta, type EnvioEstado, type Payload, type Respuesta } from '@/lib/finanzas/envio'
 import { AGENT_OPERATIONS } from '@/lib/operations/constants'
 import { OperationError } from '@/lib/operations/errors'
 import { RateLimiter } from '@/lib/operations/rate-limit'
@@ -662,4 +663,127 @@ describe('criterio 9: render.mjs valida y agrega la escritura de finanzas', () =
     for (const v of [CUENTA_FIN, DUENO, LECTURA, ESCRITURA_POS, 'cuenta-secreta', FINANZAS]) expect(error).not.toContain(v)
   })
   // deploy.sh --desde-activa las conserva y --quitar las retira juntas: tests/deploy-script.test.ts (ORD-POS-077).
+})
+
+/* ------------------------------- ORD-POS-079: hallazgos de 077 ------------------------------- */
+
+describe('ORD-POS-079 criterio 1 (H1): el CONCEPTO final de un ajuste respeta los 80 caracteres', () => {
+  const prefijo = 'Ajuste de MAN-0001: '
+
+  it('el prefijo cuenta dentro del límite: 60 + 20 entra; 61 + 20, 400 con el motivo', async () => {
+    expect(prefijo).toHaveLength(20)
+    const cabe = parseMovimiento(base({ ajusteDe: 'MAN-0001', montoMxn: '-1', concepto: 'x'.repeat(60) }))
+    expect(conceptoFinal(cabe)).toHaveLength(80)
+    const e = await Promise.resolve().then(() => parseMovimiento(base({ ajusteDe: 'MAN-0001', montoMxn: '-1', concepto: 'x'.repeat(61) }))).catch((x: unknown) => x)
+    expect((e as OperationError).code).toBe('validacion')
+    expect((e as OperationError).fields?.concepto).toMatch(/hasta 60 caracteres/)
+    // Sin ajuste, los 80 siguen valiendo.
+    expect(conceptoFinal(parseMovimiento(base({ concepto: 'x'.repeat(80) })))).toHaveLength(80)
+  })
+
+  it('lo que se escribe en la hoja nunca pasa de 80, con o sin el prefijo ya escrito por el usuario', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libro())
+    const svc = servicio(s)
+    await svc.crearMovimiento(parseMovimiento(base({ ajusteDe: 'MAN-0001', montoMxn: '-1', concepto: 'y'.repeat(60) })), CTX)
+    await svc.crearMovimiento(parseMovimiento(base({ ajusteDe: 'MAN-0001', montoMxn: '-1', concepto: prefijo + 'z'.repeat(60) })), CTX)
+    expect(await codigo(() => parseMovimiento(base({ ajusteDe: 'MAN-0001', montoMxn: '-1', concepto: prefijo + 'z'.repeat(61) })))).toBe('validacion')
+    // Un 80 que empieza por = ganaría el apóstrofo: también se rechaza.
+    expect(await codigo(() => parseMovimiento(base({ concepto: '=' + 'x'.repeat(79) })))).toBe('validacion')
+    const conceptos = filasMov(s).slice(2).map((f) => String(col(f, 'CONCEPTO')))
+    expect(conceptos).toEqual([prefijo + 'y'.repeat(60), prefijo + 'z'.repeat(60)])
+    for (const c of conceptos) expect(c.length).toBeLessThanOrEqual(80)
+  })
+})
+
+describe('ORD-POS-079 criterio 2 (H2): la cuenta de finanzas debe ser distinta de la de lectura, aunque falte SHEETS_EXPECTED_SERVICE_ACCOUNT', () => {
+  it.each([undefined, '', '   '])('sin SHEETS_EXPECTED_SERVICE_ACCOUNT (%o): deshabilitada, no se puede comprobar', (lectura) => {
+    const vars = env({ ...ACTIVA, SHEETS_EXPECTED_SERVICE_ACCOUNT: lectura })
+    expect(finanzasWriteStatus(vars)).toEqual({ mode: 'disabled', reason: 'sin-cuenta-de-lectura' })
+    expect(finanzasWriter(vars)).toBeNull()
+    expect(finanzasCanWrite(DUENO, vars)).toBe(false)
+  })
+
+  it('con la cuenta de lectura declarada: igual (aun con otras mayúsculas) deshabilita; distinta, sheets', () => {
+    expect(finanzasWriteStatus(env({ ...ACTIVA, SHEETS_EXPECTED_SERVICE_ACCOUNT: ` ${CUENTA_FIN.toUpperCase()} ` }))).toEqual({ mode: 'disabled', reason: 'cuenta-de-lectura' })
+    expect(finanzasWriteStatus(env({ ...ACTIVA, SHEETS_EXPECTED_SERVICE_ACCOUNT: LECTURA }))).toEqual({ mode: 'sheets', reason: null })
+  })
+})
+
+describe('ORD-POS-079 criterio 3 (H3): reenviar tras escritura-fallida no deja un MAN auditado sin fila ni huecos', () => {
+  let n = 0
+  const nuevoId = () => `00000000-0000-4000-9000-${String(++n).padStart(12, '0')}`
+
+  /** Lo que haría el formulario: cuerpo según el estado, respuesta del servicio y estado siguiente. */
+  async function enviarComoFormulario(svc: FinanzasWriteService, estado: EnvioEstado, formulario: Payload): Promise<[EnvioEstado, Respuesta]> {
+    const cuerpo = cuerpoEnvio(estado, formulario)
+    let respuesta: Respuesta
+    try {
+      await svc.crearMovimiento(parseMovimiento(cuerpo), CTX)
+      respuesta = { ok: true }
+    } catch (e) {
+      respuesta = { ok: false, codigo: (e as OperationError).code }
+    }
+    return [trasRespuesta(estado, cuerpo, respuesta, nuevoId), respuesta]
+  }
+
+  /** Cada MAN- de la auditoría tiene su fila, y los MAN- van seguidos desde MAN-0001 (salvo el MAN-0002 del libro base). */
+  function sinHuerfanosNiHuecos(s: InMemoryFinanzasStore) {
+    const movs = new Set(filasMov(s).map((f) => String(col(f, 'MOV_ID'))))
+    const auditados = new Set(filasAud(s).map((f) => String(f[ENC_AUD.indexOf('REGISTRO_ID')])))
+    for (const id of auditados) expect(movs.has(id), id).toBe(true)
+    const nums = [...movs].map((id) => Number(/^MAN-(\d{4})$/.exec(id)![1])).sort((a, b) => a - b)
+    expect(nums).toEqual([1, ...Array.from({ length: nums.length - 1 }, (_, i) => i + 3)])
+  }
+
+  it.each([
+    ['sin cambios', {}],
+    ['con otro monto', { montoMxn: '999' }],
+    ['con otro concepto y fecha', { concepto: 'Otro concepto', fecha: '2026-10-21' }],
+  ])('%s: el reintento completa el mismo MAN con los datos auditados, y la siguiente alta sigue la numeración', async (_caso, cambio) => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libro())
+    const formulario = { ...base(), requestId: undefined }
+    let estado = estadoInicial(nuevoId)
+    let r: Respuesta
+    ;[estado, r] = await enviarComoFormulario(servicio(new FallaEn(s, 'MOVIMIENTOS')), estado, formulario)
+    expect(r).toEqual({ ok: false, codigo: 'escritura-fallida' })
+    expect(estado.congelado).not.toBeNull()
+
+    // El usuario edita (o no) y reenvía: mismo requestId y mismo cuerpo, nunca 409 ni otro MAN.
+    const requestId = estado.requestId
+    expect(cuerpoEnvio(estado, { ...formulario, ...cambio }).requestId).toBe(requestId)
+    ;[estado, r] = await enviarComoFormulario(servicio(s), estado, { ...formulario, ...cambio })
+    expect(r).toEqual({ ok: true })
+    expect(estado.congelado).toBeNull()
+    expect(estado.requestId).not.toBe(requestId)
+    const fila = filasMov(s).find((f) => col(f, 'MOV_ID') === 'MAN-0004')!
+    expect([col(fila, 'MONTO_MXN'), col(fila, 'CONCEPTO')]).toEqual([123.45, 'Muestras de empaque'])
+
+    // La siguiente alta con el formulario ya cambiado lleva el MAN siguiente: sin huecos ni huérfanos.
+    ;[estado, r] = await enviarComoFormulario(servicio(s), estado, { ...formulario, ...cambio })
+    expect(r).toEqual({ ok: true })
+    expect(filasMov(s).map((f) => col(f, 'MOV_ID'))).toEqual(['MAN-0001', 'MAN-0003', 'MAN-0004', 'MAN-0005'])
+    sinHuerfanosNiHuecos(s)
+  })
+
+  it('si el reintento vuelve a fallar sigue congelado con el mismo requestId; los fallos previos a la auditoría no congelan', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libro())
+    const formulario = { ...base(), requestId: undefined }
+    let estado = estadoInicial(nuevoId)
+    ;[estado] = await enviarComoFormulario(servicio(new FallaEn(s, 'MOVIMIENTOS')), estado, formulario)
+    const congelado = estado
+    ;[estado] = await enviarComoFormulario(servicio(new FallaEn(s, 'MOVIMIENTOS')), estado, { ...formulario, montoMxn: '5' })
+    expect(estado).toBe(congelado)
+    ;[estado] = await enviarComoFormulario(servicio(s), estado, formulario)
+    expect(estado.congelado).toBeNull()
+    sinHuerfanosNiHuecos(s)
+
+    // Validación: nada auditado, el usuario corrige y el mismo requestId sirve.
+    const antes = estado
+    const [tras, r] = await enviarComoFormulario(servicio(s), estado, { ...formulario, concepto: 'ab' })
+    expect(r).toEqual({ ok: false, codigo: 'validacion' })
+    expect(tras).toBe(antes)
+    for (const codigo of ['verificacion-fallida', 'auditoria-fallida', 'red', 'error', 'error-interno']) {
+      expect(trasRespuesta(antes, { a: 1, requestId: antes.requestId }, { ok: false, codigo }, nuevoId), codigo).toEqual({ requestId: antes.requestId, congelado: { a: 1 } })
+    }
+  })
 })

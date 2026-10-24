@@ -1,0 +1,47 @@
+/**
+ * Reintentos de los formularios de escritura de /finanzas (ORD-POS-079, hallazgo H3 de ORD-POS-077;
+ * docs/diseno-finanzas-v2.md §3.3). Puro y sin dependencias de servidor: lo usan forms.tsx y las pruebas.
+ *
+ * Tras una respuesta que puede haber dejado la auditoría escrita sin su fila (la fila falló, no se pudo verificar, la
+ * auditoría dio error a medias o no hubo respuesta), el formulario queda CONGELADO: el siguiente envío reutiliza el
+ * mismo requestId y el MISMO cuerpo que el envío original, aunque el formulario haya cambiado. Así el servidor completa
+ * el mismo MAN (roll-forward) en vez de responder 409 `conflicto-idempotencia` y obligar a otro requestId, que dejaría
+ * un MAN auditado sin fila y un hueco en la numeración. Lo que estuviera mal se corrige después con «Ajustar».
+ */
+
+export type Payload = Record<string, unknown>
+
+export interface EnvioEstado {
+  requestId: string
+  /** Cuerpo del envío que pudo quedar auditado; mientras exista, se reenvía tal cual. */
+  congelado: Payload | null
+}
+
+export type Respuesta = { ok: true } | { ok: false; codigo: string }
+
+/** Códigos tras los que la solicitud pudo quedar auditada sin su fila. `red`: sin respuesta; `error`: respuesta
+ * sin JSON (p. ej. un 502 del balanceador). */
+export const CODIGOS_PENDIENTES: readonly string[] = ['escritura-fallida', 'verificacion-fallida', 'auditoria-fallida', 'conflicto-concurrente', 'error-interno', 'error', 'red']
+
+export function estadoInicial(nuevoId: () => string): EnvioEstado {
+  return { requestId: nuevoId(), congelado: null }
+}
+
+/** Cuerpo que se envía: el congelado si hay una solicitud pendiente; si no, el del formulario. Siempre con su requestId. */
+export function cuerpoEnvio(estado: EnvioEstado, formulario: Payload): Payload {
+  return { ...(estado.congelado ?? formulario), requestId: estado.requestId }
+}
+
+/** Estado tras la respuesta al `enviado` (lo que devolvió `cuerpoEnvio`). */
+export function trasRespuesta(estado: EnvioEstado, enviado: Payload, respuesta: Respuesta, nuevoId: () => string): EnvioEstado {
+  if (respuesta.ok) return estadoInicial(nuevoId)
+  if (estado.congelado) return estado
+  if (CODIGOS_PENDIENTES.includes(respuesta.codigo)) {
+    const cuerpo = { ...enviado }
+    delete cuerpo.requestId
+    return { requestId: estado.requestId, congelado: cuerpo }
+  }
+  // Sin nada pendiente: el requestId ya usado con otros datos se renueva (el anterior quedó completo).
+  if (respuesta.codigo === 'conflicto-idempotencia') return { requestId: nuevoId(), congelado: null }
+  return estado
+}

@@ -2,12 +2,15 @@
 
 import { useRouter } from 'next/navigation'
 import { useRef, useState, type FormEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { CONCEPTO_MAX, prefijoAjuste } from '@/lib/finanzas/escritura-validacion'
+import { CODIGOS_PENDIENTES, cuerpoEnvio, estadoInicial, trasRespuesta, type EnvioEstado, type Respuesta } from '@/lib/finanzas/envio'
 
 /* --------------------------------------------------------------------------------------------
  * Formularios de escritura de /finanzas (ORD-POS-077, docs/diseno-finanzas-v2.md §3 y §4.3). Solo UI: el servidor
  * repite todas las verificaciones. Cada formulario genera su requestId al abrirse y lo reenvía en cada reintento; solo
- * se renueva tras un alta correcta (o si el servidor dice que ese requestId ya se usó con otros datos). El botón se
- * desactiva mientras se envía: doble clic, recarga o red lenta no duplican.
+ * se renueva tras un alta correcta. Tras un fallo que pudo dejar la auditoría escrita, el reintento reenvía el mismo
+ * cuerpo aunque el formulario cambie (ORD-POS-079, `lib/finanzas/envio.ts`). El botón se desactiva mientras se envía:
+ * doble clic, recarga o red lenta no duplican.
  * ------------------------------------------------------------------------------------------ */
 
 interface Exito { ok: true; id: string; repetida: boolean }
@@ -34,44 +37,51 @@ function nuevoId(): string {
   return crypto.randomUUID()
 }
 
-/** requestId por apertura del formulario; envío con el botón desactivado. */
+/** requestId por apertura del formulario; envío con el botón desactivado y cuerpo congelado tras un fallo a medias. */
 function useEnvio(endpoint: string) {
   const router = useRouter()
   const [estado, setEstado] = useState<Estado>({ status: 'idle' })
-  const requestId = useRef<string | null>(null)
+  const [congelado, setCongelado] = useState(false)
+  const envio = useRef<EnvioEstado | null>(null)
 
   /** Al abrir el formulario: si no hay un requestId pendiente, se crea uno. */
   function abrir() {
-    requestId.current ??= nuevoId()
+    envio.current ??= estadoInicial(nuevoId)
   }
 
-  async function enviar(payload: Record<string, unknown>) {
+  async function enviar(formulario: Record<string, unknown>) {
     if (estado.status === 'sending') return
     abrir()
+    const actual = envio.current!
+    const cuerpo = cuerpoEnvio(actual, formulario)
     setEstado({ status: 'sending' })
+    let respuesta: Respuesta
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Project-OS-CSRF': '1' },
-        body: JSON.stringify({ ...payload, requestId: requestId.current }),
+        body: JSON.stringify(cuerpo),
         credentials: 'same-origin',
       })
       const json = (await response.json().catch(() => null)) as Exito | Fallo | null
       if (json && json.ok) {
-        requestId.current = nuevoId()
         setEstado({ status: 'done', result: json })
-        router.refresh()
-        return
+        respuesta = { ok: true }
+      } else {
+        const error = json && !json.ok ? json.error : { codigo: 'error', mensaje: 'No se pudo completar la operación.' }
+        setEstado({ status: 'error', error })
+        respuesta = { ok: false, codigo: error.codigo }
       }
-      const error = json && !json.ok ? json.error : { codigo: 'error', mensaje: 'No se pudo completar la operación.' }
-      if (error.codigo === 'conflicto-idempotencia') requestId.current = nuevoId()
-      setEstado({ status: 'error', error })
     } catch {
       setEstado({ status: 'error', error: { codigo: 'red', mensaje: 'Sin conexión con el servidor. Puedes reintentar sin duplicar.' } })
+      respuesta = { ok: false, codigo: 'red' }
     }
+    envio.current = trasRespuesta(actual, cuerpo, respuesta, nuevoId)
+    setCongelado(envio.current.congelado !== null)
+    if (respuesta.ok) router.refresh()
   }
 
-  return { estado, enviar, abrir }
+  return { estado, enviar, abrir, congelado }
 }
 
 function valores(form: HTMLFormElement): Record<string, string> {
@@ -90,13 +100,13 @@ function Campo({ label, error, children }: { label: string; error?: string; chil
   )
 }
 
-function Resultado({ estado }: { estado: Estado }) {
+function Resultado({ estado, congelado }: { estado: Estado; congelado: boolean }) {
   if (estado.status === 'error') {
     return (
       <div className="alert alert-danger" role="alert">
         <p><strong>No se guardó.</strong> {estado.error.mensaje}</p>
-        {['escritura-fallida', 'red', 'verificacion-fallida'].includes(estado.error.codigo)
-          ? <p className="small">Al reintentar se reutiliza la misma solicitud: no se duplicará.</p> : null}
+        {congelado || CODIGOS_PENDIENTES.includes(estado.error.codigo)
+          ? <p className="small">Al reintentar se reenvían los mismos datos de la solicitud anterior, aunque cambies el formulario: no se duplicará. Si algo estaba mal, corrígelo después con «Ajustar».</p> : null}
       </div>
     )
   }
@@ -110,9 +120,9 @@ function Resultado({ estado }: { estado: Estado }) {
   return <div aria-live="polite" className="visually-hidden">{estado.status === 'sending' ? 'Guardando…' : ''}</div>
 }
 
-function Boton({ estado, label }: { estado: Estado; label: string }) {
+function Boton({ estado, label, congelado }: { estado: Estado; label: string; congelado: boolean }) {
   const sending = estado.status === 'sending'
-  return <button type="submit" className="button button-primary" disabled={sending} aria-busy={sending}>{sending ? 'Guardando…' : label}</button>
+  return <button type="submit" className="button button-primary" disabled={sending} aria-busy={sending}>{sending ? 'Guardando…' : congelado ? 'Reintentar la misma solicitud' : label}</button>
 }
 
 const campo = (estado: Estado, nombre: string) => (estado.status === 'error' ? estado.error.campos?.[nombre] : undefined)
@@ -159,12 +169,12 @@ function CamposMonto({ estado, tipoCambioDefecto, ajuste }: { estado: Estado; ti
   )
 }
 
-function CamposComunes({ estado, hoy }: { estado: Estado; hoy: string }) {
+function CamposComunes({ estado, hoy, conceptoMax = CONCEPTO_MAX }: { estado: Estado; hoy: string; conceptoMax?: number }) {
   return (
     <>
       <Campo label="Fecha" error={campo(estado, 'fecha')}><input name="fecha" type="date" required defaultValue={hoy} /></Campo>
       <Campo label="Concepto" error={campo(estado, 'concepto')}>
-        <input name="concepto" required minLength={3} maxLength={80} placeholder="Sin datos personales ni bancarios" />
+        <input name="concepto" required minLength={3} maxLength={conceptoMax} placeholder="Sin datos personales ni bancarios" />
       </Campo>
       <Campo label="Producto (opcional)" error={campo(estado, 'productoId')}><input name="productoId" pattern="EC-\d{3,4}" placeholder="EC-NNN" /></Campo>
       <Campo label="IVA en MXN (opcional)" error={campo(estado, 'ivaMxn')}><input name="ivaMxn" type="number" step="0.01" min="0" /></Campo>
@@ -191,7 +201,7 @@ const ENDPOINT_CONFIRMAR = '/api/finanzas/recurrentes/confirmar'
 
 /** «Nuevo movimiento» (§3.1): alta manual con MAN-NNNN asignado por el servidor. */
 export function NuevoMovimientoForm({ hoy, tipoCambioDefecto }: { hoy: string; tipoCambioDefecto: string | null }) {
-  const { estado, enviar, abrir } = useEnvio(ENDPOINT_MOVIMIENTOS)
+  const { estado, enviar, abrir, congelado } = useEnvio(ENDPOINT_MOVIMIENTOS)
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     await enviar(valores(e.currentTarget))
@@ -205,8 +215,8 @@ export function NuevoMovimientoForm({ hoy, tipoCambioDefecto }: { hoy: string; t
         <Lista name="categoria" opciones={CATEGORIAS} error={campo(estado, 'categoria')} />
         <CamposComunes estado={estado} hoy={hoy} />
         <CamposMonto estado={estado} tipoCambioDefecto={tipoCambioDefecto} ajuste={false} />
-        <Boton estado={estado} label="Registrar movimiento" />
-        <Resultado estado={estado} />
+        <Boton estado={estado} label="Registrar movimiento" congelado={congelado} />
+        <Resultado estado={estado} congelado={congelado} />
       </form>
     </details>
   )
@@ -214,7 +224,7 @@ export function NuevoMovimientoForm({ hoy, tipoCambioDefecto }: { hoy: string; t
 
 /** «Ajustar» (§3.4): otro movimiento con `AJUSTE_DE`; PROYECTO, TIPO y CATEGORIA copiados del original y bloqueados. */
 export function AjustarForm({ ajustables, hoy, tipoCambioDefecto }: { ajustables: AjustableOpcion[]; hoy: string; tipoCambioDefecto: string | null }) {
-  const { estado, enviar, abrir } = useEnvio(ENDPOINT_MOVIMIENTOS)
+  const { estado, enviar, abrir, congelado } = useEnvio(ENDPOINT_MOVIMIENTOS)
   const [movId, setMovId] = useState('')
   const original = ajustables.find((a) => a.movId === movId) ?? null
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -236,10 +246,11 @@ export function AjustarForm({ ajustables, hoy, tipoCambioDefecto }: { ajustables
         {original ? (
           <p className="small">Proyecto <strong>{original.proyecto}</strong> · Tipo <strong>{original.tipo}</strong> · Categoría <strong>{original.categoria}</strong> (copiados del original, no editables).</p>
         ) : null}
-        <CamposComunes estado={estado} hoy={hoy} />
+        {original ? <p className="small">El concepto se guardará como «{prefijoAjuste(original.movId)}…».</p> : null}
+        <CamposComunes estado={estado} hoy={hoy} conceptoMax={CONCEPTO_MAX - prefijoAjuste(original?.movId ?? null).length} />
         <CamposMonto estado={estado} tipoCambioDefecto={tipoCambioDefecto} ajuste />
-        <Boton estado={estado} label="Registrar ajuste" />
-        <Resultado estado={estado} />
+        <Boton estado={estado} label="Registrar ajuste" congelado={congelado} />
+        <Resultado estado={estado} congelado={congelado} />
       </form>
     </details>
   )
@@ -247,7 +258,7 @@ export function AjustarForm({ ajustables, hoy, tipoCambioDefecto }: { ajustables
 
 /** «Confirmar» un recurrente pendiente (§4.3): crea `REC-<ID>-AAAA-MM`; monto, tipo de cambio y fecha editables. */
 export function ConfirmarForm({ pendiente, tipoCambioDefecto }: { pendiente: PendienteOpcion; tipoCambioDefecto: string | null }) {
-  const { estado, enviar, abrir } = useEnvio(ENDPOINT_CONFIRMAR)
+  const { estado, enviar, abrir, congelado } = useEnvio(ENDPOINT_CONFIRMAR)
   const [monto, setMonto] = useState(pendiente.monto)
   const [tc, setTc] = useState(tipoCambioDefecto ?? '')
   const ultimo = `${pendiente.mes}-${String(new Date(Date.UTC(Number(pendiente.mes.slice(0, 4)), Number(pendiente.mes.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}`
@@ -276,8 +287,8 @@ export function ConfirmarForm({ pendiente, tipoCambioDefecto }: { pendiente: Pen
         <Campo label="Comprobante" error={campo(estado, 'comprobante')}>
           <select name="comprobante" defaultValue="no"><option value="sí">sí</option><option value="no">no</option></select>
         </Campo>
-        <Boton estado={estado} label={`Confirmar ${pendiente.movId}`} />
-        <Resultado estado={estado} />
+        <Boton estado={estado} label={`Confirmar ${pendiente.movId}`} congelado={congelado} />
+        <Resultado estado={estado} congelado={congelado} />
       </form>
     </details>
   )

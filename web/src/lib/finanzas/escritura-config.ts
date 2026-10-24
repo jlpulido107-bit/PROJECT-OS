@@ -10,7 +10,8 @@ import { finanzasConfig } from '../config'
  * - FINANZAS_WRITE_MODE=sheets exacto (cualquier otro valor, o ausente: deshabilitada; no hay modo simulado).
  * - FINANZAS_SHEET_ID válido (`finanzasConfig`: con formato y distinto de PROJECT-OS y de RADAROS).
  * - FINANZAS_WRITE_SERVICE_ACCOUNT: cuenta de servicio exclusiva de FINANZAS, distinta de la cuenta de lectura
- *   (SHEETS_EXPECTED_SERVICE_ACCOUNT) y de la de escritura de PROJECT-OS (PROJECT_OS_WRITE_SERVICE_ACCOUNT).
+ *   (SHEETS_EXPECTED_SERVICE_ACCOUNT) y de la de escritura de PROJECT-OS (PROJECT_OS_WRITE_SERVICE_ACCOUNT). Sin
+ *   SHEETS_EXPECTED_SERVICE_ACCOUNT no se puede probar que sean distintas: deshabilitada (ORD-POS-079, H2).
  * - FINANZAS_WRITER_EMAIL: un único correo, que además debe estar en AUTH_ALLOWED_EMAILS.
  */
 
@@ -19,6 +20,7 @@ export type FinanzasWriteReason =
   | 'modo-invalido'
   | 'sin-libro'
   | 'sin-cuenta'
+  | 'sin-cuenta-de-lectura'
   | 'cuenta-de-lectura'
   | 'cuenta-de-project-os'
   | 'sin-escritor'
@@ -54,7 +56,9 @@ export function finanzasWriteStatus(env: NodeJS.ProcessEnv = process.env): Finan
   if (finanzasConfig(env).id === null) return { mode: 'disabled', reason: 'sin-libro' }
   const account = finanzasWriteServiceAccount(env)
   if (!account) return { mode: 'disabled', reason: 'sin-cuenta' }
-  if (account === env.SHEETS_EXPECTED_SERVICE_ACCOUNT?.trim().toLowerCase()) return { mode: 'disabled', reason: 'cuenta-de-lectura' }
+  const reader = env.SHEETS_EXPECTED_SERVICE_ACCOUNT?.trim().toLowerCase() ?? ''
+  if (!reader) return { mode: 'disabled', reason: 'sin-cuenta-de-lectura' }
+  if (account === reader) return { mode: 'disabled', reason: 'cuenta-de-lectura' }
   if (account === env.PROJECT_OS_WRITE_SERVICE_ACCOUNT?.trim().toLowerCase()) return { mode: 'disabled', reason: 'cuenta-de-project-os' }
   const writer = writerEmail(env)
   if (writer.email === null) return { mode: 'disabled', reason: writer.reason }

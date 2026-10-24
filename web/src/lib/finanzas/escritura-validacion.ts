@@ -100,10 +100,25 @@ export function conceptoProhibido(texto: string): boolean {
   return false
 }
 
-function concepto(raw: string | null, fields: Fields, key = 'concepto'): string {
+/** Límite de CONCEPTO (§3.1). Vale para el texto FINAL de la celda: con el prefijo de un ajuste y la neutralización. */
+export const CONCEPTO_MAX = 80
+
+/** Prefijo que lleva el CONCEPTO de un ajuste (§3.4); vacío si no es ajuste. */
+export function prefijoAjuste(ajusteDe: string | null): string {
+  return ajusteDe ? `Ajuste de ${ajusteDe}: ` : ''
+}
+
+/**
+ * CONCEPTO limpio y validado. El límite se mide sobre `conceptoFinal` (ORD-POS-079, H1 de ORD-POS-077): en un ajuste,
+ * el prefijo «Ajuste de <MOV_ID>: » cuenta dentro de los 80 caracteres.
+ */
+function concepto(raw: string | null, ajusteDe: string | null, fields: Fields, key = 'concepto'): string {
   const limpio = raw === null ? '' : cleanText(raw, false)
-  if (limpio.length < 3 || limpio.length > 80) fields[key] = 'Entre 3 y 80 caracteres.'
-  else if (conceptoProhibido(limpio)) fields[key] = 'Sin correos, cuentas, tarjetas, RFC ni URL.'
+  const prefijo = prefijoAjuste(ajusteDe)
+  if (limpio.length < 3 || limpio.length > CONCEPTO_MAX) fields[key] = `Entre 3 y ${CONCEPTO_MAX} caracteres.`
+  else if (conceptoFinal({ concepto: limpio, ajusteDe }).length > CONCEPTO_MAX) {
+    fields[key] = prefijo ? `En un ajuste, hasta ${CONCEPTO_MAX - prefijo.length} caracteres: se antepone «${prefijo.trim()}».` : `Entre 3 y ${CONCEPTO_MAX} caracteres.`
+  } else if (conceptoProhibido(limpio)) fields[key] = 'Sin correos, cuentas, tarjetas, RFC ni URL.'
   return limpio
 }
 
@@ -138,7 +153,7 @@ export function parseMovimiento(input: unknown): MovimientoCommand {
   const ajusteRaw = str(body, 'ajusteDe')
   if (ajusteRaw !== null && !MOV_ID.test(ajusteRaw)) fields.ajusteDe = 'MOV_ID no válido.'
   const ajusteDe = ajusteRaw !== null && MOV_ID.test(ajusteRaw) ? ajusteRaw : null
-  const textoConcepto = concepto(str(body, 'concepto'), fields)
+  const textoConcepto = concepto(str(body, 'concepto'), ajusteDe, fields)
   const productoRaw = str(body, 'productoId')
   if (productoRaw !== null && !PRODUCTO_ID.test(productoRaw)) fields.productoId = 'Vacío o EC-NNN.'
   const moneda = canonico(str(body, 'moneda') ?? 'MXN', MONEDAS)
@@ -206,7 +221,7 @@ export function parseConfirmar(input: unknown): ConfirmarCommand {
 
 /** Texto final de CONCEPTO: el de un ajuste empieza por «Ajuste de <MOV_ID>: »; neutralizado contra fórmulas. */
 export function conceptoFinal(cmd: Pick<MovimientoCommand, 'concepto' | 'ajusteDe'>): string {
-  const prefijo = cmd.ajusteDe ? `Ajuste de ${cmd.ajusteDe}: ` : ''
+  const prefijo = prefijoAjuste(cmd.ajusteDe)
   const texto = prefijo && cmd.concepto.startsWith(prefijo) ? cmd.concepto : prefijo + cmd.concepto
   return safeCellText(texto)
 }
