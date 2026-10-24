@@ -1,6 +1,6 @@
 ---
 tipo: decision
-proyecto: POS       # POS | SIG | ECO | DEV
+proyecto: POS       # POS | SIG | ECO | DEV | ALI
 estado: borrador    # borrador | enviada | aprobada | descartada
 fecha: {{date}}
 tarea:              # DEC-PRY-NNN cuando se registre en DECISIONES

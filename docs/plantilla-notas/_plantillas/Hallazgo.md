@@ -1,6 +1,6 @@
 ---
 tipo: hallazgo
-proyecto: SIG       # POS | SIG | ECO | DEV
+proyecto: SIG       # POS | SIG | ECO | DEV | ALI
 estado: abierto     # abierto | confirmado | en-orden | resuelto | descartado
 prioridad: media    # alta (daña o esconde datos) | media (falla visible) | baja (limpieza)
 fecha: {{date}}

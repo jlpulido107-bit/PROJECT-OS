@@ -1,6 +1,6 @@
 ---
 tipo: revision
-proyecto: SIG       # POS | SIG | ECO | DEV
+proyecto: SIG       # POS | SIG | ECO | DEV | ALI
 semana: {{date}}
 ---
 

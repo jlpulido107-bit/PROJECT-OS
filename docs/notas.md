@@ -17,7 +17,7 @@ Organizada por tipo de nota desde NOTAS#4 (2026-10-22).
 | --- | --- | --- |
 | `00-entrada/` | Captura rápida, sin clasificar | Solo si el propietario lo pide |
 | `_plantillas/` | Captura, Idea, Decision, Hallazgo, Revision y Referencia | Sí, `revisar-ideas` |
-| `POS/`, `SIG/`, `ECO/`, `DEV/` | `indice.md` y una subcarpeta por tipo (abajo) | Sí: `indice.md` y, si es relevante, una nota |
+| `POS/`, `SIG/`, `ECO/`, `DEV/`, `ALI/` | `indice.md` y una subcarpeta por tipo (abajo) | Sí: `indice.md` y, si es relevante, una nota |
 | `privado/` | Lo que no es para agentes | Nunca |
 
 Dentro de cada proyecto:
@@ -71,7 +71,7 @@ sección «Capas de contexto»):
 | Ruta | Qué es |
 | --- | --- |
 | `_contexto/` | `propietario.md`, `como-trabajamos.md` y `glosario.md`: quién es el propietario, cómo se trabaja y el vocabulario |
-| `<PRY>/contexto.md` | Un archivo por proyecto (`POS`, `SIG`, `ECO`, `DEV`): situación y criterio propios del proyecto |
+| `<PRY>/contexto.md` | Un archivo por proyecto (`POS`, `SIG`, `ECO`, `DEV`, `ALI`): situación y criterio propios del proyecto |
 | `<PRY>/referencia/` | Bitácoras: registro con fecha de lo que se habló y quedó en cada tema |
 
 Orden de lectura al arrancar: `_contexto/propietario.md` → `<PRY>/contexto.md` → `<PRY>/indice.md`. Las bitácoras y el
