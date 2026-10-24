@@ -3,7 +3,7 @@ import { SignOutButton } from '@/components/auth-buttons'
 import { NavLinks } from '@/components/nav-links'
 import { writeAccess } from '@/components/operations/write-access'
 import { requireUser } from '@/lib/auth'
-import { radarosSheetId } from '@/lib/config'
+import { finanzasSheetId, radarosSheetId } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +19,7 @@ export default async function PrivateLayout({ children }: { children: ReactNode 
         <div className="topbar-inner">
           <p className="brand">PROJECT-OS <span className="brand-sub">Centro de dirección · {real ? 'escritura real' : writes ? 'escritura simulada' : 'solo lectura'}</span></p>
           <nav aria-label="Principal">
-            <NavLinks showOperations={writes} showEco={radarosSheetId() !== null} />
+            <NavLinks showOperations={writes} showEco={radarosSheetId() !== null} showFinanzas={finanzasSheetId() !== null} />
           </nav>
           <div className="user">
             <span className="user-email" title="Sesión iniciada">{user.email}</span>

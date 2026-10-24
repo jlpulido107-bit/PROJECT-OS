@@ -14,7 +14,7 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 const read = (rel: string) => readFileSync(path.join(SRC, rel), 'utf8')
 
 const PAGES = [
-  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'estado', 'metricas', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
+  '', 'actividad', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'estado', 'finanzas', 'metricas', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
   'tareas', 'tareas/[id]/editar', 'tareas/nueva', 'tiempos/nuevo',
 ]
 
@@ -24,7 +24,9 @@ describe('árbol integrado V1.3–V1.6', () => {
       .map((f) => path.relative(path.join(SRC, 'app', '(private)'), path.dirname(f)).split(path.sep).join('/')).sort()
     expect(found).toEqual([...PAGES].sort())
     // /eco (ORD-POS-067): privateEco verifica la sesión y solo después lee RADAROS.
-    for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toMatch(page === 'eco' ? /privateEco\(/ : /privateData\(/)
+    // /finanzas (ORD-POS-074): privateFinanzas, igual, antes de leer FINANZAS.
+    const lector: Record<string, RegExp> = { eco: /privateEco\(/, finanzas: /privateFinanzas\(/ }
+    for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toMatch(lector[page] ?? /privateData\(/)
   })
 
   it('toda API (salvo NextAuth y la sonda pública) exige sesión en el servidor antes de leer o escribir', () => {
@@ -56,6 +58,7 @@ describe('árbol integrado V1.3–V1.6', () => {
     expect(base).not.toContain('/operaciones')
     expect(nav).toMatch(/showOperations \? \[\{ href: '\/operaciones'/)
     expect(nav).toMatch(/showEco \? \[\{ href: '\/eco'/)
+    expect(nav).toMatch(/showFinanzas \? \[\{ href: '\/finanzas'/)
     const layout = read(path.join('app', '(private)', 'layout.tsx'))
     expect(layout).toMatch(/showOperations=\{/)
   })
