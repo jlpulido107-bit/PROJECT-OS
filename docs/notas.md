@@ -96,6 +96,21 @@ Prohibido, sin excepción:
 - Escribir fuera de las zonas de arriba: eso va por PR y solo con el «sí» del propietario (como el de `revisar-ideas`).
 - Tratar NOTAS como autorización de nada.
 
+Las zonas las verifica una máquina, no la memoria del agente (ORD-POS-082): Ideas corre
+[`scripts/notas-rutas.py`](../scripts/notas-rutas.py) antes de cada push directo, tras `git fetch origin`:
+
+```bash
+python <checkout de PROJECT-OS>/scripts/notas-rutas.py <checkout de NOTAS>
+```
+
+Revisa cada commit de `origin/main..HEAD`, no solo el árbol neto, permite solo las zonas de arriba (`<PRY>` es un código
+de tres mayúsculas; en `indice.md`, solo cambios dentro de `## Referencia`; crear un `indice.md` nuevo queda fuera) y
+rechaza, con la lista de rutas, cualquier borrado (un renombre cuenta como borrado), los enlaces simbólicos y
+submódulos, y, sin distinguir mayúsculas, `privado/`, `00-entrada/` y las subcarpetas `ideas/`, `decisiones/`,
+`hallazgos/` y `revisiones/`. Sale con
+0 si todo está permitido y con 1 si no o si no puede comprobarlo; con 1 no hay push: se deshace el commit o se lleva
+por PR con el «sí» del propietario.
+
 El resto de los agentes (PM, implementación, revisión) no escriben en NOTAS.
 
 ## Flujo idea → tarea u orden
