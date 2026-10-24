@@ -246,6 +246,37 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('escritura de finanzas (ORD-POS-077): se conserva de la activa sin imprimir valores y --quitar retira las tres', () => {
+      const activa = JSON.parse(full)
+      const cuenta = 'project-os-finanzas@project-os-511102.iam.gserviceaccount.com'
+      const correo = 'dueno-sintetico@example.com'
+      const id = 'LIBRO_FINANZAS_SINTETICO_0123456789'
+      activa.spec.template.spec.containers[0].env.push(
+        { name: 'FINANZAS_SHEET_ID', value: id }, { name: 'FINANZAS_WRITE_MODE', value: 'sheets' },
+        { name: 'FINANZAS_WRITE_SERVICE_ACCOUNT', value: cuenta }, { name: 'FINANZAS_WRITER_EMAIL', value: correo })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toMatch(/FINANZAS_WRITE|FINANZAS_WRITER_EMAIL/)
+      for (const v of [cuenta, correo, id]) expect(sigue.out).not.toContain(v)
+      for (const nombre of ['FINANZAS_WRITE_MODE', 'FINANZAS_WRITER_EMAIL']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        expect(apagada.out).toMatch(/Variables quitadas:\n(  - [A-Z_]+\n)*  - FINANZAS_WRITER_EMAIL\n/)
+        expect(apagada.out).toContain('  - FINANZAS_WRITE_MODE\n')
+        expect(apagada.out).toContain('  - FINANZAS_WRITE_SERVICE_ACCOUNT\n')
+        expect(apagada.out).not.toContain('  - FINANZAS_SHEET_ID')
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, FINANZAS_SHEET_ID: id, FINANZAS_WRITE_MODE: 'sheets', FINANZAS_WRITE_SERVICE_ACCOUNT: cuenta, FINANZAS_WRITER_EMAIL: correo } })
+      expect(nueva.code).toBe(0)
+      expect(nueva.out).toContain('  + FINANZAS_WRITE_MODE\n')
+      for (const v of [cuenta, correo]) expect(nueva.out).not.toContain(v)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, FINANZAS_WRITE_SERVICE_ACCOUNT: RENDER_ENV.WRITE_SERVICE_ACCOUNT }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.out).toContain('no puede ser la cuenta de escritura de PROJECT-OS')
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('IMAGE exportada vacía: el render falla sin aplicar', () => {
       const r = run(['--desde-activa'], { raw: full, env: { ...min, IMAGE: '' }, input: 'desplegar\n' })
       expect(r.code).toBe(1)

@@ -1,14 +1,16 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
+import { AjustarForm, ConfirmarForm, NuevoMovimientoForm } from '@/components/finanzas/forms'
 import { Badge, Empty, Section, Stat } from '@/components/ui'
-import { formatInstant } from '@/lib/dates'
+import { formatInstant, todayInMerida } from '@/lib/dates'
+import { finanzasCanWrite } from '@/lib/finanzas/escritura-config'
 import {
   formatoMoneda, formatoMxn, PROYECTOS, type Bloque, type Capital, type FilaProblema, type GastoMensual, type Herramientas,
   type Pyl, type RecurrentesMes,
 } from '@/lib/finanzas/finanzas'
 import { privateFinanzas } from '@/lib/page-data'
 
-export const metadata: Metadata = { title: 'Finanzas (solo lectura)' }
+export const metadata: Metadata = { title: 'Finanzas' }
 
 /** Estado de un bloque que no está `ok` (diseño §5); los demás bloques se pintan igual. */
 function EstadoBloque<T>({ bloque, children }: { bloque: Bloque<T>; children: (datos: T) => ReactNode }) {
@@ -163,20 +165,20 @@ function BloquePyl({ datos }: { datos: Pyl }) {
   )
 }
 
-/** v2 §4.2: solo lectura, sin botones. «Confirmar» llega con la escritura (docs/diseno-finanzas-v2.md §9.2). */
-function BloqueRecurrentes({ datos }: { datos: RecurrentesMes }) {
+/** v2 §4.2 y §4.3: la lista es igual con o sin escritura; «Confirmar» solo con escritura de finanzas activa (ORD-POS-077). */
+function BloqueRecurrentes({ datos, confirmar, tipoCambioDefecto }: { datos: RecurrentesMes; confirmar: boolean; tipoCambioDefecto: string | null }) {
   return (
     <>
       <p className="small">
         Cargos vigentes en {datos.mes} ({datos.vigentes}) sin su fila <code>REC-&lt;ID&gt;-AAAA-MM</code> en MOVIMIENTOS, y los
-        de {datos.mesAnterior} marcados «atrasado». Montos esperados según RECURRENTES; esta vista no confirma nada: se
-        capturan en la hoja.
+        de {datos.mesAnterior} marcados «atrasado». Montos esperados según RECURRENTES.
+        {confirmar ? ' «Confirmar» crea la fila con el monto real.' : ' Sin escritura de finanzas activa, se capturan en la hoja.'}
       </p>
       {datos.pendientes.length === 0 ? <Empty>Sin recurrentes pendientes de {datos.mes} ni de {datos.mesAnterior}.</Empty> : (
         <div className="table-wrap">
           <table aria-label="Recurrentes pendientes">
             <thead>
-              <tr><th scope="col">Concepto</th><th scope="col">Proyecto</th><th scope="col">Monto esperado</th><th scope="col">Moneda</th><th scope="col">Día de cobro</th><th scope="col">Estado</th></tr>
+              <tr><th scope="col">Concepto</th><th scope="col">Proyecto</th><th scope="col">Monto esperado</th><th scope="col">Moneda</th><th scope="col">Día de cobro</th><th scope="col">Estado</th>{confirmar ? <th scope="col">Acción</th> : null}</tr>
             </thead>
             <tbody>
               {datos.pendientes.map((p) => (
@@ -187,6 +189,14 @@ function BloqueRecurrentes({ datos }: { datos: RecurrentesMes }) {
                   <td>{p.recurrente.moneda}</td>
                   <td className="mono">{p.fechaCobro}</td>
                   <td>{p.atrasado ? <Badge tone="danger">Atrasado</Badge> : p.aunNoVence ? <Badge tone="muted">Aún no vence</Badge> : <Badge tone="warn">Pendiente</Badge>}</td>
+                  {confirmar ? (
+                    <td>
+                      <ConfirmarForm tipoCambioDefecto={tipoCambioDefecto} pendiente={{
+                        recurrenteId: p.recurrente.id, mes: p.mes, movId: p.movId, concepto: p.recurrente.concepto,
+                        moneda: p.recurrente.moneda, monto: (p.recurrente.centavos / 100).toFixed(2), fechaCobro: p.fechaCobro,
+                      }} />
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -217,7 +227,9 @@ function BloqueProblemas({ problemas }: { problemas: FilaProblema[] }) {
 }
 
 export default async function FinanzasPage() {
-  const { result } = await privateFinanzas('/finanzas')
+  const { user, result } = await privateFinanzas('/finanzas')
+  // Botones solo con la escritura de finanzas activa y para su único escritor; el servidor repite todo (v2 §2.2).
+  const escribe = finanzasCanWrite(user.email)
 
   if (result.estado === 'no-configurado') {
     return (
@@ -250,13 +262,23 @@ export default async function FinanzasPage() {
     <>
       <h1>Finanzas</h1>
       <p className="muted small">
-        Solo lectura del libro FINANZAS (ECO y POS), leído {formatInstant(result.fetchedAt)} (hora Mérida). Montos en MXN.
-        Esta página no escribe, no llama a SP-API, a Anthropic ni a ningún banco y no lee la pestaña RESUMEN.
+        Libro FINANZAS (ECO y POS), leído {formatInstant(result.fetchedAt)} (hora Mérida). Montos en MXN.
+        {escribe
+          ? ' Escritura activa: solo altas en MOVIMIENTOS, auditadas en la AUDITORIA de FINANZAS; nada se edita ni se borra.'
+          : ' Solo lectura: esta página no escribe.'}{' '}
+        No llama a SP-API, a Anthropic ni a ningún banco y no lee la pestaña RESUMEN.
       </p>
+      {escribe ? (
+        <Section title="Registrar" id="registrar">
+          <div className="alert alert-info" role="note"><p><strong>Escritura real.</strong> Lo que guardes se escribe en la hoja FINANZAS y queda en su AUDITORIA.</p></div>
+          <NuevoMovimientoForm hoy={todayInMerida()} tipoCambioDefecto={v.tipoCambioDefecto} />
+          {v.ajustables.length ? <AjustarForm ajustables={v.ajustables} hoy={todayInMerida()} tipoCambioDefecto={v.tipoCambioDefecto} /> : null}
+        </Section>
+      ) : null}
       <Section title="Capital usado contra el tope" id="capital"><EstadoBloque bloque={v.capital}>{(d) => <BloqueCapital datos={d} />}</EstadoBloque></Section>
       <Section title="Gasto mensual por proyecto y categoría" id="mensual"><EstadoBloque bloque={v.mensual}>{(d) => <BloqueMensual datos={d} />}</EstadoBloque></Section>
       <Section title="Costo de herramientas" id="herramientas"><EstadoBloque bloque={v.herramientas}>{(d) => <BloqueHerramientas datos={d} />}</EstadoBloque></Section>
-      <Section title="Recurrentes del mes" id="recurrentes"><EstadoBloque bloque={v.recurrentes}>{(d) => <BloqueRecurrentes datos={d} />}</EstadoBloque></Section>
+      <Section title="Recurrentes del mes" id="recurrentes"><EstadoBloque bloque={v.recurrentes}>{(d) => <BloqueRecurrentes datos={d} confirmar={escribe} tipoCambioDefecto={v.tipoCambioDefecto} />}</EstadoBloque></Section>
       <Section title="P&L por producto" id="pyl"><EstadoBloque bloque={v.pyl}>{(d) => <BloquePyl datos={d} />}</EstadoBloque></Section>
       {v.problemas.length ? <Section title="Filas con problema" id="problemas"><BloqueProblemas problemas={v.problemas} /></Section> : null}
     </>
