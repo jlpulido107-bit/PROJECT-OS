@@ -35,7 +35,8 @@ CLAVE = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
 
 
 def es_privado(relativa):
-    return relativa == PRIVADO or relativa.startswith(PRIVADO + "/")
+    """Si algún tramo de la ruta es privado/, con cualquier combinación de mayúsculas (Privado/, PRIVADO/…)."""
+    return any(tramo.casefold() == PRIVADO for tramo in relativa.split("/"))
 
 
 def recorrer(raiz):
@@ -48,7 +49,7 @@ def recorrer(raiz):
             for entrada in sorted(entradas, key=lambda e: e.name):
                 hija = posixpath.join(relativa, entrada.name) if relativa else entrada.name
                 # Se descarta por nombre, antes de cualquier llamada sobre la carpeta.
-                if entrada.name == PRIVADO or es_privado(hija) or entrada.name in IGNORADAS:
+                if es_privado(hija) or entrada.name in IGNORADAS:
                     continue
                 if entrada.is_symlink():
                     continue

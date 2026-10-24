@@ -4,8 +4,10 @@ import contextlib
 import importlib.util
 import io
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -123,8 +125,36 @@ class TestNotasSalud(unittest.TestCase):
         self.assertNotIn("secreto", salida.getvalue())
         self.assertNotIn("Nunca debe leerse", salida.getvalue())
 
+    def test_privado_con_cualquier_mayuscula(self):
+        # En una copia temporal: privado/ y Privado/ no pueden convivir en un sistema de archivos sin mayúsculas.
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = os.path.join(tmp, "notas")
+            shutil.copytree(BOVEDA, raiz, ignore=shutil.ignore_patterns("privado"))
+            for carpeta in ("Privado", "PRIVADO", os.path.join("POS", "Privado")):
+                os.makedirs(os.path.join(raiz, carpeta))
+                with open(os.path.join(raiz, carpeta, "oculta.md"), "w", encoding="utf-8") as nota:
+                    nota.write("# Oculta\n\n## Vacia\n\n[roto](no-existe.md)\n")
+            tocadas = []
+            scandir, abrir = os.scandir, builtins.open
+
+            def espiar_scandir(ruta="."):
+                tocadas.append(str(ruta))
+                return scandir(ruta)
+
+            def espiar_open(ruta, *args, **kwargs):
+                tocadas.append(str(ruta))
+                return abrir(ruta, *args, **kwargs)
+
+            with mock.patch("os.scandir", espiar_scandir), mock.patch("builtins.open", espiar_open), \
+                    contextlib.redirect_stdout(io.StringIO()) as salida:
+                notas_salud.main([raiz])
+        self.assertTrue(any(r.endswith("_plantillas") for r in tocadas))
+        relativas = [os.path.relpath(r, raiz) for r in tocadas]
+        self.assertEqual([r for r in relativas if "privado" in r.casefold().split(os.sep)], [])
+        self.assertNotIn("oculta", salida.getvalue().casefold())
+
     def test_leer_rechaza_privado(self):
-        for ruta in ("privado", "privado/secreto.md"):
+        for ruta in ("privado", "privado/secreto.md", "Privado/n.md", "PRIVADO", "POS/Privado/n.md"):
             with self.assertRaises(ValueError):
                 notas_salud.leer(str(BOVEDA), ruta)
 
