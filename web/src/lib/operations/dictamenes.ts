@@ -1,5 +1,5 @@
 import { cacheSeconds } from '../config'
-import { evaluarDictamen, type EvaluacionDictamen, type DatosPr } from '../supervision/dictamen'
+import { evaluarDictamen, type EvaluacionDictamen, type DatosPr, type PrDictamen } from '../supervision/dictamen'
 import { REPOSITORIOS, codigoFalloGitHub, repoDeUrl, type GitHubClient } from './github'
 
 /**
@@ -24,6 +24,15 @@ export const urlComentario = (prUrl: string, id: number): string | null =>
   repoDeUrl(prUrl, 'pull') ? `${prUrl}#issuecomment-${id}` : null
 
 export async function dictamenDeOrden(client: GitHubClient, o: OrdenConPr, ahora = Date.now()): Promise<EvaluacionDictamen | null> {
+  const leido = await datosDePr(client, o, ahora)
+  return leido && evaluarDictamen(leido.datos, o, leido.pr)
+}
+
+/**
+ * Datos del PR registrado de la orden (head y comentarios propios) con la misma caché que dictamenDeOrden; null si la
+ * URL no es de su repositorio o GitHub falla. También lo usa /agentes (ORD-POS-078) para contar dictámenes.
+ */
+export async function datosDePr(client: GitHubClient, o: OrdenConPr, ahora = Date.now()): Promise<{ datos: DatosPr; pr: PrDictamen } | null> {
   const repo = o.proyectoId ? REPOSITORIOS[o.proyectoId] : undefined
   if (!repo || !o.prUrl || repoDeUrl(o.prUrl, 'pull') !== repo) return null
   const prUrl = o.prUrl
@@ -42,5 +51,5 @@ export async function dictamenDeOrden(client: GitHubClient, o: OrdenConPr, ahora
     }
     cache.set(prUrl, entrada)
   }
-  return entrada.datos && evaluarDictamen(entrada.datos, o, { repo, numero: Number(/\/pull\/(\d+)$/.exec(prUrl)![1]) })
+  return entrada.datos && { datos: entrada.datos, pr: { repo, numero: Number(/\/pull\/(\d+)$/.exec(prUrl)![1]) } }
 }

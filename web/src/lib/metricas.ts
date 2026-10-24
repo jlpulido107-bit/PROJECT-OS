@@ -26,6 +26,8 @@ export interface EventosOrden {
   id: string
   riesgo: Riesgo
   creadaMs: number | null
+  /** Primer envío (`orden.enviar` → ENVIADA) en AUDITORIA, o null (ORD-POS-078). */
+  enviadaMs: number | null
   cierre: Cierre | null
   rondas: number
 }
@@ -88,6 +90,7 @@ export function eventosOrdenes(ordenes: Orden[], audit: TableView): EventosOrden
   return ordenes.map((o) => {
     const propias = ops.filter((op) => op.id === o.id)
     const alta = propias.find((op) => op.operacion === 'orden.crear' && op.fields.get('ESTADO')?.despues === 'BORRADOR')
+    const envio = propias.find((op) => op.operacion === 'orden.enviar' && op.fields.get('ESTADO')?.despues === 'ENVIADA')
     const ultimoCierre = propias.filter((op) => /^orden\.cerrar(_fusionado)?$/.test(op.operacion) && op.fields.get('ESTADO')?.despues === 'CERRADA').at(-1)
     const tCierre = ultimoCierre ? fecha(ultimoCierre.order) : null
     // Solo cuenta el cierre si la orden sigue CERRADA en la hoja.
@@ -97,7 +100,8 @@ export function eventosOrdenes(ordenes: Orden[], audit: TableView): EventosOrden
     const claves = new Set(propias
       .filter((op) => op.operacion === 'orden.corregir_lanzar' && op.fields.get('SESION')?.despues)
       .map((op) => op.fields.get('CLAVE')?.despues || op.requestId))
-    return { id: o.id, riesgo: riesgoDe(o.riesgo), creadaMs: alta ? fecha(alta.order)?.epochMs ?? null : null, cierre, rondas: claves.size }
+    return { id: o.id, riesgo: riesgoDe(o.riesgo), creadaMs: alta ? fecha(alta.order)?.epochMs ?? null : null,
+      enviadaMs: envio ? fecha(envio.order)?.epochMs ?? null : null, cierre, rondas: claves.size }
   })
 }
 

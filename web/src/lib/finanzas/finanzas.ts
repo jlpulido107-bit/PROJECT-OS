@@ -144,6 +144,8 @@ export interface FinanzasVista {
   herramientas: Bloque<Herramientas>
   pyl: Bloque<Pyl>
   recurrentes: Bloque<RecurrentesMes>
+  /** Gasto mensual en Claude (ORD-POS-078, /agentes). */
+  claude: Bloque<GastoClaudeMes[]>
   problemas: FilaProblema[]
   movimientosValidos: number
   /** Movimientos originales (no ajustes) que «Ajustar» puede referir (v2 §3.4, ORD-POS-077). */
@@ -397,20 +399,48 @@ export function gastoMensual(movimientos: Movimiento[], meses: string[]): MesGas
   })
 }
 
-/** §4.3: Herramientas por CONCEPTO y mes, total mensual, promedio de 3 meses y meses «sin registrar». */
-export function costoHerramientas(movimientos: Movimiento[], meses: string[]): Omit<Herramientas, 'avisos'> {
-  const enVentana = new Set(meses)
+/** Un ajuste («Ajuste de MAN-…: …») cuenta con el concepto de su original, en el mes de su propia FECHA. */
+function originalDe(movimientos: Movimiento[]): (m: Movimiento) => Movimiento {
   const porId = new Map(movimientos.map((m) => [m.movId, m]))
-  // Un ajuste («Ajuste de MAN-…: …») suma en la columna del concepto de su original, en el mes de su propia FECHA.
-  const conceptoDe = (m: Movimiento): string => {
+  return (m) => {
     const vistos = new Set<string>()
     let actual = m
     while (actual.ajusteDe !== null && !vistos.has(actual.movId) && porId.has(actual.ajusteDe)) {
       vistos.add(actual.movId)
       actual = porId.get(actual.ajusteDe)!
     }
-    return actual.concepto
+    return actual
   }
+}
+
+export interface GastoClaudeMes {
+  mes: string
+  gasto: Record<Proyecto, number>
+}
+
+/**
+ * Gasto mensual en Claude (/agentes, ORD-POS-078): Gasto + Inversión de `Herramientas` cuyo original es de Claude
+ * (CONCEPTO con «Claude», o `MOV_ID` `CLAUDE-…` o `REC-CLAUDE-…`, §2.3 y v2 §4.4), por mes y proyecto, de todos los meses.
+ */
+export function gastoClaudeMensual(movimientos: Movimiento[]): GastoClaudeMes[] {
+  const original = originalDe(movimientos)
+  const porMes = new Map<string, Record<Proyecto, number>>()
+  for (const m of movimientos) {
+    const o = original(m)
+    if (m.categoria !== 'Herramientas' || !esGasto(m)) continue
+    if (!/\bclaude\b/i.test(o.concepto) && !/^(REC-)?CLAUDE-/.test(o.movId)) continue
+    const g = porMes.get(m.mes) ?? cero()
+    g[m.proyecto] += m.centavos
+    porMes.set(m.mes, g)
+  }
+  return [...porMes.keys()].sort().map((mes) => ({ mes, gasto: porMes.get(mes)! }))
+}
+
+/** §4.3: Herramientas por CONCEPTO y mes, total mensual, promedio de 3 meses y meses «sin registrar». */
+export function costoHerramientas(movimientos: Movimiento[], meses: string[]): Omit<Herramientas, 'avisos'> {
+  const enVentana = new Set(meses)
+  const original = originalDe(movimientos)
+  const conceptoDe = (m: Movimiento): string => original(m).concepto
   const porConcepto = new Map<string, Map<string, number>>()
   for (const m of movimientos) {
     if (m.categoria !== 'Herramientas' || !esGasto(m) || !enVentana.has(m.mes)) continue
@@ -657,7 +687,7 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
   if (lectura.estado === 'no-disponible') {
     const b = { estado: 'no-disponible', mensaje: lectura.mensaje } as const
     return {
-      capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, problemas: [], movimientosValidos: 0, ajustables: [],
+      capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, claude: b, problemas: [], movimientosValidos: 0, ajustables: [],
       tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
     }
   }
@@ -678,8 +708,12 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
     : herr.conceptos.length === 0 ? { estado: 'vacio', mensaje: 'Sin filas de Herramientas en los últimos 12 meses.' }
     : { estado: 'ok', datos: { ...herr, avisos: avisosVentana } }
   const pyl: Bloque<Pyl> = vacio ? vacioBloque : { estado: 'ok', datos: pylPorProducto(movimientos) }
+  const claudeMeses = gastoClaudeMensual(movimientos)
+  const claude: Bloque<GastoClaudeMes[]> = vacio ? vacioBloque
+    : claudeMeses.length === 0 ? { estado: 'vacio', mensaje: 'Sin filas de Claude en Herramientas.' }
+    : { estado: 'ok', datos: claudeMeses }
   return {
-    capital, mensual, herramientas, pyl, recurrentes, problemas, movimientosValidos: movimientos.length,
+    capital, mensual, herramientas, pyl, recurrentes, claude, problemas, movimientosValidos: movimientos.length,
     ajustables: ajustablesDe(movimientos), tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
   }
 }

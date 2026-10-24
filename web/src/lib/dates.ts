@@ -101,6 +101,13 @@ export function civilDateInZone(epochMs: number, tz: string = MERIDA_TZ): string
   return `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}`
 }
 
+/** Fecha civil, hora (0–23) y día de la semana (0 = lunes … 6 = domingo) de un instante en la zona indicada. */
+export function civilHourInZone(epochMs: number, tz: string = MERIDA_TZ): { date: string; hour: number; weekday: number } {
+  const p = zonedParts(epochMs, tz)
+  const dow = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay()
+  return { date: `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}`, hour: p.hour, weekday: (dow + 6) % 7 }
+}
+
 export function todayInMerida(now: Date = new Date()): string {
   return civilDateInZone(now.getTime(), MERIDA_TZ)
 }
