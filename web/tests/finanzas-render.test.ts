@@ -65,4 +65,27 @@ describe('/finanzas: render', () => {
     const sinTab = await html({ estado: 'ok', vista: construirFinanzas({}, NOW), fetchedAt: NOW })
     expect(sinTab).toContain('La pestaña MOVIMIENTOS todavía no existe.')
   })
+
+  it('recurrentes del mes (ORD-POS-076): sin botones, con «atrasado», «aún no vence», con problema sin monto y estados', async () => {
+    const REC = [
+      ['ID', 'CONCEPTO', 'PROYECTO', 'CATEGORIA', 'MONTO', 'MONEDA', 'DIA_COBRO', 'DESDE', 'HASTA'],
+      ['CLAUDE', 'Suscripción Claude', 'POS', 'Herramientas', 20, 'USD', 1, '2026-09', ''],
+      ['KEEPA', 'Keepa', 'ECO', 'Herramientas', 250.5, 'MXN', 28, '2026-10', ''],
+      ['', 'Roto', 'POS', 'Herramientas', 54321, 'MXN', 1, '2026-10', ''],
+    ]
+    const h = await html({ estado: 'ok', vista: construirFinanzas({ MOVIMIENTOS: MOV, PARAMETROS: PARAM(1000), RECURRENTES: REC }, NOW), fetchedAt: NOW })
+    expect(h).toContain('Recurrentes del mes')
+    expect(h).toContain('REC-CLAUDE-2026-09')
+    expect(h).toContain('Atrasado')
+    expect(h).toContain('Aún no vence')
+    expect(h).toContain('$250.50')
+    expect(h).toContain('Recurrentes con problema')
+    expect(h).toContain('fila 4')
+    expect(h).not.toContain('54,321')
+    expect(h).not.toMatch(/<button|<form|Confirmar/)
+    const sinTab = await html({ estado: 'ok', vista: construirFinanzas({ MOVIMIENTOS: MOV, PARAMETROS: PARAM(1000) }, NOW), fetchedAt: NOW })
+    expect(sinTab).toContain('La pestaña RECURRENTES todavía no existe.')
+    const vacia = await html({ estado: 'ok', vista: construirFinanzas({ MOVIMIENTOS: MOV, PARAMETROS: PARAM(1000), RECURRENTES: [REC[0]!] }, NOW), fetchedAt: NOW })
+    expect(vacia).toContain('Sin recurrentes registrados en RECURRENTES.')
+  })
 })

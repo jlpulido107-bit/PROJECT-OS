@@ -3,14 +3,17 @@ import { cellText, parseNumber } from '../parse'
 import { MAX_DATA_ROWS } from '../schema'
 
 /**
- * Vista de solo lectura del libro FINANZAS (/finanzas, ORD-POS-074). Funciones puras sobre las filas que el lector ya
+ * Vista de solo lectura del libro FINANZAS (/finanzas, ORD-POS-074; esquema v2 y recurrentes, ORD-POS-076). Funciones puras sobre las filas que el lector ya
  * trajo con `UNFORMATTED_VALUE` (montos como número, fechas como texto): no leen, no escriben y no corrigen nada
  * (docs/diseno-finanzas.md §2 y §4). Las columnas se buscan por nombre de encabezado (fila 1), nunca por posición.
  * Los montos se suman en centavos enteros para no acumular error de punto flotante.
  */
 
-/** Pestañas que lee /finanzas (§3). RESUMEN no se lee: es una vista derivada en la hoja (§2.5). */
-export const FINANZAS_TABS = ['MOVIMIENTOS', 'PARAMETROS'] as const
+/**
+ * Pestañas que lee /finanzas (§3), en un solo batchGet. RESUMEN no se lee: es una vista derivada en la hoja (§2.5).
+ * RECURRENTES es del esquema v2 (docs/diseno-finanzas-v2.md §4.1).
+ */
+export const FINANZAS_TABS = ['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES'] as const
 export type FinanzasTab = (typeof FINANZAS_TABS)[number]
 export type FinanzasRaw = Partial<Record<FinanzasTab, unknown[][]>>
 
@@ -18,7 +21,8 @@ export type FinanzasRaw = Partial<Record<FinanzasTab, unknown[][]>>
 export const COLUMNAS_OBLIGATORIAS = [
   'MOV_ID', 'FECHA', 'PROYECTO', 'TIPO', 'CATEGORIA', 'CONCEPTO', 'MONTO_MXN', 'FUENTE', 'COMPROBANTE',
 ] as const
-const COLUMNAS_LEIDAS = [...COLUMNAS_OBLIGATORIAS, 'PRODUCTO_ID'] as const
+/** `AJUSTE_DE` es opcional (v2 §8): una hoja v1 sin la columna sigue válida. */
+const COLUMNAS_LEIDAS = [...COLUMNAS_OBLIGATORIAS, 'PRODUCTO_ID', 'AJUSTE_DE'] as const
 
 export const PROYECTOS = ['ECO', 'POS'] as const
 export type Proyecto = (typeof PROYECTOS)[number]
@@ -27,17 +31,26 @@ export type Tipo = (typeof TIPOS)[number]
 /** §2.3, lista cerrada. Una categoría fuera de la lista hace la fila «con problema» (§2.1). */
 export const CATEGORIAS = ['Herramientas', 'Marketplace', 'Producto', 'Marketing', 'Legal y marca', 'Ventas'] as const
 export type Categoria = (typeof CATEGORIAS)[number]
-export const FUENTES = ['manual', 'sp-api', 'anthropic'] as const
+export const FUENTES = ['manual', 'sp-api', 'anthropic', 'recurrente'] as const
 export type Fuente = (typeof FUENTES)[number]
 
+/** `ID` de RECURRENTES (v2 §4.1): forma parte del `MOV_ID` `REC-<ID>-AAAA-MM`. */
+export const RECURRENTE_ID = /^[A-Z0-9]{2,12}$/
+
 /**
- * §2.2 con la resolución (a) del PM: solo MAN- con `manual`, SPAPI- con `sp-api` y CLAUDE- con `anthropic`; cualquier
- * otro prefijo, o uno que no cuadra con su FUENTE, es fila con problema.
+ * §2.2 con la resolución (a) del PM: solo MAN- con `manual`, SPAPI- con `sp-api`, CLAUDE- con `anthropic` y, desde v2
+ * §8, REC-<ID>-AAAA-MM con `recurrente`; cualquier otro prefijo, o uno que no cuadra con su FUENTE, es fila con problema.
  */
 const PREFIJOS: Record<Fuente, RegExp> = {
   manual: /^MAN-\d{4}$/,
   'sp-api': /^SPAPI-[A-Za-z0-9_.:-]+$/,
   anthropic: /^CLAUDE-\d{4}-(0[1-9]|1[0-2])$/,
+  recurrente: /^REC-[A-Z0-9]{2,12}-\d{4}-(0[1-9]|1[0-2])$/,
+}
+
+/** `MOV_ID` de la confirmación de un recurrente en un mes (v2 §4.3). */
+export function movIdRecurrente(id: string, mes: string): string {
+  return `REC-${id}-${mes}`
 }
 
 export const ALERTA_PCT_DEFECTO = 80
@@ -53,7 +66,10 @@ export interface Movimiento {
   categoria: Categoria
   concepto: string
   productoId: string | null
+  /** Con signo: negativo solo en un ajuste (v2 §8). */
   centavos: number
+  /** `MOV_ID` que corrige (v2 §3.4), o null si no es un ajuste. */
+  ajusteDe: string | null
 }
 
 /** Fila no sumada (§2.1 y §4.5): solo la referencia y las columnas que fallan, nunca el monto. */
@@ -127,6 +143,7 @@ export interface FinanzasVista {
   mensual: Bloque<GastoMensual>
   herramientas: Bloque<Herramientas>
   pyl: Bloque<Pyl>
+  recurrentes: Bloque<RecurrentesMes>
   problemas: FilaProblema[]
   movimientosValidos: number
 }
@@ -221,9 +238,13 @@ export function leerParametros(rows: unknown[][]): Parametros {
 
 type Lectura =
   | { estado: 'no-disponible'; mensaje: string }
-  | { estado: 'ok'; movimientos: Movimiento[]; problemas: FilaProblema[] }
+  | { estado: 'ok'; movimientos: Movimiento[]; problemas: FilaProblema[]; ids: Set<string> }
 
-/** MOVIMIENTOS (§2.1 y §2.2): valida cada fila; las que fallan no se suman y se listan sin monto. */
+/**
+ * MOVIMIENTOS (§2.1 y §2.2, con los cambios de v2 §8): valida cada fila; las que fallan no se suman y se listan sin
+ * monto. `ids` son todos los `MOV_ID` presentes, también los de filas con problema: un `REC-…` ya escrito cuenta como
+ * confirmado aunque su fila tenga un error (v2 §4.3, paso 3).
+ */
 export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
   if (rows === undefined) return { estado: 'no-disponible', mensaje: 'La pestaña MOVIMIENTOS todavía no existe.' }
   const header = (rows[0] ?? []).map(texto)
@@ -258,21 +279,26 @@ export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
     const monto = numeroCelda(celda('MONTO_MXN'))
     const fuente = canonico(texto(celda('FUENTE')), FUENTES)
     const comprobante = canonico(texto(celda('COMPROBANTE'))?.replace(/^si$/i, 'sí') ?? null, ['sí', 'no'])
+    const ajusteDe = texto(celda('AJUSTE_DE'))
     if (movId === null || (fuente !== null && !PREFIJOS[fuente].test(movId)) || (fuente === null && !Object.values(PREFIJOS).some((r) => r.test(movId)))) {
       columnas.push('MOV_ID')
     }
     if (fecha === null) columnas.push('FECHA')
     if (proyecto === null) columnas.push('PROYECTO')
-    if (tipo === null) columnas.push('TIPO')
+    // Un recurrente siempre es Gasto (v2 §4.1).
+    if (tipo === null || (fuente === 'recurrente' && tipo !== 'Gasto')) columnas.push('TIPO')
     if (categoria === null) columnas.push('CATEGORIA')
     if (concepto === null) columnas.push('CONCEPTO')
-    if (monto === null || monto <= 0) columnas.push('MONTO_MXN')
+    // > 0 siempre; en un ajuste, distinto de 0 y con signo (v2 §8).
+    if (monto === null || (ajusteDe === null ? monto <= 0 : monto === 0)) columnas.push('MONTO_MXN')
     if (fuente === null) columnas.push('FUENTE')
     if (comprobante === null) columnas.push('COMPROBANTE')
+    // Un ajuste lleva su propio MAN-NNNN (v2 §3.4) y no se refiere a sí mismo; que el referido exista se revisa abajo.
+    if (ajusteDe !== null && (fuente !== 'manual' || ajusteDe === movId)) columnas.push('AJUSTE_DE')
     const mov = columnas.length === 0
       ? {
           mes: fecha!.slice(0, 7), proyecto: proyecto!, tipo: tipo!, categoria: categoria!, concepto: concepto!,
-          productoId: texto(celda('PRODUCTO_ID')), centavos: Math.round(monto! * 100),
+          productoId: texto(celda('PRODUCTO_ID')), centavos: Math.round(monto! * 100), ajusteDe,
         }
       : null
     // Número de fila en la hoja: encabezado en la fila 1.
@@ -282,16 +308,33 @@ export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
   // MOV_ID duplicado: ninguna de sus filas se suma, porque no se sabe cuál es la buena (§2.1).
   const cuenta = new Map<string, number>()
   for (const c of candidatas) if (c.movId !== null) cuenta.set(c.movId, (cuenta.get(c.movId) ?? 0) + 1)
+  for (const c of candidatas) {
+    if (c.movId === null || (cuenta.get(c.movId) ?? 0) <= 1) continue
+    c.columnas = c.columnas.includes('MOV_ID') ? c.columnas.map((x) => (x === 'MOV_ID' ? 'MOV_ID (duplicado)' : x)) : ['MOV_ID (duplicado)', ...c.columnas]
+  }
+  // AJUSTE_DE debe llevar, directo o por una cadena de ajustes, a una fila que sí se suma y no es ajuste (v2 §3.1 y
+  // §3.4): un ajuste de una fila inexistente o con problema, o un ciclo de ajustes, restaría sin su original.
+  const aceptados = new Set(candidatas.filter((c) => c.columnas.length === 0 && c.mov?.ajusteDe === null).map((c) => c.movId!))
+  const ajustes = candidatas.filter((c) => c.columnas.length === 0 && c.mov?.ajusteDe != null)
+  for (let crece = true; crece;) {
+    crece = false
+    for (const c of ajustes) {
+      if (!aceptados.has(c.movId!) && aceptados.has(c.mov!.ajusteDe!)) {
+        aceptados.add(c.movId!)
+        crece = true
+      }
+    }
+  }
+  for (const c of ajustes) if (!aceptados.has(c.movId!)) c.columnas.push('AJUSTE_DE')
+
   const movimientos: Movimiento[] = []
   const problemas: FilaProblema[] = []
   for (const c of candidatas) {
-    const duplicado = c.movId !== null && (cuenta.get(c.movId) ?? 0) > 1
-    const columnas = duplicado && !c.columnas.includes('MOV_ID') ? ['MOV_ID (duplicado)', ...c.columnas]
-      : duplicado ? c.columnas.map((x) => (x === 'MOV_ID' ? 'MOV_ID (duplicado)' : x)) : c.columnas
-    if (columnas.length === 0 && c.mov) movimientos.push({ movId: c.movId!, ...c.mov })
-    else problemas.push({ ref: c.movId !== null && /^[A-Za-z0-9_.:-]{1,40}$/.test(c.movId) ? `${c.movId} (fila ${c.fila})` : `fila ${c.fila}`, columnas })
+    if (c.columnas.length === 0 && c.mov) movimientos.push({ movId: c.movId!, ...c.mov })
+    else problemas.push({ ref: c.movId !== null && /^[A-Za-z0-9_.:-]{1,40}$/.test(c.movId) ? `${c.movId} (fila ${c.fila})` : `fila ${c.fila}`, columnas: c.columnas })
   }
-  return { estado: 'ok', movimientos, problemas }
+  const ids = new Set(candidatas.flatMap((c) => (c.movId === null ? [] : [c.movId])))
+  return { estado: 'ok', movimientos, problemas, ids }
 }
 
 const esGasto = (m: Movimiento) => m.tipo === 'Gasto' || m.tipo === 'Inversión'
@@ -345,12 +388,24 @@ export function gastoMensual(movimientos: Movimiento[], meses: string[]): MesGas
 /** §4.3: Herramientas por CONCEPTO y mes, total mensual, promedio de 3 meses y meses «sin registrar». */
 export function costoHerramientas(movimientos: Movimiento[], meses: string[]): Omit<Herramientas, 'avisos'> {
   const enVentana = new Set(meses)
+  const porId = new Map(movimientos.map((m) => [m.movId, m]))
+  // Un ajuste («Ajuste de MAN-…: …») suma en la columna del concepto de su original, en el mes de su propia FECHA.
+  const conceptoDe = (m: Movimiento): string => {
+    const vistos = new Set<string>()
+    let actual = m
+    while (actual.ajusteDe !== null && !vistos.has(actual.movId) && porId.has(actual.ajusteDe)) {
+      vistos.add(actual.movId)
+      actual = porId.get(actual.ajusteDe)!
+    }
+    return actual.concepto
+  }
   const porConcepto = new Map<string, Map<string, number>>()
   for (const m of movimientos) {
     if (m.categoria !== 'Herramientas' || !esGasto(m) || !enVentana.has(m.mes)) continue
-    const porMes = porConcepto.get(m.concepto) ?? new Map<string, number>()
+    const concepto = conceptoDe(m)
+    const porMes = porConcepto.get(concepto) ?? new Map<string, number>()
     porMes.set(m.mes, (porMes.get(m.mes) ?? 0) + m.centavos)
-    porConcepto.set(m.concepto, porMes)
+    porConcepto.set(concepto, porMes)
   }
   const totalPorMes: Record<string, number> = Object.fromEntries(meses.map((mes) => [mes, 0]))
   const conceptos = [...porConcepto.keys()].sort((a, b) => a.localeCompare(b, 'es')).map((concepto) => {
@@ -387,14 +442,189 @@ export function pylPorProducto(movimientos: Movimiento[]): Pyl {
   return { productos, sinProducto: mapa.get(null) ?? null }
 }
 
+
+/** Columnas de RECURRENTES (v2 §4.1). `HASTA` es opcional: sin la columna, todos los recurrentes siguen vigentes. */
+export const COLUMNAS_RECURRENTES = ['ID', 'CONCEPTO', 'PROYECTO', 'CATEGORIA', 'MONTO', 'MONEDA', 'DIA_COBRO', 'DESDE'] as const
+export const MONEDAS = ['MXN', 'USD'] as const
+export type Moneda = (typeof MONEDAS)[number]
+
+export interface Recurrente {
+  id: string
+  concepto: string
+  proyecto: Proyecto
+  categoria: Categoria
+  /** Monto esperado en `moneda`, en centavos. */
+  centavos: number
+  moneda: Moneda
+  diaCobro: number
+  desde: string
+  hasta: string | null
+}
+
+export type LecturaRecurrentes =
+  | { estado: 'no-disponible'; mensaje: string }
+  | { estado: 'ok'; recurrentes: Recurrente[]; problemas: FilaProblema[] }
+
+/** Número con hasta 2 decimales (centavos exactos). */
+function conDosDecimales(n: number): boolean {
+  return Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
+}
+
+/**
+ * RECURRENTES (v2 §4.1): valida cada fila. Una fila con `ID` vacío, duplicado o fuera de formato, o con otra columna
+ * fuera de regla, no genera pendientes y se lista con su `ID` (o número de fila) y la columna, nunca con el monto.
+ */
+export function leerRecurrentes(rows: unknown[][] | undefined): LecturaRecurrentes {
+  if (rows === undefined) return { estado: 'no-disponible', mensaje: 'La pestaña RECURRENTES todavía no existe.' }
+  const header = (rows[0] ?? []).map(texto)
+  const indice = new Map<string, number>()
+  header.forEach((h, i) => {
+    if (h !== null && !indice.has(h)) indice.set(h, i)
+  })
+  const faltan = COLUMNAS_RECURRENTES.filter((c) => !indice.has(c))
+  if (faltan.length) {
+    return {
+      estado: 'no-disponible',
+      mensaje: `${faltan.length === 1 ? 'Falta la columna' : 'Faltan las columnas'} ${faltan.join(', ')} en RECURRENTES; no se calculan pendientes.`,
+    }
+  }
+  if (rows.length > MAX_DATA_ROWS + 1) {
+    return { estado: 'no-disponible', mensaje: `RECURRENTES está truncada (más de ${MAX_DATA_ROWS} filas): no se calculan pendientes.` }
+  }
+
+  type Candidata = { fila: number; id: string | null; rec: Recurrente | null; columnas: string[] }
+  const leidas = [...COLUMNAS_RECURRENTES, 'HASTA'] as const
+  const candidatas: Candidata[] = []
+  rows.slice(1).forEach((row, i) => {
+    const celda = (c: (typeof leidas)[number]) => row[indice.get(c) ?? -1]
+    if (leidas.every((c) => texto(celda(c)) === null)) return
+    const columnas: string[] = []
+    const id = texto(celda('ID'))
+    const concepto = texto(celda('CONCEPTO'))
+    const proyecto = canonico(texto(celda('PROYECTO')), PROYECTOS)
+    const categoria = canonico(texto(celda('CATEGORIA')), CATEGORIAS)
+    const monto = numeroCelda(celda('MONTO'))
+    const moneda = canonico(texto(celda('MONEDA')), MONEDAS)
+    const dia = numeroCelda(celda('DIA_COBRO'))
+    const desde = mesDeTexto(texto(celda('DESDE')))
+    const hastaTexto = texto(celda('HASTA'))
+    const hasta = mesDeTexto(hastaTexto)
+    if (id === null || !RECURRENTE_ID.test(id)) columnas.push('ID')
+    if (concepto === null) columnas.push('CONCEPTO')
+    if (proyecto === null) columnas.push('PROYECTO')
+    if (categoria === null) columnas.push('CATEGORIA')
+    if (monto === null || monto <= 0 || !conDosDecimales(monto)) columnas.push('MONTO')
+    if (moneda === null) columnas.push('MONEDA')
+    if (dia === null || !Number.isInteger(dia) || dia < 1 || dia > 31) columnas.push('DIA_COBRO')
+    if (desde === null) columnas.push('DESDE')
+    if (hastaTexto !== null && (hasta === null || (desde !== null && hasta < desde))) columnas.push('HASTA')
+    const rec = columnas.length === 0
+      ? {
+          id: id!, concepto: concepto!, proyecto: proyecto!, categoria: categoria!, centavos: Math.round(monto! * 100),
+          moneda: moneda!, diaCobro: dia!, desde: desde!, hasta,
+        }
+      : null
+    candidatas.push({ fila: i + 2, id, rec, columnas })
+  })
+
+  // ID duplicado: ninguna de sus filas genera pendientes (el MOV_ID REC-<ID>-AAAA-MM sería ambiguo).
+  const cuenta = new Map<string, number>()
+  for (const c of candidatas) if (c.id !== null) cuenta.set(c.id, (cuenta.get(c.id) ?? 0) + 1)
+  const recurrentes: Recurrente[] = []
+  const problemas: FilaProblema[] = []
+  for (const c of candidatas) {
+    if (c.id !== null && (cuenta.get(c.id) ?? 0) > 1) {
+      c.columnas = c.columnas.includes('ID') ? c.columnas.map((x) => (x === 'ID' ? 'ID (duplicado)' : x)) : ['ID (duplicado)', ...c.columnas]
+    }
+    if (c.columnas.length === 0 && c.rec) recurrentes.push(c.rec)
+    else problemas.push({ ref: c.id !== null && /^[A-Za-z0-9_.:-]{1,40}$/.test(c.id) ? `${c.id} (fila ${c.fila})` : `fila ${c.fila}`, columnas: c.columnas })
+  }
+  return { estado: 'ok', recurrentes, problemas }
+}
+
+/** Último día del mes `AAAA-MM` (28 a 31). */
+export function ultimoDiaDelMes(mes: string): number {
+  const [y, m] = mes.split('-').map(Number) as [number, number]
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+/** Fecha de cobro en `mes`: `DIA_COBRO`, o el último día si el mes es más corto (v2 §4.1). */
+export function fechaCobro(diaCobro: number, mes: string): string {
+  return `${mes}-${String(Math.min(diaCobro, ultimoDiaDelMes(mes))).padStart(2, '0')}`
+}
+
+/** Vigente en `mes`: `DESDE` ≤ mes y `HASTA` vacío o ≥ mes (v2 §4.2). */
+export function vigenteEn(r: Recurrente, mes: string): boolean {
+  return r.desde <= mes && (r.hasta === null || r.hasta >= mes)
+}
+
+export interface Pendiente {
+  recurrente: Recurrente
+  mes: string
+  /** `MOV_ID` que tendrá al confirmarse. */
+  movId: string
+  fechaCobro: string
+  /** Del mes anterior y sin confirmar. */
+  atrasado: boolean
+  /** Del mes actual y hoy es anterior a la fecha de cobro. */
+  aunNoVence: boolean
+}
+
+/**
+ * Pendientes del mes actual M (en Mérida) y, como «atrasado», del mes anterior (v2 §4.2): vigentes en ese mes y sin
+ * `REC-<ID>-AAAA-MM` en MOVIMIENTOS. Meses más viejos no se listan. Primero los atrasados; luego por fecha de cobro.
+ */
+export function pendientesRecurrentes(recurrentes: Recurrente[], movIds: ReadonlySet<string>, now: number): Pendiente[] {
+  const hoy = civilDateInZone(now)
+  const actual = hoy.slice(0, 7)
+  const anterior = sumarMeses(actual, -1)
+  const pendientes: Pendiente[] = []
+  for (const mes of [anterior, actual]) {
+    for (const r of recurrentes) {
+      const movId = movIdRecurrente(r.id, mes)
+      if (!vigenteEn(r, mes) || movIds.has(movId)) continue
+      const fecha = fechaCobro(r.diaCobro, mes)
+      pendientes.push({ recurrente: r, mes, movId, fechaCobro: fecha, atrasado: mes === anterior, aunNoVence: mes === actual && hoy < fecha })
+    }
+  }
+  return pendientes.sort((a, b) => a.mes.localeCompare(b.mes) || a.fechaCobro.localeCompare(b.fechaCobro) || a.recurrente.id.localeCompare(b.recurrente.id))
+}
+
+export interface RecurrentesMes {
+  mes: string
+  mesAnterior: string
+  pendientes: Pendiente[]
+  problemas: FilaProblema[]
+  vigentes: number
+}
+
+/** Bloque «Recurrentes del mes»: sin pestaña o sin MOVIMIENTOS legible, no disponible; sin filas, vacío. */
+export function recurrentesDelMes(raw: unknown[][] | undefined, movimientos: Lectura, now: number): Bloque<RecurrentesMes> {
+  const lectura = leerRecurrentes(raw)
+  if (lectura.estado === 'no-disponible') return lectura
+  if (movimientos.estado === 'no-disponible') {
+    return { estado: 'no-disponible', mensaje: 'Sin MOVIMIENTOS legible no se sabe qué recurrentes ya están confirmados.' }
+  }
+  if (lectura.recurrentes.length === 0 && lectura.problemas.length === 0) return { estado: 'vacio', mensaje: 'Sin recurrentes registrados en RECURRENTES.' }
+  const mes = civilDateInZone(now).slice(0, 7)
+  return {
+    estado: 'ok',
+    datos: {
+      mes, mesAnterior: sumarMeses(mes, -1), pendientes: pendientesRecurrentes(lectura.recurrentes, movimientos.ids, now),
+      problemas: lectura.problemas, vigentes: lectura.recurrentes.filter((r) => vigenteEn(r, mes)).length,
+    },
+  }
+}
+
 const SIN_MOVIMIENTOS = 'Sin movimientos todavía.'
 
 /** Arma los bloques de §4 con los estados de §5. Nunca lanza: cada bloque resuelve su estado. */
 export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista {
   const lectura = leerMovimientos(raw.MOVIMIENTOS)
+  const recurrentes = recurrentesDelMes(raw.RECURRENTES, lectura, now)
   if (lectura.estado === 'no-disponible') {
     const b = { estado: 'no-disponible', mensaje: lectura.mensaje } as const
-    return { capital: b, mensual: b, herramientas: b, pyl: b, problemas: [], movimientosValidos: 0 }
+    return { capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, problemas: [], movimientosValidos: 0 }
   }
   const { movimientos, problemas } = lectura
   const parametros = raw.PARAMETROS === undefined ? null : leerParametros(raw.PARAMETROS)
@@ -413,12 +643,19 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
     : herr.conceptos.length === 0 ? { estado: 'vacio', mensaje: 'Sin filas de Herramientas en los últimos 12 meses.' }
     : { estado: 'ok', datos: { ...herr, avisos: avisosVentana } }
   const pyl: Bloque<Pyl> = vacio ? vacioBloque : { estado: 'ok', datos: pylPorProducto(movimientos) }
-  return { capital, mensual, herramientas, pyl, problemas, movimientosValidos: movimientos.length }
+  return { capital, mensual, herramientas, pyl, recurrentes, problemas, movimientosValidos: movimientos.length }
 }
 
 const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+const USD = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 /** Centavos enteros → «$1,234.50». */
 export function formatoMxn(centavos: number): string {
   return MXN.format(centavos / 100)
+}
+
+/** Centavos enteros en la moneda del recurrente → «$1,234.50» o «USD 1,234.50». */
+export function formatoMoneda(centavos: number, moneda: Moneda): string {
+  return moneda === 'USD' ? USD.format(centavos / 100) : formatoMxn(centavos)
 }

@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { Badge, Empty, Section, Stat } from '@/components/ui'
 import { formatInstant } from '@/lib/dates'
 import {
-  formatoMxn, PROYECTOS, type Bloque, type Capital, type FilaProblema, type GastoMensual, type Herramientas, type Pyl,
+  formatoMoneda, formatoMxn, PROYECTOS, type Bloque, type Capital, type FilaProblema, type GastoMensual, type Herramientas,
+  type Pyl, type RecurrentesMes,
 } from '@/lib/finanzas/finanzas'
 import { privateFinanzas } from '@/lib/page-data'
 
@@ -162,6 +163,48 @@ function BloquePyl({ datos }: { datos: Pyl }) {
   )
 }
 
+/** v2 §4.2: solo lectura, sin botones. «Confirmar» llega con la escritura (docs/diseno-finanzas-v2.md §9.2). */
+function BloqueRecurrentes({ datos }: { datos: RecurrentesMes }) {
+  return (
+    <>
+      <p className="small">
+        Cargos vigentes en {datos.mes} ({datos.vigentes}) sin su fila <code>REC-&lt;ID&gt;-AAAA-MM</code> en MOVIMIENTOS, y los
+        de {datos.mesAnterior} marcados «atrasado». Montos esperados según RECURRENTES; esta vista no confirma nada: se
+        capturan en la hoja.
+      </p>
+      {datos.pendientes.length === 0 ? <Empty>Sin recurrentes pendientes de {datos.mes} ni de {datos.mesAnterior}.</Empty> : (
+        <div className="table-wrap">
+          <table aria-label="Recurrentes pendientes">
+            <thead>
+              <tr><th scope="col">Concepto</th><th scope="col">Proyecto</th><th scope="col">Monto esperado</th><th scope="col">Moneda</th><th scope="col">Día de cobro</th><th scope="col">Estado</th></tr>
+            </thead>
+            <tbody>
+              {datos.pendientes.map((p) => (
+                <tr key={p.movId}>
+                  <th scope="row">{p.recurrente.concepto} <span className="mono small muted">{p.movId}</span></th>
+                  <td>{p.recurrente.proyecto}</td>
+                  <td>{formatoMoneda(p.recurrente.centavos, p.recurrente.moneda)}</td>
+                  <td>{p.recurrente.moneda}</td>
+                  <td className="mono">{p.fechaCobro}</td>
+                  <td>{p.atrasado ? <Badge tone="danger">Atrasado</Badge> : p.aunNoVence ? <Badge tone="muted">Aún no vence</Badge> : <Badge tone="warn">Pendiente</Badge>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {datos.problemas.length ? (
+        <>
+          <p className="small">Recurrentes con problema: no generan pendientes. Corrígelos en la hoja.</p>
+          <ul className="list" aria-label="Recurrentes con problema">
+            {datos.problemas.map((p) => <li key={p.ref}><span className="mono">{p.ref}</span>: {p.columnas.join(', ')}</li>)}
+          </ul>
+        </>
+      ) : null}
+    </>
+  )
+}
+
 function BloqueProblemas({ problemas }: { problemas: FilaProblema[] }) {
   return (
     <>
@@ -213,6 +256,7 @@ export default async function FinanzasPage() {
       <Section title="Capital usado contra el tope" id="capital"><EstadoBloque bloque={v.capital}>{(d) => <BloqueCapital datos={d} />}</EstadoBloque></Section>
       <Section title="Gasto mensual por proyecto y categoría" id="mensual"><EstadoBloque bloque={v.mensual}>{(d) => <BloqueMensual datos={d} />}</EstadoBloque></Section>
       <Section title="Costo de herramientas" id="herramientas"><EstadoBloque bloque={v.herramientas}>{(d) => <BloqueHerramientas datos={d} />}</EstadoBloque></Section>
+      <Section title="Recurrentes del mes" id="recurrentes"><EstadoBloque bloque={v.recurrentes}>{(d) => <BloqueRecurrentes datos={d} />}</EstadoBloque></Section>
       <Section title="P&L por producto" id="pyl"><EstadoBloque bloque={v.pyl}>{(d) => <BloquePyl datos={d} />}</EstadoBloque></Section>
       {v.problemas.length ? <Section title="Filas con problema" id="problemas"><BloqueProblemas problemas={v.problemas} /></Section> : null}
     </>
