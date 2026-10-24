@@ -10,12 +10,12 @@ Reglas, subcarpetas por tipo, frontmatter, formato del índice y flujo: `docs/no
 00-entrada/     captura rápida, sin clasificar
 _plantillas/    Captura, Idea, Decision, Hallazgo, Revision, Referencia
 privado/        nunca la leen los agentes
-POS/ SIG/ ECO/ DEV/
+POS/ SIG/ ECO/ DEV/ ALI/
   indice.md     secciones Ideas, Decisiones en borrador, Hallazgos abiertos y Referencia
   ideas/ decisiones/ hallazgos/ revisiones/ referencia/
 ```
 
-- Índices: [POS](POS/indice.md) · [SIG](SIG/indice.md) · [ECO](ECO/indice.md) · [DEV](DEV/indice.md)
+- Índices: [POS](POS/indice.md) · [SIG](SIG/indice.md) · [ECO](ECO/indice.md) · [DEV](DEV/indice.md) · [ALI](ALI/indice.md)
 - Plantillas: [Captura](_plantillas/Captura.md) · [Idea](_plantillas/Idea.md) · [Decision](_plantillas/Decision.md) ·
   [Hallazgo](_plantillas/Hallazgo.md) · [Revision](_plantillas/Revision.md) · [Referencia](_plantillas/Referencia.md)
 - Nota de ejemplo: [POS/ideas/ejemplo-idea.md](POS/ideas/ejemplo-idea.md).

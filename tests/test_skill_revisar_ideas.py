@@ -60,7 +60,7 @@ class TestSkillRevisarIdeas(unittest.TestCase):
         plantillas = ROOT / "docs" / "plantilla-notas"
         self.assertEqual(sorted(p.stem for p in (plantillas / "_plantillas").glob("*.md")),
                          ["Captura", "Decision", "Hallazgo", "Idea", "Referencia", "Revision"])
-        for proyecto in ("POS", "SIG", "ECO", "DEV"):
+        for proyecto in ("POS", "SIG", "ECO", "DEV", "ALI"):
             indice = (plantillas / proyecto / "indice.md").read_text(encoding="utf-8")
             for seccion in ("## Ideas", "## Decisiones en borrador", "## Hallazgos abiertos", "## Referencia"):
                 self.assertIn(seccion, indice)

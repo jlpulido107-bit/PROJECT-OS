@@ -1,6 +1,6 @@
 ---
 tipo: captura
-proyecto:        # POS | SIG | ECO | DEV | ?
+proyecto:        # POS | SIG | ECO | DEV | ALI | ?
 fecha: {{date}}
 ---
 

@@ -1,7 +1,7 @@
 ---
 tipo: idea
 estado: idea        # idea | propuesta | descartada
-proyecto: POS       # POS | SIG | ECO | DEV
+proyecto: POS       # POS | SIG | ECO | DEV | ALI
 fecha: {{date}}
 urgencia: media     # alta | media | baja
 tarea:              # POS-NNN u ORD-POS-NNN cuando se dé de alta
