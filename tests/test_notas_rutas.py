@@ -147,6 +147,41 @@ class TestNotasRutas(unittest.TestCase):
         self.commit("fuera")
         self.assertRechazado(*rechazadas)
 
+    def test_mayusculas_y_carpetas_que_no_son_de_proyecto_se_rechazan(self):
+        # H1 de REV-ORD-POS-082-1: en un sistema de archivos sin mayúsculas, Privado/ es privado/.
+        rechazadas = {"Privado/contexto.md": "privado/", "PRIVADO/referencia/x.md": "privado/",
+                      "00-Entrada/referencia/x.md": "carpeta del propietario",
+                      "POS/Ideas/x.md": "carpeta del propietario", "pos/referencia/x.md": "fuera de las zonas",
+                      "Notas/contexto.md": "fuera de las zonas", "POSX/indice.md": "fuera de las zonas"}
+        for ruta in rechazadas:
+            self.escribir(ruta, "Cambio\n")
+        self.commit("mayusculas")
+        salida = self.assertRechazado(*rechazadas)
+        for ruta, motivo in rechazadas.items():
+            self.assertIn(f"- {ruta}: {motivo}", salida.stdout)
+
+    def test_enlaces_simbolicos_se_rechazan_aunque_esten_en_zona(self):
+        # H2 de REV-ORD-POS-082-1: la ruta está en zona, pero el enlace apunta a privado/.
+        for ruta, destino in (("POS/referencia/enl.md", "../../privado/secreto.md"),
+                              ("_contexto/enl.md", "../privado/secreto.md")):
+            (self.notas / ruta).symlink_to(destino)
+        self.commit("enlaces")
+        salida = self.assertRechazado("POS/referencia/enl.md", "_contexto/enl.md")
+        self.assertIn("enlace simbólico", salida.stdout)
+
+    def test_revisa_cada_commit_y_no_solo_el_arbol_neto(self):
+        # H3 de REV-ORD-POS-082-1: el árbol neto no cambia, pero el push lleva estos commits.
+        self.escribir("privado/n.md", "Nuevo\n")
+        self.commit("agrega privado")
+        (self.notas / "privado" / "n.md").unlink()
+        (self.notas / "POS" / "referencia" / "bitacora.md").unlink()
+        self.commit("borra")
+        self.escribir("POS/referencia/bitacora.md", "Bitácora\n")
+        self.commit("restaura")
+        salida = self.assertRechazado("privado/n.md", "POS/referencia/bitacora.md")
+        self.assertIn("- privado/n.md: privado/", salida.stdout)
+        self.assertIn("- POS/referencia/bitacora.md: borrado", salida.stdout)
+
     def test_sin_origin_main_sale_con_uno(self):
         self.git(self.notas, "remote", "remove", "origin")
         salida = self.correr()

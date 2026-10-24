@@ -103,9 +103,11 @@ Las zonas las verifica una máquina, no la memoria del agente (ORD-POS-082): Ide
 python <checkout de PROJECT-OS>/scripts/notas-rutas.py <checkout de NOTAS>
 ```
 
-Revisa los archivos que cambian los commits de `origin/main..HEAD`, permite solo las zonas de arriba (en `indice.md`,
-solo cambios dentro de `## Referencia`; crear un `indice.md` nuevo queda fuera) y rechaza, con la lista de rutas, cualquier borrado (un renombre cuenta como
-borrado), `privado/`, `00-entrada/` y las subcarpetas `ideas/`, `decisiones/`, `hallazgos/` y `revisiones/`. Sale con
+Revisa cada commit de `origin/main..HEAD`, no solo el árbol neto, permite solo las zonas de arriba (`<PRY>` es un código
+de tres mayúsculas; en `indice.md`, solo cambios dentro de `## Referencia`; crear un `indice.md` nuevo queda fuera) y
+rechaza, con la lista de rutas, cualquier borrado (un renombre cuenta como borrado), los enlaces simbólicos y
+submódulos, y, sin distinguir mayúsculas, `privado/`, `00-entrada/` y las subcarpetas `ideas/`, `decisiones/`,
+`hallazgos/` y `revisiones/`. Sale con
 0 si todo está permitido y con 1 si no o si no puede comprobarlo; con 1 no hay push: se deshace el commit o se lleva
 por PR con el «sí» del propietario.
 
