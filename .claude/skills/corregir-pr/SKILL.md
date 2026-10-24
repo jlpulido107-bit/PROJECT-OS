@@ -85,7 +85,8 @@ alcance» son los que mandan.
 
 1. En `REPO_DIR`, haz checkout de la rama del PR en `HEAD_ESPERADO` (verifica `git -C REPO_DIR rev-parse HEAD`).
 2. Aplica solo las correcciones atendidas; sigue `AGENTS.md` y `CLAUDE.md` de `REPO_DIR` y de PROJECT-OS. Antes de
-   escribir código sube la [escalera](../ejecutar-orden/SKILL.md#escalera-antes-de-escribir-código): ¿hace falta?,
+   escribir código sube la [escalera](../ejecutar-orden/SKILL.md#escalera-antes-de-escribir-código) (adaptada de
+   [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail), licencia MIT): ¿hace falta?,
    ¿ya existe en el repositorio?, ¿lo da la biblioteca estándar o la plataforma?, ¿una dependencia ya instalada?, ¿una
    línea?; solo entonces lo mínimo, con una prueba si hay lógica. Nunca recortes validación, manejo de errores,
    seguridad ni accesibilidad. Un atajo con límite conocido lleva el comentario `atajo: <límite>, <cuándo mejorarlo>`.
