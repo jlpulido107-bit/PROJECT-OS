@@ -1,4 +1,4 @@
-"""reporte-consumo: agente de finanzas de Claude, solo lectura (ORD-POS-088 y ORD-POS-089, POS-030)."""
+"""reporte-consumo: agente de finanzas de Claude (ORD-POS-088, ORD-POS-089 y ORD-POS-093, POS-030)."""
 import unittest
 from pathlib import Path
 
@@ -14,7 +14,8 @@ class TestSkillReporteConsumo(unittest.TestCase):
         self.assertTrue(self.texto.startswith("---\nname: reporte-consumo\ndescription: "))
         description = self.texto.split("description: ", 1)[1].split("\n", 1)[0]
         self.assertIn("/reporte-consumo", description)
-        self.assertIn("Nunca escribe en FINANZAS", description)
+        self.assertIn("Nunca escribe con el conector", description)
+        self.assertIn("nunca registra la suscripción", description)
 
     def test_lee_list_sessions_y_get_session(self):
         for frase in ("`list_sessions`", "`get_session`", "`cost_usd`", "no estimes ni inventes costos",
@@ -37,7 +38,7 @@ class TestSkillReporteConsumo(unittest.TestCase):
 
     def test_propone_movimiento_sin_escribir(self):
         for frase in ("| `CATEGORIA` | `Herramientas` |", "| `CONCEPTO` | `Claude` |", "| `TIPO` | `Gasto` |",
-                      "es una **propuesta**: lo registra el propietario", "No escribir en FINANZAS ni en la hoja",
+                      "es una **propuesta**: lo registra el propietario", "No escribir en FINANZAS salvo el registro del corte de §4",
                       "no tocas `/finanzas` ni `web/`", "`CLAUDE-` es solo de la automatización"):
             self.assertIn(frase, self.texto)
 
@@ -74,6 +75,49 @@ class TestSkillReporteConsumo(unittest.TestCase):
                       "se **señala**", "No la corriges"):
             self.assertIn(frase, clasificar)
         self.assertIn("**Etiquetas de rol mal escritas:**", self.texto.split("## 3. Reportar", 1)[1])
+
+    def registrar(self):
+        return self.texto.split("## 4. Registrar el corte", 1)[1].split("## Límites", 1)[0]
+
+    def test_registro_toma_cifras_del_reporte_del_corte(self):
+        registrar = self.registrar()
+        for frase in ("Haz §1 a §3 con el periodo del corte", "**Q1**, días 1 a 15", "**Q2**, día 16 al último",
+                      "| `costoEquivUsd` | suma de `cost_usd` del corte", "| `reporte` | el ID de esta sesión",
+                      "omítelos (sin dato, nunca 0)", "Más de 3,000 USD: no lo envíes"):
+            self.assertIn(frase, registrar)
+
+    def test_registro_pide_total_con_cita_literal_fechada_y_nunca_estima(self):
+        registrar = self.registrar()
+        for frase in ("**Pide el total de factura al propietario.**", "**Cita literal fechada.**",
+                      "`<corte> «<cita literal del propietario>» AAAA-MM-DD`", "no la edites", "**Nunca estimes.**",
+                      "Nunca uses `cost_usd`, el monto de RECURRENTES ni otro corte como total",
+                      "envía solo `rendimiento`"):
+            self.assertIn(frase, registrar)
+
+    def test_pendiente_de_factura_en_cada_reporte(self):
+        self.assertIn("el corte queda **pendiente de factura** y se\n   lista en cada reporte", self.registrar())
+        reportar = self.texto.split("## 3. Reportar", 1)[1].split("## 4.", 1)[0]
+        self.assertIn("**Cortes pendientes de factura:**", reportar)
+        self.assertIn("Va en **cada**\n   reporte", reportar)
+
+    def test_pide_que_el_total_excluya_la_suscripcion_o_diga_en_que_corte_cayo(self):
+        registrar = self.registrar()
+        for frase in ("¿La suscripción cayó en este corte?", "Si cayó en el otro,\n   dame el total sin ella",
+                      "si cayó en este, el total con ella", "Si el propietario no dice en qué corte cayó, pregúntalo antes de enviar",
+                      "nunca sumes ni restes la suscripción tú"):
+            self.assertIn(frase, registrar)
+
+    def test_envia_solo_con_el_script_sin_token(self):
+        registrar = self.registrar()
+        for frase in ("bash scripts/agente-finanzas.sh rendimiento", "bash scripts/agente-finanzas.sh cargo-extra",
+                      "**sin**\n   `requestId`", "`--repetir`", "nunca lo leas, lo imprimas", "no uses `curl` a mano",
+                      "409 `suscripcion-sin-confirmar`", "409 `factura-no-cuadra`", "409 `corte-ya-registrado`"):
+            self.assertIn(frase, registrar)
+        self.assertTrue((ROOT / "scripts" / "agente-finanzas.sh").is_file())
+
+    def test_ejemplo_de_fuente_cumple_el_formato(self):
+        ejemplo = "`2027-02-Q2 «total del corte: 20.00 USD, la suscripción\n   cayó en el otro corte» 2027-03-01`"
+        self.assertIn(ejemplo, self.registrar())
 
     def test_categoria_existe_en_el_diseno(self):
         diseno = (ROOT / "docs" / "diseno-finanzas.md").read_text(encoding="utf-8")
