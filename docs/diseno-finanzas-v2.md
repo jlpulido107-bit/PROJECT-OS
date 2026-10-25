@@ -275,6 +275,10 @@ del propietario, en la activación (§7.2). El código lo asegura así (✅ ORD-
 - El servicio y el almacén de finanzas solo reciben `FINANZAS_SHEET_ID` y esa cuenta; el de operaciones, solo
   `SHEETS_SPREADSHEET_ID` y `project-os-writer` (pruebas cruzadas en `tests/finanzas-cruce.test.ts`).
 
+> **Propuesta v3 (pendiente de DEC-POS-018):** el [diseño v3](diseno-finanzas-v3.md) enmienda esta opción para que el
+> agente de finanzas escriba, con su propia ruta y su propia cuenta, solo los cortes quincenales de Claude. El PM sigue
+> sin acceso a FINANZAS.
+
 **R3 y R4 tras activar.** R3: la cuenta de lectura sigue Lector de tres libros como máximo; `project-os-writer` sigue
 Editor solo de PROJECT-OS; la cuenta nueva es Editor solo de FINANZAS; ninguna tiene roles de proyecto. R4: sin cambio
 para la lectura; la escritura en FINANZAS exige modo, libro, cuenta propia, escritor único y su sesión. Tabla actualizada
