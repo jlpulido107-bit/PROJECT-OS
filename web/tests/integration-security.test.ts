@@ -14,18 +14,19 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 const read = (rel: string) => readFileSync(path.join(SRC, rel), 'utf8')
 
 const PAGES = [
-  '', 'actividad', 'agentes', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'estado', 'finanzas', 'metricas', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
+  '', 'actividad', 'agentes', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'eco/pipeline', 'estado', 'finanzas', 'metricas', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
   'tareas', 'tareas/[id]/editar', 'tareas/nueva', 'tiempos/nuevo',
 ]
 
 describe('árbol integrado V1.3–V1.6', () => {
-  it('las 20 páginas privadas existen y verifican la sesión antes de leer datos', () => {
+  it('las 21 páginas privadas existen y verifican la sesión antes de leer datos', () => {
     const found = files(path.join(SRC, 'app', '(private)')).filter((f) => f.endsWith('page.tsx'))
       .map((f) => path.relative(path.join(SRC, 'app', '(private)'), path.dirname(f)).split(path.sep).join('/')).sort()
     expect(found).toEqual([...PAGES].sort())
     // /eco (ORD-POS-067): privateEco verifica la sesión y solo después lee RADAROS.
+    // /eco/pipeline (ORD-POS-097) usa el mismo lector, igual de verificado.
     // /finanzas (ORD-POS-074): privateFinanzas, igual, antes de leer FINANZAS.
-    const lector: Record<string, RegExp> = { eco: /privateEco\(/, finanzas: /privateFinanzas\(/ }
+    const lector: Record<string, RegExp> = { eco: /privateEco\(/, 'eco/pipeline': /privateEco\(/, finanzas: /privateFinanzas\(/ }
     for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toMatch(lector[page] ?? /privateData\(/)
   })
 

@@ -112,7 +112,7 @@ Reglas comunes:
 | --- | --- | --- |
 | `PRODUCTO_ID` | `PRD-NNNN` | Obligatoria, única, del servidor |
 | `NOMBRE` | texto ≤ 120 | Obligatoria |
-| `ASIN` | `^B0[A-Z0-9]{8}$` o vacío | Única entre filas no descartadas; un ASIN descartado puede volver solo con `REABRIR` (§5.1), no con un alta nueva |
+| `ASIN` | `^[A-Z0-9]{10}$` o vacío (10 caracteres, no solo `B0…`; ORD-POS-097) | Única entre filas no descartadas; un ASIN descartado puede volver solo con `REABRIR` (§5.1), no con un alta nueva |
 | `IDEA_ID` | texto o vacío | Si viene, debe existir en `PRODUCTS` (❓ nombre de la columna, el mismo de `COLUMNA_ID_IDEA`, ✅ `eco.ts`) |
 | `ORIGEN` | `RADAR_KEEPA`, `AMZ_CANDIDATOS`, `MANUAL` | Del servidor según la ruta (§4.2 y §9) |
 | `ORIGEN_REF` | texto ≤ 80 o vacío | Referencia de origen (lote de migración o fila de `AMZ_CANDIDATOS`) |

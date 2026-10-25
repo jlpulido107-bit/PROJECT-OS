@@ -267,3 +267,8 @@ tbody th { font-weight: 500; }
   .form-grid { grid-template-columns: 1fr; }
   .form-actions .button, .actions-row .button { flex: 1 1 auto; }
 }
+
+/* Tablero del pipeline (/eco/pipeline): seis columnas con desplazamiento horizontal en pantallas angostas. */
+.board { display: grid; grid-template-columns: repeat(6, minmax(200px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.board-col { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-width: 0; }
+.board-col h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }

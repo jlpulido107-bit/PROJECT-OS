@@ -194,7 +194,7 @@ describe('readTabs: opción de render (criterio 2)', () => {
     const data = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'data.ts'), 'utf8')
     expect(data).toContain('reader.readTabs(TABS_READ)')
     const ecoSrc = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'radaros', 'data.ts'), 'utf8')
-    expect(ecoSrc).toContain('reader.readTabs(ECO_TABS)')
+    expect(ecoSrc).toContain('reader.readTabs(ECO_LECTURA)')
   })
 })
 
