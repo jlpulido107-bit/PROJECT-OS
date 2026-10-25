@@ -83,6 +83,21 @@ class TestNotasSalud(unittest.TestCase):
         self.assertEqual(salida.returncode, 2)
         self.assertIn("No es una carpeta", salida.stderr)
 
+    def test_nota_no_utf8_es_hallazgo_y_sigue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            boveda = Path(tmp) / "notas"
+            shutil.copytree(BOVEDA, boveda)
+            (boveda / "latin1.md").write_bytes("# Idea\n\nCampaña\n".encode("latin-1"))
+            salida = ejecutar(str(boveda), "--estricto")
+        self.assertEqual(salida.returncode, 1, salida.stderr)
+        self.assertNotIn("Traceback", salida.stderr)
+        texto = salida.stdout
+        seccion = texto.split("## Notas que no son UTF-8 (1)", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("- `latin1.md`: no es UTF-8", seccion)
+        # El resto de la bóveda se sigue revisando.
+        self.assertIn("## Enlaces rotos (3)", texto)
+        self.assertTrue(texto.endswith("Total: 11 hallazgos.\n"))
+
     def test_no_escribe_nada(self):
         antes = foto(BOVEDA)
         aperturas = []

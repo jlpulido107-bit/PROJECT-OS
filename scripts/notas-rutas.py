@@ -6,7 +6,7 @@ Uso: python scripts/notas-rutas.py [CHECKOUT_DE_NOTAS] [--base origin/main]
 Revisa cada commit de origin/main..HEAD contra cada uno de sus padres (sin renombres: un renombre cuenta como
 borrado más alta), no solo el árbol neto. Permitido: _contexto/, <PRY>/contexto.md, <PRY>/referencia/ y
 <PRY>/indice.md con cambios solo dentro de «## Referencia», donde <PRY> es un código de proyecto de tres mayúsculas
-(POS, SIG, ECO, DEV). Rechaza borrados, privado/ y las carpetas del propietario sin distinguir mayúsculas, y todo lo
+(POS, SIG, ECO, DEV, ALI). Rechaza borrados, privado/ y las carpetas del propietario sin distinguir mayúsculas, y todo lo
 que no sea un archivo normal (enlaces simbólicos, submódulos). Sale con 0 si todo está permitido y con 1 si no (o si
 no puede comprobarlo). Solo lee.
 Zonas: docs/notas.md, «Escritura directa limitada (POS · Ideas)».

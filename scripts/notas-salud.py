@@ -3,7 +3,7 @@
 
 Uso: python scripts/notas-salud.py <ruta-del-checkout-de-NOTAS> [--estricto]
 
-Reporta en markdown enlaces rotos, notas fuera de su indice.md, frontmatter incompleto según la plantilla de su tipo
+Reporta en markdown notas que no son UTF-8, enlaces rotos, notas fuera de su indice.md, frontmatter incompleto según la plantilla de su tipo
 (_plantillas/) y secciones vacías. No escribe nada. Nunca lista, lee ni busca en privado/: la carpeta se descarta por
 su nombre antes de abrirla y los enlaces que apuntan a ella no se verifican. Tampoco lee el contenido de 00-entrada/
 (docs/notas.md: los agentes no la leen sin que el propietario lo pida); sus nombres sí cuentan como destinos de enlaces.
@@ -259,7 +259,14 @@ def secciones_vacias(nota, texto):
 def revisar(raiz):
     archivos, carpetas = recorrer(raiz)
     legibles = [a for a in archivos if a.endswith(".md") and not a.startswith(ENTRADA + "/")]
-    textos = {a: leer(raiz, a) for a in legibles}
+    textos, no_utf8 = {}, []
+    for relativa in legibles:
+        try:
+            textos[relativa] = leer(raiz, relativa)
+        except UnicodeDecodeError as error:
+            # Se reporta y se sigue con el resto; la nota no cuenta para enlaces, índice ni frontmatter.
+            no_utf8.append(f"`{relativa}`: no es UTF-8 (byte {error.start})")
+    legibles = list(textos)
     metadatos = {a: frontmatter(t) for a, t in textos.items()}
     por_tipo = plantillas(archivos, textos)
     notas = [a for a in legibles if not a.startswith(PLANTILLAS + "/")
@@ -271,6 +278,7 @@ def revisar(raiz):
         "revisadas": len(legibles),
         "plantillas": sorted(por_tipo),
         "grupos": [
+            ("Notas que no son UTF-8", no_utf8),
             ("Enlaces rotos", enlaces_rotos(raiz, archivos, carpetas, textos)),
             ("Notas fuera de su indice.md", notas_fuera_del_indice(archivos, textos, metadatos)),
             ("Frontmatter incompleto", frontmatter_incompleto(archivos, metadatos, por_tipo)
