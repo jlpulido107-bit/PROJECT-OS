@@ -257,7 +257,7 @@ describe('criterio 3: guard propio sin rama de agente', () => {
     expect((await decide(ok, { secret: 'x', agentTokenSha256: PM_HASH })).action).toBe('agent')
   })
 
-  it('AGENT_ROUTES y AGENT_OPERATIONS no cambian ni nombran finanzas', () => {
+  it('AGENT_ROUTES y AGENT_OPERATIONS no cambian ni nombran finanzas (el agente de finanzas tiene su propia lista)', () => {
     expect(AGENT_OPERATIONS).toEqual(['tarea.crear', 'tarea.editar', 'decision.crear', 'orden.crear', 'orden.aprobar'])
     for (const op of FINANZAS_OPERATIONS) expect((AGENT_OPERATIONS as readonly string[]).includes(op)).toBe(false)
     const authz = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'authz.ts'), 'utf8')
@@ -268,7 +268,15 @@ describe('criterio 3: guard propio sin rama de agente', () => {
       "  ['PATCH', /^\\/api\\/operaciones\\/(tareas|ordenes)\\/[^/]+\\/?$/],",
       ']',
     ].join('\n'))
-    expect(authz).not.toMatch(/finanzas/i)
+    expect(rutas).not.toMatch(/finanzas/i)
+    // ORD-POS-092: la única lista que nombra finanzas es la del agente de finanzas, con solo sus dos rutas POST.
+    const agente = authz.slice(authz.indexOf('const FINANZAS_AGENT_ROUTES'), authz.indexOf(']\n', authz.indexOf('const FINANZAS_AGENT_ROUTES')) + 1)
+    expect(agente).toBe([
+      "const FINANZAS_AGENT_ROUTES: Array<[method: string, path: RegExp]> = [",
+      "  ['POST', /^\\/api\\/finanzas\\/agente\\/(rendimiento|cargo-extra)\\/?$/],",
+      ']',
+    ].join('\n'))
+    expect(authz.replace(agente, '')).not.toMatch(/\/api\/finanzas/)
   })
 
   it('orden de verificaciones: sesión, lector, origen/CSRF, modo, escritor, 415, 429, JSON', async () => {

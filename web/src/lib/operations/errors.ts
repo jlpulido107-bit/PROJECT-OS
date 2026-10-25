@@ -48,6 +48,12 @@ export type OperationErrorCode =
   | 'movimiento-inexistente'
   | 'recurrente-inexistente'
   | 'recurrente-ya-confirmado'
+  | 'corte-no-cerrado'
+  | 'corte-fuera-de-plazo'
+  | 'corte-ya-registrado'
+  | 'monto-excede-tope'
+  | 'factura-no-cuadra'
+  | 'suscripcion-sin-confirmar'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -98,6 +104,12 @@ const STATUS: Record<OperationErrorCode, number> = {
   'movimiento-inexistente': 422,
   'recurrente-inexistente': 422,
   'recurrente-ya-confirmado': 409,
+  'corte-no-cerrado': 400,
+  'corte-fuera-de-plazo': 400,
+  'corte-ya-registrado': 409,
+  'monto-excede-tope': 400,
+  'factura-no-cuadra': 409,
+  'suscripcion-sin-confirmar': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -149,6 +161,12 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'movimiento-inexistente': 'El movimiento que se quiere ajustar no existe o no es un original; no se escribió nada.',
   'recurrente-inexistente': 'El recurrente no existe, tiene un problema o no está vigente en ese mes; no se escribió nada.',
   'recurrente-ya-confirmado': 'Ese recurrente ya está confirmado en ese mes; no se escribió nada.',
+  'corte-no-cerrado': 'El corte todavía no cierra (Q1 desde el día 16, Q2 desde el día 1 del mes siguiente); no se escribió nada.',
+  'corte-fuera-de-plazo': 'Solo se registran cortes del mes actual o del anterior; uno más viejo se captura a mano. No se escribió nada.',
+  'corte-ya-registrado': 'Ese corte ya está registrado con otra solicitud; no se escribió nada.',
+  'monto-excede-tope': 'El monto supera el tope de 3,000.00 USD por fila; se captura a mano. No se escribió nada.',
+  'factura-no-cuadra': 'El total de factura no cuadra con la suscripción confirmada del corte; no se escribió nada.',
+  'suscripcion-sin-confirmar': 'La suscripción de Claude cae en este corte y su recurrente no está confirmado; no se escribió nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

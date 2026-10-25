@@ -31,7 +31,7 @@ export type Tipo = (typeof TIPOS)[number]
 /** §2.3, lista cerrada. Una categoría fuera de la lista hace la fila «con problema» (§2.1). */
 export const CATEGORIAS = ['Herramientas', 'Marketplace', 'Producto', 'Marketing', 'Legal y marca', 'Ventas'] as const
 export type Categoria = (typeof CATEGORIAS)[number]
-export const FUENTES = ['manual', 'sp-api', 'anthropic', 'recurrente'] as const
+export const FUENTES = ['manual', 'sp-api', 'anthropic', 'recurrente', 'agente-finanzas'] as const
 export type Fuente = (typeof FUENTES)[number]
 
 /** `ID` de RECURRENTES (v2 §4.1): forma parte del `MOV_ID` `REC-<ID>-AAAA-MM`. */
@@ -39,13 +39,15 @@ export const RECURRENTE_ID = /^[A-Z0-9]{2,12}$/
 
 /**
  * §2.2 con la resolución (a) del PM: solo MAN- con `manual`, SPAPI- con `sp-api`, CLAUDE- con `anthropic` y, desde v2
- * §8, REC-<ID>-AAAA-MM con `recurrente`; cualquier otro prefijo, o uno que no cuadra con su FUENTE, es fila con problema.
+ * §8, REC-<ID>-AAAA-MM con `recurrente` y, desde v3 §7 (ORD-POS-092), CLAUDE-EXTRA-AAAA-MM-Q1/Q2 con `agente-finanzas`;
+ * cualquier otro prefijo, o uno que no cuadra con su FUENTE, es fila con problema.
  */
 const PREFIJOS: Record<Fuente, RegExp> = {
   manual: /^MAN-\d{4}$/,
   'sp-api': /^SPAPI-[A-Za-z0-9_.:-]+$/,
   anthropic: /^CLAUDE-\d{4}-(0[1-9]|1[0-2])$/,
   recurrente: /^REC-[A-Z0-9]{2,12}-\d{4}-(0[1-9]|1[0-2])$/,
+  'agente-finanzas': /^CLAUDE-EXTRA-\d{4}-(0[1-9]|1[0-2])-Q[12]$/,
 }
 
 /** `MOV_ID` de la confirmación de un recurrente en un mes (v2 §4.3). */
@@ -299,8 +301,8 @@ export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
     }
     if (fecha === null) columnas.push('FECHA')
     if (proyecto === null) columnas.push('PROYECTO')
-    // Un recurrente siempre es Gasto (v2 §4.1).
-    if (tipo === null || (fuente === 'recurrente' && tipo !== 'Gasto')) columnas.push('TIPO')
+    // Un recurrente y un cargo extra del agente siempre son Gasto (v2 §4.1 y v3 §7).
+    if (tipo === null || ((fuente === 'recurrente' || fuente === 'agente-finanzas') && tipo !== 'Gasto')) columnas.push('TIPO')
     if (categoria === null) columnas.push('CATEGORIA')
     if (concepto === null) columnas.push('CONCEPTO')
     // > 0 siempre; en un ajuste, distinto de 0 y con signo (v2 §8).
@@ -413,6 +415,12 @@ function originalDe(movimientos: Movimiento[]): (m: Movimiento) => Movimiento {
   }
 }
 
+/** Línea única de Claude en Herramientas: suscripción (`REC-CLAUDE-…`), `CLAUDE-…` y cargos extra (v3, ORD-POS-092). */
+export const CONCEPTO_CLAUDE = 'Claude'
+const MOV_ID_CLAUDE = /^(REC-)?CLAUDE-/
+/** Original de Claude: `MOV_ID` `CLAUDE-…`/`REC-CLAUDE-…` (incluye `CLAUDE-EXTRA-…`) o CONCEPTO con «Claude». */
+const esDeClaude = (o: Movimiento) => /\bclaude\b/i.test(o.concepto) || MOV_ID_CLAUDE.test(o.movId)
+
 export interface GastoClaudeMes {
   mes: string
   gasto: Record<Proyecto, number>
@@ -428,7 +436,7 @@ export function gastoClaudeMensual(movimientos: Movimiento[]): GastoClaudeMes[] 
   for (const m of movimientos) {
     const o = original(m)
     if (m.categoria !== 'Herramientas' || !esGasto(m)) continue
-    if (!/\bclaude\b/i.test(o.concepto) && !/^(REC-)?CLAUDE-/.test(o.movId)) continue
+    if (!esDeClaude(o)) continue
     const g = porMes.get(m.mes) ?? cero()
     g[m.proyecto] += m.centavos
     porMes.set(m.mes, g)
@@ -436,11 +444,18 @@ export function gastoClaudeMensual(movimientos: Movimiento[]): GastoClaudeMes[] 
   return [...porMes.keys()].sort().map((mes) => ({ mes, gasto: porMes.get(mes)! }))
 }
 
-/** §4.3: Herramientas por CONCEPTO y mes, total mensual, promedio de 3 meses y meses «sin registrar». */
+/**
+ * §4.3: Herramientas por CONCEPTO y mes, total mensual, promedio de 3 meses y meses «sin registrar». Lo de Claude
+ * (mismo criterio que `gastoClaudeMensual`) va en una sola línea, aunque el recurrente y el cargo extra tengan CONCEPTO
+ * distinto.
+ */
 export function costoHerramientas(movimientos: Movimiento[], meses: string[]): Omit<Herramientas, 'avisos'> {
   const enVentana = new Set(meses)
   const original = originalDe(movimientos)
-  const conceptoDe = (m: Movimiento): string => original(m).concepto
+  const conceptoDe = (m: Movimiento): string => {
+    const o = original(m)
+    return esDeClaude(o) ? CONCEPTO_CLAUDE : o.concepto
+  }
   const porConcepto = new Map<string, Map<string, number>>()
   for (const m of movimientos) {
     if (m.categoria !== 'Herramientas' || !esGasto(m) || !enVentana.has(m.mes)) continue

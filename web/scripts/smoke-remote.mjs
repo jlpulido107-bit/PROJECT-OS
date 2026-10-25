@@ -44,6 +44,7 @@ const PRIVATE_APIS = [
   '/api/operaciones/tiempos', '/api/operaciones/decisiones', '/api/operaciones/ordenes', '/api/operaciones/ordenes/ORD-POS-001',
   '/api/operaciones/ordenes/ORD-POS-001/ejecutar', '/api/operaciones/ordenes/ORD-POS-001/supervision',
   '/api/finanzas/movimientos', '/api/finanzas/recurrentes/confirmar',
+  '/api/finanzas/agente/rendimiento', '/api/finanzas/agente/cargo-extra',
 ]
 
 for (const path of PRIVATE_PAGES) {

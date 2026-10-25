@@ -13,6 +13,7 @@ decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-23. Si algo a
 | Primer revisor | Revisa a ciegas (orden, diff y contrato, sin la descripción del PR) | Sonnet | DEC-POS-008; [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
 | Segundo revisor | Solo en MEDIO, a ciegas y sin el dictamen del primero | Fable 5.1 | DEC-POS-008; [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
 | Corrector | Corrige en el mismo PR, máximo 2 rondas por orden | Opus | DEC-POS-003, DEC-POS-008; [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
+| Agente de finanzas | Por corte (días 15 y fin de mes): rendimiento de `reporte-consumo` y, con el total de factura que da el propietario, el cargo extra o el cierre «sin cargo», solo por `POST /api/finanzas/agente/…` con su token. Nunca estima, edita, borra ni registra la suscripción; inerte hasta que el propietario lo active ([/finanzas v3 §8.2](diseno-finanzas-v3.md#82-activación-solo-el-propietario-tras-aprobar-dec-pos-018-fusionar-y-desplegar-f-3)) | Claude | DEC-POS-018 (PENDIENTE); ORD-POS-092; [diseño v3](diseno-finanzas-v3.md) |
 
 Cada función corre en una sesión separada; el revisor nunca es la sesión que implementó y usa otro modelo (DEC-POS-002,
 [`AGENTS.md`](../AGENTS.md)). Sin auditor externo: ChatGPT ya no participa (DEC-POS-008).

@@ -54,7 +54,7 @@ export interface FinanzasServiceOptions {
 
 type Registro = Record<string, Celda>
 
-interface Tabla {
+export interface Tabla {
   header: string[]
   indice: Map<string, number>
   filas: unknown[][]
@@ -82,7 +82,7 @@ export function celdaTexto(v: unknown): string {
   return typeof v === 'string' ? v.trim() : String(v)
 }
 
-function tabla(rows: unknown[][], columnas: readonly string[], pestana: string): Tabla {
+export function tabla(rows: unknown[][], columnas: readonly string[], pestana: string): Tabla {
   const header = (rows[0] ?? []).map(celdaTexto)
   const indice = new Map<string, number>()
   for (const [i, name] of header.entries()) {
@@ -138,7 +138,7 @@ export function auditoriaFinanzas(t: Tabla): Auditada[] {
   })
 }
 
-function iguales(guardado: unknown, esperado: Celda): boolean {
+export function iguales(guardado: unknown, esperado: Celda): boolean {
   if (typeof esperado === 'number') {
     const n = typeof guardado === 'number' ? guardado : Number(celdaTexto(guardado))
     return celdaTexto(guardado) !== '' && Number.isFinite(n) && Math.abs(n - esperado) < 1e-9

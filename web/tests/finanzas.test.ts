@@ -334,11 +334,12 @@ describe('funciones puras de §2 y §4 (criterio 4)', () => {
     const l = leerMovimientos(MOVIMIENTOS)
     if (l.estado !== 'ok') throw new Error('lectura')
     const h = costoHerramientas(l.movimientos, ventanaMeses(NOW, '2026-07'))
-    expect(h.conceptos.map((c) => c.concepto)).toEqual(['Keepa', 'Suscripción Claude'])
-    const keepa = h.conceptos[0]!
+    // ORD-POS-092: lo de Claude (MAN- con «Claude» y CLAUDE-…) va en una sola línea.
+    expect(h.conceptos.map((c) => c.concepto)).toEqual(['Claude', 'Keepa'])
+    const keepa = h.conceptos[1]!
     expect(keepa.porMes).toEqual({ '2026-07': null, '2026-08': null, '2026-09': 25050, '2026-10': null })
     expect(keepa.sinRegistrar).toEqual(['2026-10'])
-    expect(h.conceptos[1]!.sinRegistrar).toEqual([])
+    expect(h.conceptos[0]!.sinRegistrar).toEqual([])
     expect(h.totalPorMes).toEqual({ '2026-07': 0, '2026-08': 40000, '2026-09': 65050, '2026-10': 40000 })
     expect(h.mesesPromedio).toEqual(['2026-08', '2026-09', '2026-10'])
     expect(h.promedioCentavos).toBe(48350)
@@ -490,8 +491,8 @@ describe('esquema v2 de MOVIMIENTOS (ORD-POS-076, criterio 1)', () => {
     // El ajuste suma en la columna del concepto original, en el mes de su propia FECHA.
     const h = costoHerramientas(l.movimientos, ['2026-09', '2026-10'])
     expect(h.conceptos.map((x) => [x.concepto, x.porMes])).toEqual([
+      ['Claude', { '2026-09': null, '2026-10': 38000 }],
       ['Keepa', { '2026-09': 25050, '2026-10': null }],
-      ['Suscripción Claude', { '2026-09': null, '2026-10': 38000 }],
     ])
   })
 
