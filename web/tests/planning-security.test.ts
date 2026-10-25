@@ -58,6 +58,8 @@ describe('sin escrituras ni aplicación automática', () => {
       const text = readFileSync(file, 'utf8')
       // ORD-POS-077: las rutas de finanzas solo exportan POST y siempre por su guard propio.
       if (rel.startsWith(`finanzas${path.sep}`) && /handleFinanzasWrite\(request,/.test(text)) continue
+      // ORD-POS-092: las del agente de finanzas, igual, por su guard propio con token.
+      if (rel.startsWith(`finanzas${path.sep}agente${path.sep}`) && /handleFinanzasAgente\(request,/.test(text)) continue
       expect(text, rel).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE)/)
     }
   })

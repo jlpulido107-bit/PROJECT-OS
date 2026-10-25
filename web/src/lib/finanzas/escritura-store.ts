@@ -10,7 +10,8 @@ import { MAX_DATA_ROWS } from '../schema'
  * - Nunca lee ni propaga el cuerpo de un error: solo el estado HTTP.
  */
 
-export const FINANZAS_WRITE_TABS = ['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES', 'AUDITORIA'] as const
+/** RENDIMIENTO_CLAUDE solo la escribe el agente de finanzas (ORD-POS-092, diseño v3 §3.3). */
+export const FINANZAS_WRITE_TABS = ['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES', 'AUDITORIA', 'RENDIMIENTO_CLAUDE'] as const
 export type FinanzasWriteTab = (typeof FINANZAS_WRITE_TABS)[number]
 export type Celda = string | number
 

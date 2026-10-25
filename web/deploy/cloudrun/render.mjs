@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID ni la escritura de finanzas')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas ni el agente de finanzas')
   return output.replace(marker, writeBlock)
 }
 
@@ -214,6 +214,49 @@ function finanzasEscritura(env, problems) {
     `              value: ${account}`,
     '            - name: FINANZAS_WRITER_EMAIL',
     `              value: '${writer}'`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-092, docs/diseno-finanzas-v3.md §8.1): rutas del agente de finanzas, apagadas por defecto. Las tres
+ * variables van juntas y solo las exporta el propietario:
+ * - FINANZAS_AGENTE_MODE: solo `sheets`; exige FINANZAS_SHEET_ID.
+ * - FINANZAS_AGENTE_SERVICE_ACCOUNT: cuenta exclusiva del agente, del mismo proyecto, distinta de la runtime (lectura),
+ *   de WRITE_SERVICE_ACCOUNT y de FINANZAS_WRITE_SERVICE_ACCOUNT (la del propietario).
+ * - SECRET_VERSION_FINANZAS_AGENTE: versión fijada del secreto project-os-finanzas-agente-token-sha256 (hash del token
+ *   del agente), montada como FINANZAS_AGENTE_TOKEN_SHA256; nunca el hash ni el token literal.
+ * Es independiente de WRITE_MODE y de FINANZAS_WRITE_MODE. Sin ninguna de las tres, el YAML no cambia; nunca se imprime
+ * un valor. Que el hash no sea el del PM no se puede ver aquí: lo comprueba el propietario y, en ejecución, el guard.
+ */
+function finanzasAgente(env, problems) {
+  const mode = (env.FINANZAS_AGENTE_MODE ?? '').trim()
+  const account = (env.FINANZAS_AGENTE_SERVICE_ACCOUNT ?? '').trim()
+  const version = (env.SECRET_VERSION_FINANZAS_AGENTE ?? '').trim()
+  if (!mode && !account && !version) return ''
+  const antes = problems.length
+  if (mode !== 'sheets') problems.push('FINANZAS_AGENTE_MODE solo admite sheets')
+  if (!mode || !account || !version) problems.push('FINANZAS_AGENTE_MODE, FINANZAS_AGENTE_SERVICE_ACCOUNT y SECRET_VERSION_FINANZAS_AGENTE van juntas')
+  if (!(env.FINANZAS_SHEET_ID ?? '').trim()) problems.push('FINANZAS_AGENTE_MODE exige FINANZAS_SHEET_ID')
+  if (account) {
+    if (!WRITE_SA.test(account)) problems.push('FINANZAS_AGENTE_SERVICE_ACCOUNT no tiene el formato esperado')
+    else if (account === (env.RUNTIME_SA ?? '').trim()) problems.push('FINANZAS_AGENTE_SERVICE_ACCOUNT no puede ser la cuenta runtime (lectura)')
+    else if (account === (env.WRITE_SERVICE_ACCOUNT ?? '').trim()) problems.push('FINANZAS_AGENTE_SERVICE_ACCOUNT no puede ser la cuenta de escritura de PROJECT-OS')
+    else if (account === (env.FINANZAS_WRITE_SERVICE_ACCOUNT ?? '').trim()) problems.push('FINANZAS_AGENTE_SERVICE_ACCOUNT no puede ser la cuenta de escritura del propietario en FINANZAS')
+    else if (account.split('@')[1] !== `${(env.PROJECT_ID ?? '').trim()}.iam.gserviceaccount.com`) problems.push('FINANZAS_AGENTE_SERVICE_ACCOUNT debe pertenecer a PROJECT_ID')
+  }
+  if (version && !/^[1-9][0-9]*$/.test(version)) problems.push('SECRET_VERSION_FINANZAS_AGENTE no tiene el formato esperado')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: FINANZAS_AGENTE_MODE',
+    '              value: sheets',
+    '            - name: FINANZAS_AGENTE_SERVICE_ACCOUNT',
+    `              value: ${account}`,
+    '            - name: FINANZAS_AGENTE_TOKEN_SHA256',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-finanzas-agente-token-sha256',
+    `                  key: '${version}'`,
     '',
   ].join('\n')
 }

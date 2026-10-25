@@ -1,7 +1,8 @@
 # Diseño v3 de /finanzas — registro quincenal de Claude por el agente de finanzas
 
-Orden ORD-POS-091 (tarea POS-030), riesgo BAJO. Fecha: 2026-10-25. Solo diseño: no hay código en `web/`, no se cambia
-FINANZAS, no se activa ninguna escritura, no se toca IAM ni se despliega. La construcción va en otra orden (§9). Parte de
+Orden ORD-POS-091 (tarea POS-030), riesgo MEDIO por lo que construye (dinero, permisos, escritura; DEC-POS-019).
+Fecha: 2026-10-25. El diseño no cambia FINANZAS, no activa ninguna escritura, no toca IAM ni despliega. La construcción
+es ORD-POS-092 (§9 y §11), inerte sin `FINANZAS_AGENTE_MODE`. Parte de
 la [v1](diseno-finanzas.md) (esquema y vista) y de la [v2](diseno-finanzas-v2.md) (alta del propietario, RECURRENTES,
 AUDITORIA de FINANZAS, opción C), construidas en ORD-POS-074 a 077 y 079, y de la skill
 [`reporte-consumo`](../.claude/skills/reporte-consumo/SKILL.md) (ORD-POS-088; ORD-POS-089 la amplía con «costo real» y
@@ -133,7 +134,7 @@ Mismo patrón que el PM (✅ `authz.ts` y `guard.ts`), con token, hash, rutas y 
 
 | | Pestaña nueva `RENDIMIENTO_CLAUDE` (elegida) | `TIPO` nuevo (`Rendimiento`) en MOVIMIENTOS, excluido de RESUMEN |
 | --- | --- | --- |
-| Riesgo de sumar al gasto | Ninguno por construcción: ninguna fórmula ni la vista lee la pestaña | Cada `SUMIFS` de RESUMEN y cada suma de la vista debe excluirlo; una fórmula nueva que lo olvide suma tokens como gasto (p. ej. «costo mensual de herramientas», v1 §2.5, agrupa por `CATEGORIA`) |
+| Riesgo de sumar al gasto | Ninguno por construcción: ninguna suma de gasto ni de capital la lee (solo la sección «Rendimiento de Claude (no suma)» de RESUMEN, §4.2, y la vista no la lee) | Cada `SUMIFS` de RESUMEN y cada suma de la vista debe excluirlo; una fórmula nueva que lo olvide suma tokens como gasto (p. ej. «costo mensual de herramientas», v1 §2.5, agrupa por `CATEGORIA`) |
 | Vista actual | Sin cambio (✅ lee solo sus pestañas fijas) | Hoy marca un `TIPO` desconocido como fila con problema (✅ `canonico(…, TIPOS)`); habría que cambiar `TIPOS`, `capitalUsado` y los bloques |
 | Columnas | Las del rendimiento (tokens, sesiones), sin `MONTO_MXN` | Forzaría `MONTO_MXN`, `CATEGORIA` y `COMPROBANTE`, que no aplican |
 
@@ -382,3 +383,37 @@ parte ALTO, del propietario (DEC-POS-014).
   Manager; el token, solo en el entorno del agente. Las pruebas usan valores sintéticos.
 - Sin números de factura ni datos bancarios: la `fuente` cita el total y la fecha, y el saneado los rechaza (§4.3).
 - Las sesiones se citan por ID, nunca por correo o contenido (📄 `reporte-consumo`).
+
+## 11. Construcción (ORD-POS-092)
+
+Construida F-3a (criterios 1 a 6, 8 y 9 de §9), inerte sin `FINANZAS_AGENTE_MODE`; el criterio 7 (skill y script) es la
+orden F-3b. La activación sigue siendo el runbook de §8.2, solo del propietario. Código:
+
+| Pieza | Archivo (`web/src/lib/finanzas/`) |
+| --- | --- |
+| Condiciones de §8.1 (`finanzasAgenteStatus`, con motivo) | `agente-config.ts` |
+| Guard propio (§2.3) y comparación del token | `agente-guard.ts`; proxy: `FINANZAS_AGENT_ROUTES` en `web/src/lib/authz.ts` |
+| Cuerpos, cortes, fuente y tope | `agente-validacion.ts` |
+| Idempotencia, regla de §5, auditoría y verificación | `agente-service.ts` |
+| Núcleo de la ruta, runtime y adaptador de Next | `agente-handler.ts`, `agente-runtime.ts`, `agente-http.ts` |
+| Rutas | `web/src/app/api/finanzas/agente/{rendimiento,cargo-extra}/route.ts` |
+
+Precisiones de la construcción sobre §3 a §6:
+
+- **Una sola ancla para `S`.** Si existe `REC-CLAUDE-AAAA-MM`, su `FECHA` decide en qué corte cae y su `MONTO_ORIG` en
+  USD es `S`; `DIA_COBRO` solo cuenta mientras ese REC no exista, y entonces da `suscripcion-sin-confirmar` en el corte
+  que lo contiene. Un REC fechado en el otro corte mueve la resta a ese corte: la suscripción nunca se registra como extra.
+  Comprobación mensual: suma de `T` del mes − `REC-CLAUDE` del mes = suma de `CLAUDE-EXTRA-…` del mes. Un `CLAUDE` de
+  RECURRENTES con problema, un REC duplicado o en MXN no se adivinan: 409, sin escribir.
+- **Cierre «sin cargo».** Una sola fila de AUDITORIA (`CAMPO` = `ESTADO`, `VALOR_DESPUES` = `sin-cargo`); se verifica
+  releyendo la AUDITORIA, nunca MOVIMIENTOS, y su repetición devuelve `repetida` sin roll-forward ni escritura.
+- **ORIGEN.** Analizador propio (`leerOrigenAgente`), distinto del de la escritura del propietario; `fuente` va con `%`,
+  `;` e `=` codificados, así que una cita no puede fingir otro `req=` ni otro `hash=`.
+- **Fuente.** La cita debe traer el total de factura; se rechazan correo, CLABE, tarjeta (13 a 19 dígitos), RFC, URL y lo
+  que parezca un número de factura o folio (`#`, «núm.», códigos con letras, dígitos y guion).
+- **Herramientas.** Lo de Claude (`REC-CLAUDE-…`, `CLAUDE-…`, `CLAUDE-EXTRA-…` y conceptos con «Claude») sale en una sola
+  línea «Claude» del costo de herramientas, con el mismo criterio que el gasto de Claude de `/agentes`.
+- **Despliegue.** `render.mjs` acepta `FINANZAS_AGENTE_MODE`, `FINANZAS_AGENTE_SERVICE_ACCOUNT` y
+  `SECRET_VERSION_FINANZAS_AGENTE` solo juntas y monta `FINANZAS_AGENTE_TOKEN_SHA256` desde
+  `project-os-finanzas-agente-token-sha256`; `deploy.sh --desde-activa` las conserva y `--quitar` de cualquiera de
+  `FINANZAS_AGENTE_MODE`, `FINANZAS_AGENTE_SERVICE_ACCOUNT` o `FINANZAS_AGENTE_TOKEN_SHA256` retira las tres.

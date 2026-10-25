@@ -5,7 +5,10 @@ import { allowedEmails, isEmailAllowed, isPublicPath } from './access'
 export type AuthDecision =
   | { action: 'public' }
   | { action: 'allow'; email: string }
-  /** Agente PM con token válido (ORD-POS-027): la API vuelve a verificar token, operación y campos. */
+  /**
+   * Agente PM con token válido (ORD-POS-027), o agente de finanzas con el suyo en sus rutas (ORD-POS-092): la API
+   * vuelve a verificar token, operación y campos.
+   */
   | { action: 'agent' }
   | { action: 'unauthenticated' }
   | { action: 'forbidden' }
@@ -16,10 +19,14 @@ export type AuthDecision =
  */
 export async function decide(
   req: NextRequest,
-  opts: { secret?: string; allowed?: Set<string>; agentTokenSha256?: string } = {},
+  opts: { secret?: string; allowed?: Set<string>; agentTokenSha256?: string; finanzasAgenteTokenSha256?: string } = {},
 ): Promise<AuthDecision> {
   if (isPublicPath(req.nextUrl.pathname)) return { action: 'public' }
-  if (await isAgentRequest(req, opts.agentTokenSha256 ?? process.env.PM_AGENT_TOKEN_SHA256)) return { action: 'agent' }
+  const pmHash = opts.agentTokenSha256 ?? process.env.PM_AGENT_TOKEN_SHA256
+  if (await isAgentRequest(req, pmHash, AGENT_ROUTES)) return { action: 'agent' }
+  const finanzasHash = opts.finanzasAgenteTokenSha256 ?? process.env.FINANZAS_AGENTE_TOKEN_SHA256
+  // Un hash igual al del PM dejaría entrar el token del PM a las rutas de finanzas: nunca coincide (diseño v3 §2.3).
+  if (normalHash(finanzasHash) !== normalHash(pmHash) && await isAgentRequest(req, finanzasHash, FINANZAS_AGENT_ROUTES)) return { action: 'agent' }
   const secret = opts.secret ?? process.env.NEXTAUTH_SECRET
   if (!secret) return { action: 'unauthenticated' }
   let token: Awaited<ReturnType<typeof getToken>> = null
@@ -39,6 +46,13 @@ const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
   ['PATCH', /^\/api\/operaciones\/(tareas|ordenes)\/[^/]+\/?$/],
 ]
 
+/** Únicas rutas del agente de finanzas, con su propio token (ORD-POS-092, docs/diseno-finanzas-v3.md §2.4). */
+const FINANZAS_AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
+  ['POST', /^\/api\/finanzas\/agente\/(rendimiento|cargo-extra)\/?$/],
+]
+
+const normalHash = (hash: string | undefined) => (hash ?? '').trim().toLowerCase()
+
 /** Comparación en tiempo constante de dos cadenas hex del mismo largo. */
 function sameHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false
@@ -48,13 +62,14 @@ function sameHex(a: string, b: string): boolean {
 }
 
 /**
- * Petición del agente PM: ruta y método de la lista, `Authorization: Bearer` y SHA-256 (Web Crypto) igual a
- * PM_AGENT_TOKEN_SHA256. Sin variable válida, o con cookie de sesión presente, nunca; el guard de la API repite todo.
+ * Petición de un agente: ruta y método de su lista, `Authorization: Bearer` y SHA-256 (Web Crypto) igual a su hash
+ * (PM_AGENT_TOKEN_SHA256 o FINANZAS_AGENTE_TOKEN_SHA256). Sin variable válida, o con cookie de sesión presente, nunca;
+ * el guard de la API repite todo.
  */
-async function isAgentRequest(req: NextRequest, expected: string | undefined): Promise<boolean> {
-  const hash = (expected ?? '').trim().toLowerCase()
+async function isAgentRequest(req: NextRequest, expected: string | undefined, routes: Array<[method: string, path: RegExp]>): Promise<boolean> {
+  const hash = normalHash(expected)
   if (!/^[0-9a-f]{64}$/.test(hash)) return false
-  if (!AGENT_ROUTES.some(([method, path]) => req.method === method && path.test(req.nextUrl.pathname))) return false
+  if (!routes.some(([method, path]) => req.method === method && path.test(req.nextUrl.pathname))) return false
   if (/next-auth\.session-token/.test(req.headers.get('cookie') ?? '')) return false
   const token = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1]
   if (!token) return false
