@@ -201,6 +201,9 @@ Para registrar como BORRADOR cuando se fusione la ORD-ECO-008; no se crea desde 
 
 ## 9. Preguntas abiertas
 
+> **Pipeline de productos y proveedores (ORD-POS-095):** la escritura del propietario en pestañas `PIPE_*` de RADAROS
+> se diseña aparte, en [`diseno-eco-pipeline.md`](diseno-eco-pipeline.md); esta vista de solo lectura no cambia.
+
 - ❓ Nombres exactos de la columna de ID de idea y de la puntuación final en SCORING (y del ID en UNIT_ECONOMICS):
   se leen en la construcción.
 - ❓ Columnas de `AMZ_CANDIDATOS`: las fija la ORD-ECO-008.
