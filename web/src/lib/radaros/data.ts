@@ -3,7 +3,7 @@ import 'server-only'
 import { cacheSeconds, ConfigError, radarosConfig } from '../config'
 import { createTokenProvider, type TokenProvider } from '../credentials'
 import { createSheetsReader, SheetsReadError, type SheetsErrorCode } from '../sheets-client'
-import { construirEco, ECO_TABS, type EcoVista } from './eco'
+import { construirEco, ECO_LECTURA, type EcoVista } from './eco'
 
 /**
  * Lector de RADAROS para /eco (docs/diseno-eco-radaros.md §2). Reutiliza el cliente de solo lectura (alcance
@@ -42,8 +42,8 @@ export function createEcoLoader(deps: EcoLoaderDeps = {}) {
     const fetchedAt = now()
     try {
       const reader = createSheetsReader({ spreadsheetId: id, getAccessToken, fetchImpl: deps.fetchImpl, sleep: deps.sleep })
-      // Metadatos + un batchGet solo con las pestañas de §3 que existen: como máximo 2 lecturas.
-      const raw = await reader.readTabs(ECO_TABS)
+      // Metadatos + un batchGet solo con las pestañas de §3 y las PIPE_* que existen: como máximo 2 lecturas.
+      const raw = await reader.readTabs(ECO_LECTURA)
       return { estado: 'ok', vista: construirEco(raw, fetchedAt), fetchedAt }
     } catch (error) {
       if (error instanceof SheetsReadError) {

@@ -1,6 +1,9 @@
 import { civilDateInZone, parseTimestamp } from '../dates'
-import { cellText, parseNumber } from '../parse'
-import { MAX_DATA_ROWS } from '../schema'
+import { parseNumber } from '../parse'
+import { construirPipeline, PIPE_TABS, type PipelineVista, type PipeTab } from './pipeline'
+import { leerTabla, mapear, type Bloque, type Fila } from './tabla'
+
+export type { Bloque, Fila } from './tabla'
 
 /**
  * Vista de solo lectura del motor de RADAROS (/eco, ORD-POS-067). Funciones puras sobre las filas que el lector ya
@@ -11,7 +14,9 @@ import { MAX_DATA_ROWS } from '../schema'
 /** Pestañas que lee /eco (§3). `AMZ_CANDIDATOS` no se pide: sus columnas las fija el diseño de V1.3. */
 export const ECO_TABS = ['AMZ_CORRIDAS', 'SCORING', 'AMZ_RESUMEN', 'UNIT_ECONOMICS', 'ML_TRENDS_ANALISIS_AUTO'] as const
 export type EcoTab = (typeof ECO_TABS)[number]
-export type EcoRaw = Partial<Record<EcoTab, unknown[][]>>
+export type EcoRaw = Partial<Record<EcoTab | PipeTab, unknown[][]>>
+/** Lo que pide el lector en un solo batchGet: /eco y las pestañas PIPE_* del pipeline (ORD-POS-097). */
+export const ECO_LECTURA = [...ECO_TABS, ...PIPE_TABS] as const
 
 /**
  * ❓ Por confirmar en la activación (diseño §3.2 y §9): nombre de la columna de ID de idea en SCORING y
@@ -59,54 +64,6 @@ const OBLIGATORIAS_TENDENCIAS = ['KEYWORD', 'ESTADO'] as const
 
 const MENSAJE_MAX = 200
 const CORRIDAS_RECIENTES = 8
-
-export type Fila = Record<string, string | null>
-
-export type Bloque<T> =
-  | { estado: 'ausente'; tab: string; mensaje: string }
-  | { estado: 'sin-filas'; tab: string; mensaje: string }
-  | { estado: 'columnas-faltantes'; tab: string; faltan: string[] }
-  | { estado: 'ok'; tab: string; truncado: boolean; datos: T }
-
-interface Tabla {
-  encabezados: Set<string>
-  filas: Fila[]
-}
-
-/** Filas con solo las columnas pedidas, buscadas por encabezado. Las filas vacías se ignoran. */
-function leerTabla(
-  tab: string, rows: unknown[][] | undefined, columnas: readonly string[], obligatorias: readonly string[], ausente: string,
-  sinFilas: string,
-): Bloque<Tabla> {
-  if (rows === undefined) return { estado: 'ausente', tab, mensaje: ausente }
-  const header = (rows[0] ?? []).map(cellText)
-  const indice = new Map<string, number>()
-  header.forEach((h, i) => {
-    if (h !== null && !indice.has(h)) indice.set(h, i)
-  })
-  const faltan = obligatorias.filter((c) => !indice.has(c))
-  if (faltan.length) return { estado: 'columnas-faltantes', tab, faltan }
-  // El lector pide encabezado + MAX_DATA_ROWS + 1 fila centinela.
-  const truncado = rows.length > MAX_DATA_ROWS + 1
-  const filas: Fila[] = []
-  for (const row of rows.slice(1, MAX_DATA_ROWS + 1)) {
-    const fila: Fila = {}
-    let vacia = true
-    for (const c of columnas) {
-      const i = indice.get(c)
-      const v = i === undefined ? null : cellText(row[i])
-      fila[c] = v
-      if (v !== null) vacia = false
-    }
-    if (!vacia) filas.push(fila)
-  }
-  if (filas.length === 0 && !truncado) return { estado: 'sin-filas', tab, mensaje: sinFilas }
-  return { estado: 'ok', tab, truncado, datos: { encabezados: new Set(indice.keys()), filas } }
-}
-
-function mapear<T, U>(b: Bloque<T>, f: (datos: T) => U): Bloque<U> {
-  return b.estado === 'ok' ? { ...b, datos: f(b.datos) } : b
-}
 
 const ANTES_V12 = (tab: string) => `${tab} todavía no existe: se crea en la activación de V1.2.`
 const NO_EXISTE = (tab: string) => `${tab} no existe en la hoja de RADAROS.`
@@ -252,6 +209,7 @@ export interface EcoVista {
   unitEconomics: Bloque<UnitEconomics>
   candidatos: { estado: 'pendiente'; mensaje: string }
   tendencias: Bloque<Tendencias>
+  pipeline: PipelineVista
 }
 
 /** Cada bloque resuelve su propio estado (diseño §4): un bloque con problema no impide pintar los demás. */
@@ -262,5 +220,6 @@ export function construirEco(raw: EcoRaw, now: number): EcoVista {
     unitEconomics: unitEconomics(raw.UNIT_ECONOMICS),
     candidatos: { estado: 'pendiente', mensaje: 'AMZ_CANDIDATOS: pendiente de V1.3 (sus columnas las fija el diseño de V1.3).' },
     tendencias: tendencias(raw.ML_TRENDS_ANALISIS_AUTO),
+    pipeline: construirPipeline(raw, now),
   }
 }
