@@ -33,6 +33,10 @@ Orden fijo; no explores el repositorio más allá de lo necesario.
 3. **La memoria del proyecto.** Lee `docs/brief-proyecto.md` si hace falta y existe. Si no existe, propón crearlo
    (sección 5).
 4. **GitHub.** Revisa los PRs e issues abiertos y los commits de los últimos 7 días del repositorio.
+   - **Desviaciones (revisión semanal).** En la revisión semanal de PROJECT-OS, llama a la skill
+     [`revisar-desviaciones`](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/.claude/skills/revisar-desviaciones/SKILL.md)
+     (solo lectura): hitos por vencer o vencidos, órdenes atoradas, PRs sin revisión y lo fusionado sin desplegar.
+     Usa su reporte en la parte de la mano derecha y del analista. Si la skill no existe en esta sesión, sigue sin ella.
 5. **Notas de ideas** ([reglas](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/notas.md)). Busca entre
    el directorio actual y sus hermanos (`../*`) el checkout cuyo `git -C <dir> remote get-url origin` sea exactamente
    `https://github.com/jlpulido107-bit/NOTAS` o `git@github.com:jlpulido107-bit/NOTAS`, con `.git` final opcional
