@@ -1,179 +1,52 @@
-import Link from 'next/link'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
-import { Badge, Empty, humanize, Section, Stat, StateBadge, Text } from '@/components/ui'
-import { executiveSummary, formatMinutes, projectStats } from '@/lib/aggregate'
-import { formatTimestamp } from '@/lib/dates'
+import { VistaInicio } from '@/components/inicio/inicio'
+import { Badge, humanize } from '@/components/ui'
+import { conteoOrdenes, ordenesDelFiltro } from '@/lib/agentes'
+import { githubDeAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { todayInMerida } from '@/lib/dates'
+import { getFinanzas } from '@/lib/finanzas/data'
+import { finanzasInicio, misPendientes, parseFiltroInicio, proyectosInicio, recurrentesSinConfirmar } from '@/lib/inicio'
+import { githubClient } from '@/lib/operations/dispatch'
 import { privateData } from '@/lib/page-data'
 import type { Dataset } from '@/lib/types'
 
-export default async function HomePage() {
+type Search = Record<string, string | string[] | undefined>
+
+/**
+ * Inicio (ORD-POS-090, POS-026): proyectos, pendientes del propietario, finanzas y agentes en una vista. Solo lectura:
+ * la hoja que ya lee todo el dashboard, FINANZAS con su caché y las listas de PRs de GitHub con la caché de /agentes
+ * (githubDeAgentes sin órdenes: no lee dictámenes). Cada bloque sin fuente dice «sin datos».
+ */
+export default async function HomePage({ searchParams }: { searchParams: Promise<Search> }) {
+  const params = await searchParams
   const { result } = await privateData('/')
+  if (!result.ok) return <><h1>Inicio</h1><LoadError result={result} /></>
+  const data = result.data
+  const filtro = parseFiltroInicio(params)
+  // Render por petición: hoy y el mes dependen de la fecha en Mérida (como /estado).
+  const ahora = new Date()
+  const now = ahora.getTime()
+  const hoy = todayInMerida(ahora)
+
+  const client = githubClient(process.env, { maxLlamadas: LLAMADAS_AGENTES })
+  const gh = client ? await githubDeAgentes(client, filtro, null) : null
+  const finanzas = await getFinanzas()
+  const vista = finanzas.estado === 'ok' ? finanzas.vista : null
+  const motivo = finanzas.estado === 'no-configurado' ? 'FINANZAS no está configurado en este despliegue (sin FINANZAS_SHEET_ID).' : 'No se pudo leer FINANZAS.'
+
   return (
     <>
-      <h1>Inicio ejecutivo</h1>
-      {result.ok ? <Overview data={result.data} /> : <LoadError result={result} />}
-    </>
-  )
-}
-
-function Overview({ data }: { data: Dataset }) {
-  const s = executiveSummary(data)
-  const blocked = s.bloqueos.tareasBloqueadas
-  const pendingDeps = s.bloqueos.dependenciasPendientes
-  const sync = s.ultimoSync
-
-  return (
-    <>
+      <h1>Inicio</h1>
       <Freshness data={data} />
-      <TabWarnings data={data} tabs={['PROYECTOS', 'TAREAS', 'DEPENDENCIAS', 'TIEMPOS', 'SYNC_RUNS', 'EVIDENCIAS']} />
-
-      <div className="stats" aria-label="Indicadores">
-        <Stat label="Proyectos registrados" value={s.proyectos} href="/proyectos" />
-        <Stat
-          label="Tareas abiertas"
-          value={s.tareas.abiertas}
-          href="/tareas"
-          hint={
-            s.tareas.total === null ? undefined : (
-              <>
-                de {s.tareas.total} registradas
-                {s.tareas.sinEstado ? ` · ${s.tareas.sinEstado} sin estado` : ''}
-              </>
-            )
-          }
-        />
-        <Stat
-          label="Bloqueos"
-          value={blocked === null ? null : blocked.length}
-          tone={blocked && blocked.length > 0 ? 'danger' : undefined}
-          href="/tareas?bloqueo=si"
-          hint={pendingDeps === null ? 'Dependencias no disponibles' : `${pendingDeps.length} ${pendingDeps.length === 1 ? 'dependencia' : 'dependencias'} sin resolver`}
-        />
-        <Stat
-          label="Tiempo real registrado"
-          value={
-            s.tiempos === null
-              ? null
-              : s.tiempos.minutos === null
-                ? <span className="stat-empty">Sin registros</span>
-                : formatMinutes(s.tiempos.minutos)
-          }
-          href="/capacidad"
-          hint={
-            s.tiempos === null
-              ? undefined
-              : s.tiempos.minutos === null
-                ? s.tiempos.sesiones > 0
-                  ? `${s.tiempos.sesiones} sesiones sin minutos válidos`
-                  : 'No hay sesiones en TIEMPOS'
-                : `${s.tiempos.sesiones} sesiones · esta semana: ${
-                    s.tiempos.minutosSemana === null ? 'sin registros' : formatMinutes(s.tiempos.minutosSemana)
-                  }`
-          }
-        />
-        <Stat
-          label="Última sincronización"
-          value={
-            sync === undefined ? null : sync === null ? <span className="stat-empty">Sin ejecuciones</span> : humanize(sync.estado)
-          }
-          tone={sync?.estado === 'EXITOSA' ? 'ok' : sync?.estado ? 'warn' : undefined}
-          hint={
-            sync
-              ? <>
-                  {sync.fin ? formatTimestamp(sync.fin) : sync.inicio ? formatTimestamp(sync.inicio) : 'Sin fecha'}
-                  {' · '}{sync.registrosProcesados === null ? 'registros sin dato' : `${sync.registrosProcesados} registros nuevos`}
-                  {' · '}{sync.fuente ?? 'Fuente sin registrar'}
-                </>
-              : undefined
-          }
-        />
-      </div>
-
-      <Section title="Proyectos" id="proyectos">
-        {data.proyectos.length === 0 ? (
-          <Empty>No hay proyectos registrados en la pestaña PROYECTOS.</Empty>
-        ) : (
-          <div className="table-wrap" role="region" aria-label="Tabla de proyectos" tabIndex={0}>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Proyecto</th>
-                  <th scope="col">Fase</th>
-                  <th scope="col">Estado</th>
-                  <th scope="col">Prioridad</th>
-                  <th scope="col">Tareas abiertas</th>
-                  <th scope="col">Hitos completados</th>
-                  <th scope="col">Bloqueos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.proyectos.map((p) => {
-                  const st = projectStats(p.id, data)
-                  return (
-                    <tr key={p.id}>
-                      <th scope="row">
-                        <Link href={`/proyectos/${encodeURIComponent(p.id)}`}>
-                          <span className="mono">{p.id}</span> · <Text value={p.nombre} empty="Sin nombre" />
-                        </Link>
-                      </th>
-                      <td>{humanize(p.fase)}</td>
-                      <td><StateBadge code={p.estado} /></td>
-                      <td><StateBadge code={p.prioridad} /></td>
-                      <td>{st.tareas === 0 ? <span className="muted">Sin tareas</span> : `${st.tareasAbiertas} de ${st.tareas}`}</td>
-                      <td>{st.hitos === 0 ? <span className="muted">Sin hitos</span> : `${st.hitosCompletados} de ${st.hitos}`}</td>
-                      <td>{st.tareasBloqueadas > 0 ? <Badge tone="danger">{st.tareasBloqueadas}</Badge> : st.tareas === 0 ? <span className="muted">—</span> : '0'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="muted small">No se calculan porcentajes de avance: solo conteos registrados en la hoja.</p>
-      </Section>
-
-      <Section title="Bloqueos y dependencias" id="bloqueos">
-        {blocked === null ? (
-          <Empty>La pestaña TAREAS no está disponible.</Empty>
-        ) : blocked.length === 0 ? (
-          <Empty>Ninguna tarea abierta tiene un bloqueo registrado (columna BLOQUEO vacía o estado distinto de BLOQUEADO).</Empty>
-        ) : (
-          <ul className="list">
-            {blocked.map((t) => (
-              <li key={t.id}>
-                <Link href={`/tareas?q=${encodeURIComponent(t.id)}`} className="mono">{t.id}</Link>{' '}
-                <Text value={t.titulo} empty="Sin título" /> — <strong>Bloqueo:</strong> <Text value={t.bloqueo} empty={humanize(t.estado)} />
-              </li>
-            ))}
-          </ul>
-        )}
-        {pendingDeps && pendingDeps.length > 0 ? (
-          <>
-            <h3>Dependencias activas sin resolver</h3>
-            <ul className="list">
-              {pendingDeps.map((d) => (
-                <li key={d.id}>
-                  <span className="mono">{d.tareaId}</span> depende de <span className="mono">{d.dependeDeTareaId}</span>{' '}
-                  ({humanize(d.tipo)}) — el prerrequisito no tiene estado COMPLETADO registrado.
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-      </Section>
-
-      {s.evidencias ? (
-        <Section title="Evidencias" id="evidencias" actions={<Link href="/actividad">Ver actividad</Link>}>
-          <ul className="inline-stats">
-            <li><strong>{s.evidencias['evento-observado']}</strong> eventos observados sin tarea vinculada</li>
-            <li><strong>{s.evidencias['vinculada-sin-validar']}</strong> vinculadas a tareas aún no completadas</li>
-            <li><strong>{s.evidencias['tarea-validada']}</strong> vinculadas a tareas con estado COMPLETADO</li>
-            {s.evidencias['vinculo-roto'] > 0 ? <li><strong>{s.evidencias['vinculo-roto']}</strong> con TAREA_ID inexistente</li> : null}
-          </ul>
-          <p className="muted small">Un commit o PR confirmado demuestra actividad, no que una tarea esté terminada.</p>
-        </Section>
-      ) : null}
-
+      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DECISIONES', 'ORDENES_CODEX']} />
+      <p className="muted small">Solo lectura: nada de esta página escribe en la hoja, en FINANZAS ni en GitHub.</p>
+      <VistaInicio d={{
+        filtro,
+        proyectos: proyectosInicio(data, hoy, filtro),
+        pendientes: misPendientes(data, hoy, filtro, { prs: gh?.prs ?? null, recurrentes: recurrentesSinConfirmar(vista, motivo) }),
+        finanzas: finanzasInicio(vista, motivo, now, filtro),
+        ordenes: conteoOrdenes(ordenesDelFiltro(data.ordenes, null, { proyecto: filtro, desde: null, hasta: null })),
+      }} />
       <Diagnostics data={data} />
     </>
   )
