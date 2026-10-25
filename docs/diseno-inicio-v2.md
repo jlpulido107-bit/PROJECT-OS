@@ -67,7 +67,7 @@ sin poner.
 | T3 | % CONFORME a la primera | De las órdenes cerradas con fusión confirmada en la semana, % sin ninguna ronda de corrección (§3.2) | Flujo | AUDITORIA: `eventosOrdenes` (✅ `cierre`, `rondas`) | `apagada` sin AUDITORIA; `sin-datos` si ninguna orden se cerró en la semana (no es 0 % ni 100 %) |
 | T4 | Hitos en riesgo | Hitos abiertos del filtro vencidos o que vencen en 7 días o menos (✅ `proyectosInicio` y `marcaDe`, `DIAS_PROXIMO`) | `sin-datos` en la v1 (§3.3) | Hoja: `HITOS.FECHA_OBJETIVO`, `HITOS.ESTADO`; avance de `TAREAS` | `sin-datos` si HITOS o TAREAS no son válidas |
 | T5 | Gasto de Claude del mes | Gasto + Inversión de Claude del mes en curso, ECO + POS o el del filtro (✅ `finanzasInicio().claude.registradoCentavos`, `gastoClaudeMensual`) | Existencia: acumulado del mes a hoy contra el acumulado del mes de hoy − 7 a esa fecha (§3.4) | FINANZAS: `MOVIMIENTOS` (Herramientas, Claude), incluido el recurrente `REC-CLAUDE-AAAA-MM` confirmado | `apagada` sin `FINANZAS_SHEET_ID`; `sin-datos` con FINANZAS ilegible o filtro fuera de ECO y POS |
-| T6 | Rendimiento en tokens | Último corte cerrado: `COSTO_EQUIV_USD` ÷ (suscripción + cargos extra del mes, en USD); con él, el consumo equivalente del corte | Contra el corte anterior (§3.5) | FINANZAS: `RENDIMIENTO_CLAUDE` (📄 [v3 §3.3 y §4.2](diseno-finanzas-v3.md#33-dónde-vive-el-rendimiento-pestaña-nueva-rendimiento_claude)) y la sección «Rendimiento de Claude (no suma)» de RESUMEN | `apagada` mientras la pestaña no exista o el agente de finanzas no esté activo; `sin-datos` sin cortes registrados |
+| T6 | Rendimiento en tokens | Último mes completo (Q1 y Q2 cerrados), con el cociente de 📄 v3 §4.2: suma de `COSTO_EQUIV_USD` de los cortes del mes ÷ (suscripción + cargos extra del mes, en USD); al lado, sin dividir, el consumo equivalente del último corte cerrado | Contra el mes completo anterior (§3.5) | FINANZAS: `RENDIMIENTO_CLAUDE` (📄 [v3 §3.3 y §4.2](diseno-finanzas-v3.md#33-dónde-vive-el-rendimiento-pestaña-nueva-rendimiento_claude)) y la sección «Rendimiento de Claude (no suma)» de RESUMEN | `apagada` mientras la pestaña no exista o el agente de finanzas no esté activo; `sin-datos` sin un mes con sus dos cortes registrados |
 
 ### 3.1 T1: reconstruir las abiertas a hoy − 7
 
@@ -105,12 +105,22 @@ La vista de FINANZAS agrupa por mes y no guarda el día (✅ `Movimiento.mes`), 
 hoja) para sumar «hasta el día X». Si hoy − 7 cae en el mes anterior, la tendencia compara con ese mes a esa fecha y la
 tarjeta nombra el mes. Es dinero real: un solo cargo grande (la suscripción) mueve la tendencia de golpe, y es correcto.
 
-### 3.5 T6: por qué la tendencia es por corte
+### 3.5 T6: por qué el valor y la tendencia son por mes
 
 `RENDIMIENTO_CLAUDE` tiene una fila por corte quincenal (📄 v3 §3.1: Q1 días 1 a 15, Q2 del 16 al fin de mes) y no tiene
-detalle diario. Comparar contra «la semana anterior» obligaría a repartir un corte entre semanas, es decir, a inventar.
-La tendencia de T6 es **último corte cerrado contra el anterior**, y la tarjeta lo dice («vs Q1 de octubre»). Es la única
-tarjeta que se aparta de la ventana de §2.2, y solo porque la fuente es quincenal. El consumo equivalente **no es gasto**
+detalle diario. El rendimiento, en cambio, es **mensual**: 📄 v3 §4.2 lo define como el `COSTO_EQUIV_USD` del mes ÷
+(suscripción + cargos extra del mes, en USD), la fórmula de la sección «Rendimiento de Claude (no suma)» de RESUMEN. T6
+usa ese mismo cociente y nunca divide un solo corte entre el costo del mes: con solo Q1 cerrado, el numerador cubriría
+medio mes contra el costo del mes completo (y el cargo extra del mes puede no estar registrado aún), lo que subestimaría
+el rendimiento a la mitad. Por eso:
+
+- **Valor:** el rendimiento del **último mes completo**, con sus dos cortes registrados; coincide con RESUMEN para ese
+  mes. Un mes con un solo corte no se toma como completo.
+- **Contexto, sin cociente:** el `COSTO_EQUIV_USD` del último corte cerrado («Q1 de octubre: N USD equivalentes»),
+  para ver el mes en curso sin inventar su rendimiento.
+- **Tendencia:** **mes completo contra el mes completo anterior**, y la tarjeta lo dice («vs septiembre»). Comparar
+  contra «la semana anterior» obligaría a repartir un corte entre semanas, es decir, a inventar. Es la única tarjeta que
+  se aparta de la ventana de §2.2, y solo porque la fuente es quincenal y la fórmula, mensual. El consumo equivalente **no es gasto**
 y la tarjeta nunca lo suma a T5 (📄 v3 §1 y la nota obligatoria de `reporte-consumo`).
 
 Hoy la vista de FINANZAS no lee `RENDIMIENTO_CLAUDE` (📄 v3 §3.3: «la vista no la lee»). La orden I-2 (§7) añade esa
@@ -133,7 +143,7 @@ lectura, solo lectura y fuera de toda suma de gasto o capital.
 | | |
 | --- | --- |
 | Qué | Por corte (los últimos 4), barras del consumo equivalente en USD por rol (Implementador, Primer revisor, Segundo revisor, Corrector, PM, Ideas, Planeación, otro) y modelo; al lado, el costo real del mes (suscripción + cargos extra) como referencia, en otra escala |
-| Cálculo | Suma por rol y modelo; el rendimiento de DEC-POS-018 (📄 v3 §4.2) es el mismo cociente de T6. Los roles son los canónicos de `reporte-consumo` (§2 de la skill) y de [operación](operacion.md) |
+| Cálculo | Suma por rol y modelo; el rendimiento de DEC-POS-018 (📄 v3 §4.2) es el cociente mensual de T6 y G2 no lo recalcula por corte: el costo real del mes va solo como referencia, sin dividir. Los roles son los canónicos de `reporte-consumo` (§2 de la skill) y de [operación](operacion.md) |
 | Fuente | FINANZAS: pestaña nueva `RENDIMIENTO_CLAUDE_ROL` (§4.1). Hoy **no existe**: `RENDIMIENTO_CLAUDE` solo guarda el total del corte (📄 v3 §4.2) y el desglose por rol vive solo en el reporte de la sesión de `reporte-consumo` |
 | Estados | `apagada` mientras `RENDIMIENTO_CLAUDE_ROL` no exista (la v1 del tablero nace así); `sin-datos` si existe sin filas del periodo; las sesiones sin `cost_usd` se muestran como «N sin dato», nunca como 0 (📄 `reporte-consumo` §1) |
 
@@ -204,7 +214,7 @@ Para registrar como BORRADOR; no se crean desde esta orden.
 
 - **Por qué BAJO:** solo lectura de una pestaña que ya construyó la ORD-POS-092; sin la pestaña, `apagada`.
 - **Criterios:** la vista de FINANZAS lee `RENDIMIENTO_CLAUDE` en un bloque propio que ninguna suma de gasto ni capital
-  usa (prueba de que los totales no cambian con filas de rendimiento); T6 con tendencia por corte (§3.5); estados
+  usa (prueba de que los totales no cambian con filas de rendimiento); T6 con el cociente mensual de v3 §4.2 y tendencia por mes (§3.5), con la prueba de que un mes con solo Q1 no se toma como completo ni se divide entre el costo del mes; estados
   `apagada` sin pestaña y `sin-datos` sin cortes.
 - **Depende de:** que el propietario active el agente de finanzas (📄 v3 §8.2) para que haya filas; se puede construir
   antes, inerte.
