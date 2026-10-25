@@ -351,7 +351,7 @@ describe('funciones puras de §2 y §4 (criterio 4)', () => {
     const p = pylPorProducto(l.movimientos)
     expect(p.productos).toEqual([{ productoId: 'EC-004', ingresoCentavos: 150000, gastoCentavos: 12025, inversionCentavos: 300000, resultadoCentavos: -162025 }])
     expect(p.sinProducto).toMatchObject({ productoId: null, ingresoCentavos: 0, inversionCentavos: 0, gastoCentavos: 345080 })
-    const soloProducto: Movimiento[] = [{ movId: 'MAN-0001', mes: '2026-10', proyecto: 'ECO', tipo: 'Ingreso', categoria: 'Ventas', concepto: 'x', productoId: 'EC-001', centavos: 100, ajusteDe: null }]
+    const soloProducto: Movimiento[] = [{ movId: 'MAN-0001', fecha: '2026-10-01', mes: '2026-10', proyecto: 'ECO', tipo: 'Ingreso', categoria: 'Ventas', concepto: 'x', productoId: 'EC-001', centavos: 100, ajusteDe: null }]
     expect(pylPorProducto(soloProducto).sinProducto).toBeNull()
   })
 

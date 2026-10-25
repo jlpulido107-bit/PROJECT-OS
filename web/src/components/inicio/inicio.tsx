@@ -185,10 +185,12 @@ function BloqueFinanzas({ f }: { f: FinanzasInicio }) {
   )
 }
 
-export function VistaInicio({ d }: { d: DatosInicio }) {
+/** `tablero`: la franja de Inicio v2 (ORD-POS-096), entre el filtro y los bloques de siempre. */
+export function VistaInicio({ d, tablero }: { d: DatosInicio; tablero?: ReactNode }) {
   return (
     <>
       <FiltroInicio filtro={d.filtro} />
+      {tablero}
       <Section title="Proyectos" id="proyectos" actions={<Link href="/estado">Ver estado →</Link>}>
         <Tarjeta indicador={d.proyectos}>{(p) => <BloqueProyectos proyectos={p} />}</Tarjeta>
       </Section>

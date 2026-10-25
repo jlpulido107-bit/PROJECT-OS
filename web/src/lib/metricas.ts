@@ -29,6 +29,8 @@ export interface EventosOrden {
   /** Primer envío (`orden.enviar` → ENVIADA) en AUDITORIA, o null (ORD-POS-078). */
   enviadaMs: number | null
   cierre: Cierre | null
+  /** Última cancelación (`orden.cancelar` → CANCELADA) si la orden sigue CANCELADA en la hoja, o null (ORD-POS-096). */
+  canceladaMs: number | null
   rondas: number
 }
 
@@ -97,11 +99,13 @@ export function eventosOrdenes(ordenes: Orden[], audit: TableView): EventosOrden
     const cierre: Cierre | null = tCierre && o.estado === 'CERRADA'
       ? { epochMs: tCierre.epochMs, fecha: tCierre.date, fusion: ultimoCierre!.operacion === 'orden.cerrar_fusionado' ? 'confirmada' : 'sin-confirmar' }
       : null
+    const ultimaCancelacion = propias.filter((op) => op.operacion === 'orden.cancelar' && op.fields.get('ESTADO')?.despues === 'CANCELADA').at(-1)
+    const canceladaMs = ultimaCancelacion && o.estado === 'CANCELADA' ? fecha(ultimaCancelacion.order)?.epochMs ?? null : null
     const claves = new Set(propias
       .filter((op) => op.operacion === 'orden.corregir_lanzar' && op.fields.get('SESION')?.despues)
       .map((op) => op.fields.get('CLAVE')?.despues || op.requestId))
     return { id: o.id, riesgo: riesgoDe(o.riesgo), creadaMs: alta ? fecha(alta.order)?.epochMs ?? null : null,
-      enviadaMs: envio ? fecha(envio.order)?.epochMs ?? null : null, cierre, rondas: claves.size }
+      enviadaMs: envio ? fecha(envio.order)?.epochMs ?? null : null, cierre, canceladaMs, rondas: claves.size }
   })
 }
 

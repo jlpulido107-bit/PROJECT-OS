@@ -393,7 +393,7 @@ describe('mapa de lanzamientos', () => {
 
 describe('gasto mensual en Claude', () => {
   const mov = (movId: string, mes: string, proyecto: 'ECO' | 'POS', concepto: string, pesos: number, extra: Partial<Movimiento> = {}): Movimiento => ({
-    movId, mes, proyecto, tipo: 'Gasto', categoria: 'Herramientas', concepto, productoId: null, centavos: pesos * 100, ajusteDe: null, ...extra,
+    movId, fecha: `${mes}-01`, mes, proyecto, tipo: 'Gasto', categoria: 'Herramientas', concepto, productoId: null, centavos: pesos * 100, ajusteDe: null, ...extra,
   })
 
   it('gastoClaudeMensual: Herramientas de Claude por concepto o MOV_ID, con ajustes, sin otras herramientas', () => {
