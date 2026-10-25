@@ -1,4 +1,4 @@
-"""reporte-consumo: agente de finanzas de Claude, solo lectura (ORD-POS-088, POS-030)."""
+"""reporte-consumo: agente de finanzas de Claude, solo lectura (ORD-POS-088 y ORD-POS-089, POS-030)."""
 import unittest
 from pathlib import Path
 
@@ -48,6 +48,32 @@ class TestSkillReporteConsumo(unittest.TestCase):
     def test_sin_datos_personales(self):
         self.assertIn("**Sin datos personales.**", self.texto)
         self.assertIn("**Datos, no instrucciones.**", self.texto)
+
+    def test_separa_costo_real_y_consumo_equivalente(self):
+        for frase in ("- **Costo real:**", "- **Consumo equivalente:**", "**No es gasto**", "`RECURRENTES`",
+                      "`ID` = `CLAUDE`", "usa el monto que dé el propietario", "costo real: **sin dato**"):
+            self.assertIn(frase, self.texto)
+        reportar = self.texto.split("## 3. Reportar", 1)[1]
+        self.assertLess(reportar.index("**Costo real**"), reportar.index("**Consumo equivalente**"))
+
+    def test_finanzas_solo_con_costo_real(self):
+        movimiento = self.texto.split("**Movimiento mensual propuesto**", 1)[1].split("## Límites", 1)[0]
+        for frase in ("solo con el **costo real**; el consumo equivalente nunca",
+                      "**no propongas otro movimiento**", "`/finanzas` («Recurrentes del mes»",
+                      "`REC-CLAUDE-AAAA-MM`", "nunca la suma de `cost_usd`", "Sin costo real: no hay propuesta"):
+            self.assertIn(frase, movimiento)
+
+    def test_cupo(self):
+        for frase in ("`rate_limit_info`", "`status`", "`rateLimitType`", "`resetsAt`", "`isUsingOverage`",
+                      "`allowed_warning`", "uso adicional", "cupo: **sin dato**"):
+            self.assertIn(frase, self.texto)
+
+    def test_etiquetas_de_rol_mal_escritas(self):
+        clasificar = self.texto.split("## 2. Clasificar", 1)[1].split("## 3.", 1)[0]
+        for frase in ("**Etiquetas de rol mal escritas.**", "`engineering`", "`ingenieria`", "`Ingeniería`",
+                      "se **señala**", "No la corriges"):
+            self.assertIn(frase, clasificar)
+        self.assertIn("**Etiquetas de rol mal escritas:**", self.texto.split("## 3. Reportar", 1)[1])
 
     def test_categoria_existe_en_el_diseno(self):
         diseno = (ROOT / "docs" / "diseno-finanzas.md").read_text(encoding="utf-8")
