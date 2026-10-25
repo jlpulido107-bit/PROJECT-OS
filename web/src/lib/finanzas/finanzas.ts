@@ -62,6 +62,8 @@ const MESES_PROMEDIO = 3
 
 export interface Movimiento {
   movId: string
+  /** FECHA de la fila (AAAA-MM-DD), para acumulados «hasta el día X» (ORD-POS-096); no cambia el esquema de la hoja. */
+  fecha: string
   mes: string // AAAA-MM
   proyecto: Proyecto
   tipo: Tipo
@@ -148,6 +150,8 @@ export interface FinanzasVista {
   recurrentes: Bloque<RecurrentesMes>
   /** Gasto mensual en Claude (ORD-POS-078, /agentes). */
   claude: Bloque<GastoClaudeMes[]>
+  /** El mismo gasto en Claude por FECHA, para la tendencia de Inicio (ORD-POS-096, T5). */
+  claudeDiario: Bloque<GastoClaudeDia[]>
   problemas: FilaProblema[]
   movimientosValidos: number
   /** Movimientos originales (no ajustes) que «Ajustar» puede referir (v2 §3.4, ORD-POS-077). */
@@ -313,7 +317,7 @@ export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
     if (ajusteDe !== null && (fuente !== 'manual' || ajusteDe === movId)) columnas.push('AJUSTE_DE')
     const mov = columnas.length === 0
       ? {
-          mes: fecha!.slice(0, 7), proyecto: proyecto!, tipo: tipo!, categoria: categoria!, concepto: concepto!,
+          fecha: fecha!, mes: fecha!.slice(0, 7), proyecto: proyecto!, tipo: tipo!, categoria: categoria!, concepto: concepto!,
           productoId: texto(celda('PRODUCTO_ID')), centavos: Math.round(monto! * 100), ajusteDe,
         }
       : null
@@ -431,17 +435,31 @@ export interface GastoClaudeMes {
  * (CONCEPTO con «Claude», o `MOV_ID` `CLAUDE-…` o `REC-CLAUDE-…`, §2.3 y v2 §4.4), por mes y proyecto, de todos los meses.
  */
 export function gastoClaudeMensual(movimientos: Movimiento[]): GastoClaudeMes[] {
+  return gastoClaudePor(movimientos, (m) => m.mes).map(([mes, gasto]) => ({ mes, gasto }))
+}
+
+export interface GastoClaudeDia {
+  fecha: string
+  gasto: Record<Proyecto, number>
+}
+
+/** Lo mismo que `gastoClaudeMensual`, por FECHA de cada fila (ORD-POS-096): un ajuste cuenta en su propia fecha. */
+export function gastoClaudeDiario(movimientos: Movimiento[]): GastoClaudeDia[] {
+  return gastoClaudePor(movimientos, (m) => m.fecha).map(([fecha, gasto]) => ({ fecha, gasto }))
+}
+
+function gastoClaudePor(movimientos: Movimiento[], clave: (m: Movimiento) => string): Array<[string, Record<Proyecto, number>]> {
   const original = originalDe(movimientos)
-  const porMes = new Map<string, Record<Proyecto, number>>()
+  const grupos = new Map<string, Record<Proyecto, number>>()
   for (const m of movimientos) {
     const o = original(m)
     if (m.categoria !== 'Herramientas' || !esGasto(m)) continue
     if (!esDeClaude(o)) continue
-    const g = porMes.get(m.mes) ?? cero()
+    const g = grupos.get(clave(m)) ?? cero()
     g[m.proyecto] += m.centavos
-    porMes.set(m.mes, g)
+    grupos.set(clave(m), g)
   }
-  return [...porMes.keys()].sort().map((mes) => ({ mes, gasto: porMes.get(mes)! }))
+  return [...grupos.keys()].sort().map((k) => [k, grupos.get(k)!])
 }
 
 /**
@@ -702,7 +720,7 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
   if (lectura.estado === 'no-disponible') {
     const b = { estado: 'no-disponible', mensaje: lectura.mensaje } as const
     return {
-      capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, claude: b, problemas: [], movimientosValidos: 0, ajustables: [],
+      capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, claude: b, claudeDiario: b, problemas: [], movimientosValidos: 0, ajustables: [],
       tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
     }
   }
@@ -727,8 +745,9 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
   const claude: Bloque<GastoClaudeMes[]> = vacio ? vacioBloque
     : claudeMeses.length === 0 ? { estado: 'vacio', mensaje: 'Sin filas de Claude en Herramientas.' }
     : { estado: 'ok', datos: claudeMeses }
+  const claudeDiario: Bloque<GastoClaudeDia[]> = claude.estado === 'ok' ? { estado: 'ok', datos: gastoClaudeDiario(movimientos) } : claude
   return {
-    capital, mensual, herramientas, pyl, recurrentes, claude, problemas, movimientosValidos: movimientos.length,
+    capital, mensual, herramientas, pyl, recurrentes, claude, claudeDiario, problemas, movimientosValidos: movimientos.length,
     ajustables: ajustablesDe(movimientos), tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
   }
 }

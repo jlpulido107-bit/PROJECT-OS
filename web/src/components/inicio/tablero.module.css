@@ -1,0 +1,13 @@
+/* Tablero de operación de Inicio v2 (ORD-POS-096): tarjetas con tendencia y barras de G1 en CSS, sin dependencias. */
+.tarjeta { min-height: 7.5rem; }
+.tendencia { font-size: 0.8rem; color: var(--muted); }
+.estado { font-size: 1.1rem; font-weight: 600; color: var(--muted); }
+.motivo { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.barras { display: flex; align-items: flex-end; gap: 2px; height: 6rem; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.columna { flex: 1 1 0; display: flex; flex-direction: column-reverse; min-width: 4px; height: 100%; }
+.ORDENES_CODEX { background: var(--accent); }
+.TAREAS { background: color-mix(in srgb, var(--accent) 60%, var(--surface)); }
+.DECISIONES { background: color-mix(in srgb, var(--accent) 35%, var(--surface)); }
+.TIEMPOS { background: color-mix(in srgb, var(--accent) 15%, var(--surface)); border: 1px solid var(--border); }
+.leyenda { display: flex; flex-wrap: wrap; gap: 4px 14px; list-style: none; padding: 0; margin: 0.5rem 0; font-size: 0.8rem; }
+.muestra { display: inline-block; width: 0.8rem; height: 0.8rem; margin-right: 4px; vertical-align: middle; }

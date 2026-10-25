@@ -1,11 +1,15 @@
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
 import { VistaInicio } from '@/components/inicio/inicio'
+import { TableroInicio } from '@/components/inicio/tablero'
 import { Badge, humanize } from '@/components/ui'
 import { conteoOrdenes, ordenesDelFiltro } from '@/lib/agentes'
 import { githubDeAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { leerAuditoria } from '@/lib/auditoria'
 import { todayInMerida } from '@/lib/dates'
 import { getFinanzas } from '@/lib/finanzas/data'
 import { finanzasInicio, misPendientes, parseFiltroInicio, proyectosInicio, recurrentesSinConfirmar } from '@/lib/inicio'
+import { tablero, type FuenteFinanzas } from '@/lib/inicio-tablero'
+import { eventosOrdenes } from '@/lib/metricas'
 import { githubClient } from '@/lib/operations/dispatch'
 import { privateData } from '@/lib/page-data'
 import type { Dataset } from '@/lib/types'
@@ -16,10 +20,12 @@ type Search = Record<string, string | string[] | undefined>
  * Inicio (ORD-POS-090, POS-026): proyectos, pendientes del propietario, finanzas y agentes en una vista. Solo lectura:
  * la hoja que ya lee todo el dashboard, FINANZAS con su caché y las listas de PRs de GitHub con la caché de /agentes
  * (githubDeAgentes sin órdenes: no lee dictámenes). Cada bloque sin fuente dice «sin datos».
+ * El tablero de Inicio v2 (ORD-POS-096) reusa esas mismas lecturas y AUDITORIA con la caché compartida con /metricas y
+ * /agentes (lib/auditoria.ts, solo para escritores): ninguna llamada nueva a GitHub.
  */
 export default async function HomePage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams
-  const { result } = await privateData('/')
+  const { user, result } = await privateData('/')
   if (!result.ok) return <><h1>Inicio</h1><LoadError result={result} /></>
   const data = result.data
   const filtro = parseFiltroInicio(params)
@@ -33,6 +39,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const finanzas = await getFinanzas()
   const vista = finanzas.estado === 'ok' ? finanzas.vista : null
   const motivo = finanzas.estado === 'no-configurado' ? 'FINANZAS no está configurado en este despliegue (sin FINANZAS_SHEET_ID).' : 'No se pudo leer FINANZAS.'
+  const audit = await leerAuditoria(user.email)
+  const proyectos = proyectosInicio(data, hoy, filtro)
+  const fuenteFinanzas: FuenteFinanzas = finanzas.estado === 'ok' ? { estado: 'ok', vista: finanzas.vista }
+    : finanzas.estado === 'no-configurado' ? { estado: 'no-configurado' } : { estado: 'error', motivo }
+  const t = tablero({
+    ds: data, hoy, now, filtro, proyectos, gh, finanzas: fuenteFinanzas, audit,
+    eventos: audit.estado === 'ok' ? { estado: 'ok', datos: eventosOrdenes(data.ordenes, audit.datos) } : audit,
+  })
 
   return (
     <>
@@ -40,9 +54,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <Freshness data={data} />
       <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DECISIONES', 'ORDENES_CODEX']} />
       <p className="muted small">Solo lectura: nada de esta página escribe en la hoja, en FINANZAS ni en GitHub.</p>
-      <VistaInicio d={{
+      <VistaInicio tablero={<TableroInicio t={t} />} d={{
         filtro,
-        proyectos: proyectosInicio(data, hoy, filtro),
+        proyectos,
         pendientes: misPendientes(data, hoy, filtro, { prs: gh?.prs ?? null, recurrentes: recurrentesSinConfirmar(vista, motivo) }),
         finanzas: finanzasInicio(vista, motivo, now, filtro),
         ordenes: conteoOrdenes(ordenesDelFiltro(data.ordenes, null, { proyecto: filtro, desde: null, hasta: null })),

@@ -1,18 +1,15 @@
 import type { Metadata } from 'next'
 import { VistaAgentes } from '@/components/agentes/agentes'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
-import { writeAccess } from '@/components/operations/write-access'
 import {
   conteoOrdenes, dictamenesPorOrden, gastoClaude, mapaLanzamientos, ordenesDelFiltro, parseFiltroAgentes, tiempoAFusion,
   type FuenteClaude,
 } from '@/lib/agentes'
 import { githubDeAgentes, LIMITE_GLOBAL_MS, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { leerAuditoria } from '@/lib/auditoria'
 import { getFinanzas } from '@/lib/finanzas/data'
 import { eventosOrdenes } from '@/lib/metricas'
-import { WRITE_HEADERS } from '@/lib/operations/constants'
 import { githubClient } from '@/lib/operations/dispatch'
-import { auditTable } from '@/lib/operations/runtime'
-import { InMemoryTableStore, readView, type TableView } from '@/lib/operations/table-store'
 import { privateData } from '@/lib/page-data'
 
 export const metadata: Metadata = { title: 'Agentes' }
@@ -32,15 +29,10 @@ export default async function AgentesPage({ searchParams }: { searchParams: Prom
   const data = result.data
   const filtro = parseFiltroAgentes(params)
 
-  let audit: TableView | null = null
-  if (writeAccess(user.email).allowed) {
-    try {
-      const rows = await auditTable()
-      if (rows) audit = await readView(new InMemoryTableStore({ AUDITORIA: rows.length ? rows : [[...WRITE_HEADERS.AUDITORIA]] }), 'AUDITORIA')
-    } catch {
-      console.warn('[project-os] /agentes: no se pudo leer AUDITORIA')
-    }
-  }
+  // AUDITORIA con la caché compartida con Inicio y /metricas (ORD-POS-096).
+  const lectura = await leerAuditoria(user.email)
+  if (lectura.estado === 'sin-datos') console.warn('[project-os] /agentes: no se pudo leer AUDITORIA')
+  const audit = lectura.estado === 'ok' ? lectura.datos : null
   const eventos = audit ? eventosOrdenes(data.ordenes, audit) : null
   const base = ordenesDelFiltro(data.ordenes, eventos, filtro)
 
