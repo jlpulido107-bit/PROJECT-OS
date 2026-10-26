@@ -1,5 +1,5 @@
 import { extraerCriterios } from './criterios'
-import { politicaDeRepo, repoSinCi } from './politica'
+import { esFamiliaClaude, FAMILIA_IMPLEMENTADOR, familiaModelo, ordenSensible, politicaDeRepo, repoSinCi } from './politica'
 import { validarReporte, type ReporteRevision } from './report'
 import type { Veredicto } from './types'
 
@@ -52,8 +52,17 @@ export interface EvaluacionDictamen {
   ciDetectada?: true
 }
 
-export interface OrdenDictamen { id: string; riesgo: string | null; criterios: string | null }
+export interface OrdenDictamen {
+  id: string; riesgo: string | null; criterios: string | null
+  /** Columna SENSIBLE de ORDENES_CODEX (DEC-POS-019). Ausente o vacía = sensible (ordenSensible). */
+  sensible?: string | null
+}
 export interface PrDictamen { repo: string; numero: number }
+/**
+ * Bandera del propietario (DEC-POS-014): sin `geminiSupervisado`, un SEGUNDO de origen gemini-supervisado no cuenta
+ * (como si no hubiera SEGUNDO). Los llamadores la toman de segundoGeminiSupervisado (operations/config.ts).
+ */
+export interface OpcionesDictamen { geminiSupervisado?: boolean }
 
 interface Valido { indice: number; id: number; reporte: ReporteRevision }
 
@@ -75,7 +84,29 @@ function leer(body: string, orden: OrdenDictamen, pr: PrDictamen, ciRequerida = 
   }
 }
 
-function siguientePaso(vigentes: Valido[], riesgo: string | null): { elegido: Valido | null; texto: string } {
+/**
+ * SEGUNDO que cuenta como otro modelo frente al PRIMERO o DELTA `p` (DEC-POS-022). Se compara por familia de modelo
+ * (familiaModelo); el firmante siempre es un modelo de Claude reconocido.
+ * - Origen `claude` (o sin origen): la familia del firmante distinta de la de `p`.
+ * - Origen `gemini-supervisado`: solo con la bandera del propietario; la de `modeloHallazgos` (Gemini) distinta de la
+ *   de `p`, y el firmante no es de la familia del implementador.
+ * El PRIMERO o DELTA `p` también tiene que ser de una familia de Claude reconocida.
+ */
+function segundoDeOtroModelo(s: ReporteRevision, p: ReporteRevision, opciones: OpcionesDictamen): boolean {
+  if (s.rol !== 'SEGUNDO') return false
+  const firmante = familiaModelo(s.modelo)
+  const revisor = familiaModelo(p.modelo)
+  if (!esFamiliaClaude(firmante) || !esFamiliaClaude(revisor)) return false
+  if (s.origenSegundo === 'gemini-supervisado') {
+    if (opciones.geminiSupervisado !== true) return false
+    const hallazgos = familiaModelo(s.modeloHallazgos)
+    return hallazgos === 'gemini' && hallazgos !== revisor && firmante !== FAMILIA_IMPLEMENTADOR
+  }
+  return firmante !== revisor
+}
+
+function siguientePaso(vigentes: Valido[], orden: OrdenDictamen, opciones: OpcionesDictamen): { elegido: Valido | null; texto: string } {
+  const { riesgo } = orden
   const ultimo = (v: Veredicto) => vigentes.filter((x) => x.reporte.veredicto === v).at(-1) ?? null
   const cambios = ultimo('CAMBIOS')
   if (cambios) {
@@ -87,13 +118,13 @@ function siguientePaso(vigentes: Valido[], riesgo: string | null): { elegido: Va
   const conforme = ultimo('CONFORME')
   if (!conforme) return { elegido: null, texto: 'Lanzar revisión' }
   if (riesgo === 'ALTO') return { elegido: conforme, texto: 'Escala al propietario' }
-  // MEDIO (y todo riesgo no reconocido, por prudencia): un CONFORME PRIMERO o DELTA y otro SEGUNDO de otro modelo,
-  // ambos de contrato v2 sobre el mismo head. Los de v1 (sin rol ni modelo) no cuentan como segundo revisor.
   const conformes = vigentes.filter((x) => x.reporte.veredicto === 'CONFORME')
-  const modelo = (x: Valido) => x.reporte.modelo?.toLowerCase()
-  const dobleRevision = conformes.some((p) =>
-    (p.reporte.rol === 'PRIMERO' || p.reporte.rol === 'DELTA') &&
-    conformes.some((s) => s.reporte.rol === 'SEGUNDO' && modelo(s) !== undefined && modelo(s) !== modelo(p)))
+  const primeros = conformes.filter((p) => p.reporte.rol === 'PRIMERO' || p.reporte.rol === 'DELTA')
+  // DEC-POS-019: MEDIO no sensible (SENSIBLE = NO) queda listo con un CONFORME PRIMERO o DELTA de contrato v2.
+  if (riesgo === 'MEDIO' && !ordenSensible(orden.sensible) && primeros.length > 0) return { elegido: conforme, texto: LISTO_PARA_DECISION }
+  // MEDIO sensible (y todo riesgo no reconocido, por prudencia): un CONFORME PRIMERO o DELTA y otro SEGUNDO de otro
+  // modelo, ambos de contrato v2 sobre el mismo head. Los de v1 (sin rol ni modelo) no cuentan como segundo revisor.
+  const dobleRevision = primeros.some((p) => conformes.some((s) => segundoDeOtroModelo(s.reporte, p.reporte, opciones)))
   return { elegido: conforme, texto: riesgo === 'BAJO' || dobleRevision ? LISTO_PARA_DECISION : 'Falta segundo revisor' }
 }
 
@@ -116,7 +147,8 @@ function planDe(
 
 /**
  * DEC-POS-011: el dictamen basta para REVISADA solo si /ordenes lo da por listo: CONFORME de PRIMERO o DELTA del head
- * actual y, salvo en BAJO, un SEGUNDO CONFORME de otro modelo. CAMBIOS, INCONCLUSO o riesgo ALTO no bastan.
+ * actual y, en MEDIO sensible, un SEGUNDO CONFORME de otro modelo (DEC-POS-019 y DEC-POS-022). CAMBIOS, INCONCLUSO o
+ * riesgo ALTO no bastan.
  */
 export function dictamenSuficiente(ev: EvaluacionDictamen): boolean {
   return ev.estado.tipo === 'vigente' && ev.estado.dictamen.veredicto === 'CONFORME' && ev.siguiente === LISTO_PARA_DECISION
@@ -135,12 +167,12 @@ export function dictamenesValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDi
   return [...porRevision.values()].map(({ revisionId, veredicto, ronda, headSha }) => ({ revisionId, veredicto, ronda, headSha }))
 }
 
-export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
-  const ev = evaluar(datos, orden, pr)
+export function evaluarDictamen(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, opciones: OpcionesDictamen = {}): EvaluacionDictamen {
+  const ev = evaluar(datos, orden, pr, opciones)
   return ev.plan && ev.plan.n > N_MAX ? { ...ev, siguiente: CORRELATIVO_AGOTADO, plan: null, agotado: true } : ev
 }
 
-function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): EvaluacionDictamen {
+function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, opciones: OpcionesDictamen): EvaluacionDictamen {
   const marcados = datos.comentarios.filter((c) => tieneMarca(c.body))
   const validos: Valido[] = []
   let ciDetectada = false
@@ -152,11 +184,11 @@ function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): Evaluaci
       ciDetectada ||= conCi?.headSha === datos.headSha && conCi.evidencia.ci.estado === 'EXITO'
     }
   })
-  const ev = evaluarValidos(datos, orden, pr, marcados.length, validos)
+  const ev = evaluarValidos(datos, orden, pr, marcados.length, validos, opciones)
   return ciDetectada ? { ...ev, ciDetectada: true } : ev
 }
 
-function evaluarValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, marcados: number, validos: Valido[]): EvaluacionDictamen {
+function evaluarValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, marcados: number, validos: Valido[], opciones: OpcionesDictamen): EvaluacionDictamen {
   const delHead = validos.filter((v) => v.reporte.headSha === datos.headSha)
   // Del head actual, el último válido por revisionId.
   const porRevision = new Map<string, Valido>()
@@ -166,7 +198,7 @@ function evaluarValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, ma
     const tipo = validos.length > 0 ? 'anterior' : marcados > 0 ? 'invalido' : 'ninguno'
     return { estado: { tipo }, siguiente: 'Lanzar revisión', plan: planDe('Lanzar revisión', validos, vigentes, null, datos.headSha, orden) }
   }
-  const { elegido, texto } = siguientePaso(vigentes, orden.riesgo)
+  const { elegido, texto } = siguientePaso(vigentes, orden, opciones)
   const r = elegido!.reporte
   const bloquean = r.hallazgos.filter((h) => h.bloquea).length
   return {

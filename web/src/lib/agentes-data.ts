@@ -105,7 +105,7 @@ export async function githubDeAgentes(
     const trabajador = async () => {
       while (i < pendientes.length && !vencido) {
         const { o, proyectoId, pr } = pendientes[i++]!
-        const orden = { id: o.id, proyectoId, prUrl: pr.url, riesgo: o.riesgo, criterios: o.criterios }
+        const orden = { id: o.id, proyectoId, prUrl: pr.url, riesgo: o.riesgo, criterios: o.criterios, sensible: o.sensible }
         const leido = await datosDePr(client, orden, ahora)
         if (!vencido) dictamenes.set(o.id, leido && dictamenesValidos(leido.datos, orden, leido.pr))
       }

@@ -1,5 +1,6 @@
 import { cacheSeconds } from '../config'
 import { evaluarDictamen, type EvaluacionDictamen, type DatosPr, type PrDictamen } from '../supervision/dictamen'
+import { segundoGeminiSupervisado } from './config'
 import { REPOSITORIOS, codigoFalloGitHub, repoDeUrl, type GitHubClient } from './github'
 
 /**
@@ -12,7 +13,7 @@ const LIMITE_MS = 20_000
 const FALLO_MS = 60_000
 const cache = new Map<string, { hasta: number; datos: DatosPr | null; fallo?: string }>()
 
-export interface OrdenConPr { id: string; proyectoId: string | null; prUrl: string | null; riesgo: string | null; criterios: string | null }
+export interface OrdenConPr { id: string; proyectoId: string | null; prUrl: string | null; riesgo: string | null; criterios: string | null; sensible?: string | null }
 
 export function limpiarCacheDictamenes(): void { cache.clear() }
 
@@ -25,7 +26,7 @@ export const urlComentario = (prUrl: string, id: number): string | null =>
 
 export async function dictamenDeOrden(client: GitHubClient, o: OrdenConPr, ahora = Date.now()): Promise<EvaluacionDictamen | null> {
   const leido = await datosDePr(client, o, ahora)
-  return leido && evaluarDictamen(leido.datos, o, leido.pr)
+  return leido && evaluarDictamen(leido.datos, o, leido.pr, { geminiSupervisado: segundoGeminiSupervisado() })
 }
 
 /**

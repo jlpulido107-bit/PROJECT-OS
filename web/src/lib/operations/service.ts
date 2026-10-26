@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { todayInMerida } from '../dates'
-import { CLOSED_TASK_STATES } from '../schema'
+import { CLOSED_TASK_STATES, ORDENES_SENSIBLE } from '../schema'
 import {
   INITIAL_DECISION_STATE, INITIAL_ORDER_STATE, INITIAL_TASK_STATE, ORDER_RISKS, ORDER_TERMINAL_STATES, ORIGIN_PREFIX,
   WRITE_HEADERS, type EntityTab, type OperationName,
@@ -443,11 +443,16 @@ export class OperationsService {
     })
   }
 
-  /** Fila actual de una orden (para enviarla a GitHub), o null si no existe. */
+  /**
+   * Fila actual de una orden (para enviarla a GitHub o evaluar su dictamen), o null si no existe. Incluye la columna
+   * opcional SENSIBLE (DEC-POS-019), vacía si la hoja aún no la tiene.
+   */
   async readOrder(ordenId: string): Promise<Record<string, string> | null> {
     const view = await readView(this.store, 'ORDENES_CODEX')
     const rows = findById(view, 'ORDEN_ID', ordenId)
-    return rows.length === 1 ? toRecord(view, rows[0]!.cells) : null
+    if (rows.length !== 1) return null
+    const cells = rows[0]!.cells
+    return { ...toRecord(view, cells), [ORDENES_SENSIBLE]: cell(view, cells, ORDENES_SENSIBLE) }
   }
 
   /**

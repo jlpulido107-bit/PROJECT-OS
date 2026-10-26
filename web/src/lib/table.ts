@@ -1,6 +1,6 @@
 import { parseCivilDate, parseTimestamp, type Parsed, type Timestamp } from './dates'
 import { cellText, normalizeCode, parseFraction, parseNonNegative, parseSafeUrl } from './parse'
-import { isOptionalTab, MAX_DATA_ROWS, TAB_HEADERS, type TabName } from './schema'
+import { isOptionalTab, MAX_DATA_ROWS, ORDENES_SENSIBLE, TAB_HEADERS, type TabName } from './schema'
 import type { DataIssue, DataSource, Dataset, RawTabs, TabStatus } from './types'
 
 const MAX_ISSUES = 200
@@ -289,6 +289,8 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     fueraDeAlcance: r.text('FUERA_DE_ALCANCE'),
     comoProbar: r.text('COMO_PROBAR'),
     riesgo: r.code('RIESGO'),
+    // Columna opcional (migración de DEC-POS-019): si la hoja aún no la tiene, null = sensible.
+    sensible: r.code(ORDENES_SENSIBLE),
     estado: r.code('ESTADO'),
     issueUrl: r.url('ISSUE_URL'),
     prUrl: r.url('PR_URL'),

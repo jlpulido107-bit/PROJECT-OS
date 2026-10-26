@@ -26,7 +26,11 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   propietario; nunca cancela ni cierra nada ni cambia ESTADO o BLOQUEO de tareas. DEC-POS-011 (2026-10-21): con el «sí»
   citado y su fecha puede aprobar y enviar órdenes (nunca de riesgo ALTO) y marcar REVISADA con un dictamen válido del
   head actual; CERRADA y CANCELADA siguen siendo del propietario. Nadie escribe en Sheets con el conector. Un solo escritor.
-  REVISADA exige CONFORME según DEC-POS-011: de PRIMERO o DELTA y, en MEDIO, también SEGUNDO de otro modelo en el mismo head.
+  REVISADA exige CONFORME según DEC-POS-011: de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el
+  mismo head. MEDIO no sensible (columna SENSIBLE = NO) basta con PRIMERO o DELTA; vacía = sensible (DEC-POS-019). Un
+  SEGUNDO gemini-supervisado (DEC-POS-022) mide «otro modelo» con el de los hallazgos (Gemini) y lo firma una sesión de
+  Claude de modelo distinto del implementador; un modelo no reconocido nunca cuenta. Esa vía está apagada: solo cuenta con
+  `SEGUNDO_GEMINI_SUPERVISADO=on`, que pone únicamente el propietario con `deploy.sh`; ningún agente la enciende.
   REGISTRAR_PR del PM (ORD-POS-063) está apagado: solo con `PM_PUEDE_REGISTRAR_PR=true`, que enciende únicamente el
   propietario con `deploy.sh` tras registrar la decisión que amplía DEC-POS-011, registra el PR que /ordenes detecta.
   Ningún agente enciende esa bandera.
@@ -43,7 +47,9 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
 ## Implementación y supervisión
 - Quien implementa (Claude) crea la rama y el PR y publica los resultados en el issue y el PR. Su autocontrol (pruebas
   propias, revisión de su diff) no sustituye la revisión independiente.
-- Quien revisa (otra sesión de Claude, con otro modelo) no es quien implementó: entrega su dictamen al propietario.
+- Quien revisa (otra sesión de Claude, con otro modelo) no es quien implementó: entrega su dictamen al propietario. En
+  MEDIO sensible, el SEGUNDO puede ser gemini-supervisado: Gemini aporta los hallazgos y una sesión de Claude de modelo
+  distinto del implementador confirma o descarta cada uno con evidencia y firma (DEC-POS-022).
   Detalle del dictamen en
   [`docs/delegacion-codex.md`](docs/delegacion-codex.md#supervisión-independiente).
 - Claude se ejecuta una sola vez al aprobar la orden en el dashboard; no se pide un lanzamiento manual duplicado.

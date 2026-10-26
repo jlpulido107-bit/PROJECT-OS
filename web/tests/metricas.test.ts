@@ -11,7 +11,7 @@ import type { Orden } from '@/lib/types'
 
 const orden = (id: string, estado: string, riesgo = 'BAJO'): Orden => ({
   id, proyectoId: 'POS', tareaId: 'POS-021', titulo: 't', objetivo: null, contexto: null, criterios: null, fueraDeAlcance: null,
-  comoProbar: null, riesgo, estado, issueUrl: null, prUrl: null, notas: null, actualizadoEn: null,
+  comoProbar: null, riesgo, sensible: null, estado, issueUrl: null, prUrl: null, notas: null, actualizadoEn: null,
 })
 
 let req = 0

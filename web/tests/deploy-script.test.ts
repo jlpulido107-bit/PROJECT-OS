@@ -202,6 +202,18 @@ describe('deploy.sh', () => {
       expect(apagada.out).toMatch(/Variables quitadas:\n  - PM_PUEDE_REGISTRAR_PR\n/)
     })
 
+    it('SEGUNDO_GEMINI_SUPERVISADO (ORD-POS-100): se conserva de la activa y se apaga con --quitar', () => {
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'SEGUNDO_GEMINI_SUPERVISADO', value: 'on' })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('SEGUNDO_GEMINI_SUPERVISADO')
+      const apagada = run(['--desde-activa', '--quitar', 'SEGUNDO_GEMINI_SUPERVISADO', '--dry-run'], { raw, env: min })
+      expect(apagada.code).toBe(0)
+      expect(apagada.out).toMatch(/Variables quitadas:\n  - SEGUNDO_GEMINI_SUPERVISADO\n/)
+    })
+
     it('RADAROS_SHEET_ID (ORD-POS-067): se conserva de la activa como literal, sin imprimir el valor, y se quita con --quitar', () => {
       const activa = JSON.parse(full)
       const id = 'LIBRO_RADAROS_SINTETICO_0123456789'

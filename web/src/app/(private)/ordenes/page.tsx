@@ -12,6 +12,7 @@ import { claveLanzamiento } from '@/lib/operations/revision'
 import { operationsService } from '@/lib/operations/runtime'
 import type { EstadoLanzamiento } from '@/lib/operations/service'
 import type { EvaluacionDictamen } from '@/lib/supervision/dictamen'
+import { ordenSensible } from '@/lib/supervision/politica'
 import { writeAccess } from '@/components/operations/write-access'
 import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
@@ -61,6 +62,7 @@ function OrdenCard({ v, canWrite, prDetectado, falloPr, falloLanzamiento, claude
         <div className="badges">
           <StateBadge code={o.estado} />
           <Badge tone={tone}>Riesgo: {o.riesgo ?? '—'}</Badge>
+          {o.riesgo === 'MEDIO' ? <Badge>{ordenSensible(o.sensible) ? 'Sensible' : 'No sensible'}</Badge> : null}
         </div>
       </header>
       <dl className="meta">
@@ -162,6 +164,11 @@ export default async function OrdenesPage() {
       {canWrite ? <p><a className="button button-primary" href="/ordenes/nueva">Nueva orden</a></p> : null}
       <p className="muted small">
         Lectura de la pestaña ORDENES_CODEX. Solo el propietario aprueba; una orden cerrada no cierra su tarea.
+      </p>
+      <p className="muted small">
+        Revisión de MEDIO: basta un CONFORME de PRIMERO o DELTA si la orden no es sensible (SENSIBLE = NO). Si es sensible
+        (SENSIBLE vacía o SI), falta además un SEGUNDO de otro modelo; si es gemini-supervisado, lo firma un modelo distinto
+        del implementador y solo cuenta si el propietario encendió esa vía (DEC-POS-019 y DEC-POS-022).
       </p>
       {total === 0 ? <Empty>No hay órdenes en ORDENES_CODEX.</Empty> : (
         <div className="badges" aria-label="Órdenes por estado">

@@ -538,6 +538,10 @@ Registro del PR por el PM (ORD-POS-063, apagado por defecto): solo el propietari
 que amplía DEC-POS-011, con `PM_PUEDE_REGISTRAR_PR=true web/deploy/cloudrun/deploy.sh --desde-activa`, y lo apaga con
 `--quitar PM_PUEDE_REGISTRAR_PR`. Ningún agente la enciende. Detalle en [`escritura-v1-8.md` §6](escritura-v1-8.md).
 
+SEGUNDO gemini-supervisado (ORD-POS-100, apagado por defecto): solo el propietario lo enciende con
+`SEGUNDO_GEMINI_SUPERVISADO=on web/deploy/cloudrun/deploy.sh --desde-activa` y lo apaga con
+`--quitar SEGUNDO_GEMINI_SUPERVISADO`. Ningún agente la enciende. Detalle en [`escritura-v1-8.md` §6](escritura-v1-8.md).
+
 ```bash
 cd web
 node deploy/cloudrun/render.mjs > /tmp/project-os-service.yaml   # valida formatos; falla si falta algo

@@ -80,3 +80,11 @@ export function canWrite(email: unknown, env: NodeJS.ProcessEnv = process.env): 
 export function pmPuedeRegistrarPr(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.PM_PUEDE_REGISTRAR_PR === 'true'
 }
+
+/**
+ * ORD-POS-100 (DEC-POS-022, DEC-POS-014): el SEGUNDO de origen gemini-supervisado cuenta como segundo revisor solo con
+ * SEGUNDO_GEMINI_SUPERVISADO=on, que pone únicamente el propietario en Cloud Run con deploy.sh. Apagada por defecto.
+ */
+export function segundoGeminiSupervisado(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SEGUNDO_GEMINI_SUPERVISADO === 'on'
+}

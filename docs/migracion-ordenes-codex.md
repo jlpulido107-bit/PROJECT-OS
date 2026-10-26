@@ -84,3 +84,20 @@ propietario: si cambió entretanto, se rechaza y hay que recargar.
   Dos sesiones no compiten por la misma orden.
 - **Auditoría.** El historial de versiones de la hoja registra quién cambió cada estado. Además, el issue y el PR quedan
   enlazados entre sí por el `ORDEN_ID` y el `TAREA_ID`.
+
+## Columna SENSIBLE (DEC-POS-019)
+
+**Tipo:** cambio de esquema aditivo (ORD-POS-100). Una columna nueva al final de `ORDENES_CODEX`; no cambia las otras.
+**Quién la aplica:** el propietario, a mano en la hoja. **Estado:** propuesta, pendiente de aplicar.
+
+Decide si una orden MEDIO necesita segundo revisor: con `NO`, /ordenes la da por lista con un CONFORME de `PRIMERO` o
+`DELTA`; con `SI`, **vacía** o **sin la columna**, es sensible y sigue exigiendo el `SEGUNDO` (para no relajar la revisión
+por omisión). En BAJO y ALTO no cambia nada.
+
+1. En `ORDENES_CODEX`, escribir `SENSIBLE` en la primera celda libre de la fila 1 (después de `ACTUALIZADO_EN`).
+2. Opcional: validación de datos con la lista `SI`, `NO`.
+3. Llenar `NO` solo en las órdenes MEDIO que el propietario considere no sensibles; el resto puede quedar vacío.
+
+El dashboard la lee si existe y no la exige: antes de aplicarla, la pestaña sigue válida y toda orden cuenta como
+sensible. La API de operaciones no la escribe: una orden nueva queda vacía (= sensible) hasta que el propietario la
+cambie. **Revertir:** borrar la columna; todas las órdenes vuelven a contar como sensibles.
