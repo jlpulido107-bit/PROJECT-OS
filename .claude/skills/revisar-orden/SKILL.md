@@ -34,7 +34,8 @@ Si te llama una rutina o el propietario, no hay nadie a quien preguntar: si algo
     `SEGUNDO_GEMINI_SUPERVISADO`; ningún agente la enciende.
 
   Regla de DEC-POS-019: solo el MEDIO **sensible** necesita `SEGUNDO` (columna `SENSIBLE` vacía, ausente o distinta de
-  `NO`). No lees la hoja: si te lanzan como `SEGUNDO`, dictaminas igual; si la orden no lo necesitaba, sobra, no estorba.
+  `NO`). No lees la hoja: si te lanzan como `SEGUNDO`, dictaminas igual. Si la orden no lo necesitaba,
+  un `CONFORME` sobra y no estorba, pero un `CAMBIOS` válido sí mueve la orden a «Corregir».
 
 ## Marca del dictamen
 

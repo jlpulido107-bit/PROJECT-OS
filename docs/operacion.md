@@ -45,6 +45,7 @@ nunca texto libre. Fuente: [rutina de Claude](rutina-claude.md).
 | Ejecutar orden | Al pulsar **Aprobar y crear el issue** en `/ordenes` (una sola vez) | Valida el issue y abre el PR | [`ejecutar-orden`](../.claude/skills/ejecutar-orden/SKILL.md) |
 | Revisar (Sonnet) | Botón **Lanzar revisión** (primera revisión o delta tras corrección) | Dictamen a ciegas | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
 | Segundo revisor (Fable 5.1) | Botón **Lanzar segundo revisor** (solo MEDIO sensible) | Dictamen a ciegas, sin el del primero | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
+| Corregir PR | Botón **Pedir corrección** (dictamen `CAMBIOS`, ronda menor que 2) | Commit nuevo en la misma rama del PR | [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
 
 **Supervisor de Gemini (ORD-POS-099).** Del 2026-10-27 al 2026-11-02 no es rutina: el propietario abre el PR sombra,
 comenta `/gemini review` y lanza una sesión de POS · Ingeniería (Sonnet) con los datos del `SEGUNDO` y «supervisa Gemini,
@@ -52,7 +53,6 @@ modo medición»; publica en el PR sombra y no cuenta. Desde el 2026-11-03, solo
 segundo revisor** apunta a la rutina nueva `PROJECT-OS · supervisar Gemini` (modo operación) y la de Fable queda
 configurada para volver ([prueba Gemini §3 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)). Comentar
 `/gemini review` es del propietario; pasarlo al PM exige una decisión que amplíe DEC-POS-005 y DEC-POS-011.
-| Corregir PR | Botón **Pedir corrección** (dictamen `CAMBIOS`, ronda menor que 2) | Commit nuevo en la misma rama del PR | [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
 
 En `/ordenes` aparece un solo botón según el dictamen del PR; nunca con riesgo ALTO ni si el head cambió desde que cargó
 la página. Los botones de revisión y corrección solo aparecen cuando el propietario crea esas rutinas y sus secretos
