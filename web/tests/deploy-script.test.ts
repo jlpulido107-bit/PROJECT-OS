@@ -289,6 +289,35 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('escritura del pipeline de /eco (ORD-POS-102): se conserva de la activa sin imprimir valores y --quitar retira las tres', () => {
+      const activa = JSON.parse(full)
+      const cuenta = 'project-os-eco@project-os-511102.iam.gserviceaccount.com'
+      const correo = 'dueno-sintetico@example.com'
+      const id = 'LIBRO_RADAROS_SINTETICO_0123456789'
+      activa.spec.template.spec.containers[0].env.push(
+        { name: 'RADAROS_SHEET_ID', value: id }, { name: 'ECO_PIPELINE_WRITE_MODE', value: 'sheets' },
+        { name: 'ECO_PIPELINE_WRITE_SERVICE_ACCOUNT', value: cuenta }, { name: 'ECO_PIPELINE_WRITER_EMAIL', value: correo })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toMatch(/ECO_PIPELINE/)
+      for (const v of [cuenta, correo, id]) expect(sigue.out).not.toContain(v)
+      for (const nombre of ['ECO_PIPELINE_WRITE_MODE', 'ECO_PIPELINE_WRITE_SERVICE_ACCOUNT', 'ECO_PIPELINE_WRITER_EMAIL']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        for (const otra of ['ECO_PIPELINE_WRITE_MODE', 'ECO_PIPELINE_WRITE_SERVICE_ACCOUNT', 'ECO_PIPELINE_WRITER_EMAIL']) expect(apagada.out).toContain(`  - ${otra}\n`)
+        expect(apagada.out).not.toContain('  - RADAROS_SHEET_ID')
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, RADAROS_SHEET_ID: id, ECO_PIPELINE_WRITE_MODE: 'sheets', ECO_PIPELINE_WRITE_SERVICE_ACCOUNT: cuenta, ECO_PIPELINE_WRITER_EMAIL: correo } })
+      expect(nueva.code).toBe(0)
+      for (const nombre of ['ECO_PIPELINE_WRITE_MODE', 'ECO_PIPELINE_WRITE_SERVICE_ACCOUNT', 'ECO_PIPELINE_WRITER_EMAIL']) expect(nueva.out).toContain(`  + ${nombre}\n`)
+      for (const v of [cuenta, correo]) expect(nueva.out).not.toContain(v)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, ECO_PIPELINE_WRITE_SERVICE_ACCOUNT: RENDER_ENV.WRITE_SERVICE_ACCOUNT }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.out).toContain('no puede ser la cuenta de escritura de PROJECT-OS')
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('IMAGE exportada vacía: el render falla sin aplicar', () => {
       const r = run(['--desde-activa'], { raw: full, env: { ...min, IMAGE: '' }, input: 'desplegar\n' })
       expect(r.code).toBe(1)

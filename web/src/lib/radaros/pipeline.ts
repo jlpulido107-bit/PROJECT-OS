@@ -280,10 +280,11 @@ export function filtrarTarjetas(tarjetas: Tarjeta[], filtro: FiltroTablero): Tar
 
 /**
  * Criterio 4 (H2 del revisor PRIMERO de #224): `CONTACTO` solo para el escritor del dashboard. La vista en caché es la
- * misma para todos los lectores, así que se recorta por petición antes de pintar.
+ * misma para todos los lectores, así que se recorta por petición antes de pintar. ORD-POS-102 (H1 de #228): las `NOTAS`
+ * del proveedor tampoco, porque pueden llevar datos de contacto.
  */
 export function paraLector(vista: PipelineVista, verContacto: boolean): PipelineVista {
   if (verContacto) return vista
-  const proveedores = mapear(vista.proveedores, ({ filas: f }) => ({ filas: f.map((p) => ({ ...p, CONTACTO: null })) }))
+  const proveedores = mapear(vista.proveedores, ({ filas: f }) => ({ filas: f.map((p) => ({ ...p, CONTACTO: null, NOTAS: null })) }))
   return { ...vista, proveedores }
 }

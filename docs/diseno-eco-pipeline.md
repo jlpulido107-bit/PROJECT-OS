@@ -307,7 +307,8 @@ tarjeta: la segunda recibe `conflicto-version` y la tarjeta vuelve a su sitio co
 Mismo razonamiento que la opción C de 📄 v2 §6: una cuenta de servicio nueva, **solo** para el pipeline (p. ej.
 `project-os-eco`), Editor solo del libro de RADAROS. Ni `project-os-writer` (que usa el PM) ni las cuentas de finanzas
 ni la de lectura ganan escritura en RADAROS. Token por suplantación (alcance `spreadsheets`, 10 min, ✅
-`write-credentials.ts`), solo dentro de una petición que ya pasó el guard.
+[`web/src/lib/operations/write-credentials.ts`](../web/src/lib/operations/write-credentials.ts)), solo dentro de una petición que ya pasó
+el guard.
 
 `ecoPipelineWriteMode(env)` devuelve `sheets` **solo** si se cumplen todas:
 
@@ -466,6 +467,51 @@ Para registrar como BORRADOR; no se crean desde esta orden. La activación de §
 
 **Cómo probar (las tres):** `npm test`, `npm run lint`, `npm run typecheck` y `npm run check:client-secrets` en `web/`;
 `python -m unittest discover -s tests`.
+
+## 10.1 Construcción (ORD-POS-102, P-2)
+
+Construida en ORD-POS-102 ([issue #236](https://github.com/jlpulido107-bit/PROJECT-OS/issues/236)), **inerte**: sin
+las tres variables de §7.1 las rutas responden 403 sin pedir token y el tablero se pinta como en P-1. Ningún agente
+creó la cuenta, tocó IAM, compartió la hoja, creó pestañas ni puso variables; la activación de §7.2 sigue siendo del
+propietario (DEC-POS-014). Código en `web/src/lib/radaros/` y `web/src/app/api/eco/pipeline/`:
+
+| Pieza | Archivo | Qué hace |
+| --- | --- | --- |
+| Configuración (§7.1) | `pipeline-escritura-config.ts` | `ecoPipelineWriteStatus`: modo `sheets` exacto, `RADAROS_SHEET_ID` válido, cuenta propia distinta de la de lectura, de la de PROJECT-OS y de las dos de finanzas, escritor único dentro de `AUTH_ALLOWED_EMAILS` |
+| Guard (§4.1–§4.2) | `pipeline-escritura-guard.ts` | `evaluateEcoWriteRequest`, sin rama de agente; limitador `eco` de 10 y 1 cada 3 s |
+| Núcleo de la ruta | `pipeline-escritura-handler.ts` | 401 con `Authorization` antes de sesión y cuerpo; servicio solo tras el guard |
+| Validación (§3, §4.3) | `pipeline-escritura-validacion.ts` | Lista cerrada de campos por operación (camelCase, uno por columna); 400 `campo-no-permitido` |
+| Servicio (§5, §6) | `pipeline-escritura-service.ts` | Las 9 operaciones, IDs `PREFIJO-NNNN`, transiciones, auditoría en `PIPE_AUDITORIA`, verificación |
+| Almacén (§6.2) | `pipeline-escritura-store.ts` | Lista cerrada de las cinco pestañas `PIPE_*` que se escriben; solo `RAW` |
+| Runtime | `pipeline-escritura-runtime.ts`, `pipeline-escritura-http.ts` | Único lugar que construye el almacén, con `RADAROS_SHEET_ID` y `ECO_PIPELINE_WRITE_SERVICE_ACCOUNT` |
+| Tablero (§2.1) | `web/src/components/eco/tablero-escritura.tsx`, `pipeline-transiciones.ts` | Arrastre nativo y «Mover a…» con las etapas de §5.1; motivo en un `<dialog>` |
+| Despliegue (§7.1) | `web/deploy/cloudrun/render.mjs`, `deploy.sh` | Las tres variables juntas; `--desde-activa` las conserva y `--quitar` de una retira las tres |
+
+Decisiones de la construcción (las que el diseño dejaba abiertas o no fijaba):
+
+- **Edición celda por celda.** Un `PATCH` o un `mover` escribe solo las columnas que cambian, más `ACTUALIZADO` y
+  `VERSION`, con rangos `'<PESTAÑA>'!X<n>:X<n>` en un `values:batchUpdate` RAW: no pisa fórmulas ni columnas que el
+  propietario añada al final. La fila se relee justo antes y solo se escribe si conserva el ID y la `VERSION`.
+- **Fórmulas (❓ §12).** Antes de auditar, la fila se lee con `valueRenderOption=FORMULA`; si alguna celda que cambia
+  es fórmula (por ejemplo `COSTO_MAX_MXN` o `COSTO_ATERRIZADO_MXN`), 409 `campo-solo-lectura` y nada se escribe. Así
+  la ruta las rechaza sin fijar ahora cuáles son fórmulas.
+- **Auditoría.** `ENTIDAD` = nombre de la pestaña; `ORIGEN` = `dashboard-eco;modo=sheets;req=<requestId>;hash=<hash>`
+  (el hash incluye la operación y el ID de la ruta); `AUDIT_ID` con lote e índice, como finanzas, para detectar una
+  auditoría a medias. El motivo de un movimiento que no es descarte va en una fila `CAMPO` = `MOTIVO`.
+- **Idempotencia.** Mismo `requestId` y mismo hash: repetida si la fila ya tiene lo auditado; roll-forward si la fila
+  sigue como antes (alta sin fila, o edición con la `VERSION` anterior); `estado-divergente` si no; otro hash:
+  `conflicto-idempotencia`.
+- **Estados de cotización y embarque.** `SOLICITADA` → `RECIBIDA` → `ELEGIDA`, `RECHAZADA` desde las tres; `PLANEADO`
+  → `PAGADO` → `EN_TRANSITO` → `RECIBIDO_FBA`, `CANCELADO` antes de recibir. `RECIBIDA` y `ELEGIDA` exigen los cinco
+  datos de §3.3.
+- **`IDEA_ID`.** Solo se valida el formato (`EC-004`): el servicio no lee pestañas fuera de `PIPE_*` y la columna de
+  `PRODUCTS` es ❓. Queda como atajo anotado en el código hasta la activación.
+- **`CONTACTO`** acepta un `+` inicial (teléfono): se escribe con apóstrofo y en RAW; `=`, `-` y `@` iniciales siguen
+  rechazados. Las `NOTAS` del proveedor se ocultan a quien no escribe, como `CONTACTO` (H1 de la revisión de P-1).
+- **Caché.** Tras una escritura correcta sube una generación en el proceso y el lector de /eco descarta su caché: la
+  tarjeta aparece en su nueva columna al refrescar.
+- **Alta y edición desde la pantalla.** Esta orden pinta solo el arrastre y «Mover a…» (criterio 7); las rutas de alta
+  y edición existen y están probadas, y sus formularios quedan para otra orden.
 
 ## 11. Fase 2 (bosquejo; depende de SP-API)
 

@@ -30,12 +30,16 @@ describe('garantías de seguridad del código', () => {
   // ORD-POS-092: el agente de finanzas usa el mismo adaptador (solo FINANZAS) desde su propio runtime y con su cuenta.
   const AGENTE_RUNTIME = path.join('lib', 'finanzas', 'agente-runtime.ts')
   const RUNTIMES_FINANZAS = [FINANZAS_RUNTIME, AGENTE_RUNTIME]
+  // ORD-POS-102: la escritura del pipeline de /eco tiene su propio adaptador, ligado solo al libro de RADAROS y a la
+  // lista cerrada de pestañas PIPE_*, y su propio runtime, que suplanta a la cuenta exclusiva del pipeline.
+  const ECO_ADAPTER = path.join('lib', 'radaros', 'pipeline-escritura-store.ts')
+  const ECO_RUNTIME = path.join('lib', 'radaros', 'pipeline-escritura-runtime.ts')
   // Módulos de V1.4 que solo pueden ejecutarse en el servidor (estado simulado y manejo de escrituras).
-  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http', 'lib/finanzas/escritura-runtime', 'lib/finanzas/escritura-http', 'lib/finanzas/agente-runtime', 'lib/finanzas/agente-http')
+  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http', 'lib/finanzas/escritura-runtime', 'lib/finanzas/escritura-http', 'lib/finanzas/agente-runtime', 'lib/finanzas/agente-http', 'lib/radaros/pipeline-escritura-runtime', 'lib/radaros/pipeline-escritura-http')
 
   it('ningún código llama endpoints de escritura de Sheets ni usa el alcance de escritura', () => {
     for (const { file, text } of sources) {
-      if (file !== WRITE_ADAPTER && file !== FINANZAS_ADAPTER) {
+      if (file !== WRITE_ADAPTER && file !== FINANZAS_ADAPTER && file !== ECO_ADAPTER) {
         expect(text, file).not.toMatch(/:append|:batchUpdate|:clear|values:update|batchUpdateByDataFilter/)
         // Quien hable con las APIs de Google solo puede leer (salvo pedir el token de escritura a IAM Credentials).
         if (/googleapis\.com/.test(text) && file !== WRITE_CREDENTIALS) expect(text, file).not.toMatch(/method:\s*'(PUT|POST|PATCH|DELETE)'/)
@@ -49,8 +53,9 @@ describe('garantías de seguridad del código', () => {
   it('el adaptador de escritura y el token de escritura solo se usan desde runtime.ts (y finanzas desde su runtime)', () => {
     for (const { file, text } of sources) {
       if (!RUNTIMES_FINANZAS.includes(file)) expect(text, file).not.toMatch(/new FinanzasSheetsStore/)
+      if (file !== ECO_RUNTIME) expect(text, file).not.toMatch(/new EcoSheetsStore/)
       if (file === WRITE_ADAPTER || file === WRITE_RUNTIME) continue
-      if (!RUNTIMES_FINANZAS.includes(file)) expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
+      if (!RUNTIMES_FINANZAS.includes(file) && file !== ECO_RUNTIME) expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
       expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*sheets-table-store['"]/)
       expect(text, file).not.toMatch(/new SheetsTableStore/)
     }
@@ -70,6 +75,18 @@ describe('garantías de seguridad del código', () => {
     expect(agente).toMatch(/finanzasSheetId\(env\)/)
     expect(agente).toMatch(/finanzasAgenteServiceAccount\(env\)/)
     expect(agente).not.toMatch(/finanzasWriteServiceAccount|FinanzasWriteService\b|spreadsheetId\(\)|SHEETS_SPREADSHEET_ID|writeServiceAccount\(|PROJECT_OS_WRITE_SERVICE_ACCOUNT|SheetsTableStore|OperationsService/)
+    // ORD-POS-102: el adaptador del pipeline solo edita valores en RAW (append y values:batchUpdate), nunca borra ni
+    // cambia la estructura del libro; su runtime usa solo RADAROS_SHEET_ID y la cuenta exclusiva del pipeline.
+    const eco = sources.find((s) => s.file === ECO_ADAPTER)!.text
+    expect(eco).toMatch(/valueInputOption=RAW/)
+    expect(eco).toMatch(/valueInputOption: 'RAW'/)
+    expect(eco).not.toMatch(/process\.env|google-auth-library|readFileSync|:clear|values:update|batchUpdateByDataFilter|deleteDimension|method:\s*'(PUT|PATCH|DELETE)'/)
+    expect(eco.match(/:batchUpdate/g)).toEqual([':batchUpdate'])
+    expect(eco).toMatch(/'\/values:batchUpdate'/)
+    const ecoRuntime = sources.find((s) => s.file === ECO_RUNTIME)!.text
+    expect(ecoRuntime).toMatch(/radarosSheetId\(env\)/)
+    expect(ecoRuntime).toMatch(/ecoPipelineWriteServiceAccount\(env\)/)
+    expect(ecoRuntime).not.toMatch(/finanzas|FINANZAS|spreadsheetId\(\)|SHEETS_SPREADSHEET_ID|writeServiceAccount\(|PROJECT_OS_WRITE_SERVICE_ACCOUNT|SheetsTableStore|OperationsService/)
   })
 
   it('las rutas de finanzas pasan por su guard propio, que rechaza Authorization antes de la sesión y del cuerpo', () => {

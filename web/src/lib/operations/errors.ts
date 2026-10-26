@@ -54,6 +54,14 @@ export type OperationErrorCode =
   | 'monto-excede-tope'
   | 'factura-no-cuadra'
   | 'suscripcion-sin-confirmar'
+  | 'eco-esquema-invalido'
+  | 'campo-no-permitido'
+  | 'campo-solo-lectura'
+  | 'registro-inexistente'
+  | 'referencia-inexistente'
+  | 'requisito-faltante'
+  | 'asin-duplicado'
+  | 'elegida-duplicada'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -110,6 +118,14 @@ const STATUS: Record<OperationErrorCode, number> = {
   'monto-excede-tope': 400,
   'factura-no-cuadra': 409,
   'suscripcion-sin-confirmar': 409,
+  'eco-esquema-invalido': 400,
+  'campo-no-permitido': 400,
+  'campo-solo-lectura': 409,
+  'registro-inexistente': 404,
+  'referencia-inexistente': 422,
+  'requisito-faltante': 409,
+  'asin-duplicado': 409,
+  'elegida-duplicada': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -167,6 +183,14 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'monto-excede-tope': 'El monto supera el tope de 3,000.00 USD por fila; se captura a mano. No se escribió nada.',
   'factura-no-cuadra': 'El total de factura no cuadra con la suscripción confirmada del corte; no se escribió nada.',
   'suscripcion-sin-confirmar': 'La suscripción de Claude cae en este corte y su recurrente no está confirmado; no se escribió nada.',
+  'eco-esquema-invalido': 'RADAROS no tiene las pestañas PIPE_* o las columnas que exige el pipeline (o hay una repetida); no se escribió nada.',
+  'campo-no-permitido': 'La solicitud trae campos que esta operación no admite; no se escribió nada.',
+  'campo-solo-lectura': 'Esa celda es una fórmula de la hoja y es de solo lectura en el dashboard; no se escribió nada.',
+  'registro-inexistente': 'El registro no existe en el pipeline.',
+  'referencia-inexistente': 'El producto, proveedor o cotización referido no existe o no está disponible; no se escribió nada.',
+  'requisito-faltante': 'Falta un dato que exige ese cambio; no se escribió nada.',
+  'asin-duplicado': 'Ese ASIN ya está en otro producto (uno descartado solo vuelve con «reabrir»); no se escribió nada.',
+  'elegida-duplicada': 'El producto ya tiene una cotización ELEGIDA; no se escribió nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')
