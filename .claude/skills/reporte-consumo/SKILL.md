@@ -51,7 +51,7 @@ recurrentes: https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/diseno
 
 | Campo | Cómo se obtiene | Si no se puede |
 | --- | --- | --- |
-| Rol | Rutina o skill de la sesión (ver [operación](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md)): `ejecutar-orden` → Implementador; `revisar-orden` → Primer revisor o Segundo revisor (modelo Fable 5.1 o «segundo revisor» en el disparo); `corregir-pr` → Corrector; `pm-escribir-api` o POS · PM → PM; POS · Ideas o `revisar-ideas` → Ideas; `planear-proyecto` → Planeación | `otro` |
+| Rol | Rutina o skill de la sesión (ver [operación](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md)): `ejecutar-orden` → Implementador; `revisar-orden` → Primer revisor o Segundo revisor (modelo Fable 5.1 o «segundo revisor» en el disparo); `supervisar-gemini` → Segundo revisor gemini-supervisado; `corregir-pr` → Corrector; `pm-escribir-api` o POS · PM → PM; POS · Ideas o `revisar-ideas` → Ideas; `planear-proyecto` → Planeación | `otro` |
 | Orden | Primer `ORD-POS-NNN`, `ORD-SIG-NNN` u `ORD-ECO-NNN` del título, del disparo o de la rama | `sin orden` |
 | Proyecto | Prefijo de la orden (POS, SIG, ECO) o repositorio de la sesión (PROJECT-OS, SIGSAH, RADAROS) | `sin proyecto` |
 | Semana | Semana ISO (`AAAA-Www`) de la creación de la sesión, en `America/Merida` | — |
@@ -70,7 +70,7 @@ sesión, la etiqueta encontrada y la canónica. No la corriges: la corrige el pr
    Las sumas cuadran con el total del periodo. Si hay costo real, añade la razón consumo equivalente / costo real del mes (solo como
    referencia del uso del plan).
 3. **Las más caras:** las 5 sesiones de mayor `cost_usd` con ID, rol, orden y consumo equivalente.
-4. **Segundo revisor:** su consumo equivalente, su porcentaje del total y su consumo por orden MEDIO revisada.
+4. **Segundo revisor:** su consumo equivalente, su porcentaje del total y su consumo por orden MEDIO revisada. Separa Fable y gemini-supervisado: el costo por PR de cada uno va a la tabla de [prueba Gemini §4](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/prueba-gemini.md#4-tabla-por-pr-la-llena-el-propietario).
 5. **Cupo:** por `rateLimitType`, `status`, `resetsAt` (en `America/Merida`) e `isUsingOverage`. **Aviso** si algún
    `status` es `allowed_warning` (cerca del límite) o si `isUsingOverage` es verdadero (uso adicional, que sí puede
    cobrarse aparte). Si ninguna sesión trae `rate_limit_info`, escribe «cupo: **sin dato**».
