@@ -3,7 +3,7 @@ import 'server-only'
 import { ORDENES_SENSIBLE } from '../schema'
 import { dictamenSuficiente, evaluarDictamen } from '../supervision/dictamen'
 import { ORDER_RISKS } from './constants'
-import { pmPuedeRegistrarPr } from './config'
+import { pmPuedeRegistrarPr, segundoGeminiSupervisado } from './config'
 import { OperationError } from './errors'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
 import { createGitHubClient, GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
@@ -203,7 +203,7 @@ async function autorizacionPm(service: OperationsService, cmd: OrderTransitionCo
     if (!(error instanceof GitHubError)) throw error
     throw new OperationError('github-no-disponible')
   }
-  const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null, sensible: o[ORDENES_SENSIBLE] ?? null }, { repo, numero: Number(numero) })
+  const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null, sensible: o[ORDENES_SENSIBLE] ?? null }, { repo, numero: Number(numero) }, { geminiSupervisado: segundoGeminiSupervisado() })
   if (ev.estado.tipo !== 'vigente') throw new OperationError('dictamen-no-valido')
   if (!dictamenSuficiente(ev)) throw new OperationError('dictamen-insuficiente')
   return `dictamen ${ev.estado.dictamen.veredicto} head ${datos.headSha} comentario ${ev.estado.dictamen.comentarioId}`

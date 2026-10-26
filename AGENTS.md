@@ -29,7 +29,8 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   REVISADA exige CONFORME según DEC-POS-011: de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el
   mismo head. MEDIO no sensible (columna SENSIBLE = NO) basta con PRIMERO o DELTA; vacía = sensible (DEC-POS-019). Un
   SEGUNDO gemini-supervisado (DEC-POS-022) mide «otro modelo» con el de los hallazgos (Gemini) y lo firma una sesión de
-  Claude de modelo distinto del implementador; un modelo no reconocido nunca cuenta.
+  Claude de modelo distinto del implementador; un modelo no reconocido nunca cuenta. Esa vía está apagada: solo cuenta con
+  `SEGUNDO_GEMINI_SUPERVISADO=on`, que pone únicamente el propietario con `deploy.sh`; ningún agente la enciende.
   REGISTRAR_PR del PM (ORD-POS-063) está apagado: solo con `PM_PUEDE_REGISTRAR_PR=true`, que enciende únicamente el
   propietario con `deploy.sh` tras registrar la decisión que amplía DEC-POS-011, registra el PR que /ordenes detecta.
   Ningún agente enciende esa bandera.

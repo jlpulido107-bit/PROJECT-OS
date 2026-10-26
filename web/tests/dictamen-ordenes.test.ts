@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dictamenDeOrden, limpiarCacheDictamenes, urlComentario } from '@/lib/operations/dictamenes'
 import { createGitHubClient } from '@/lib/operations/github'
 import { extraerCriterios } from '@/lib/supervision/criterios'
@@ -99,9 +99,24 @@ describe('dictamen vigente por orden', () => {
     ['gemini-supervisado firmado por el implementador (Opus)', [sonnet, gemini('claude-opus-5-5')], 'Falta segundo revisor'],
     ['gemini-supervisado con modeloHallazgos de Claude', [sonnet, gemini('claude-fable-5-1', 'claude-haiku-5-5')], 'Falta segundo revisor'],
     ['gemini-supervisado con modeloHallazgos inventado', [sonnet, gemini('claude-fable-5-1', 'gemini-supervisado')], 'Falta segundo revisor'],
-  ])('MEDIO sensible con %s: %s (criterios 2 y 5)', async (_, reportes, paso) => {
+    ['PRIMERO de Gemini y SEGUNDO de Claude', [v2('PRIMERO', 'gemini-2.5-pro', 'R1'), v2('SEGUNDO', 'claude-sonnet-5-5', 'R2')], 'Falta segundo revisor'],
+    ['gemini-supervisado sobre un PRIMERO de Gemini', [v2('PRIMERO', 'gemini-2.5-pro', 'R1'), gemini('claude-fable-5-1', 'gemini-3-pro')], 'Falta segundo revisor'],
+  ])('MEDIO sensible con %s: %s (criterios 2 y 5, bandera encendida)', async (_, reportes, paso) => {
+    vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', 'on')
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })
+
+  // Hallazgo H1 del PRIMERO (DEC-POS-014): sin SEGUNDO_GEMINI_SUPERVISADO=on, un SEGUNDO gemini-supervisado no cuenta.
+  it.each([undefined, '', 'true', 'ON', '1', ' on'])('con SEGUNDO_GEMINI_SUPERVISADO=%j el gemini-supervisado no cuenta', async (valor) => {
+    if (valor !== undefined) vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', valor)
+    const ev = await evaluar([comentario(sonnet), comentario(gemini('claude-fable-5-1'))], 'MEDIO')
+    expect(ev?.siguiente).toBe('Falta segundo revisor')
+    expect(ev?.plan?.tipo).toBe('SEGUNDO')
+  })
+  it('apagada no afecta al SEGUNDO de origen claude', async () => {
+    expect((await evaluar([comentario(sonnet), comentario(v2('SEGUNDO', 'claude-fable-5-1', 'R2'))], 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
+  })
+  afterEach(() => { vi.unstubAllEnvs() })
 
   // DEC-POS-019: MEDIO no sensible (SENSIBLE = NO) queda listo con PRIMERO o DELTA CONFORME; vacía o ausente = sensible.
   it.each([

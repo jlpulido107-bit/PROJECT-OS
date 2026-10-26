@@ -155,7 +155,8 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
     si no, `dictamen-no-valido` o `dictamen-insuficiente`. MEDIO no sensible (`SENSIBLE` = `NO` en ORDENES_CODEX) pasa
     con PRIMERO o DELTA; vacía = sensible (DEC-POS-019). Un SEGUNDO gemini-supervisado cuenta si el modelo de sus
     hallazgos es de otra familia que el del PRIMERO o DELTA y su firmante no es del modelo del implementador
-    (DEC-POS-022, [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)).
+    (DEC-POS-022, [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003)), y solo con
+    `SEGUNDO_GEMINI_SUPERVISADO=on` (ver «Activar el SEGUNDO gemini-supervisado»); sin ella no cuenta.
   - `REGISTRAR_PR` (ENVIADA → PR_ABIERTO, ORD-POS-063) es inerte por defecto: responde `transicion-reservada-pm` salvo con
     `PM_PUEDE_REGISTRAR_PR=true`, que solo el propietario pone en Cloud Run (ver «Activar el registro del PR»). Encendida,
     sin `url` ni `autorizacion`: registra el PR que /ordenes detecta (`prDeOrden`) solo si es el único de la orden y está
@@ -176,5 +177,10 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
   (exige `SECRET_VERSION_PM_AGENT` y `SECRET_VERSION_GITHUB`; otro valor que `true` hace fallar el render). `--desde-activa`
   la conserva en los despliegues siguientes; para apagarla, `deploy.sh --desde-activa --quitar PM_PUEDE_REGISTRAR_PR`.
   Ningún agente exporta esta variable ni despliega.
+- **Activar el SEGUNDO gemini-supervisado (ORD-POS-100, DEC-POS-022 y DEC-POS-014).** Apagado por defecto: sin la
+  variable, un SEGUNDO de origen `gemini-supervisado` no cuenta en /ordenes ni en REVISAR. Solo el propietario lo
+  enciende: `SEGUNDO_GEMINI_SUPERVISADO=on web/deploy/cloudrun/deploy.sh --desde-activa` (otro valor que `on` hace fallar
+  el render; no depende de `WRITE_MODE`). `--desde-activa` la conserva; para apagarla,
+  `deploy.sh --desde-activa --quitar SEGUNDO_GEMINI_SUPERVISADO`. Ningún agente exporta esta variable ni despliega.
 - **Revocar.** Desplegar sin `SECRET_VERSION_PM_AGENT` (`unset SECRET_VERSION_PM_AGENT`, renderizar y `services replace`):
   la variable `PM_AGENT_TOKEN_SHA256` desaparece y el acceso del agente queda deshabilitado (401). La escritura humana no se toca.

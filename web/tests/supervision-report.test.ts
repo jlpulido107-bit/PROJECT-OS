@@ -250,7 +250,7 @@ describe('clave idempotente (criterio 4)', () => {
 })
 
 describe('SEGUNDO de origen gemini-supervisado (ORD-POS-100, criterio 1)', () => {
-  const hallazgo = { id: 'G1', veredicto: 'CONFIRMADO', evidencia: 'a.ts:10, npm test falla en el head' }
+  const hallazgo = { id: 'G1', veredicto: 'DESCARTADO', evidencia: 'a.ts:10, npm test pasa en el head' }
   const v2 = (rol: string, mut: (r: Rep) => void = () => {}) => con((r) => { r.versionContrato = '2'; r.rol = rol; r.modelo = 'claude-sonnet-5-5'; mut(r) })
   const gemini = (mut: (r: Rep) => void = () => {}) =>
     v2('SEGUNDO', (r) => { r.origenSegundo = 'gemini-supervisado'; r.modeloHallazgos = 'gemini-2.5-pro'; r.hallazgosGemini = [hallazgo]; mut(r) })
@@ -258,7 +258,21 @@ describe('SEGUNDO de origen gemini-supervisado (ORD-POS-100, criterio 1)', () =>
   it('acepta el origen gemini-supervisado con modeloHallazgos y el veredicto del supervisor por hallazgo', () => {
     const r = validarReporte(gemini(), POL)
     expect(r.ok && [r.reporte.origenSegundo, r.reporte.modeloHallazgos, r.reporte.hallazgosGemini]).toEqual(['gemini-supervisado', 'gemini-2.5-pro', [hallazgo]])
-    expect(validarReporte(gemini((r) => { r.hallazgosGemini = [] }), POL).ok).toBe(true)
+  })
+  it('rechaza hallazgosGemini vacío con origen gemini-supervisado (hallazgo H2 del PRIMERO)', () => {
+    expect(errores(gemini((r) => { r.hallazgosGemini = [] })).some((e) => e.startsWith('hallazgosGemini:'))).toBe(true)
+  })
+  // Hallazgo H1 del SEGUNDO: un hallazgo de Gemini CONFIRMADO sin hallazgo propio con el mismo id impide el CONFORME.
+  const confirmado = { id: 'G1', veredicto: 'CONFIRMADO', evidencia: 'a.ts:10, npm test falla en el head' }
+  const propio = (bloquea: boolean) => ({ id: 'G1', severidad: 'MEDIA', ubicacion: 'a.ts:10', condicion: 'c', impacto: 'i', bloquea, justificacion: 'j' })
+  it('rechaza un CONFORME con un hallazgo de Gemini CONFIRMADO sin hallazgo propio', () => {
+    expect(errores(gemini((r) => { r.hallazgosGemini = [confirmado] })).some((e) => e.startsWith('hallazgosGemini: G1 CONFIRMADO'))).toBe(true)
+    expect(errores(gemini((r) => { r.hallazgosGemini = [confirmado]; r.hallazgos = [{ ...propio(false), id: 'H1' }] })).some((e) => e.startsWith('hallazgosGemini: G1'))).toBe(true)
+  })
+  it('acepta el CONFIRMADO con hallazgo propio del mismo id, o con un veredicto distinto de CONFORME', () => {
+    expect(validarReporte(gemini((r) => { r.hallazgosGemini = [confirmado]; r.hallazgos = [propio(false)] }), POL).ok).toBe(true)
+    const cambios = gemini((r) => { r.hallazgosGemini = [confirmado]; r.hallazgos = [propio(true)]; r.veredicto = 'CAMBIOS' })
+    expect(validarReporte(cambios, POL).ok).toBe(true)
   })
   it('acepta origen claude sin los campos de Gemini, y un SEGUNDO sin origen', () => {
     expect(validarReporte(v2('SEGUNDO', (r) => { r.origenSegundo = 'claude' }), POL).ok).toBe(true)

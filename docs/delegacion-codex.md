@@ -112,7 +112,10 @@ segundo revisor: con `NO`, un CONFORME de `PRIMERO` o `DELTA` basta para «Listo
   firma; el modelo del firmante no es el del implementador (Opus).
 
 «Otro modelo» se compara por familia (Opus, Sonnet, Haiku, Fable, Gemini), nunca por el texto libre de `modelo`: un
-sufijo distinto del mismo modelo o un nombre inventado no cuentan. Formato:
+sufijo distinto del mismo modelo o un nombre inventado no cuentan, y el `PRIMERO` o `DELTA` tiene que ser de Claude.
+La vía `gemini-supervisado` está **apagada por defecto** (DEC-POS-014): cuenta solo con `SEGUNDO_GEMINI_SUPERVISADO=on`,
+que activa el propietario ([escritura §6](escritura-v1-8.md)); sin ella, /ordenes y REVISAR la tratan como si no hubiera
+`SEGUNDO`. Formato:
 [contrato §3.1](contrato-supervision-automatica.md#contrato-versión-2-rol-y-modelo-del-revisor).
 
 ## Qué se puede delegar

@@ -1,5 +1,6 @@
 import { cacheSeconds } from '../config'
 import { evaluarDictamen, type EvaluacionDictamen, type DatosPr, type PrDictamen } from '../supervision/dictamen'
+import { segundoGeminiSupervisado } from './config'
 import { REPOSITORIOS, codigoFalloGitHub, repoDeUrl, type GitHubClient } from './github'
 
 /**
@@ -25,7 +26,7 @@ export const urlComentario = (prUrl: string, id: number): string | null =>
 
 export async function dictamenDeOrden(client: GitHubClient, o: OrdenConPr, ahora = Date.now()): Promise<EvaluacionDictamen | null> {
   const leido = await datosDePr(client, o, ahora)
-  return leido && evaluarDictamen(leido.datos, o, leido.pr)
+  return leido && evaluarDictamen(leido.datos, o, leido.pr, { geminiSupervisado: segundoGeminiSupervisado() })
 }
 
 /**

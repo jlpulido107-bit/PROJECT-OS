@@ -203,6 +203,14 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     }
     expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_GITHUB: '1', PM_PUEDE_REGISTRAR_PR: 'true' })).toThrow('exige SECRET_VERSION_PM_AGENT')
     expect(() => render(template, { ...VARS, ...WRITE, SECRET_VERSION_PM_AGENT: '4', PM_PUEDE_REGISTRAR_PR: 'true' })).toThrow('exige SECRET_VERSION_PM_AGENT')
+    // ORD-POS-100 (DEC-POS-022, DEC-POS-014): SEGUNDO_GEMINI_SUPERVISADO apagada por defecto; solo `on`, independiente de WRITE_MODE.
+    expect(out).not.toContain('SEGUNDO_GEMINI_SUPERVISADO')
+    expect(render(template, VARS)).not.toContain('SEGUNDO_GEMINI_SUPERVISADO')
+    expect(render(template, { ...VARS, SEGUNDO_GEMINI_SUPERVISADO: ' ' })).toBe(render(template, VARS))
+    expect(render(template, { ...VARS, SEGUNDO_GEMINI_SUPERVISADO: 'on' })).toMatch(/- name: SEGUNDO_GEMINI_SUPERVISADO\n\s+value: 'on'\n/)
+    for (const bad of ['true', 'ON', '1', 'off']) {
+      expect(() => render(template, { ...VARS, SEGUNDO_GEMINI_SUPERVISADO: bad }), bad).toThrow('SEGUNDO_GEMINI_SUPERVISADO solo admite on')
+    }
     // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
     expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })

@@ -111,13 +111,15 @@ pero no cuenta como segundo revisor. BAJO no cambia.
 | `modelo` | solo en v2 | Identificador del modelo de la sesión revisora, p. ej. `claude-sonnet-5-5` (minúsculas, dígitos, `.`, `_`, `-`; 3 a 64) |
 | `origenSegundo` | no; solo con rol `SEGUNDO` | `claude` (por defecto si falta) o `gemini-supervisado` (DEC-POS-022) |
 | `modeloHallazgos` | solo con `gemini-supervisado` (y entonces sí) | Modelo que produjo los hallazgos, mismo formato que `modelo`, p. ej. `gemini-2.5-pro` |
-| `hallazgosGemini` | solo con `gemini-supervisado` (y entonces sí) | Lista (puede ir vacía) de `{ id, veredicto, evidencia }`: el veredicto del supervisor por hallazgo de Gemini, `CONFIRMADO` o `DESCARTADO`, con su evidencia |
+| `hallazgosGemini` | solo con `gemini-supervisado` (y entonces sí) | Lista (al menos uno) de `{ id, veredicto, evidencia }`: el veredicto del supervisor por hallazgo de Gemini, `CONFIRMADO` o `DESCARTADO`, con su evidencia. Un `CONFIRMADO` exige un hallazgo propio con el mismo `id` en `hallazgos`; si no, el veredicto no puede ser `CONFORME` |
 
 «Otro modelo» se compara por familia (`opus`, `sonnet`, `haiku`, `fable` en `claude-<familia>-<versión>`; `gemini` en
 `gemini-<versión>` o `gemini-code-assist`); un modelo que no la tiene no cuenta como distinto. El firmante (`modelo`) de un
 `SEGUNDO` es siempre de Claude. Con `gemini-supervisado`, la familia de `modeloHallazgos` se compara con la del `PRIMERO`
 o `DELTA` y el firmante no puede ser de la familia del implementador (Opus). En MEDIO no sensible (`SENSIBLE` = `NO`,
-DEC-POS-019) el `SEGUNDO` no hace falta.
+DEC-POS-019) el `SEGUNDO` no hace falta. El `PRIMERO` o `DELTA` también tiene que ser de una familia de Claude. Un
+`SEGUNDO` `gemini-supervisado` solo cuenta con `SEGUNDO_GEMINI_SUPERVISADO=on` en Cloud Run, que pone el propietario
+([escritura §6](escritura-v1-8.md)); sin ella se trata como si no hubiera `SEGUNDO`.
 
 ### 3.3 Solicitud de corrección
 

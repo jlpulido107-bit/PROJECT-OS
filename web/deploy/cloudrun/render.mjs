@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + segundoGemini(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas ni el agente de finanzas')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas ni SEGUNDO_GEMINI_SUPERVISADO')
   return output.replace(marker, writeBlock)
 }
 
@@ -143,6 +143,18 @@ function escritura(env, problems) {
     ...registrarPrLines,
     '',
   ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-100, DEC-POS-022 y DEC-POS-014): SEGUNDO_GEMINI_SUPERVISADO=on hace contar el SEGUNDO de origen
+ * gemini-supervisado en /ordenes y en REVISAR del PM. Solo la exporta el propietario; sin ella, el YAML no cambia y la
+ * vía queda apagada (un SEGUNDO gemini-supervisado no cuenta). Es independiente de WRITE_MODE: /ordenes también lo lee.
+ */
+function segundoGemini(env, problems) {
+  const valor = (env.SEGUNDO_GEMINI_SUPERVISADO ?? '').trim()
+  if (!valor) return ''
+  if (valor !== 'on') problems.push('SEGUNDO_GEMINI_SUPERVISADO solo admite on')
+  return ['            - name: SEGUNDO_GEMINI_SUPERVISADO', "              value: 'on'", ''].join('\n')
 }
 
 /**

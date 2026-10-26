@@ -168,7 +168,7 @@ export default async function OrdenesPage() {
       <p className="muted small">
         Revisión de MEDIO: basta un CONFORME de PRIMERO o DELTA si la orden no es sensible (SENSIBLE = NO). Si es sensible
         (SENSIBLE vacía o SI), falta además un SEGUNDO de otro modelo; si es gemini-supervisado, lo firma un modelo distinto
-        del implementador (DEC-POS-019 y DEC-POS-022).
+        del implementador y solo cuenta si el propietario encendió esa vía (DEC-POS-019 y DEC-POS-022).
       </p>
       {total === 0 ? <Empty>No hay órdenes en ORDENES_CODEX.</Empty> : (
         <div className="badges" aria-label="Órdenes por estado">

@@ -286,7 +286,7 @@ function leerSegundo(o: Obj, L: Lector, rol: RolRevisor | undefined): Pick<Repor
   }
   const modeloHallazgos = L.texto(o, 'modeloHallazgos', '', 64, MODELO)
   const hallazgosGemini: HallazgoGemini[] = []
-  L.lista(o, 'hallazgosGemini', '', LIMITES.hallazgos).forEach((h, i) => {
+  L.lista(o, 'hallazgosGemini', '', LIMITES.hallazgos, 1).forEach((h, i) => {
     const r = `hallazgosGemini[${i}].`
     if (!esObj(h)) { L.err(`hallazgosGemini[${i}]`, 'debe ser un objeto'); return }
     hallazgosGemini.push({
@@ -344,9 +344,20 @@ function problemasCriterios(r: ReporteRevision, politica: PoliticaReporte): stri
   return p
 }
 
+/**
+ * Un hallazgo de Gemini CONFIRMADO por el supervisor (DEC-POS-022) tiene que estar en `hallazgos` con el mismo id; si
+ * no, el veredicto no puede ser CONFORME.
+ */
+function problemasGemini(r: ReporteRevision): string[] {
+  if (r.veredicto !== 'CONFORME') return []
+  const propios = new Set(r.hallazgos.map((h) => h.id))
+  return (r.hallazgosGemini ?? []).filter((h) => h.veredicto === 'CONFIRMADO' && !propios.has(h.id))
+    .map((h) => `hallazgosGemini: ${h.id} CONFIRMADO sin hallazgo propio con el mismo id; el veredicto no puede ser CONFORME`)
+}
+
 /** Coherencia del veredicto con su evidencia (§3.2). Devuelve los errores; vacío = coherente. */
 function coherencia(r: ReporteRevision, politica: PoliticaReporte): string[] {
-  const faltas = problemasCriterios(r, politica)
+  const faltas = [...problemasCriterios(r, politica), ...problemasGemini(r)]
   if (faltas.length > 0) return faltas
   const esperado = veredictoPorEvidencia(r)
   if (esperado !== null) {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildFixtureTabs } from '@/lib/fixtures'
 import { WRITE_HEADERS } from '@/lib/operations/constants'
 import { transitionWithDispatch } from '@/lib/operations/dispatch'
@@ -142,12 +142,14 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
   // ORD-POS-100: DEC-POS-019 (columna SENSIBLE) y DEC-POS-022 (SEGUNDO gemini-supervisado) en la ruta de REVISADA del PM.
   const gemini = (modelo: string) => comentario(JSON.stringify({
     ...reporte(HEAD, 'SEGUNDO', modelo, 2), origenSegundo: 'gemini-supervisado', modeloHallazgos: 'gemini-2.5-pro',
-    hallazgosGemini: [{ id: 'G1', veredicto: 'CONFIRMADO', evidencia: 'ya corregido en el head' }],
+    hallazgosGemini: [{ id: 'G1', veredicto: 'DESCARTADO', evidencia: 'npm test pasa en el head' }],
   }), 8)
+  afterEach(() => { vi.unstubAllEnvs() })
   it.each([
     ['SENSIBLE = NO, solo con PRIMERO', { 'ORD-POS-902': 'NO' }, [primero]],
-    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por Sonnet', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-sonnet-5-5')]],
+    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por Sonnet (bandera encendida)', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-sonnet-5-5')]],
   ])('MEDIO con %s pasa a REVISADA', async (_n, sensible, comentarios) => {
+    vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', 'on')
     const e = await setup(medio, comentarios, sensible)
     await e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })
     expect(await e.estado('ORD-POS-902')).toBe('REVISADA')
@@ -157,7 +159,9 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
     ['SENSIBLE = SI, solo con PRIMERO', { 'ORD-POS-902': 'SI' }, [primero]],
     ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por el implementador', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-opus-5-5')]],
     ['SENSIBLE = SI, con Sonnet + Sonnet sin origen', { 'ORD-POS-902': 'SI' }, [primero, segundo('claude-sonnet-5-5')]],
-  ])('MEDIO con %s responde dictamen-insuficiente sin escribir', async (_n, sensible, comentarios) => {
+    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado y la bandera apagada', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-sonnet-5-5')], null],
+  ])('MEDIO con %s responde dictamen-insuficiente sin escribir', async (_n, sensible, comentarios, bandera: string | null = 'on') => {
+    if (bandera) vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', bandera)
     const e = await setup(medio, comentarios, sensible)
     await expect(e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })).rejects.toMatchObject({ code: 'dictamen-insuficiente' })
     expect([e.auditoria(), await e.estado('ORD-POS-902')]).toEqual([[], 'PR_ABIERTO'])
