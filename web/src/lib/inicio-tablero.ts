@@ -1,6 +1,6 @@
 import { proyectoDeOrden, type Indicador, type ProyectoAgentes } from './agentes'
 import { addDays, civilDateInZone, civilHourInZone, parseTimestamp } from './dates'
-import type { FinanzasVista } from './finanzas/finanzas'
+import { formatoMoneda, sumarMeses, type FinanzasVista, type Rendimiento } from './finanzas/finanzas'
 import type { HitoInicio, ProyectoInicio } from './inicio'
 import type { EventosOrden } from './metricas'
 import type { PrFusion } from './operations/github'
@@ -11,7 +11,7 @@ import type { Dataset, Orden } from './types'
 
 /**
  * Tablero de operación de Inicio v2 (ORD-POS-096, docs/diseno-inicio-v2.md §7 I-1): tarjetas T1 a T6 y gráficas G1 y
- * G2. Funciones puras sobre lo que la página ya leyó (la hoja, AUDITORIA, las listas de PRs de GitHub y FINANZAS): no
+ * G2; T6 desde ORD-POS-101 (§7 I-2). Funciones puras sobre lo que la página ya leyó (la hoja, AUDITORIA, las listas de PRs de GitHub y FINANZAS): no
  * leen ni escriben y no llaman a GitHub. Tres estados (§2.1): `ok`, `sin-datos` (se leyó pero no alcanza) y `apagada`
  * (la fuente no existe en este despliegue o para esta sesión). Solo `ok` lleva números: nunca un 0 por falta de datos.
  */
@@ -37,7 +37,7 @@ export interface ValorTarjeta {
   tendencia: Estado<Tendencia>
 }
 
-export type Formato = 'numero' | 'pct' | 'mxn'
+export type Formato = 'numero' | 'pct' | 'mxn' | 'veces'
 
 export interface TarjetaTablero {
   id: 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6'
@@ -196,8 +196,63 @@ export function tarjetaGastoClaude(fin: FuenteFinanzas, filtro: ProyectoAgentes 
   }
 }
 
-/** T6 y G2 nacen apagadas en la v1 (§7 I-1): sus fuentes aún no se leen. */
-export const MOTIVO_T6 = 'La vista de FINANZAS todavía no lee RENDIMIENTO_CLAUDE (orden I-2 del diseño de Inicio v2); se enciende con el agente de finanzas del propietario.'
+/** T6 (ORD-POS-101): apagada sin el agente de finanzas activo o sin la pestaña, que no crea ninguna orden. */
+export const MOTIVO_T6_AGENTE = 'El agente de finanzas no está activo en este despliegue (FINANZAS_AGENTE_MODE): lo enciende el propietario.'
+export const MOTIVO_T6_PESTANA = 'La pestaña RENDIMIENTO_CLAUDE no existe en FINANZAS: la crea el propietario en la activación del agente de finanzas.'
+
+const usd = (centavos: number) => formatoMoneda(centavos, 'USD')
+const completo = (r: Rendimiento, mes: string) => ['Q1', 'Q2'].every((q) => r.cortes.some((c) => c.mes === mes && c.quincena === q))
+const redondeo = (n: number) => Math.round(n * 100) / 100
+
+/** Cociente de v3 §4.2 de un mes con sus dos cortes: consumo equivalente ÷ lo pagado, o por qué no se puede. */
+function cocienteMes(r: Rendimiento, mes: string): { valor: number; equiv: number; pagado: number } | { motivo: string } {
+  if (!completo(r, mes)) return { motivo: `${mes} no tiene sus dos cortes (Q1 y Q2) registrados` }
+  const pago = r.pagado[mes]!
+  if (pago.usdCentavos === null) return { motivo: `en ${mes} ${pago.motivo}` }
+  const equiv = r.cortes.filter((c) => c.mes === mes).reduce((s, c) => s + c.equivCentavos, 0)
+  return { valor: redondeo(equiv / pago.usdCentavos), equiv, pagado: pago.usdCentavos }
+}
+
+/**
+ * T6: rendimiento en tokens del último mes completo (§3.5): suma de COSTO_EQUIV_USD de sus dos cortes ÷ (suscripción +
+ * cargos extra del mes, en USD); tendencia contra el mes anterior, también completo. Un mes con un solo corte nunca se
+ * divide entre el costo del mes; el último corte cerrado va al lado, sin dividir. El consumo equivalente no es gasto.
+ */
+export function tarjetaRendimiento(fin: FuenteFinanzas, agenteActivo: boolean, filtro: ProyectoAgentes | null): Estado<ValorTarjeta> {
+  if (fin.estado === 'no-configurado') return apagada(MOTIVO_SIN_FINANZAS)
+  if (!agenteActivo) return apagada(MOTIVO_T6_AGENTE)
+  if (fin.estado === 'error') return sinDatos(fin.motivo)
+  const b = fin.vista.rendimiento
+  if (b.estado === 'sin-pestana') return apagada(MOTIVO_T6_PESTANA)
+  if (b.estado !== 'ok') return sinDatos(b.mensaje)
+  const r = b.datos
+  const ultimo = r.cortes.at(-1)
+  const contexto = ultimo ? `Último corte cerrado ${ultimo.corte}: ${usd(ultimo.equivCentavos)} equivalentes, sin dividir.` : null
+  const meses = [...new Set(r.cortes.map((c) => c.mes))].filter((m) => completo(r, m)).sort()
+  const notasFila = r.problemas.length ? [`${r.problemas.length} ${r.problemas.length === 1 ? 'fila' : 'filas'} de RENDIMIENTO_CLAUDE con problema no cuentan.`] : []
+  const mes = meses.at(-1)
+  if (!mes) return sinDatos(['Ningún mes tiene sus dos cortes (Q1 y Q2) registrados.', contexto, ...notasFila].filter(Boolean).join(' '))
+  const actual = cocienteMes(r, mes)
+  if ('motivo' in actual) return sinDatos([`El último mes completo no se puede dividir: ${actual.motivo}.`, contexto, ...notasFila].filter(Boolean).join(' '))
+  const anteriorMes = sumarMeses(mes, -1)
+  const anterior = cocienteMes(r, anteriorMes)
+  return {
+    estado: 'ok',
+    datos: {
+      valor: actual.valor,
+      detalle: `${mes}: ${usd(actual.equiv)} equivalentes ÷ ${usd(actual.pagado)} pagados`,
+      notas: [
+        ...(contexto ? [contexto] : []),
+        'El consumo equivalente no es gasto: no suma a T5.',
+        ...(filtro ? ['Toda la cuenta de Claude: no se reparte por proyecto.'] : []),
+        ...notasFila,
+      ],
+      tendencia: 'motivo' in anterior ? sinDatos(`${anterior.motivo[0]!.toUpperCase()}${anterior.motivo.slice(1)}.`)
+        : { estado: 'ok', datos: { anterior: anterior.valor, diferencia: redondeo(actual.valor - anterior.valor), etiqueta: `vs ${anteriorMes}` } },
+    },
+  }
+}
+
 export const MOTIVO_G2 = 'La pestaña RENDIMIENTO_CLAUDE_ROL no existe: requiere que el propietario registre la ampliación de DEC-POS-018 (orden I-3).'
 
 export interface FuentesTablero {
@@ -209,6 +264,8 @@ export interface FuentesTablero {
   eventos: FuenteEventos
   gh: FuenteGithub | null
   finanzas: FuenteFinanzas
+  /** Agente de finanzas activo (`finanzasAgenteMode() === 'sheets'`, ORD-POS-092): sin él, T6 apagada. */
+  agenteFinanzas: boolean
 }
 
 export function tarjetasTablero(f: FuentesTablero): TarjetaTablero[] {
@@ -218,7 +275,7 @@ export function tarjetasTablero(f: FuentesTablero): TarjetaTablero[] {
     { id: 'T3', titulo: 'CONFORME a la primera', formato: 'pct', fuente: 'AUDITORIA: cierres con fusión confirmada y rondas', href: '/metricas', estado: tarjetaConforme(f.ds, f.eventos, f.filtro, f.hoy) },
     { id: 'T4', titulo: 'Hitos en riesgo', formato: 'numero', fuente: 'HITOS y TAREAS', href: '/estado', estado: tarjetaHitos(f.proyectos) },
     { id: 'T5', titulo: 'Gasto de Claude del mes', formato: 'mxn', fuente: 'FINANZAS: MOVIMIENTOS de Claude', href: '/finanzas#herramientas', estado: tarjetaGastoClaude(f.finanzas, f.filtro, f.hoy) },
-    { id: 'T6', titulo: 'Rendimiento en tokens', formato: 'numero', fuente: 'FINANZAS: RENDIMIENTO_CLAUDE', href: '/finanzas', estado: apagada(MOTIVO_T6) },
+    { id: 'T6', titulo: 'Rendimiento en tokens', formato: 'veces', fuente: 'FINANZAS: RENDIMIENTO_CLAUDE', href: '/finanzas', estado: tarjetaRendimiento(f.finanzas, f.agenteFinanzas, f.filtro) },
   ]
 }
 

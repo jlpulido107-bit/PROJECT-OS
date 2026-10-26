@@ -11,7 +11,7 @@ import {
 import { construirFinanzas, gastoClaudeDiario, leerMovimientos } from '@/lib/finanzas/finanzas'
 import { finanzasInicio, misPendientes, proyectosInicio } from '@/lib/inicio'
 import {
-  abiertasEn, actividadPorDia, MOTIVO_G2, MOTIVO_T6, tablero, tarjetaAbiertas, tarjetaConforme, tarjetaFusionadas, tarjetaGastoClaude,
+  abiertasEn, actividadPorDia, MOTIVO_G2, MOTIVO_T6_AGENTE, MOTIVO_T6_PESTANA, tablero, tarjetaAbiertas, tarjetaConforme, tarjetaFusionadas, tarjetaGastoClaude,
   tarjetaHitos, ventanas, type FuenteAuditoria, type FuenteEventos, type FuenteFinanzas, type FuentesTablero,
 } from '@/lib/inicio-tablero'
 import { eventosOrdenes } from '@/lib/metricas'
@@ -123,7 +123,7 @@ async function fuentes(over: Partial<FuentesTablero & { audit: FuenteAuditoria }
   const d = over.ds ?? ds()
   const audit: FuenteAuditoria = over.audit ?? { estado: 'ok', datos: await vista(filasAudit()) }
   const eventos: FuenteEventos = audit.estado === 'ok' ? { estado: 'ok', datos: eventosOrdenes(d.ordenes, audit.datos) } : audit
-  return { ds: d, hoy: HOY, now: NOW, filtro: null, proyectos: proyectosInicio(d, HOY, null), eventos, gh: GH, finanzas: FINANZAS, audit, ...over }
+  return { ds: d, hoy: HOY, now: NOW, filtro: null, proyectos: proyectosInicio(d, HOY, null), eventos, gh: GH, finanzas: FINANZAS, agenteFinanzas: true, audit, ...over }
 }
 
 describe('criterio 3: canceladaMs en eventosOrdenes y fecha en Movimiento', () => {
@@ -222,10 +222,11 @@ describe('criterio 1: tarjetas T1 a T6', () => {
     expect(eco.estado === 'ok' && eco.datos.valor).toBe(5000)
   })
 
-  it('T6 y G2 nacen apagadas con su motivo', async () => {
+  it('T6 apagada sin la pestaña RENDIMIENTO_CLAUDE o sin el agente activo; G2 sigue apagada', async () => {
     const t = tablero(await fuentes())
     expect(t.tarjetas.map((x) => x.id)).toEqual(['T1', 'T2', 'T3', 'T4', 'T5', 'T6'])
-    expect(t.tarjetas[5]!.estado).toEqual({ estado: 'apagada', motivo: MOTIVO_T6 })
+    expect(t.tarjetas[5]!.estado).toEqual({ estado: 'apagada', motivo: MOTIVO_T6_PESTANA })
+    expect(tablero(await fuentes({ agenteFinanzas: false })).tarjetas[5]!.estado).toEqual({ estado: 'apagada', motivo: MOTIVO_T6_AGENTE })
     expect(t.costoPorRol).toEqual({ estado: 'apagada', motivo: MOTIVO_G2 })
   })
 })

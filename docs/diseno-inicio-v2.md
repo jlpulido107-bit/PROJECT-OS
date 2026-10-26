@@ -40,7 +40,7 @@ Se amplía el tipo `Indicador<T>` de /agentes (✅ `{ estado: 'sin-datos' } | { 
 | --- | --- | --- |
 | `ok` (con datos) | La fuente se leyó y hay al menos un dato que contar | El valor, la tendencia (§2.2) y la fuente |
 | `sin-datos` | La fuente se leyó pero no alcanza para el valor (pestaña inválida, sin filas del filtro, GitHub no respondió o se acabó el tope) | «sin datos» y el motivo; **nunca un 0** |
-| `apagada` (fuente apagada) | La fuente no existe en este despliegue o para esta sesión, por configuración: sin token de GitHub, sin `FINANZAS_SHEET_ID`, AUDITORIA sin escritura activa o para un lector no escritor, pestaña `RENDIMIENTO_CLAUDE` sin construir | «fuente apagada», qué falta y quién la enciende (el propietario) |
+| `apagada` (fuente apagada) | La fuente no existe en este despliegue o para esta sesión, por configuración: sin token de GitHub, sin `FINANZAS_SHEET_ID`, AUDITORIA sin escritura activa o para un lector no escritor, pestaña `RENDIMIENTO_CLAUDE` sin crear (la crea el propietario en la activación del agente de finanzas) | «fuente apagada», qué falta y quién la enciende (el propietario) |
 
 Un 0 solo aparece cuando la fuente se leyó y de verdad hay cero (p. ej. ninguna orden abierta en una ORDENES_CODEX
 válida). La distinción `apagada` contra `sin-datos` evita que el propietario busque un fallo donde solo hay una variable
@@ -123,8 +123,11 @@ el rendimiento a la mitad. Por eso:
   se aparta de la ventana de §2.2, y solo porque la fuente es quincenal y la fórmula, mensual. El consumo equivalente **no es gasto**
 y la tarjeta nunca lo suma a T5 (📄 v3 §1 y la nota obligatoria de `reporte-consumo`).
 
-Hoy la vista de FINANZAS no lee `RENDIMIENTO_CLAUDE` (📄 v3 §3.3: «la vista no la lee»). La orden I-2 (§7) añade esa
-lectura, solo lectura y fuera de toda suma de gasto o capital.
+Desde la ORD-POS-101 (orden I-2 de §7) la vista de FINANZAS lee `RENDIMIENTO_CLAUDE` en un bloque propio
+(`rendimiento`), solo lectura y fuera de toda suma de gasto o capital; el denominador es el `MONTO_ORIG` en USD de
+`REC-CLAUDE-AAAA-MM` y de `CLAUDE-EXTRA-AAAA-MM-Q1/Q2` del mes. Sin la suscripción confirmada o sin su monto en USD, T6
+queda `sin-datos`. T6 es `apagada` sin el agente de finanzas activo (`FINANZAS_AGENTE_MODE`) o sin la pestaña, que la
+crea el propietario en la activación del agente de finanzas, no ninguna orden.
 
 ## 4. Las dos gráficas (criterios 2 y 3)
 
@@ -212,7 +215,8 @@ Para registrar como BORRADOR; no se crean desde esta orden.
 
 ### I-2 «Inicio v2: T6, rendimiento en tokens desde RENDIMIENTO_CLAUDE» — riesgo **BAJO**
 
-- **Por qué BAJO:** solo lectura de una pestaña que ya construyó la ORD-POS-092; sin la pestaña, `apagada`.
+- **Por qué BAJO:** solo lectura de `RENDIMIENTO_CLAUDE`. La ORD-POS-092 construyó solo la ruta que la escribe: la pestaña
+  la crea el propietario en la activación del agente de finanzas (📄 v3 §8.2; H3 de #223); sin ella, `apagada`.
 - **Criterios:** la vista de FINANZAS lee `RENDIMIENTO_CLAUDE` en un bloque propio que ninguna suma de gasto ni capital
   usa (prueba de que los totales no cambian con filas de rendimiento); T6 con el cociente mensual de v3 §4.2 y tendencia por mes (§3.5), con la prueba de que un mes con solo Q1 no se toma como completo ni se divide entre el costo del mes; estados
   `apagada` sin pestaña y `sin-datos` sin cortes.

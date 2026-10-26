@@ -13,15 +13,18 @@ import styles from './tablero.module.css'
 
 const ETIQUETA_ENTIDAD: Record<EntidadG1, string> = { ORDENES_CODEX: 'Órdenes', TAREAS: 'Tareas', DECISIONES: 'Decisiones', TIEMPOS: 'Tiempos' }
 
+const VECES = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 })
+
 function valor(n: number, formato: Formato): string {
   if (formato === 'pct') return `${n} %`
+  if (formato === 'veces') return `${VECES.format(n)} ×`
   if (formato === 'mxn') return formatoMxn(n)
   return String(n)
 }
 
 function diferencia(n: number, formato: Formato): string {
   if (n === 0) return '='
-  const abs = formato === 'pct' ? `${Math.abs(n)} pp` : formato === 'mxn' ? formatoMxn(Math.abs(n)) : String(Math.abs(n))
+  const abs = formato === 'pct' ? `${Math.abs(n)} pp` : formato === 'mxn' ? formatoMxn(Math.abs(n)) : formato === 'veces' ? valor(Math.abs(n), formato) : String(Math.abs(n))
   return `${n > 0 ? '+' : '−'}${abs}`
 }
 

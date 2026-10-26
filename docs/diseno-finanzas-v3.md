@@ -134,7 +134,7 @@ Mismo patrón que el PM (✅ `authz.ts` y `guard.ts`), con token, hash, rutas y 
 
 | | Pestaña nueva `RENDIMIENTO_CLAUDE` (elegida) | `TIPO` nuevo (`Rendimiento`) en MOVIMIENTOS, excluido de RESUMEN |
 | --- | --- | --- |
-| Riesgo de sumar al gasto | Ninguno por construcción: ninguna suma de gasto ni de capital la lee (solo la sección «Rendimiento de Claude (no suma)» de RESUMEN, §4.2, y la vista no la lee) | Cada `SUMIFS` de RESUMEN y cada suma de la vista debe excluirlo; una fórmula nueva que lo olvide suma tokens como gasto (p. ej. «costo mensual de herramientas», v1 §2.5, agrupa por `CATEGORIA`) |
+| Riesgo de sumar al gasto | Ninguno por construcción: ninguna suma de gasto ni de capital la lee (solo la sección «Rendimiento de Claude (no suma)» de RESUMEN, §4.2, y, desde la ORD-POS-101, el bloque propio `rendimiento` de la vista para T6 de Inicio) | Cada `SUMIFS` de RESUMEN y cada suma de la vista debe excluirlo; una fórmula nueva que lo olvide suma tokens como gasto (p. ej. «costo mensual de herramientas», v1 §2.5, agrupa por `CATEGORIA`) |
 | Vista actual | Sin cambio (✅ lee solo sus pestañas fijas) | Hoy marca un `TIPO` desconocido como fila con problema (✅ `canonico(…, TIPOS)`); habría que cambiar `TIPOS`, `capitalUsado` y los bloques |
 | Columnas | Las del rendimiento (tokens, sesiones), sin `MONTO_MXN` | Forzaría `MONTO_MXN`, `CATEGORIA` y `COMPROBANTE`, que no aplican |
 
