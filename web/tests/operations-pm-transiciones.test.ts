@@ -33,8 +33,11 @@ const reporte = (headSha = HEAD, rol = 'PRIMERO', modelo = 'claude-sonnet-5-5', 
 })
 const comentario = (body: string, id = 7) => ({ id, body: `${MARCA_DICTAMEN}\n\n\`\`\`json\n${body}\n\`\`\`` })
 
-async function setup(cambios: Record<string, Record<string, string>> = {}, comentarios = [comentario(JSON.stringify(reporte()))]) {
-  const store = new InMemoryTableStore({ ...(buildFixtureTabs('2026-10-21') as Record<string, unknown[][]>), AUDITORIA: [[...WRITE_HEADERS.AUDITORIA]] })
+/** Con `sensible`, la hoja ya tiene la columna SENSIBLE (migración de DEC-POS-019) con esos valores por orden. */
+async function setup(cambios: Record<string, Record<string, string>> = {}, comentarios = [comentario(JSON.stringify(reporte()))], sensible?: Record<string, string>) {
+  const tabs = buildFixtureTabs('2026-10-21') as Record<string, unknown[][]>
+  if (sensible) tabs.ORDENES_CODEX = tabs.ORDENES_CODEX!.map((fila, i) => [...fila, i === 0 ? 'SENSIBLE' : sensible[String(fila[0])] ?? ''])
+  const store = new InMemoryTableStore({ ...tabs, AUDITORIA: [[...WRITE_HEADERS.AUDITORIA]] })
   const view = await readView(store, 'ORDENES_CODEX')
   for (const [id, campos] of Object.entries(cambios)) {
     const fila = findById(view, 'ORDEN_ID', id)[0]!
@@ -134,6 +137,30 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
     const e = await setup(medio, [primero, segundo('claude-fable-5-1')])
     await e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })
     expect(await e.estado('ORD-POS-902')).toBe('REVISADA')
+  })
+
+  // ORD-POS-100: DEC-POS-019 (columna SENSIBLE) y DEC-POS-022 (SEGUNDO gemini-supervisado) en la ruta de REVISADA del PM.
+  const gemini = (modelo: string) => comentario(JSON.stringify({
+    ...reporte(HEAD, 'SEGUNDO', modelo, 2), origenSegundo: 'gemini-supervisado', modeloHallazgos: 'gemini-2.5-pro',
+    hallazgosGemini: [{ id: 'G1', veredicto: 'CONFIRMADO', evidencia: 'ya corregido en el head' }],
+  }), 8)
+  it.each([
+    ['SENSIBLE = NO, solo con PRIMERO', { 'ORD-POS-902': 'NO' }, [primero]],
+    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por Sonnet', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-sonnet-5-5')]],
+  ])('MEDIO con %s pasa a REVISADA', async (_n, sensible, comentarios) => {
+    const e = await setup(medio, comentarios, sensible)
+    await e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })
+    expect(await e.estado('ORD-POS-902')).toBe('REVISADA')
+  })
+  it.each([
+    ['SENSIBLE vacía, solo con PRIMERO', {}, [primero]],
+    ['SENSIBLE = SI, solo con PRIMERO', { 'ORD-POS-902': 'SI' }, [primero]],
+    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por el implementador', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-opus-5-5')]],
+    ['SENSIBLE = SI, con Sonnet + Sonnet sin origen', { 'ORD-POS-902': 'SI' }, [primero, segundo('claude-sonnet-5-5')]],
+  ])('MEDIO con %s responde dictamen-insuficiente sin escribir', async (_n, sensible, comentarios) => {
+    const e = await setup(medio, comentarios, sensible)
+    await expect(e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })).rejects.toMatchObject({ code: 'dictamen-insuficiente' })
+    expect([e.auditoria(), await e.estado('ORD-POS-902')]).toEqual([[], 'PR_ABIERTO'])
   })
 })
 

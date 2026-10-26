@@ -81,7 +81,7 @@ DEC-POS-008 retiró el muestreo de 1 de cada 5 y toda auditoría externa.
 | --- | --- | --- |
 | BAJO | Revisor Claude a ciegas, con modelo distinto al que implementó | Sí, hasta 2 rondas |
 | BAJO solo documentación | Sin revisor automático | — |
-| MEDIO | Revisión completa a ciegas (Sonnet); tras cada corrección, re-revisión del delta; segundo revisor Fable 5.1 antes de fusionar | Hasta 2 rondas y luego escala |
+| MEDIO | Revisión completa a ciegas (Sonnet); tras cada corrección, re-revisión del delta; si la orden es sensible, segundo revisor (Fable 5.1, o gemini-supervisado) antes de fusionar | Hasta 2 rondas y luego escala |
 | ALTO | No se delega tal cual (DEC-POS-014): se descompone en una orden MEDIO de código inerte por defecto más la activación del propietario; si no se puede, va en vivo con el propietario y se registra en DECISIONES | — (la orden MEDIO sigue su fila) |
 
 **Carril ALTO (DEC-POS-014).** ALTO es el código que cambia en tiempo de ejecución la autorización o los permisos de
@@ -101,6 +101,19 @@ inerte por defecto ([`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md#r
 
 El máximo es de 2 rondas de corrección por orden. El segundo revisor de MEDIO revisa a ciegas, sin el dictamen del
 primero. Ningún dictamen autoriza fusión, despliegue ni cierre.
+
+**MEDIO sensible y SEGUNDO gemini-supervisado (DEC-POS-019 y DEC-POS-022, ORD-POS-100).** La columna `SENSIBLE` de
+ORDENES_CODEX ([migración](migracion-ordenes-codex.md#columna-sensible-dec-pos-019)) decide si un MEDIO necesita
+segundo revisor: con `NO`, un CONFORME de `PRIMERO` o `DELTA` basta para «Listo para tu decisión»; vacía, ausente o
+`SI` = sensible, y sigue exigiendo un `SEGUNDO` CONFORME de otro modelo sobre el mismo head. El `SEGUNDO` puede ser:
+- de origen `claude` (o sin origen): su modelo, de otra familia que la del `PRIMERO` o `DELTA`;
+- de origen `gemini-supervisado`: los hallazgos los produce Gemini (`modeloHallazgos`, de otra familia que la del
+  `PRIMERO` o `DELTA`) y una sesión de Claude los confirma o descarta uno por uno con evidencia (`hallazgosGemini`) y
+  firma; el modelo del firmante no es el del implementador (Opus).
+
+«Otro modelo» se compara por familia (Opus, Sonnet, Haiku, Fable, Gemini), nunca por el texto libre de `modelo`: un
+sufijo distinto del mismo modelo o un nombre inventado no cuentan. Formato:
+[contrato §3.1](contrato-supervision-automatica.md#contrato-versión-2-rol-y-modelo-del-revisor).
 
 ## Qué se puede delegar
 

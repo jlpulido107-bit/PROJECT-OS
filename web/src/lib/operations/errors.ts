@@ -151,7 +151,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'transicion-reservada-pm': 'El agente PM solo aprueba, envía y marca REVISADA; esa transición es del propietario.',
   'riesgo-alto-pm': 'El agente PM no aprueba ni envía órdenes de riesgo ALTO; no se escribió nada.',
   'dictamen-no-valido': 'No hay un dictamen válido del head actual del PR; no se marcó REVISADA.',
-  'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011: en MEDIO, también SEGUNDO de otro modelo); no se marcó REVISADA.',
+  'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011, 019 y 022: en MEDIO sensible, también SEGUNDO de otro modelo; si es gemini-supervisado, lo firma un modelo distinto del implementador); no se marcó REVISADA.',
   'autorizacion-no-valida': 'La autorización no lleva el ID de esta orden, la palabra «sí» y la fecha de hoy, o ya se usó para otra orden; no se escribió nada.',
   'pr-no-detectado': 'No hay un único PR abierto de la orden detectado en GitHub; el agente PM no registró nada.',
   'finanzas-esquema-invalido': 'FINANZAS no tiene las pestañas o columnas que exige la escritura (MOVIMIENTOS, RECURRENTES y AUDITORIA); no se escribió nada.',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildFixtureTabs } from '@/lib/fixtures'
 import { estadoOrden, resumenOrdenes, vistaOrden } from '@/lib/ordenes'
+import { ordenSensible } from '@/lib/supervision/politica'
 import { buildDataset } from '@/lib/table'
 import type { Orden } from '@/lib/types'
 
@@ -8,7 +9,7 @@ const ds = buildDataset(buildFixtureTabs('2026-10-14'), { source: 'fixtures', fe
 
 const orden = (extra: Partial<Orden> = {}): Orden => ({
   id: 'ORD-POS-001', proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'T', objetivo: 'O', contexto: null, criterios: 'C',
-  fueraDeAlcance: 'F', comoProbar: 'npm test', riesgo: 'BAJO', estado: 'BORRADOR', issueUrl: null, prUrl: null, notas: null,
+  fueraDeAlcance: 'F', comoProbar: 'npm test', riesgo: 'BAJO', sensible: null, estado: 'BORRADOR', issueUrl: null, prUrl: null, notas: null,
   actualizadoEn: '2026-10-13', ...extra,
 })
 
@@ -48,5 +49,25 @@ describe('órdenes a Codex: lectura', () => {
     const invalida = vistaOrden(orden({ estado: 'HECHA' }), ds)
     expect(invalida).toMatchObject({ estado: null, grupo: 'invalidas', siguiente: null })
     expect(invalida.problemas).toContain('ESTADO no es válido')
+  })
+})
+
+describe('columna SENSIBLE de ORDENES_CODEX (ORD-POS-100, DEC-POS-019)', () => {
+  const conColumna = (valores: string[]) => {
+    const tabs = buildFixtureTabs('2026-10-14') as Record<string, unknown[][]>
+    tabs.ORDENES_CODEX = tabs.ORDENES_CODEX!.map((fila, i) => [...fila, i === 0 ? 'SENSIBLE' : valores[i - 1] ?? ''])
+    return buildDataset(tabs as ReturnType<typeof buildFixtureTabs>, { source: 'fixtures', fetchedAt: 0 })
+  }
+
+  it('sin migrar, la pestaña sigue válida y SENSIBLE se lee como null (= sensible)', () => {
+    expect(ds.tabs.ORDENES_CODEX.ok).toBe(true)
+    expect(ds.ordenes.length).toBeGreaterThan(0)
+    expect(ds.ordenes.every((o) => o.sensible === null && ordenSensible(o.sensible))).toBe(true)
+  })
+
+  it('migrada, lee SI y NO normalizados y la celda vacía como null', () => {
+    const d = conColumna(['no', ' SI ', ''])
+    expect(d.tabs.ORDENES_CODEX.ok).toBe(true)
+    expect(d.ordenes.slice(0, 3).map((o) => [o.sensible, ordenSensible(o.sensible)])).toEqual([['NO', false], ['SI', true], [null, true]])
   })
 })

@@ -23,6 +23,14 @@ export type EstadoCi = 'EXITO' | 'FALLO' | 'PENDIENTE' | 'CI_AUSENTE'
 export type Severidad = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA'
 /** Papel del revisor (contrato v2): revisión completa, delta tras corrección o segundo revisor de MEDIO. */
 export type RolRevisor = 'PRIMERO' | 'DELTA' | 'SEGUNDO'
+/**
+ * Origen del SEGUNDO (DEC-POS-022): revisión propia de Claude (por defecto) o hallazgos de Gemini que una sesión de
+ * Claude supervisa y firma, uno por uno.
+ */
+export type OrigenSegundo = 'claude' | 'gemini-supervisado'
+export type VeredictoSupervisor = 'CONFIRMADO' | 'DESCARTADO'
+/** Veredicto del supervisor sobre un hallazgo de Gemini, con su evidencia. */
+export interface HallazgoGemini { id: string; veredicto: VeredictoSupervisor; evidencia: string }
 
 export interface CriterioReporte { id: string; resultado: ResultadoCriterio; evidencia: string }
 export interface PruebaPropia { comando: string; sha: string; codigoSalida: number }
@@ -41,7 +49,14 @@ export interface ReporteRevision {
   versionContrato: string
   /** Solo en la versión 2 del contrato (obligatorios allí); en la 1 quedan sin definir. */
   rol?: RolRevisor
+  /** Modelo de la sesión que firma el dictamen. */
   modelo?: string
+  /** Solo con rol SEGUNDO (contrato v2). Sin él, el SEGUNDO es de origen `claude`. */
+  origenSegundo?: OrigenSegundo
+  /** Solo con origen `gemini-supervisado` (obligatorio allí): modelo que produjo los hallazgos. */
+  modeloHallazgos?: string
+  /** Solo con origen `gemini-supervisado` (obligatorio allí): veredicto del supervisor por hallazgo de Gemini. */
+  hallazgosGemini?: HallazgoGemini[]
   versionPolitica: string
   ordenId: string
   tareaId: string
@@ -98,6 +113,8 @@ const TAREA = /^[A-Z]{2,5}-\d{1,6}$/
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const MODELO = /^[a-z0-9][a-z0-9._-]{2,63}$/
 const ROLES: readonly string[] = ['PRIMERO', 'DELTA', 'SEGUNDO']
+const ORIGENES: readonly string[] = ['claude', 'gemini-supervisado']
+const VEREDICTOS_SUPERVISOR: readonly string[] = ['CONFIRMADO', 'DESCARTADO']
 const RESULTADOS: readonly string[] = ['CUMPLE', 'NO_CUMPLE', 'NO_VERIFICADO']
 const ESTADOS_CI: readonly string[] = ['EXITO', 'FALLO', 'PENDIENTE', 'CI_AUSENTE']
 const SEVERIDADES: readonly string[] = ['CRITICA', 'ALTA', 'MEDIA', 'BAJA']
@@ -157,6 +174,7 @@ function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
   const v2 = versionContrato === '2'
   const rol = v2 ? L.opcion<RolRevisor>(o, 'rol', '', ROLES) : undefined
   const modelo = v2 ? L.texto(o, 'modelo', '', 64, MODELO) : undefined
+  const segundo = leerSegundo(o, L, rol)
   const ordenId = L.texto(o, 'ordenId', '', 64, ORDEN)
   const tareaId = L.texto(o, 'tareaId', '', 64, TAREA)
   const proyectoId = L.texto(o, 'proyectoId', '', 8, /^(POS|SIG|ECO)$/)
@@ -241,10 +259,43 @@ function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
   const veredicto = L.opcion<Veredicto>(o, 'veredicto', '', VEREDICTOS)
   if (L.errores.length > 0) return null
   return {
-    versionContrato, ...(v2 ? { rol, modelo } : {}), versionPolitica, ordenId, tareaId, proyectoId, repo, issue, pr, headSha, baseSha, hashCriterios,
+    versionContrato, ...(v2 ? { rol, modelo } : {}), ...segundo, versionPolitica, ordenId, tareaId, proyectoId, repo, issue, pr, headSha, baseSha, hashCriterios,
     revisionId, ejecucionId, intento, ronda, autorizacion, limiteConsumo, criterios,
     evidencia: { propias, ci, autor }, hallazgos, veredicto,
   }
+}
+
+/**
+ * Campos del SEGUNDO (DEC-POS-022): `origenSegundo`, `modeloHallazgos` y `hallazgosGemini` solo valen con rol SEGUNDO;
+ * los dos últimos, solo con origen `gemini-supervisado`, que los exige.
+ */
+function leerSegundo(o: Obj, L: Lector, rol: RolRevisor | undefined): Pick<ReporteRevision, 'origenSegundo' | 'modeloHallazgos' | 'hallazgosGemini'> {
+  const campos = ['origenSegundo', 'modeloHallazgos', 'hallazgosGemini'] as const
+  if (rol !== 'SEGUNDO') {
+    for (const k of campos) if (o[k] !== undefined) L.err(k, 'solo vale con rol SEGUNDO (contrato v2)')
+    return {}
+  }
+  if (o.origenSegundo === undefined) {
+    for (const k of campos.slice(1)) if (o[k] !== undefined) L.err(k, 'solo vale con origenSegundo gemini-supervisado')
+    return {}
+  }
+  const origenSegundo = L.opcion<OrigenSegundo>(o, 'origenSegundo', '', ORIGENES)
+  if (origenSegundo !== 'gemini-supervisado') {
+    for (const k of campos.slice(1)) if (o[k] !== undefined) L.err(k, 'solo vale con origenSegundo gemini-supervisado')
+    return { origenSegundo }
+  }
+  const modeloHallazgos = L.texto(o, 'modeloHallazgos', '', 64, MODELO)
+  const hallazgosGemini: HallazgoGemini[] = []
+  L.lista(o, 'hallazgosGemini', '', LIMITES.hallazgos).forEach((h, i) => {
+    const r = `hallazgosGemini[${i}].`
+    if (!esObj(h)) { L.err(`hallazgosGemini[${i}]`, 'debe ser un objeto'); return }
+    hallazgosGemini.push({
+      id: L.texto(h, 'id', r),
+      veredicto: L.opcion<VeredictoSupervisor>(h, 'veredicto', r, VEREDICTOS_SUPERVISOR),
+      evidencia: L.texto(h, 'evidencia', r, LIMITES.textoLargo),
+    })
+  })
+  return { origenSegundo, modeloHallazgos, hallazgosGemini }
 }
 
 /** Veredicto que corresponde a los criterios y hallazgos, sin mirar las comprobaciones (§3.2). */

@@ -150,6 +150,8 @@ export interface Orden {
   fueraDeAlcance: string | null
   comoProbar: string | null
   riesgo: string | null
+  /** Columna SENSIBLE (DEC-POS-019): `SI`, `NO` o null si está vacía o falta; solo `NO` es no sensible. */
+  sensible: string | null
   estado: string | null
   issueUrl: string | null
   prUrl: string | null

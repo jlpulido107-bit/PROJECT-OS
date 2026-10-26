@@ -12,7 +12,7 @@ const LIMITE_MS = 20_000
 const FALLO_MS = 60_000
 const cache = new Map<string, { hasta: number; datos: DatosPr | null; fallo?: string }>()
 
-export interface OrdenConPr { id: string; proyectoId: string | null; prUrl: string | null; riesgo: string | null; criterios: string | null }
+export interface OrdenConPr { id: string; proyectoId: string | null; prUrl: string | null; riesgo: string | null; criterios: string | null; sensible?: string | null }
 
 export function limpiarCacheDictamenes(): void { cache.clear() }
 

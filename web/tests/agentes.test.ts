@@ -28,7 +28,7 @@ const CRITERIOS = '1. Uno\n2. Dos'
 
 const orden = (id: string, estado: string, riesgo = 'BAJO', proyectoId: string | null = id.slice(4, 7)): Orden => ({
   id, proyectoId, tareaId: 'POS-029', titulo: 't', objetivo: null, contexto: null, criterios: CRITERIOS, fueraDeAlcance: null,
-  comoProbar: null, riesgo, estado, issueUrl: null, prUrl: null, notas: null, actualizadoEn: null,
+  comoProbar: null, riesgo, sensible: null, estado, issueUrl: null, prUrl: null, notas: null, actualizadoEn: null,
 })
 
 let req = 0

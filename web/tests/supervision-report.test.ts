@@ -248,3 +248,42 @@ describe('clave idempotente (criterio 4)', () => {
     }
   })
 })
+
+describe('SEGUNDO de origen gemini-supervisado (ORD-POS-100, criterio 1)', () => {
+  const hallazgo = { id: 'G1', veredicto: 'CONFIRMADO', evidencia: 'a.ts:10, npm test falla en el head' }
+  const v2 = (rol: string, mut: (r: Rep) => void = () => {}) => con((r) => { r.versionContrato = '2'; r.rol = rol; r.modelo = 'claude-sonnet-5-5'; mut(r) })
+  const gemini = (mut: (r: Rep) => void = () => {}) =>
+    v2('SEGUNDO', (r) => { r.origenSegundo = 'gemini-supervisado'; r.modeloHallazgos = 'gemini-2.5-pro'; r.hallazgosGemini = [hallazgo]; mut(r) })
+
+  it('acepta el origen gemini-supervisado con modeloHallazgos y el veredicto del supervisor por hallazgo', () => {
+    const r = validarReporte(gemini(), POL)
+    expect(r.ok && [r.reporte.origenSegundo, r.reporte.modeloHallazgos, r.reporte.hallazgosGemini]).toEqual(['gemini-supervisado', 'gemini-2.5-pro', [hallazgo]])
+    expect(validarReporte(gemini((r) => { r.hallazgosGemini = [] }), POL).ok).toBe(true)
+  })
+  it('acepta origen claude sin los campos de Gemini, y un SEGUNDO sin origen', () => {
+    expect(validarReporte(v2('SEGUNDO', (r) => { r.origenSegundo = 'claude' }), POL).ok).toBe(true)
+    expect(validarReporte(v2('SEGUNDO'), POL).ok).toBe(true)
+  })
+  it.each([
+    ['otro origen', (r: Rep) => { r.origenSegundo = 'gemini' }, 'origenSegundo:'],
+    ['sin modeloHallazgos', (r: Rep) => { delete r.modeloHallazgos }, 'modeloHallazgos:'],
+    ['modeloHallazgos con formato inválido', (r: Rep) => { r.modeloHallazgos = 'Gemini Pro' }, 'modeloHallazgos:'],
+    ['sin hallazgosGemini', (r: Rep) => { delete r.hallazgosGemini }, 'hallazgosGemini:'],
+    ['hallazgo sin veredicto del supervisor', (r: Rep) => { r.hallazgosGemini = [{ id: 'G1', evidencia: 'x' }] }, 'hallazgosGemini[0].veredicto:'],
+    ['veredicto del supervisor desconocido', (r: Rep) => { r.hallazgosGemini = [{ ...hallazgo, veredicto: 'TAL VEZ' }] }, 'hallazgosGemini[0].veredicto:'],
+    ['hallazgo sin evidencia', (r: Rep) => { r.hallazgosGemini = [{ ...hallazgo, evidencia: '' }] }, 'hallazgosGemini[0].evidencia:'],
+  ])('rechaza %s', (_, mut, prefijo) => {
+    expect(errores(gemini(mut)).some((e) => e.startsWith(prefijo))).toBe(true)
+  })
+  it.each(['PRIMERO', 'DELTA'])('rechaza los campos del SEGUNDO con rol %s', (rol) => {
+    for (const campo of ['origenSegundo', 'modeloHallazgos', 'hallazgosGemini']) {
+      const valor = { origenSegundo: 'claude', modeloHallazgos: 'gemini-2.5-pro', hallazgosGemini: [] }[campo]
+      expect(errores(v2(rol, (r) => { r[campo] = valor })).some((e) => e.startsWith(`${campo}:`))).toBe(true)
+    }
+  })
+  it('rechaza los campos del SEGUNDO en contrato v1 y los de Gemini con origen claude', () => {
+    expect(errores(con((r) => { r.origenSegundo = 'claude' })).some((e) => e.startsWith('origenSegundo:'))).toBe(true)
+    expect(errores(v2('SEGUNDO', (r) => { r.origenSegundo = 'claude'; r.modeloHallazgos = 'gemini-2.5-pro' })).some((e) => e.startsWith('modeloHallazgos:'))).toBe(true)
+    expect(errores(v2('SEGUNDO', (r) => { r.hallazgosGemini = [] })).some((e) => e.startsWith('hallazgosGemini:'))).toBe(true)
+  })
+})

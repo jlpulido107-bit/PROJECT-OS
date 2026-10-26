@@ -53,6 +53,7 @@ export const TAB_HEADERS = {
     'ORDEN_ID', 'PROYECTO_ID', 'TAREA_ID', 'TITULO', 'OBJETIVO', 'CONTEXTO', 'CRITERIOS_ACEPTACION',
     'FUERA_DE_ALCANCE', 'COMO_PROBAR', 'RIESGO', 'ESTADO', 'ISSUE_URL', 'PR_URL', 'NOTAS', 'ACTUALIZADO_EN',
   ],
+  // SENSIBLE (DEC-POS-019) va aparte, en ORDENES_SENSIBLE: es opcional para no invalidar la pestaña antes de la migración.
   /**
    * V1.9 (opcional): estado de supervisión de PRs (docs/migracion-supervision.md, contrato §3.1/§4/§5).
    * Solo lectura por ahora; no está en WRITE_HEADERS.
@@ -63,6 +64,12 @@ export const TAB_HEADERS = {
     'RONDA', 'ESTADO', 'VEREDICTO', 'ORIGEN', 'REPORTE_REF', 'MOTIVO', 'VERSION', 'ACTUALIZADO_EN',
   ],
 } as const
+
+/**
+ * Columna opcional de ORDENES_CODEX (DEC-POS-019, docs/migracion-ordenes-codex.md): `SI` o `NO`. Se lee si existe y no
+ * se exige en los encabezados; vacía o ausente = sensible. No está en el contrato de escritura: la llena el propietario.
+ */
+export const ORDENES_SENSIBLE = 'SENSIBLE'
 
 export type TabName = keyof typeof TAB_HEADERS
 export type TabColumn<T extends TabName> = (typeof TAB_HEADERS)[T][number]
