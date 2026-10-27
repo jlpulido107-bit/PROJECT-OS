@@ -1,0 +1,42 @@
+{
+  "versionContrato": "2",
+  "rol": "SEGUNDO",
+  "modelo": "claude-sonnet-5-5",
+  "origenSegundo": "gemini-supervisado",
+  "modeloHallazgos": "gemini-code-assist",
+  "hallazgosGemini": [
+    { "id": "G1", "veredicto": "CONFIRMADO", "evidencia": "Gemini (medium): la skill no valida el formato de RONDA. Sondeo propio en el head: RONDA=7 no hace terminar sin dictamen. Va como hallazgo propio G1, no bloquea." },
+    { "id": "G2", "veredicto": "DESCARTADO", "evidencia": "Gemini (high): «lee la descripción del PR». Falso positivo: la skill solo usa get_diff, get_files, get_check_runs y get_comments (SKILL.md:58); git grep 'method.*get\\b' sin coincidencias." }
+  ],
+  "versionPolitica": "DEC-POS-003",
+  "ordenId": "ORD-POS-023",
+  "tareaId": "POS-019",
+  "proyectoId": "POS",
+  "repo": "jlpulido107-bit/PROJECT-OS",
+  "issue": 77,
+  "pr": 78,
+  "headSha": "1111111111111111111111111111111111111111",
+  "baseSha": "2222222222222222222222222222222222222222",
+  "hashCriterios": "f3b239e94b3d04157278cda26d2a93ec2e0456db25c84ba3ca622c82c8ec5d7f",
+  "revisionId": "REV-ORD-POS-023-3",
+  "ejecucionId": "EJE-ORD-POS-023-3",
+  "intento": 1,
+  "ronda": 0,
+  "autorizacion": { "otorgadaPor": "propietario", "orden": "ORD-POS-023", "desde": "2026-10-17" },
+  "limiteConsumo": { "presupuesto": "2 USD", "tiempoMaximo": "30 min" },
+  "criterios": [
+    { "id": "1", "resultado": "CUMPLE", "evidencia": "La skill valida los cuatro datos y no lee la descripción del PR (G2 descartado). Caso negativo: HEAD_ESPERADO distinto del head actual hace terminar sin dictamen." },
+    { "id": "2", "resultado": "CUMPLE", "evidencia": "Exige comando, SHA, código de salida y un caso negativo por criterio. Caso negativo: criterio sin prueba ejecutada queda NO_VERIFICADO." }
+  ],
+  "evidencia": {
+    "propias": [
+      { "comando": "cd web && npx vitest run tests/supervision-dictamen-ejemplo.test.ts", "sha": "1111111111111111111111111111111111111111", "codigoSalida": 0 }
+    ],
+    "ci": { "estado": "EXITO", "ejecucion": "run-123", "sha": "1111111111111111111111111111111111111111" },
+    "autor": []
+  },
+  "hallazgos": [
+    { "id": "G1", "severidad": "BAJA", "ubicacion": ".claude/skills/revisar-orden/SKILL.md:47", "condicion": "RONDA fuera de 0 a 2 no se rechaza.", "impacto": "Un dictamen con ronda inválida se rechaza después en validarReporte, no antes.", "bloquea": false, "justificacion": "" }
+  ],
+  "veredicto": "CONFORME"
+}

@@ -102,7 +102,9 @@ inerte por defecto ([`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md#r
 El máximo es de 2 rondas de corrección por orden. El segundo revisor de MEDIO revisa a ciegas, sin el dictamen del
 primero. Ningún dictamen autoriza fusión, despliegue ni cierre.
 
-**MEDIO sensible y SEGUNDO gemini-supervisado (DEC-POS-019 y DEC-POS-022, ORD-POS-100).** La columna `SENSIBLE` de
+### MEDIO sensible y SEGUNDO gemini-supervisado
+
+DEC-POS-019 y DEC-POS-022 (ORD-POS-100 en el código, ORD-POS-099 en la skill y el flujo). La columna `SENSIBLE` de
 ORDENES_CODEX ([migración](migracion-ordenes-codex.md#columna-sensible-dec-pos-019)) decide si un MEDIO necesita
 segundo revisor: con `NO`, un CONFORME de `PRIMERO` o `DELTA` basta para «Listo para tu decisión»; vacía, ausente o
 `SI` = sensible, y sigue exigiendo un `SEGUNDO` CONFORME de otro modelo sobre el mismo head. El `SEGUNDO` puede ser:
@@ -116,7 +118,22 @@ sufijo distinto del mismo modelo o un nombre inventado no cuentan, y el `PRIMERO
 La vía `gemini-supervisado` está **apagada por defecto** (DEC-POS-014): cuenta solo con `SEGUNDO_GEMINI_SUPERVISADO=on`,
 que activa el propietario ([escritura §6](escritura-v1-8.md)); sin ella, /ordenes y REVISAR la tratan como si no hubiera
 `SEGUNDO`. Formato:
-[contrato §3.1](contrato-supervision-automatica.md#contrato-versión-2-rol-y-modelo-del-revisor).
+[contrato §3.1](contrato-supervision-automatica.md#contrato-versión-2-rol-y-modelo-del-revisor). El supervisor sigue la
+skill [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md): lee la revisión de Gemini en un PR sombra
+del mismo head, verifica cada hallazgo, agrega los bloqueantes que Gemini no vio y firma; si Gemini no dejó hallazgos,
+no hay `SEGUNDO` gemini-supervisado y va el de Fable. «Otro modelo» no se aplica a ciegas: ningún `SEGUNDO`, de ningún
+origen, lo firma la familia del implementador (Opus).
+
+**Fechas de transición (ORD-POS-099; [prueba Gemini §5 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)).**
+
+| Periodo | `SEGUNDO` que cuenta en MEDIO sensible | Supervisor gemini-supervisado |
+| --- | --- | --- |
+| Hasta el 2026-10-26 | Fable 5.1 | — |
+| 2026-10-27 a 2026-11-02 (medición, 1 semana) | Fable 5.1 | En paralelo, modo medición: publica en el PR sombra y no cuenta |
+| Desde el 2026-11-03, **solo si** el propietario encendió `SEGUNDO_GEMINI_SUPERVISADO` y la tabla de la prueba no muestra bloqueantes reales que Gemini y el supervisor no vieron | gemini-supervisado (rutina `PROJECT-OS · supervisar Gemini`, Sonnet) | Modo operación: publica en el PR de la orden |
+| Si falla cualquiera de esas condiciones, o al volver | Fable 5.1 (la rutina no se borra) | Se apaga la bandera |
+
+Retirar a Fable lo decide el propietario; esta tabla es la recomendación del PM.
 
 ## Qué se puede delegar
 

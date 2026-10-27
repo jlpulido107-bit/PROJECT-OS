@@ -23,8 +23,19 @@ Si te llama una rutina o el propietario, no hay nadie a quien preguntar: si algo
   hay regresión en los criterios que ya cumplían. El dictamen sigue siendo uno por head y lleva `ronda` (máximo 2).
   También tras una **ronda de solo fusión** de `corregir-pr` (un PR `CONFORME` que quedó en conflicto con su base): el
   delta es el merge commit; comprueba que solo trae la base y que la resolución conserva ambos comportamientos.
-- **Segundo revisor** (solo órdenes MEDIO, antes de fusionar; Fable 5.1): revisión completa e independiente. No leas el
-  dictamen del primer revisor antes de fijar el tuyo; tu dictamen no lo sustituye ni lo hereda.
+- **Segundo revisor** (solo órdenes MEDIO sensibles, antes de fusionar): revisión completa e independiente. No leas el
+  dictamen del primer revisor antes de fijar el tuyo; tu dictamen no lo sustituye ni lo hereda. Tiene dos orígenes
+  (DEC-POS-022, `origenSegundo`):
+  - `claude` (Fable 5.1, esta skill): tu modelo, de otra familia que la del `PRIMERO` o `DELTA` y que la del
+    implementador (Opus). Si tu sesión corre en Opus, termina sin dictaminar: aunque /ordenes hoy solo compara con el
+    `PRIMERO` o `DELTA`, la familia que implementa y corrige no firma el `SEGUNDO` de ningún origen.
+  - `gemini-supervisado`: sigue [`supervisar-gemini`](../supervisar-gemini/SKILL.md), que parte de los hallazgos de
+    Gemini en un PR sombra y aplica todo lo de esta skill. Solo cuenta si el propietario encendió
+    `SEGUNDO_GEMINI_SUPERVISADO`; ningún agente la enciende.
+
+  Regla de DEC-POS-019: solo el MEDIO **sensible** necesita `SEGUNDO` (columna `SENSIBLE` vacía, ausente o distinta de
+  `NO`). No lees la hoja: si te lanzan como `SEGUNDO`, dictaminas igual. Si la orden no lo necesitaba,
+  un `CONFORME` sobra y no estorba, pero un `CAMBIOS` válido sí mueve la orden a «Corregir».
 
 ## Marca del dictamen
 
@@ -170,8 +181,9 @@ hallazgo. Un `ALTO` no se reclasifica como `MEDIO`: el hallazgo pide descomponer
 - `CAMBIOS`: algún hallazgo bloqueante o criterio `NO_CUMPLE`.
 - `INCONCLUSO`: sin bloqueantes, pero algún criterio `NO_VERIFICADO`.
 
-Un `CONFORME` **no autoriza** fusión, despliegue ni cierre: decide el propietario. En MEDIO, el `CONFORME` del primer
-revisor no basta: falta el del segundo revisor sobre el mismo head.
+Un `CONFORME` **no autoriza** fusión, despliegue ni cierre: decide el propietario. En MEDIO sensible (DEC-POS-019), el
+`CONFORME` del primer revisor no basta: falta el del segundo revisor sobre el mismo head; en MEDIO con `SENSIBLE` = `NO`,
+basta el `CONFORME` de `PRIMERO` o `DELTA`.
 
 ## Validar antes de publicar
 
@@ -189,8 +201,12 @@ revisor no basta: falta el del segundo revisor sobre el mismo head.
 
 Contrato versión 2: escribe `versionContrato` `"2"`, `rol` según el modo (revisión completa = `PRIMERO`, delta tras
 corrección = `DELTA`, segundo revisor = `SEGUNDO`) y `modelo` con el identificador del modelo con el que corre tu
-sesión (p. ej. `claude-sonnet-5-5`). `/ordenes` solo da por cumplida la doble revisión de MEDIO si el `SEGUNDO` usa un
-modelo distinto al del `PRIMERO` o `DELTA`.
+sesión (p. ej. `claude-sonnet-5-5`), tal como te lo da el entorno: nunca un nombre comercial, otro sufijo ni un texto
+inventado (`gemini-supervisado`, `revisor-x`). `/ordenes` compara «otro modelo» **por familia** (`familiaModelo` de
+`politica.ts`: Opus, Sonnet, Haiku, Fable o Gemini), y un modelo no reconocido nunca cuenta: la doble revisión del MEDIO
+sensible solo se cumple si el `SEGUNDO` es de otra familia que el `PRIMERO` o `DELTA` (o, con origen
+`gemini-supervisado`, si `modeloHallazgos` es de familia Gemini y el firmante no es Opus). El `SEGUNDO` de Fable lleva
+`origenSegundo` `"claude"` (o lo omite); `modeloHallazgos` y `hallazgosGemini` solo van con `gemini-supervisado`.
 
 Campos comunes del JSON (contrato §3.1): versiones, identidad (`ordenId`, `tareaId`, `proyectoId`, `repo`, `issue`,
 `pr`), vigencia (`headSha`, `baseSha`, `hashCriterios`), trazabilidad (`revisionId`, `ejecucionId`, `intento`,

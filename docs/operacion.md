@@ -11,7 +11,7 @@ decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-23. Si algo a
 | PM | Planea, redacta borradores y delega; único escritor de la hoja, por la API | Claude | DEC-POS-005, DEC-POS-007; [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
 | Implementador | Ejecuta la orden aprobada: rama → PR con la CI en verde | Opus | Orden ORD-POS-047; [estado actual](estado-actual.md) |
 | Primer revisor | Revisa a ciegas (orden, diff y contrato, sin la descripción del PR) | Sonnet | DEC-POS-008; [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
-| Segundo revisor | Solo en MEDIO, a ciegas y sin el dictamen del primero | Fable 5.1 | DEC-POS-008; [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
+| Segundo revisor | Solo en MEDIO sensible, a ciegas y sin el dictamen del primero | Fable 5.1; desde el 2026-11-03, si el propietario lo activa, Sonnet supervisando a Gemini (nunca Opus) | DEC-POS-008, DEC-POS-019, DEC-POS-022; [delegación](delegacion-codex.md#medio-sensible-y-segundo-gemini-supervisado); [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md) |
 | Corrector | Corrige en el mismo PR, máximo 2 rondas por orden | Opus | DEC-POS-003, DEC-POS-008; [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
 | Agente de finanzas | Por corte (días 15 y fin de mes): rendimiento de `reporte-consumo` y, con el total de factura que da el propietario, el cargo extra o el cierre «sin cargo», solo por `POST /api/finanzas/agente/…` con su token. Nunca estima, edita, borra ni registra la suscripción; inerte hasta que el propietario lo active ([/finanzas v3 §8.2](diseno-finanzas-v3.md#82-activación-solo-el-propietario-tras-aprobar-dec-pos-018-fusionar-y-desplegar-f-3)) | Claude | DEC-POS-018 (PENDIENTE); ORD-POS-092; [diseño v3](diseno-finanzas-v3.md) |
 
@@ -44,8 +44,15 @@ nunca texto libre. Fuente: [rutina de Claude](rutina-claude.md).
 | --- | --- | --- | --- |
 | Ejecutar orden | Al pulsar **Aprobar y crear el issue** en `/ordenes` (una sola vez) | Valida el issue y abre el PR | [`ejecutar-orden`](../.claude/skills/ejecutar-orden/SKILL.md) |
 | Revisar (Sonnet) | Botón **Lanzar revisión** (primera revisión o delta tras corrección) | Dictamen a ciegas | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
-| Segundo revisor (Fable 5.1) | Botón **Lanzar segundo revisor** (solo MEDIO) | Dictamen a ciegas, sin el del primero | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
+| Segundo revisor (Fable 5.1) | Botón **Lanzar segundo revisor** (solo MEDIO sensible) | Dictamen a ciegas, sin el del primero | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
 | Corregir PR | Botón **Pedir corrección** (dictamen `CAMBIOS`, ronda menor que 2) | Commit nuevo en la misma rama del PR | [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
+
+**Supervisor de Gemini (ORD-POS-099).** Del 2026-10-27 al 2026-11-02 no es rutina: el propietario abre el PR sombra,
+comenta `/gemini review` y lanza una sesión de POS · Ingeniería (Sonnet) con los datos del `SEGUNDO` y «supervisa Gemini,
+modo medición»; publica en el PR sombra y no cuenta. Desde el 2026-11-03, solo si el propietario lo activa, **Lanzar
+segundo revisor** apunta a la rutina nueva `PROJECT-OS · supervisar Gemini` (modo operación) y la de Fable queda
+configurada para volver ([prueba Gemini §3 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)). Comentar
+`/gemini review` es del propietario; pasarlo al PM exige una decisión que amplíe DEC-POS-005 y DEC-POS-011.
 
 En `/ordenes` aparece un solo botón según el dictamen del PR; nunca con riesgo ALTO ni si el head cambió desde que cargó
 la página. Los botones de revisión y corrección solo aparecen cuando el propietario crea esas rutinas y sus secretos
