@@ -27,9 +27,15 @@ export const OPTIONAL_WRITE_COLUMNS: Partial<Record<WriteTab, readonly string[]>
 }
 export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX'
 
-/** Estados de tarea que el dashboard puede asignar. COMPLETADO/CANCELADO requieren aprobación humana (bloqueados). */
+/**
+ * Estados de tarea que la edición puede asignar. COMPLETADO/CANCELADO no se asignan editando: COMPLETADO solo con la
+ * operación 'tarea.completar' del propietario (DEC-POS-023, inerte sin TAREAS_CIERRE_PROPIETARIO); CANCELADO nunca.
+ */
 export const WRITABLE_TASK_STATES = ['PENDIENTE', 'EN_PROGRESO', 'BLOQUEADO'] as const
 export const CLOSING_TASK_STATES = ['COMPLETADO', 'CANCELADO'] as const
+export const COMPLETED_TASK_STATE = 'COMPLETADO'
+/** Campo de AUDITORIA sin columna en TAREAS: la nota opcional del cierre del propietario (ORD-POS-106). */
+export const AUDIT_NOTA_CIERRE = 'NOTA_CIERRE'
 export const INITIAL_TASK_STATE = 'PENDIENTE'
 export const TASK_PRIORITIES = ['ALTA', 'MEDIA', 'BAJA'] as const
 export const INITIAL_DECISION_STATE = 'PENDIENTE'
@@ -56,12 +62,15 @@ export const LIMITS = {
   diasAtras: 365,
   ordenTexto: 2000,
   motivo: 500,
+  notaCierre: 500,
 } as const
 
 export const ORIGIN_PREFIX = 'dashboard-v1.4'
 
 export type OperationName =
   | 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'
+  /** Cierre de una tarea a COMPLETADO por el propietario (ORD-POS-106, DEC-POS-023). Nunca del agente PM. */
+  | 'tarea.completar'
   | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
   /** Cierre asistido de una orden cuyo PR ya se fusionó (ORD-POS-046). */
   | 'orden.cerrar_fusionado'

@@ -34,6 +34,10 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   REGISTRAR_PR del PM (ORD-POS-063) está apagado: solo con `PM_PUEDE_REGISTRAR_PR=true`, que enciende únicamente el
   propietario con `deploy.sh` tras registrar la decisión que amplía DEC-POS-011, registra el PR que /ordenes detecta.
   Ningún agente enciende esa bandera.
+  DEC-POS-023 (APROBADA, 2026-10-27; ORD-POS-106): el propietario puede marcar una tarea COMPLETADA desde el dashboard
+  con su sesión de Google, nunca con el token del PM; CANCELADA y reabrir siguen fuera del dashboard. Está apagado: solo
+  con `TAREAS_CIERRE_PROPIETARIO=true` y su correo en `TAREAS_CIERRE_PROPIETARIO_EMAIL`, que pone únicamente el
+  propietario con `deploy.sh` ([escritura §7](docs/escritura-v1-8.md)). Ningún agente la enciende ni cierra tareas.
   DEC-POS-013 (enmienda de DEC-POS-008): el «sí PAQ-AAAA-MM-DD-NN» que el propietario da en la sesión POS · Ideas
   autoriza solo las altas de ese paquete, y solo después de que el PM lo verifica en la fuente (`pm-escribir-api`,
   sección «Altas con sí PAQ»); aprobar, enviar, cancelar y cerrar no cambian: un «sí PAQ» nunca vale para ellos.

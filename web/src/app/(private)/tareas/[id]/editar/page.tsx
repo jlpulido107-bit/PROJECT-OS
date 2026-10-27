@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { LoadError } from '@/components/data-state'
 import { Instrucciones } from '@/components/instrucciones'
-import { EditTaskForm } from '@/components/operations/forms'
+import { CompleteTaskForm, EditTaskForm } from '@/components/operations/forms'
 import { WriteGate } from '@/components/operations/write-access'
 import { Text } from '@/components/ui'
+import { puedeCerrarTareas } from '@/lib/operations/config'
 import { KNOWN_TASK_TYPES } from '@/lib/operations/constants'
 import { privateData } from '@/lib/page-data'
 import { CLOSED_TASK_STATES } from '@/lib/schema'
@@ -35,28 +36,36 @@ export default async function EditTaskPage({ params }: { params: Promise<{ id: s
             <p>Esta tarea está <strong>cerrada</strong> ({task.estado}). Reabrirla o modificarla requiere aprobación humana fuera del dashboard.</p>
           </div>
         ) : (
-          <EditTaskForm
-            key={task.version ?? '0'}
-            task={{
-              id: task.id,
-              version: Number(task.version ?? '0') || 0,
-              hitoId: task.hitoId ?? '',
-              titulo: task.titulo ?? '',
-              descripcion: task.descripcion ?? '',
-              tipo: task.tipo ?? '',
-              estado: task.estado ?? 'PENDIENTE',
-              prioridad: task.prioridad ?? '',
-              responsable: task.responsable ?? '',
-              fechaPlan: task.fechaPlan ?? '',
-              fechaLimite: task.fechaLimite ?? '',
-              horasEstimadas: task.horasEstimadas === null ? '' : String(task.horasEstimadas),
-              criterioTerminado: task.criterioTerminado ?? '',
-              bloqueo: task.bloqueo ?? '',
-              instrucciones: task.instrucciones ?? '',
-            }}
-            milestones={result.data.hitos.filter((h) => h.proyectoId === task.proyectoId).map((h) => ({ value: h.id, label: `${h.id}${h.nombre ? ` · ${h.nombre}` : ''}` }))}
-            taskTypes={[...new Set([...KNOWN_TASK_TYPES, ...result.data.tareas.map((t) => t.tipo).filter((t): t is string => Boolean(t))])].sort()}
-          />
+          <>
+            {puedeCerrarTareas(user.email) ? (
+              <CompleteTaskForm
+                key={`cerrar-${task.version ?? '0'}`}
+                task={{ id: task.id, version: Number(task.version ?? '0') || 0, criterioTerminado: task.criterioTerminado ?? '' }}
+              />
+            ) : null}
+            <EditTaskForm
+              key={task.version ?? '0'}
+              task={{
+                id: task.id,
+                version: Number(task.version ?? '0') || 0,
+                hitoId: task.hitoId ?? '',
+                titulo: task.titulo ?? '',
+                descripcion: task.descripcion ?? '',
+                tipo: task.tipo ?? '',
+                estado: task.estado ?? 'PENDIENTE',
+                prioridad: task.prioridad ?? '',
+                responsable: task.responsable ?? '',
+                fechaPlan: task.fechaPlan ?? '',
+                fechaLimite: task.fechaLimite ?? '',
+                horasEstimadas: task.horasEstimadas === null ? '' : String(task.horasEstimadas),
+                criterioTerminado: task.criterioTerminado ?? '',
+                bloqueo: task.bloqueo ?? '',
+                instrucciones: task.instrucciones ?? '',
+              }}
+              milestones={result.data.hitos.filter((h) => h.proyectoId === task.proyectoId).map((h) => ({ value: h.id, label: `${h.id}${h.nombre ? ` · ${h.nombre}` : ''}` }))}
+              taskTypes={[...new Set([...KNOWN_TASK_TYPES, ...result.data.tareas.map((t) => t.tipo).filter((t): t is string => Boolean(t))])].sort()}
+            />
+          </>
         )}
       </WriteGate>
     </>

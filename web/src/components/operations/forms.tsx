@@ -372,6 +372,58 @@ export function EditTaskForm({ task, milestones, taskTypes }: { task: EditableTa
   )
 }
 
+/* ------------------------------ Marcar completada (ORD-POS-106) ------------------------------ */
+
+/**
+ * Cierre del propietario (DEC-POS-023). La página solo lo muestra a su sesión con TAREAS_CIERRE_PROPIETARIO encendida;
+ * el servidor lo vuelve a verificar. La confirmación muestra el criterio de terminado; la nota va solo a AUDITORIA.
+ */
+export function CompleteTaskForm({ task }: { task: { id: string; version: number; criterioTerminado: string } }) {
+  const op = useOperation(`/api/operaciones/tareas/${encodeURIComponent(task.id)}/completar`, 'POST')
+  const router = useRouter()
+  const [confirming, setConfirming] = useState(false)
+  const notaId = useId()
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const { nota } = formValues(event.currentTarget)
+    await op.submit({ expectedVersion: task.version, ...(nota ? { nota } : {}) })
+  }
+
+  if (!confirming && op.state.status === 'idle') {
+    return (
+      <div className="form-actions">
+        <button type="button" className="button" onClick={() => setConfirming(true)}>Marcar completada</button>
+      </div>
+    )
+  }
+  const conflict = op.state.status === 'error' && op.state.error.codigo.startsWith('conflicto')
+  return (
+    <form className="op-form" onSubmit={onSubmit} noValidate aria-labelledby={`${notaId}-titulo`}>
+      <h2 id={`${notaId}-titulo`}>Marcar <span className="mono">{task.id}</span> como completada</h2>
+      <p>Confirma que se cumple el criterio de terminado:</p>
+      <blockquote className="card">{task.criterioTerminado || <span className="muted">(sin criterio registrado)</span>}</blockquote>
+      <div className="field field-wide">
+        <label htmlFor={notaId}>Nota de cierre (opcional)</label>
+        <textarea id={notaId} name="nota" rows={2} maxLength={500} aria-describedby={`${notaId}-hint`} />
+        <span id={`${notaId}-hint`} className="field-hint">Hasta 500 caracteres. Queda en AUDITORIA, no en la tarea.</span>
+        {fieldError(op.state, 'nota') ? <span className="field-error">{fieldError(op.state, 'nota')}</span> : null}
+      </div>
+      <p className="muted small">Pasa a COMPLETADO desde la versión <strong>{task.version}</strong>. Reabrirla o cancelarla sigue fuera del dashboard.</p>
+      {op.state.status === 'done' ? null : (
+        <div className="form-actions">
+          <Submit state={op.state} label="Confirmar: marcar completada" />
+          <button type="button" className="button button-ghost" onClick={() => { op.reset(); setConfirming(false) }}>Cancelar</button>
+        </div>
+      )}
+      <Status state={op.state} />
+      {conflict ? (
+        <button type="button" className="button" onClick={() => { op.reset(); router.refresh() }}>Recargar la versión actual</button>
+      ) : null}
+    </form>
+  )
+}
+
 /* --------------------------------- Registrar tiempo --------------------------------- */
 
 export function TimeForm({ tasks, defaultTask, today, workTypes }: { tasks: Option[]; defaultTask?: string; today: string; workTypes: string[] }) {

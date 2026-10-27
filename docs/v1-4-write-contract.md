@@ -67,9 +67,10 @@ Los valores se escriben con `valueInputOption=RAW`, nunca como fórmulas.
 
 Reglas de estado:
 
-- **No se puede cerrar una tarea desde el dashboard.** `COMPLETADO` y `CANCELADO` se rechazan con
-  `cierre-no-permitido`, porque requieren aceptación humana, evidencia y criterio verificados, y aún no existe ese flujo
-  de aprobación.
+- **No se puede cerrar una tarea editándola.** `COMPLETADO` y `CANCELADO` se rechazan con `cierre-no-permitido`,
+  porque requieren aceptación humana, evidencia y criterio verificados. La única vía es `POST /api/operaciones/tareas/<id>/completar`
+  (ORD-POS-106, DEC-POS-023): solo a `COMPLETADO`, solo la sesión del propietario y solo con `TAREAS_CIERRE_PROPIETARIO`
+  encendida ([escritura §7](escritura-v1-8.md)); si no, `cierre-no-permitido`. `CANCELADO` sigue sin vía.
 - **Las tareas ya cerradas no se editan**: no se pueden reabrir ni cambiar sus campos (`tarea-cerrada`).
 - Una edición sin cambios efectivos se rechaza (`sin-cambios`) y no genera auditoría ni sube la versión.
 - Campos inmutables o desconocidos en el payload (p. ej. `version`, `proyectoId` en la edición) ⇒ `validacion`.

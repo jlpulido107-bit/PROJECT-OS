@@ -88,3 +88,22 @@ export function pmPuedeRegistrarPr(env: NodeJS.ProcessEnv = process.env): boolea
 export function segundoGeminiSupervisado(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.SEGUNDO_GEMINI_SUPERVISADO === 'on'
 }
+
+/**
+ * ORD-POS-106 (DEC-POS-023, DEC-POS-014): cierre de tareas por el propietario, apagado por defecto. Solo con
+ * TAREAS_CIERRE_PROPIETARIO=true exacto y un único correo en TAREAS_CIERRE_PROPIETARIO_EMAIL que además esté en
+ * AUTH_ALLOWED_EMAILS. Devuelve ese correo, o null si falta cualquier condición. Solo el propietario la pone en Cloud Run
+ * con deploy.sh; el token del agente PM nunca cierra (guard.ts).
+ */
+export function tareasCierrePropietario(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.TAREAS_CIERRE_PROPIETARIO !== 'true') return null
+  const email = env.TAREAS_CIERRE_PROPIETARIO_EMAIL?.trim().toLowerCase() ?? ''
+  if (!/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(email)) return null
+  return isEmailAllowed(email, parseAllowedEmails(env.AUTH_ALLOWED_EMAILS)) ? email : null
+}
+
+/** El correo de la sesión es el del propietario con la bandera encendida (para mostrar el botón; el guard lo repite). */
+export function puedeCerrarTareas(email: unknown, env: NodeJS.ProcessEnv = process.env): boolean {
+  const owner = tareasCierrePropietario(env)
+  return owner !== null && typeof email === 'string' && email.trim().toLowerCase() === owner
+}

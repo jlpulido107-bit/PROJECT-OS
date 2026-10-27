@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO ni SEGUNDO_GEMINI_SUPERVISADO')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO ni TAREAS_CIERRE_PROPIETARIO')
   return output.replace(marker, writeBlock)
 }
 
@@ -155,6 +155,32 @@ function segundoGemini(env, problems) {
   if (!valor) return ''
   if (valor !== 'on') problems.push('SEGUNDO_GEMINI_SUPERVISADO solo admite on')
   return ['            - name: SEGUNDO_GEMINI_SUPERVISADO', "              value: 'on'", ''].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-106, DEC-POS-023 y DEC-POS-014): cierre de tareas por el propietario desde el dashboard, apagado
+ * por defecto. Las dos van juntas y solo las exporta el propietario:
+ * - TAREAS_CIERRE_PROPIETARIO: solo `true`; exige WRITE_MODE=sheets (usa la escritura de PROJECT-OS).
+ * - TAREAS_CIERRE_PROPIETARIO_EMAIL: un único correo (el servidor exige además que esté en AUTH_ALLOWED_EMAILS).
+ * Sin ninguna de las dos, el YAML no cambia; nunca se imprime un valor.
+ */
+function cierrePropietario(env, problems) {
+  const flag = (env.TAREAS_CIERRE_PROPIETARIO ?? '').trim()
+  const owner = (env.TAREAS_CIERRE_PROPIETARIO_EMAIL ?? '').trim()
+  if (!flag && !owner) return ''
+  const antes = problems.length
+  if (flag !== 'true') problems.push('TAREAS_CIERRE_PROPIETARIO solo admite true')
+  if (!flag || !owner) problems.push('TAREAS_CIERRE_PROPIETARIO y TAREAS_CIERRE_PROPIETARIO_EMAIL van juntas')
+  if ((env.WRITE_MODE ?? '').trim() !== 'sheets') problems.push('TAREAS_CIERRE_PROPIETARIO exige WRITE_MODE=sheets')
+  if (owner && !UN_CORREO.test(owner)) problems.push('TAREAS_CIERRE_PROPIETARIO_EMAIL debe ser un único correo')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: TAREAS_CIERRE_PROPIETARIO',
+    "              value: 'true'",
+    '            - name: TAREAS_CIERRE_PROPIETARIO_EMAIL',
+    `              value: '${owner}'`,
+    '',
+  ].join('\n')
 }
 
 /**
