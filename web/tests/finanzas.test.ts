@@ -142,7 +142,16 @@ describe('lector de FINANZAS (criterio 3)', () => {
     expect(batch.searchParams.getAll('ranges').map((x) => /^'(.+)'!/.exec(x)![1])).toEqual(['MOVIMIENTOS', 'PARAMETROS'])
     expect(batch.searchParams.get('valueRenderOption')).toBe('UNFORMATTED_VALUE')
     expect(batch.searchParams.get('dateTimeRenderOption')).toBe('FORMATTED_STRING')
-    expect(FINANZAS_TABS).toEqual(['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES'])
+    expect(FINANZAS_TABS).toEqual(['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES', 'RENDIMIENTO_CLAUDE'])
+  })
+
+  it('RENDIMIENTO_CLAUDE va en el mismo batchGet cuando existe (ORD-POS-101): siguen siendo 2 lecturas', async () => {
+    const l = loader({ FINANZAS_SHEET_ID: FINANZAS }, { MOVIMIENTOS, PARAMETROS, RENDIMIENTO_CLAUDE: [['REND_ID', 'COSTO_EQUIV_USD']] })
+    const r = await l.load()
+    expect(l.urls).toHaveLength(2)
+    const batch = new URL(l.urls.find((u) => u.includes('values:batchGet'))!)
+    expect(batch.searchParams.getAll('ranges').map((x) => /^'(.+)'!/.exec(x)![1])).toEqual(['MOVIMIENTOS', 'PARAMETROS', 'RENDIMIENTO_CLAUDE'])
+    expect(r.estado === 'ok' && r.vista.rendimiento).toEqual({ estado: 'vacio', mensaje: 'RENDIMIENTO_CLAUDE no tiene cortes registrados.' })
   })
 
   it('sin ninguna pestaña de la lista: solo metadatos, sin batchGet, y cada bloque dice que no existe', async () => {

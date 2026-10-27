@@ -11,9 +11,10 @@ import { MAX_DATA_ROWS } from '../schema'
 
 /**
  * Pestañas que lee /finanzas (§3), en un solo batchGet. RESUMEN no se lee: es una vista derivada en la hoja (§2.5).
- * RECURRENTES es del esquema v2 (docs/diseno-finanzas-v2.md §4.1).
+ * RECURRENTES es del esquema v2 (docs/diseno-finanzas-v2.md §4.1); RENDIMIENTO_CLAUDE, de v3 §4.2 (ORD-POS-101): se lee
+ * en su propio bloque y ninguna suma de gasto ni de capital la usa.
  */
-export const FINANZAS_TABS = ['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES'] as const
+export const FINANZAS_TABS = ['MOVIMIENTOS', 'PARAMETROS', 'RECURRENTES', 'RENDIMIENTO_CLAUDE'] as const
 export type FinanzasTab = (typeof FINANZAS_TABS)[number]
 export type FinanzasRaw = Partial<Record<FinanzasTab, unknown[][]>>
 
@@ -21,8 +22,11 @@ export type FinanzasRaw = Partial<Record<FinanzasTab, unknown[][]>>
 export const COLUMNAS_OBLIGATORIAS = [
   'MOV_ID', 'FECHA', 'PROYECTO', 'TIPO', 'CATEGORIA', 'CONCEPTO', 'MONTO_MXN', 'FUENTE', 'COMPROBANTE',
 ] as const
-/** `AJUSTE_DE` es opcional (v2 §8): una hoja v1 sin la columna sigue válida. */
-const COLUMNAS_LEIDAS = [...COLUMNAS_OBLIGATORIAS, 'PRODUCTO_ID', 'AJUSTE_DE'] as const
+/**
+ * `AJUSTE_DE` es opcional (v2 §8): una hoja v1 sin la columna sigue válida. `MONEDA_ORIG` y `MONTO_ORIG` también: solo
+ * dan el monto en USD de las filas de Claude para el rendimiento (ORD-POS-101) y no cambian ninguna suma en MXN.
+ */
+const COLUMNAS_LEIDAS = [...COLUMNAS_OBLIGATORIAS, 'PRODUCTO_ID', 'AJUSTE_DE', 'MONEDA_ORIG', 'MONTO_ORIG'] as const
 
 export const PROYECTOS = ['ECO', 'POS'] as const
 export type Proyecto = (typeof PROYECTOS)[number]
@@ -74,6 +78,8 @@ export interface Movimiento {
   centavos: number
   /** `MOV_ID` que corrige (v2 §3.4), o null si no es un ajuste. */
   ajusteDe: string | null
+  /** `MONTO_ORIG` en centavos de USD si `MONEDA_ORIG` = USD (ORD-POS-101); ausente en otra moneda o sin dato. */
+  usdCentavos?: number
 }
 
 /** Fila no sumada (§2.1 y §4.5): solo la referencia y las columnas que fallan, nunca el monto. */
@@ -158,6 +164,8 @@ export interface FinanzasVista {
   ajustables: Ajustable[]
   /** `TIPO_CAMBIO_DEFECTO` de PARAMETROS para precargar los formularios en USD, o null. */
   tipoCambioDefecto: string | null
+  /** RENDIMIENTO_CLAUDE (v3 §4.2, ORD-POS-101): consumo equivalente por corte. **No es gasto**: no entra en ningún bloque de arriba. */
+  rendimiento: BloqueRendimiento
 }
 
 export interface Ajustable {
@@ -300,6 +308,8 @@ export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
     const fuente = canonico(texto(celda('FUENTE')), FUENTES)
     const comprobante = canonico(texto(celda('COMPROBANTE'))?.replace(/^si$/i, 'sí') ?? null, ['sí', 'no'])
     const ajusteDe = texto(celda('AJUSTE_DE'))
+    const montoOrig = numeroCelda(celda('MONTO_ORIG'))
+    const enUsd = texto(celda('MONEDA_ORIG'))?.toUpperCase() === 'USD' && montoOrig !== null && montoOrig > 0
     if (movId === null || (fuente !== null && !PREFIJOS[fuente].test(movId)) || (fuente === null && !Object.values(PREFIJOS).some((r) => r.test(movId)))) {
       columnas.push('MOV_ID')
     }
@@ -319,6 +329,7 @@ export function leerMovimientos(rows: unknown[][] | undefined): Lectura {
       ? {
           fecha: fecha!, mes: fecha!.slice(0, 7), proyecto: proyecto!, tipo: tipo!, categoria: categoria!, concepto: concepto!,
           productoId: texto(celda('PRODUCTO_ID')), centavos: Math.round(monto! * 100), ajusteDe,
+          ...(enUsd ? { usdCentavos: Math.round(montoOrig! * 100) } : {}),
         }
       : null
     // Número de fila en la hoja: encabezado en la fila 1.
@@ -691,6 +702,106 @@ export function recurrentesDelMes(raw: unknown[][] | undefined, movimientos: Lec
   }
 }
 
+/** Columnas de RENDIMIENTO_CLAUDE que lee la vista (v3 §4.2); las demás son informativas. */
+export const COLUMNAS_RENDIMIENTO = ['REND_ID', 'COSTO_EQUIV_USD'] as const
+const REND_ID = /^REND-CLAUDE-(\d{4}-(?:0[1-9]|1[0-2]))-(Q[12])$/
+/** Tope por fila de v3 §4.4, en centavos: más es una fila con problema. */
+const TOPE_EQUIV_CENTAVOS = 300_000
+
+export interface CorteRendimiento {
+  /** `AAAA-MM-Q1` | `AAAA-MM-Q2`. */
+  corte: string
+  mes: string
+  quincena: 'Q1' | 'Q2'
+  /** `COSTO_EQUIV_USD` en centavos de USD: consumo equivalente a precio de API, no gasto. */
+  equivCentavos: number
+}
+
+/** USD pagados a Claude en un mes (v3 §4.2 y §5), o el motivo por el que no se pueden saber. */
+export type PagoClaudeMes = { usdCentavos: number; motivo: null } | { usdCentavos: null; motivo: string }
+
+export interface Rendimiento {
+  cortes: CorteRendimiento[]
+  /** Por cada mes con algún corte: suscripción + cargos extra del mes, en USD. */
+  pagado: Record<string, PagoClaudeMes>
+  problemas: FilaProblema[]
+}
+
+/** `sin-pestana`: la pestaña no existe en el libro (la crea el propietario al activar el agente de finanzas). */
+export type BloqueRendimiento = { estado: 'sin-pestana' } | Bloque<Rendimiento>
+
+/**
+ * Lo pagado a Claude en `mes`, en USD (v3 §4.2): `MONTO_ORIG` de `REC-CLAUDE-AAAA-MM` (la única vía de la suscripción,
+ * §5) más los de `CLAUDE-EXTRA-AAAA-MM-Q1/Q2`. Sin la suscripción confirmada, con una de esas filas con problema o sin
+ * monto en USD, no se sabe: nunca se rellena con un monto esperado.
+ * atajo: un ajuste MAN- de esas filas solo corrige el MXN y no cambia este USD; mejorarlo si se ajustan en USD.
+ */
+export function pagadoClaudeUsd(lectura: Lectura, mes: string): PagoClaudeMes {
+  if (lectura.estado === 'no-disponible') return { usdCentavos: null, motivo: 'MOVIMIENTOS no se puede leer' }
+  const recId = movIdRecurrente('CLAUDE', mes)
+  const extra = new RegExp(`^CLAUDE-EXTRA-${mes}-Q[12]$`)
+  const ids = [...lectura.ids].filter((id) => id === recId || extra.test(id))
+  if (!ids.includes(recId)) return { usdCentavos: null, motivo: `falta la suscripción confirmada ${recId}` }
+  let usdCentavos = 0
+  for (const id of ids) {
+    const m = lectura.movimientos.find((x) => x.movId === id)
+    if (!m) return { usdCentavos: null, motivo: `${id} es una fila con problema en MOVIMIENTOS` }
+    if (m.usdCentavos === undefined) return { usdCentavos: null, motivo: `${id} no tiene su monto en USD (MONEDA_ORIG y MONTO_ORIG)` }
+    usdCentavos += m.usdCentavos
+  }
+  return { usdCentavos, motivo: null }
+}
+
+/**
+ * RENDIMIENTO_CLAUDE (v3 §4.2), en un bloque propio. Encabezados por nombre; una fila con `REND_ID` fuera de formato o
+ * repetido, o con `COSTO_EQUIV_USD` que no es un número de 0 a 3,000.00 con 2 decimales, no cuenta y se lista sin monto.
+ */
+export function rendimientoClaude(rows: unknown[][] | undefined, movimientos: Lectura): BloqueRendimiento {
+  if (rows === undefined) return { estado: 'sin-pestana' }
+  const header = (rows[0] ?? []).map(texto)
+  const faltan = COLUMNAS_RENDIMIENTO.filter((c) => !header.includes(c))
+  if (faltan.length) {
+    return {
+      estado: 'no-disponible',
+      mensaje: `${faltan.length === 1 ? 'Falta la columna' : 'Faltan las columnas'} ${faltan.join(', ')} en RENDIMIENTO_CLAUDE.`,
+    }
+  }
+  if (rows.length > MAX_DATA_ROWS + 1) {
+    return { estado: 'no-disponible', mensaje: `RENDIMIENTO_CLAUDE está truncada (más de ${MAX_DATA_ROWS} filas).` }
+  }
+  const iId = header.indexOf('REND_ID')
+  const iCosto = header.indexOf('COSTO_EQUIV_USD')
+  type Candidata = { fila: number; id: string | null; corte: CorteRendimiento | null; columnas: string[] }
+  const candidatas: Candidata[] = []
+  rows.slice(1).forEach((row, i) => {
+    const id = texto(row[iId])
+    const costo = numeroCelda(row[iCosto])
+    if (id === null && texto(row[iCosto]) === null) return
+    const columnas: string[] = []
+    const m = id === null ? null : REND_ID.exec(id)
+    if (!m) columnas.push('REND_ID')
+    if (costo === null || costo < 0 || !conDosDecimales(costo) || Math.round(costo * 100) > TOPE_EQUIV_CENTAVOS) columnas.push('COSTO_EQUIV_USD')
+    const corte = columnas.length === 0
+      ? { corte: `${m![1]}-${m![2]}`, mes: m![1]!, quincena: m![2] as 'Q1' | 'Q2', equivCentavos: Math.round(costo! * 100) }
+      : null
+    candidatas.push({ fila: i + 2, id, corte, columnas })
+  })
+  // REND_ID repetido: ninguna de sus filas cuenta, porque no se sabe cuál es la buena.
+  const cuenta = new Map<string, number>()
+  for (const c of candidatas) if (c.id !== null) cuenta.set(c.id, (cuenta.get(c.id) ?? 0) + 1)
+  const cortes: CorteRendimiento[] = []
+  const problemas: FilaProblema[] = []
+  for (const c of candidatas) {
+    if (c.id !== null && (cuenta.get(c.id) ?? 0) > 1) c.columnas = ['REND_ID (duplicado)', ...c.columnas.filter((x) => x !== 'REND_ID')]
+    if (c.columnas.length === 0 && c.corte) cortes.push(c.corte)
+    else problemas.push({ ref: c.id !== null && /^[A-Za-z0-9_.:-]{1,40}$/.test(c.id) ? `${c.id} (fila ${c.fila})` : `fila ${c.fila}`, columnas: c.columnas })
+  }
+  if (cortes.length === 0 && problemas.length === 0) return { estado: 'vacio', mensaje: 'RENDIMIENTO_CLAUDE no tiene cortes registrados.' }
+  cortes.sort((a, b) => a.corte.localeCompare(b.corte))
+  const pagado = Object.fromEntries([...new Set(cortes.map((c) => c.mes))].map((mes) => [mes, pagadoClaudeUsd(movimientos, mes)]))
+  return { estado: 'ok', datos: { cortes, pagado, problemas } }
+}
+
 const SIN_MOVIMIENTOS = 'Sin movimientos todavía.'
 
 /** `TIPO_CAMBIO_DEFECTO` de PARAMETROS (v1 §2.4): número mayor que 0 con hasta 4 decimales, como texto; si no, null. */
@@ -721,7 +832,7 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
     const b = { estado: 'no-disponible', mensaje: lectura.mensaje } as const
     return {
       capital: b, mensual: b, herramientas: b, pyl: b, recurrentes, claude: b, claudeDiario: b, problemas: [], movimientosValidos: 0, ajustables: [],
-      tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
+      tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS), rendimiento: rendimientoClaude(raw.RENDIMIENTO_CLAUDE, lectura),
     }
   }
   const { movimientos, problemas } = lectura
@@ -749,6 +860,7 @@ export function construirFinanzas(raw: FinanzasRaw, now: number): FinanzasVista 
   return {
     capital, mensual, herramientas, pyl, recurrentes, claude, claudeDiario, problemas, movimientosValidos: movimientos.length,
     ajustables: ajustablesDe(movimientos), tipoCambioDefecto: tipoCambioDefecto(raw.PARAMETROS),
+    rendimiento: rendimientoClaude(raw.RENDIMIENTO_CLAUDE, lectura),
   }
 }
 

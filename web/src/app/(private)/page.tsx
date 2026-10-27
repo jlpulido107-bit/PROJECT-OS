@@ -6,6 +6,7 @@ import { conteoOrdenes, ordenesDelFiltro } from '@/lib/agentes'
 import { githubDeAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { leerAuditoria } from '@/lib/auditoria'
 import { todayInMerida } from '@/lib/dates'
+import { finanzasAgenteMode } from '@/lib/finanzas/agente-config'
 import { getFinanzas } from '@/lib/finanzas/data'
 import { finanzasInicio, misPendientes, parseFiltroInicio, proyectosInicio, recurrentesSinConfirmar } from '@/lib/inicio'
 import { tablero, type FuenteFinanzas } from '@/lib/inicio-tablero'
@@ -44,7 +45,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const fuenteFinanzas: FuenteFinanzas = finanzas.estado === 'ok' ? { estado: 'ok', vista: finanzas.vista }
     : finanzas.estado === 'no-configurado' ? { estado: 'no-configurado' } : { estado: 'error', motivo }
   const t = tablero({
-    ds: data, hoy, now, filtro, proyectos, gh, finanzas: fuenteFinanzas, audit,
+    ds: data, hoy, now, filtro, proyectos, gh, finanzas: fuenteFinanzas, audit, agenteFinanzas: finanzasAgenteMode() === 'sheets',
     eventos: audit.estado === 'ok' ? { estado: 'ok', datos: eventosOrdenes(data.ordenes, audit.datos) } : audit,
   })
 
