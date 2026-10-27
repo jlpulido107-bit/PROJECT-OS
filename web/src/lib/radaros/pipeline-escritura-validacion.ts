@@ -1,6 +1,6 @@
 import { parseCivilDate } from '../dates'
 import { OperationError } from '../operations/errors'
-import { cleanText, neutralizeFormula } from '../operations/sanitize'
+import { cleanText } from '../operations/sanitize'
 import { ETAPAS, type Etapa } from './pipeline'
 import type { Celda } from './pipeline-escritura-store'
 
@@ -25,7 +25,7 @@ type Tipo =
   | { k: 'asin' }
   | { k: 'idea' }
   | { k: 'fecha' }
-  | { k: 'numero' }
+  | { k: 'numero'; decimales: 2 | 4 }
   | { k: 'entero'; min: number }
   | { k: 'lista'; valores: readonly string[] }
   | { k: 'id'; prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB' }
@@ -41,7 +41,9 @@ interface Campo {
 
 const texto = (clave: string, columna: string, max: number, obligatorio = false, multilinea = false): Campo => ({ clave, columna, tipo: { k: 'texto', max, multilinea }, obligatorio })
 const fecha = (clave: string, columna: string): Campo => ({ clave, columna, tipo: { k: 'fecha' } })
-const numero = (clave: string, columna: string): Campo => ({ clave, columna, tipo: { k: 'numero' } })
+const numero = (clave: string, columna: string, decimales: 2 | 4 = 2): Campo => ({ clave, columna, tipo: { k: 'numero', decimales } })
+/** ORD-POS-104 (H1): los montos por unidad o totales admiten hasta 4 decimales (p. ej. un precio unitario de 0.125). */
+const monto = (clave: string, columna: string): Campo => numero(clave, columna, 4)
 const entero = (clave: string, columna: string, min: number, obligatorio = false): Campo => ({ clave, columna, tipo: { k: 'entero', min }, obligatorio })
 const lista = (clave: string, columna: string, valores: readonly string[], obligatorio = false): Campo => ({ clave, columna, tipo: { k: 'lista', valores }, obligatorio })
 const id = (clave: string, columna: string, prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB', obligatorio = false): Campo => ({ clave, columna, tipo: { k: 'id', prefijo }, obligatorio })
@@ -79,16 +81,16 @@ const PROVEEDOR: Campo[] = [
 const COTIZACION_COMUNES: Campo[] = [
   fecha('fechaSolicitud', 'FECHA_SOLICITUD'),
   fecha('fechaRespuestaEsperada', 'FECHA_RESPUESTA_ESPERADA'),
-  numero('precioUnit', 'PRECIO_UNIT'),
+  monto('precioUnit', 'PRECIO_UNIT'),
   lista('moneda', 'MONEDA', MONEDAS),
   entero('moq', 'MOQ', 1),
   entero('plazoProduccionDias', 'PLAZO_PRODUCCION_DIAS', 0),
   lista('incoterm', 'INCOTERM', INCOTERMS),
-  numero('costoAterrizadoMxn', 'COSTO_ATERRIZADO_MXN'),
+  monto('costoAterrizadoMxn', 'COSTO_ATERRIZADO_MXN'),
   lista('muestraEstado', 'MUESTRA_ESTADO', ESTADOS_MUESTRA),
   fecha('muestraFechaPedido', 'MUESTRA_FECHA_PEDIDO'),
   fecha('muestraFechaEsperada', 'MUESTRA_FECHA_ESPERADA'),
-  numero('muestraCosto', 'MUESTRA_COSTO'),
+  monto('muestraCosto', 'MUESTRA_COSTO'),
   lista('muestraMoneda', 'MUESTRA_MONEDA', MONEDAS),
   notas,
 ]
@@ -98,7 +100,7 @@ const EMBARQUE_COMUNES: Campo[] = [
   fecha('fechaPago', 'FECHA_PAGO'),
   fecha('fechaSalida', 'FECHA_SALIDA'),
   fecha('fechaLlegadaEsperada', 'FECHA_LLEGADA_ESPERADA'),
-  numero('costoTotal', 'COSTO_TOTAL'),
+  monto('costoTotal', 'COSTO_TOTAL'),
   lista('moneda', 'MONEDA', MONEDAS),
   notas,
 ]
@@ -132,7 +134,7 @@ const ASIN = /^[A-Z0-9]{10}$/
 // activación confirme la columna: pasar la lista de ideas desde la lectura de /eco.
 const IDEA = /^[A-Z]{2,4}-\d{3,4}$/
 const PAIS = /^[A-Z]{2}$/
-const DECIMAL = /^\d{1,10}(\.\d{1,2})?$/
+const DECIMAL = { 2: /^\d{1,10}(\.\d{1,2})?$/, 4: /^\d{1,10}(\.\d{1,4})?$/ } as const
 const ENTERO = /^\d{1,9}$/
 /** §4.3: texto que empieza por = + - @ se rechaza (se escribiría en una hoja con fórmulas). */
 const FORMULA_START = /^[=+\-@]/
@@ -211,12 +213,12 @@ function valorCampo(c: Campo, raw: unknown, fields: Fields): Celda | null {
       out = textoLimpio(s, t.max, t.multilinea ?? false, fields, c.clave)
       break
     case 'contacto': {
-      // ORD-POS-102 (hallazgo de revisión): un teléfono como «+52 …» es válido. Se acepta un «+» inicial y se
-      // neutraliza con apóstrofo (además de escribir en RAW); =, - y @ iniciales siguen rechazados.
+      // ORD-POS-102 (hallazgo de revisión): un teléfono como «+52 …» es válido. Se acepta un «+» inicial tal cual:
+      // RAW nunca lo evalúa y un apóstrofo quedaría visible (ORD-POS-104, H4); =, - y @ iniciales siguen rechazados.
       const limpio = cleanText(s, false)
       if (limpio.length > 200) fields[c.clave] = 'Hasta 200 caracteres.'
       else if (/^[=\-@]/.test(limpio)) fields[c.clave] = 'No puede empezar por =, - ni @.'
-      out = neutralizeFormula(limpio)
+      out = limpio
       break
     }
     case 'asin':
@@ -232,7 +234,7 @@ function valorCampo(c: Campo, raw: unknown, fields: Fields): Celda | null {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || parseCivilDate(s).value === null) fields[c.clave] = 'Fecha AAAA-MM-DD válida.'
       break
     case 'numero':
-      if (!DECIMAL.test(s)) fields[c.clave] = 'Número ≥ 0 con hasta 2 decimales.'
+      if (!DECIMAL[t.decimales].test(s)) fields[c.clave] = `Número ≥ 0 con hasta ${t.decimales} decimales.`
       else out = Number(s)
       break
     case 'entero':

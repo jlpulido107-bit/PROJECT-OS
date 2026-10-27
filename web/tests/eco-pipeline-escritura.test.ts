@@ -26,6 +26,7 @@ import {
 } from '@/lib/radaros/pipeline-escritura-store'
 import { parseEco, parseIdRuta, parseMover } from '@/lib/radaros/pipeline-escritura-validacion'
 import { TRANSICIONES } from '@/lib/radaros/pipeline-transiciones'
+import { MAX_DATA_ROWS } from '@/lib/schema'
 
 /**
  * Escritura del pipeline de /eco (ORD-POS-102, docs/diseno-eco-pipeline.md §4 a §7). Solo dobles de sesión, de token y
@@ -641,13 +642,13 @@ class FallaStore extends InMemoryEcoStore {
 }
 
 describe('criterio 4: auditoría antes de la entidad y verificación después (§6.1)', () => {
-  it('orden de un alta y de una edición: leer → auditoría → entidad → releer para verificar', async () => {
+  it('orden de un alta y de una edición: leer → (releer la fila y sus fórmulas) → auditoría → entidad → releer para verificar', async () => {
     const f = new FallaStore(libro())
     await crearProducto(servicio(f))
     expect(f.llamadas).toEqual(['tabs', expect.stringMatching(/^read-PIPE_PRODUCTOS,/), 'append-PIPE_AUDITORIA', 'append-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
     f.llamadas = []
     await mover(servicio(f), 'PRD-0001', 'SUGERIDO', 'EVALUANDO', 1)
-    expect(f.llamadas).toEqual(['tabs', expect.stringMatching(/^read-PIPE_PRODUCTOS,/), 'formulas', 'append-PIPE_AUDITORIA', 'read-PIPE_PRODUCTOS', 'update-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
+    expect(f.llamadas).toEqual(['tabs', expect.stringMatching(/^read-PIPE_PRODUCTOS,/), 'read-PIPE_PRODUCTOS', 'formulas', 'append-PIPE_AUDITORIA', 'update-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
   })
 
   it.each([
@@ -976,14 +977,14 @@ describe('criterio 8: render.mjs valida y agrega la escritura del pipeline', () 
 /* ------------------------------------------ Criterio 9 ------------------------------------------ */
 
 describe('criterio 9: hallazgos de revisiones', () => {
-  it('CONTACTO acepta un «+» inicial (teléfono) y lo neutraliza con apóstrofo, además de RAW; =, - y @ siguen fuera', async () => {
+  it('CONTACTO acepta un «+» inicial (teléfono) y llega exacto en RAW, sin apóstrofo (ORD-POS-104, H4); =, - y @ siguen fuera', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro())
     const svc = servicio(s)
     const crear = (contacto: string) => svc.crearProveedor(parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'Con teléfono', canal: 'NACIONAL', pais: 'MX', contacto }), CTX)
-    const r = await crear('+52 000 000 0000')
-    expect(registro(s, 'PIPE_PROVEEDORES', r.id).CONTACTO).toBe("'+52 000 000 0000")
-    // La verificación releyó el mismo texto (con apóstrofo) y el reintento con el mismo requestId lo reconoce.
-    expect(auditoria(s).find((a) => a.CAMPO === 'CONTACTO')!.VALOR_DESPUES).toBe("'+52 000 000 0000")
+    const r = await crear('+52 999 123')
+    expect(registro(s, 'PIPE_PROVEEDORES', r.id).CONTACTO).toBe('+52 999 123')
+    // La verificación releyó el mismo texto y la auditoría lo guarda igual, sin apóstrofo.
+    expect(auditoria(s).find((a) => a.CAMPO === 'CONTACTO')!.VALOR_DESPUES).toBe('+52 999 123')
     for (const malo of ['=HYPERLINK("http://x")', '-1+1', '@SUM(A1)']) {
       expect(await codigo(() => parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'x', canal: 'OTRO', pais: 'MX', contacto: malo })), malo).toBe('validacion')
     }
@@ -1005,5 +1006,76 @@ describe('criterio 9: hallazgos de revisiones', () => {
     expect(diseno).not.toMatch(/[^/]`write-credentials\.ts`/)
     const reglas = readFileSync(path.join(ROOT, '.claude', 'rules', 'web.md'), 'utf8')
     expect(reglas).toContain('web/src/lib/operations/write-credentials.ts')
+  })
+})
+
+/* ------------------------------------ ORD-POS-104 (hallazgos) ------------------------------------ */
+
+describe('ORD-POS-104: hallazgos no bloqueantes de ORD-POS-102', () => {
+  it('criterio 1: los 4 montos aceptan hasta 4 decimales; 5 decimales, coma, negativos y notación científica no', () => {
+    const cot = (precioUnit: unknown, extra: Record<string, unknown> = {}) =>
+      parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0003', proveedorId: 'PRV-0001', precioUnit, ...extra })
+    for (const ok of ['0.125', '0.1234', 0.125, 0.1234, '12']) expect(cot(ok).valores.PRECIO_UNIT, String(ok)).toBe(Number(ok))
+    expect(cot('1', { costoAterrizadoMxn: '0.1234', muestraCosto: '0.125' }).valores).toMatchObject({ COSTO_ATERRIZADO_MXN: 0.1234, MUESTRA_COSTO: 0.125 })
+    const emb = parseEco('eco.embarque.crear', { requestId: rid(), productoId: 'PRD-0003', cotizacionId: 'COT-0001', unidades: 10, costoTotal: '1234.5678' })
+    expect(emb.valores.COSTO_TOTAL).toBe(1234.5678)
+    for (const malo of ['0.12345', '1,5', '-1', -1, '1e3', 1e21, '.5']) {
+      for (const campo of ['precioUnit', 'costoAterrizadoMxn', 'muestraCosto']) {
+        expect(() => cot('1', { [campo]: malo }), `${campo} ${malo}`).toThrow(OperationError)
+      }
+      expect(() => parseEco('eco.embarque.crear', { requestId: rid(), productoId: 'PRD-0003', cotizacionId: 'COT-0001', unidades: 10, costoTotal: malo }), String(malo)).toThrow(OperationError)
+    }
+    // Los demás números siguen con 2 decimales.
+    expect(() => parseEco('eco.producto.editar', { requestId: rid(), expectedVersion: 1, costoMaxMxn: '0.125' })).toThrow(OperationError)
+  })
+
+  const relleno = (n: number) => Array.from({ length: n }, (_, i) => fila(COLUMNAS_AUDITORIA, { AUDIT_ID: `MANUAL-${i}` }))
+
+  it('criterio 2: al 80 % de MAX_DATA_ROWS la respuesta ok trae el aviso y el tablero lo muestra', async () => {
+    const s = new InMemoryEcoStore(RADAROS, libro({ PIPE_AUDITORIA: [[...COLUMNAS_AUDITORIA], ...relleno(MAX_DATA_ROWS * 0.8)] }))
+    const r = await crearProducto(servicio(s))
+    expect(r.aviso).toMatch(/^PIPE_AUDITORIA pasa del 80 % del límite de 5000 filas: archívala/)
+    expect((await crearProducto(servicio(new InMemoryEcoStore(RADAROS, libro())))).aviso).toBeUndefined()
+    const src = readFileSync(path.join(__dirname, '..', 'src', 'components', 'eco', 'tablero-escritura.tsx'), 'utf8')
+    expect(src).toContain('setAviso(json.aviso ?? null)')
+    expect(src).toMatch(/\{aviso \? <div className="alert alert-warn" role="status"><p>\{aviso\}<\/p><\/div> : null\}/)
+  })
+
+  it('criterio 2: al 100 % falla cerrado, sin escribir, y el mensaje nombra la pestaña y pide archivar', async () => {
+    for (const n of [MAX_DATA_ROWS, MAX_DATA_ROWS + 3]) {
+      const f = new FallaStore(libro({ PIPE_AUDITORIA: [[...COLUMNAS_AUDITORIA], ...relleno(n)] }))
+      expect(await codigo(crearProducto(servicio(f)))).toBe('eco-pestana-llena')
+      expect(f.llamadas.some((l) => l.startsWith('append') || l.startsWith('update'))).toBe(false)
+    }
+    const h = arnes(ACTIVA, { datos: libro({ PIPE_AUDITORIA: [[...COLUMNAS_AUDITORIA], ...relleno(MAX_DATA_ROWS)] }) })
+    const r = await h.llamar('POST', '/api/eco/pipeline/productos', { requestId: rid(), nombre: 'x' })
+    expect(r.status).toBe(409)
+    expect((r.body.error as { mensaje: string }).mensaje).toMatch(/^La pestaña PIPE_AUDITORIA llegó al límite de 5000 filas: archívala .*§7\.2/)
+    const diseno = readFileSync(path.join(__dirname, '..', '..', 'docs', 'diseno-eco-pipeline.md'), 'utf8')
+    expect(diseno).toMatch(/\*\*Archivar `PIPE_AUDITORIA`\*\* \(solo el propietario, a mano\)/)
+  })
+
+  it('criterio 4: sinFormulas mira la fila relocalizada por ID en la relectura de aplicar(), con una fila insertada entre medias', async () => {
+    const f = new FallaStore(libro())
+    const datos = (f as unknown as { data: Map<string, unknown[][]> }).data
+    const insertar = () => { datos.get('PIPE_PRODUCTOS')!.splice(1, 0, prd('PRD-0009', 'SUGERIDO')); f.antesDeReleer = null }
+    // PRD-0002 está en la fila 3; tras la inserción pasa a la 4, donde su COSTO_MAX_MXN es fórmula.
+    f.formulasHoja.set(`PIPE_PRODUCTOS!4!${COLUMNAS_PRODUCTOS.indexOf('COSTO_MAX_MXN')}`, '=SCORING!B2*0.3')
+    f.antesDeReleer = insertar
+    const editar = (body: Record<string, unknown>) => servicio(f).editarProducto('PRD-0002', parseEco('eco.producto.editar', { requestId: rid(), expectedVersion: 2, ...body }), CTX)
+    expect(await codigo(editar({ costoMaxMxn: 10 }))).toBe('campo-solo-lectura')
+    expect(auditoria(f)).toHaveLength(0)
+    // Otra columna sí se edita, y en la fila relocalizada (no en la que ahora ocupa PRD-0009).
+    f.antesDeReleer = insertar
+    await editar({ notas: 'ok' })
+    expect(registro(f, 'PIPE_PRODUCTOS', 'PRD-0002')).toMatchObject({ NOTAS: 'ok', VERSION: 3 })
+    expect(tabla(f, 'PIPE_PRODUCTOS').filter((r) => r[0] === 'PRD-0009').every((r) => !r.includes('ok'))).toBe(true)
+  })
+
+  it('criterio 5: H3 (IDEA_ID solo formato) queda en §10.1 y en el paso 7 de §7.2', () => {
+    const diseno = readFileSync(path.join(__dirname, '..', '..', 'docs', 'diseno-eco-pipeline.md'), 'utf8')
+    expect(diseno).toMatch(/H3 \(BAJA\).*IDEA_ID/)
+    const paso7 = diseno.slice(diseno.indexOf('7. **Verificar:**'), diseno.indexOf('8. **Revertir:**'))
+    expect(paso7).toContain('IDEA_ID')
   })
 })

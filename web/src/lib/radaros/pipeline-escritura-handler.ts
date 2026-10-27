@@ -28,6 +28,15 @@ const MENSAJES: Partial<Record<string, string>> = {
   'conflicto-version': 'El registro cambió desde que lo abriste (etapa o versión). Recarga y vuelve a intentarlo.',
 }
 
+/** ORD-POS-104 (H2): la pestaña llena se nombra (es una de las cinco PIPE_*, nunca un valor de la hoja). */
+function mensajeDe(error: OperationError): string {
+  const { pestana, limite } = error.detail ?? {}
+  if (error.code === 'eco-pestana-llena' && pestana) {
+    return `La pestaña ${pestana} llegó al límite de ${limite} filas: archívala (diseño /eco pipeline §7.2) y vuelve a intentarlo. No se escribió nada.`
+  }
+  return MENSAJES[error.code] ?? error.message
+}
+
 function requestIdOf(body: unknown): string | undefined {
   const id = body && typeof body === 'object' ? (body as Record<string, unknown>).requestId : undefined
   return typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id) ? id : undefined
@@ -41,7 +50,7 @@ function errorBody(error: OperationError, operacion: string, requestId?: string)
     body: {
       ok: false,
       error: {
-        codigo: error.code, mensaje: MENSAJES[error.code] ?? error.message,
+        codigo: error.code, mensaje: mensajeDe(error),
         ...(error.fields ? { campos: error.fields } : {}), ...(error.detail ? { detalle: error.detail } : {}),
       },
       ...(requestId ? { requestId } : {}),

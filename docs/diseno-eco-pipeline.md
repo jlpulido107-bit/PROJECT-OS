@@ -369,10 +369,20 @@ Ningún agente crea la cuenta, toca IAM, comparte la hoja, crea pestañas, pone 
 7. **Verificar:** un producto de prueba (`NOMBRE` «PRUEBA»), moverlo a `EVALUANDO` y a `DESCARTADO` con motivo; en la
    hoja, tres juegos de filas en `PIPE_AUDITORIA` y la fila en `PIPE_PRODUCTOS` con `VERSION` 3. Intentar editar
    `SCORING` con la cuenta nueva no es posible (rango protegido). La cuenta nueva no tiene roles de proyecto (el mismo
-   `get-iam-policy` del diseño /eco §6 sale vacío para ella).
+   `get-iam-policy` del diseño /eco §6 sale vacío para ella). Si la prueba lleva `IDEA_ID`, comprobar a mano que esa
+   idea existe en `PRODUCTS` de RADAROS: la ruta solo valida el formato (§10.1, H3).
 8. **Revertir:** `deploy.sh --desde-activa --quitar ECO_PIPELINE_WRITE_MODE` (retira las tres; el tablero vuelve a solo
    lectura), quitar a `project-os-eco` del Compartir y, si se quiere, borrar el binding del paso 4. Las pestañas `PIPE_*`
    y su auditoría se quedan.
+9. **Archivar `PIPE_AUDITORIA`** (solo el propietario, a mano), cuando el tablero avise del 80 % de 5000 filas o la
+   escritura falle con 409 `eco-pestana-llena`. Nunca por la ruta: no hay `DELETE`.
+   1. No mover tarjetas mientras tanto y nombrar una versión como en el paso 1.
+   2. Copiar las filas más antiguas (dejar al menos las del último mes) a otro libro o a una pestaña
+      `PIPE_AUDITORIA_ARCHIVO_AAAA`, fuera de la lista cerrada de §6.2 (la ruta nunca la lee), y borrarlas de
+      `PIPE_AUDITORIA` sin tocar el encabezado.
+   3. Efectos: un `requestId` archivado ya no se reconoce como repetido, y los IDs que solo consten en filas archivadas
+      se podrían reutilizar si su fila de entidad se borró a mano (no borrar filas de las otras `PIPE_*`).
+   Las otras `PIPE_*` no se archivan así: si una llega al aviso, se pide una orden.
 
 ## 8. Migración explícita del esquema de RADAROS (criterio 2)
 
@@ -491,8 +501,9 @@ Decisiones de la construcción (las que el diseño dejaba abiertas o no fijaba):
 
 - **Edición celda por celda.** Un `PATCH` o un `mover` escribe solo las columnas que cambian, más `ACTUALIZADO` y
   `VERSION`, con rangos `'<PESTAÑA>'!X<n>:X<n>` en un `values:batchUpdate` RAW: no pisa fórmulas ni columnas que el
-  propietario añada al final. La fila se relee justo antes y solo se escribe si conserva el ID y la `VERSION`.
-- **Fórmulas (❓ §12).** Antes de auditar, la fila se lee con `valueRenderOption=FORMULA`; si alguna celda que cambia
+  propietario añada al final. Antes de auditar, la pestaña se relee y la fila se ubica por ID; solo se escribe si
+  conserva la `VERSION`, y en esa misma fila (ORD-POS-104).
+- **Fórmulas (❓ §12).** Antes de auditar, la fila ubicada en esa relectura se lee con `valueRenderOption=FORMULA`; si alguna celda que cambia
   es fórmula (por ejemplo `COSTO_MAX_MXN` o `COSTO_ATERRIZADO_MXN`), 409 `campo-solo-lectura` y nada se escribe. Así
   la ruta las rechaza sin fijar ahora cuáles son fórmulas.
 - **Auditoría.** `ENTIDAD` = nombre de la pestaña; `ORIGEN` = `dashboard-eco;modo=sheets;req=<requestId>;hash=<hash>`
@@ -506,12 +517,23 @@ Decisiones de la construcción (las que el diseño dejaba abiertas o no fijaba):
   datos de §3.3.
 - **`IDEA_ID`.** Solo se valida el formato (`EC-004`): el servicio no lee pestañas fuera de `PIPE_*` y la columna de
   `PRODUCTS` es ❓. Queda como atajo anotado en el código hasta la activación.
-- **`CONTACTO`** acepta un `+` inicial (teléfono): se escribe con apóstrofo y en RAW; `=`, `-` y `@` iniciales siguen
-  rechazados. Las `NOTAS` del proveedor se ocultan a quien no escribe, como `CONTACTO` (H1 de la revisión de P-1).
+- **`CONTACTO`** acepta un `+` inicial (teléfono): se escribe tal cual en RAW, sin apóstrofo; `=`, `-` y `@`
+  iniciales siguen rechazados. Las `NOTAS` del proveedor se ocultan a quien no escribe, como `CONTACTO` (H1 de la revisión de P-1).
 - **Caché.** Tras una escritura correcta sube una generación en el proceso y el lector de /eco descarta su caché: la
   tarjeta aparece en su nueva columna al refrescar.
 - **Alta y edición desde la pantalla.** Esta orden pinta solo el arrastre y «Mover a…» (criterio 7); las rutas de alta
   y edición existen y están probadas, y sus formularios quedan para otra orden.
+
+Hallazgos no bloqueantes de los dictámenes del PR #239, corregidos en ORD-POS-104
+([issue #241](https://github.com/jlpulido107-bit/PROJECT-OS/issues/241)), también inerte:
+
+| Hallazgo | Cómo quedó |
+| --- | --- |
+| PRIMERO H1 (MEDIA): montos con 2 decimales | `PRECIO_UNIT`, `COSTO_ATERRIZADO_MXN`, `MUESTRA_COSTO` y `COSTO_TOTAL` admiten hasta 4 (0.125); los demás números siguen con 2 |
+| PRIMERO H2 (MEDIA): más de 5000 filas | Al 80 % la respuesta ok trae `aviso` y el tablero lo muestra; al 100 %, 409 `eco-pestana-llena` con la pestaña; archivado manual en §7.2 paso 9 |
+| PRIMERO H3 (BAJA): `IDEA_ID` solo valida el formato | Límite aceptado: la lista cerrada de §6.2 no cambia; comprobación manual en §7.2 paso 7 |
+| PRIMERO H4 (BAJA): apóstrofo visible en `CONTACTO` | Sin apóstrofo: RAW basta |
+| SEGUNDO H1 (BAJA): fórmulas en la fila de la lectura inicial | Las fórmulas se leen en la fila ubicada por ID en la misma relectura que usa la escritura |
 
 ## 11. Fase 2 (bosquejo; depende de SP-API)
 
