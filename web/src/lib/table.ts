@@ -1,6 +1,6 @@
 import { parseCivilDate, parseTimestamp, type Parsed, type Timestamp } from './dates'
 import { cellText, normalizeCode, parseFraction, parseNonNegative, parseSafeUrl } from './parse'
-import { isOptionalTab, MAX_DATA_ROWS, ORDENES_SENSIBLE, TAB_HEADERS, type TabName } from './schema'
+import { isOptionalTab, MAX_DATA_ROWS, ORDENES_SENSIBLE, TAB_HEADERS, TAREAS_INSTRUCCIONES, type TabName } from './schema'
 import type { DataIssue, DataSource, Dataset, RawTabs, TabStatus } from './types'
 
 const MAX_ISSUES = 200
@@ -183,6 +183,7 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     bloqueo: r.text('BLOQUEO'),
     version: r.text('VERSION'),
     actualizadoEn: r.timestamp('ACTUALIZADO_EN'),
+    instrucciones: r.text(TAREAS_INSTRUCCIONES),
   }))
 
   const capacidad = mapTab('CAPACIDAD_SEMANAL', raw, tabs, log, (r, id) => ({

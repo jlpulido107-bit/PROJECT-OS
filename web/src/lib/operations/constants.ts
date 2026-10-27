@@ -1,4 +1,4 @@
-import { TAB_HEADERS } from '../schema'
+import { TAB_HEADERS, TAREAS_INSTRUCCIONES } from '../schema'
 
 /**
  * Contrato de escritura V1.4 (docs/v1-4-write-contract.md). Encabezados exactos; no se crean columnas.
@@ -17,6 +17,14 @@ export const WRITE_HEADERS = {
 } as const
 
 export type WriteTab = keyof typeof WRITE_HEADERS
+
+/**
+ * Columnas opcionales del contrato (ORD-POS-105): no se exigen en los encabezados; si la hoja las tiene se leen, se
+ * escriben y se verifican como las demás. Sin ellas, la pestaña se lee y se escribe igual que antes.
+ */
+export const OPTIONAL_WRITE_COLUMNS: Partial<Record<WriteTab, readonly string[]>> = {
+  TAREAS: [TAREAS_INSTRUCCIONES],
+}
 export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX'
 
 /** Estados de tarea que el dashboard puede asignar. COMPLETADO/CANCELADO requieren aprobación humana (bloqueados). */
@@ -34,6 +42,7 @@ export const LIMITS = {
   bodyBytes: 16 * 1024,
   titulo: 160,
   descripcion: 2000,
+  instrucciones: 4000,
   criterio: 1000,
   bloqueo: 500,
   responsable: 80,

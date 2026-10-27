@@ -63,6 +63,7 @@ export type OperationErrorCode =
   | 'requisito-faltante'
   | 'asin-duplicado'
   | 'elegida-duplicada'
+  | 'instrucciones-sin-columna'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -128,6 +129,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'requisito-faltante': 409,
   'asin-duplicado': 409,
   'elegida-duplicada': 409,
+  'instrucciones-sin-columna': 422,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -194,6 +196,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'requisito-faltante': 'Falta un dato que exige ese cambio; no se escribió nada.',
   'asin-duplicado': 'Ese ASIN ya está en otro producto (uno descartado solo vuelve con «reabrir»); no se escribió nada.',
   'elegida-duplicada': 'El producto ya tiene una cotización ELEGIDA; no se escribió nada.',
+  'instrucciones-sin-columna': 'La pestaña TAREAS aún no tiene la columna INSTRUCCIONES (la añade el propietario con la migración); quita las instrucciones o espera la migración. No se escribió nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

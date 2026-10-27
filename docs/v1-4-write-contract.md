@@ -63,6 +63,7 @@ Los valores se escriben con `valueInputOption=RAW`, nunca como fórmulas.
 | `BLOQUEO` | opcional | editable | ≤ 500. **Obligatorio si `ESTADO=BLOQUEADO`** |
 | `VERSION` | `1` | sistema | Entero; +1 en cada edición. Concurrencia optimista (§6) |
 | `ACTUALIZADO_EN` | sistema | sistema | Instante ISO 8601 en hora de Mérida (`2026-10-09T10:15:00-06:00`) |
+| `INSTRUCCIONES` | opcional | editable | ≤ 4000, multilínea. **Columna opcional al final** (ORD-POS-105, [migración](migracion-instrucciones.md)): sin ella, enviar `instrucciones` da `instrucciones-sin-columna` (422) y no escribe nada |
 
 Reglas de estado:
 

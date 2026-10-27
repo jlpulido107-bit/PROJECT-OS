@@ -71,6 +71,13 @@ export const TAB_HEADERS = {
  */
 export const ORDENES_SENSIBLE = 'SENSIBLE'
 
+/**
+ * Columna opcional de TAREAS (ORD-POS-105, docs/escritura-v1-8.md §6): instrucciones paso a paso, hasta 4000 caracteres.
+ * Va al final y solo la añade el propietario (docs/migracion-instrucciones.md). Se lee si existe; sin ella, la tarea se lee
+ * y se escribe igual que antes y las instrucciones se rechazan.
+ */
+export const TAREAS_INSTRUCCIONES = 'INSTRUCCIONES'
+
 export type TabName = keyof typeof TAB_HEADERS
 export type TabColumn<T extends TabName> = (typeof TAB_HEADERS)[T][number]
 

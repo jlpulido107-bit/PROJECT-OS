@@ -171,7 +171,7 @@ export function NewTaskForm({ projects, milestones, defaultProject, taskTypes }:
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const values = formValues(event.currentTarget)
-    await op.submit(compact(values, ['hitoId', 'descripcion', 'responsable', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'bloqueo']))
+    await op.submit(compact(values, ['hitoId', 'descripcion', 'responsable', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'bloqueo', 'instrucciones']))
   }
 
   const projectMilestones = milestones.filter((m) => m.project === project)
@@ -229,6 +229,9 @@ export function NewTaskForm({ projects, milestones, defaultProject, taskTypes }:
         <Field name="descripcion" label="Descripción (opcional)" state={op.state} wide>
           {(p) => <textarea {...p} name="descripcion" rows={3} maxLength={2000} />}
         </Field>
+        <Field name="instrucciones" label="Instrucciones (opcional)" state={op.state} wide hint={INSTRUCCIONES_HINT}>
+          {(p) => <textarea {...p} name="instrucciones" rows={6} maxLength={4000} />}
+        </Field>
       </div>
       <p className="muted small">La tarea se crea en estado <strong>Pendiente</strong>, versión 1.</p>
       <div className="form-actions">
@@ -264,14 +267,17 @@ export interface EditableTask {
   horasEstimadas: string
   criterioTerminado: string
   bloqueo: string
+  instrucciones: string
 }
+
+const INSTRUCCIONES_HINT = 'Paso a paso; una línea «1. …» por paso. Requiere la columna INSTRUCCIONES en TAREAS'
 
 const ESTADOS: Option[] = [
   { value: 'PENDIENTE', label: 'Pendiente' },
   { value: 'EN_PROGRESO', label: 'En progreso' },
   { value: 'BLOQUEADO', label: 'Bloqueado' },
 ]
-const OPTIONAL_EDIT = new Set(['hitoId', 'descripcion', 'responsable', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'bloqueo'])
+const OPTIONAL_EDIT = new Set(['hitoId', 'descripcion', 'responsable', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'bloqueo', 'instrucciones'])
 
 export function EditTaskForm({ task, milestones, taskTypes }: { task: EditableTask; milestones: Option[]; taskTypes: string[] }) {
   const op = useOperation(`/api/operaciones/tareas/${encodeURIComponent(task.id)}`, 'PATCH')
@@ -346,6 +352,9 @@ export function EditTaskForm({ task, milestones, taskTypes }: { task: EditableTa
         </Field>
         <Field name="descripcion" label="Descripción" state={op.state} wide>
           {(p) => <textarea {...p} name="descripcion" rows={3} maxLength={2000} defaultValue={task.descripcion} />}
+        </Field>
+        <Field name="instrucciones" label="Instrucciones" state={op.state} wide hint={INSTRUCCIONES_HINT}>
+          {(p) => <textarea {...p} name="instrucciones" rows={6} maxLength={4000} defaultValue={task.instrucciones} />}
         </Field>
       </div>
       <p className="muted small">Editando la versión <strong>{task.version}</strong>. Si alguien la cambia antes de guardar, se te pedirá recargar.</p>

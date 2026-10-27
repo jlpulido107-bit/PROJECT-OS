@@ -13,7 +13,7 @@ tipo=$1; archivo=$2; repetir=${3:-}
 
 # Límites de longitud por tipo (web/src/lib/operations/constants.ts, LIMITS).
 case "$tipo" in
-  tareas) limites='{"titulo":160,"descripcion":2000,"criterioTerminado":1000,"responsable":80}' ;;
+  tareas) limites='{"titulo":160,"descripcion":2000,"criterioTerminado":1000,"responsable":80,"instrucciones":4000}' ;;
   decisiones) limites='{"asunto":200,"decision":2000,"justificacion":2000,"responsable":80,"evidenciaUrl":500}' ;;
   ordenes) limites='{"titulo":160,"objetivo":2000,"criterios":2000,"fueraDeAlcance":2000,"comoProbar":2000,"contexto":2000}' ;;
   *) echo "Tipo no permitido: $tipo (solo tareas, decisiones u ordenes)" >&2; exit 2 ;;
