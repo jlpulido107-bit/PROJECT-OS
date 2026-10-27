@@ -52,6 +52,8 @@ export interface EcoResultado {
   id: string
   version: number
   repetida: boolean
+  /** ORD-POS-104 (H2): una PIPE_* pasa del 80 % de MAX_DATA_ROWS; el tablero lo muestra al escritor. */
+  aviso?: string
 }
 
 export interface EcoServiceOptions {
@@ -68,6 +70,12 @@ interface Tabla {
 }
 
 type Libro = Record<EcoWriteTab, Tabla>
+
+/** Fila de una entidad releída: la tabla de esa relectura y el número de fila (1 = encabezado). */
+interface Destino {
+  t: Tabla
+  n: number
+}
 
 interface Cambio {
   entidad: Entidad
@@ -111,8 +119,18 @@ function tabla(rows: unknown[][], columnas: readonly string[], pestana: string):
     indice.set(name, i)
   }
   if (columnas.some((c) => !indice.has(c))) throw new OperationError('eco-esquema-invalido', { detail: { pestana } })
-  if (rows.length > MAX_DATA_ROWS + 1) throw new OperationError('lectura-fallida', { detail: { motivo: 'limite-filas' } })
+  if (rows.length > MAX_DATA_ROWS + 1) throw llena(pestana)
   return { header, indice, filas: rows.slice(1) }
+}
+
+/** ORD-POS-104 (H2): al 100 % de MAX_DATA_ROWS se falla cerrado nombrando la pestaña; se archiva a mano (§7.2). */
+const llena = (pestana: string) => new OperationError('eco-pestana-llena', { detail: { pestana, limite: MAX_DATA_ROWS } })
+
+/** Al 80 % o más de MAX_DATA_ROWS, la respuesta ok lleva el aviso (casi siempre por PIPE_AUDITORIA). */
+function conAviso(libro: Libro, r: EcoResultado): EcoResultado {
+  const casi = ECO_WRITE_TABS.filter((tab) => libro[tab].filas.length >= MAX_DATA_ROWS * 0.8)
+  if (!casi.length) return r
+  return { ...r, aviso: `${casi.join(', ')} pasa del 80 % del límite de ${MAX_DATA_ROWS} filas: archívala (diseño /eco pipeline §7.2) antes de que se bloquee la escritura.` }
 }
 
 const valor = (t: Tabla, fila: unknown[], columna: string): unknown => fila[t.indice.get(columna) ?? -1]
@@ -210,9 +228,8 @@ export class EcoPipelineWriteService {
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
 
-      const { fila, actual } = this.unica(libro, 'producto', id)
-      const t = libro.PIPE_PRODUCTOS
-      const etapaTexto = texto(t, fila, 'ETAPA').toUpperCase()
+      const { actual } = this.unica(libro, 'producto', id)
+      const etapaTexto = celdaTexto(actual.ETAPA).toUpperCase()
       const desde = ETAPAS.find((e) => e === etapaTexto)
       const version = this.versionDe(actual)
       if (desde !== cmd.expectedEtapa || version !== cmd.expectedVersion) {
@@ -227,7 +244,7 @@ export class EcoPipelineWriteService {
       const extra: Cambio['extra'] = []
       if (cmd.etapa === 'DESCARTADO') despues.MOTIVO_DESCARTE = cmd.motivo!
       else if (cmd.motivo) extra.push([CAMPO_MOTIVO, cmd.motivo])
-      return this.escribirEdicion(hash, cmd.requestId, ctx, op, 'producto', id, actual, despues, fila, libro, extra)
+      return this.escribirEdicion(hash, cmd.requestId, ctx, op, 'producto', id, actual, despues, libro, extra)
     })
   }
 
@@ -429,7 +446,7 @@ export class EcoPipelineWriteService {
       await this.auditar(hash, cmd.requestId, ctx, cambio, libro)
       await this.aplicar(cambio, libro)
       await this.verificar(cambio)
-      return { operacion: op, id, version: 1, repetida: false }
+      return conAviso(libro, { operacion: op, id, version: 1, repetida: false })
     })
   }
 
@@ -442,38 +459,39 @@ export class EcoPipelineWriteService {
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
-      const { fila, actual } = this.unica(libro, e, id)
+      const { actual } = this.unica(libro, e, id)
       const version = this.versionDe(actual)
       if (version !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { version } })
       const despues: Registro = Object.fromEntries(Object.entries(cmd.valores).filter(([c, v]) => !iguales(actual[c], v) && !(v === '' && celdaTexto(actual[c]) === '')))
       if (!Object.keys(despues).length) throw new OperationError('sin-cambios')
       validar(libro, { ...actual, ...cmd.valores }, actual)
-      return this.escribirEdicion(hash, cmd.requestId, ctx, op, e, id, actual, despues, fila, libro, [])
+      return this.escribirEdicion(hash, cmd.requestId, ctx, op, e, id, actual, despues, libro, [])
     })
   }
 
-  /** Edición ya validada: fórmulas → auditoría → celdas guardadas → verificación. */
+  /** Edición ya validada: relectura → fórmulas de esa fila → auditoría → celdas guardadas → verificación. */
   private async escribirEdicion(
     hash: string, requestId: string, ctx: EcoContext, op: EcoOperationName, e: Entidad, id: string, actual: Registro,
-    cambios: Registro, fila: unknown[], libro: Libro, extra: Cambio['extra'],
+    cambios: Registro, libro: Libro, extra: Cambio['extra'],
   ): Promise<EcoResultado> {
-    const t = libro[ENTIDADES[e].tab]
-    await this.sinFormulas(e, t.filas.indexOf(fila) + 2, Object.keys(cambios), t)
+    // ORD-POS-104 (SEGUNDO H1): la misma relectura ubica la fila por ID para las fórmulas y para aplicar().
+    const destino = await this.ubicar(e, id, actual.VERSION!)
+    await this.sinFormulas(e, destino, Object.keys(cambios))
     const version = this.versionDe(actual)
     const despues: Registro = { ...cambios, ACTUALIZADO: this.stamp(), VERSION: version + 1 }
     const antes: Registro = Object.fromEntries(Object.keys(despues).map((c) => [c, actual[c] ?? '']))
     const cambio: Cambio = { entidad: e, id, antes, despues, extra }
     await this.auditar(hash, requestId, ctx, cambio, libro)
-    await this.aplicar(cambio, libro)
+    await this.aplicar(cambio, libro, destino)
     await this.verificar(cambio)
-    return { operacion: op, id, version: version + 1, repetida: false }
+    return conAviso(libro, { operacion: op, id, version: version + 1, repetida: false })
   }
 
   /** ❓ §12: una celda que es fórmula de la hoja (p. ej. COSTO_MAX_MXN o COSTO_ATERRIZADO_MXN) no se pisa. */
-  private async sinFormulas(e: Entidad, numeroFila: number, columnas: string[], t: Tabla) {
+  private async sinFormulas(e: Entidad, { t, n }: Destino, columnas: string[]) {
     let row: unknown[]
     try {
-      row = await this.store.formulas(ENTIDADES[e].tab, numeroFila)
+      row = await this.store.formulas(ENTIDADES[e].tab, n)
     } catch {
       throw new OperationError('lectura-fallida')
     }
@@ -502,7 +520,10 @@ export class EcoPipelineWriteService {
     } catch {
       throw new OperationError('lectura-fallida')
     }
-    return Object.fromEntries(ECO_WRITE_TABS.map((tab) => [tab, tabla(datos[tab] ?? [], columnasDe(tab), tab)])) as Libro
+    const libro = Object.fromEntries(ECO_WRITE_TABS.map((tab) => [tab, tabla(datos[tab] ?? [], columnasDe(tab), tab)])) as Libro
+    const tope = ECO_WRITE_TABS.find((tab) => libro[tab].filas.length >= MAX_DATA_ROWS)
+    if (tope) throw llena(tope)
+    return libro
   }
 
   private async releer(tab: EcoWriteTab, error: 'escritura-fallida' | 'verificacion-fallida'): Promise<Tabla> {
@@ -537,11 +558,11 @@ export class EcoPipelineWriteService {
     const version = Number(despues.VERSION)
     if (filas.length > 1) throw new OperationError('conflicto-concurrente')
     const coincide = (r: Registro) => filas.length === 1 && Object.entries(r).every(([c, v]) => iguales(valor(t, filas[0]!, c), v))
-    if (coincide(despues)) return { operacion: op, id: a.id, version, repetida: true }
+    if (coincide(despues)) return conAviso(libro, { operacion: op, id: a.id, version, repetida: true })
     if ((alta && filas.length === 0) || (!alta && coincide(antes))) {
       await this.aplicar(cambio, libro)
       await this.verificar(cambio)
-      return { operacion: op, id: a.id, version, repetida: true }
+      return conAviso(libro, { operacion: op, id: a.id, version, repetida: true })
     }
     throw new OperationError('estado-divergente')
   }
@@ -578,9 +599,18 @@ export class EcoPipelineWriteService {
     }
   }
 
-  /** Alta: fila al final. Edición: solo si, releída justo antes, la fila conserva ID y VERSION (como `writeGuarded`). */
-  private async aplicar(cambio: Cambio, libro: Libro) {
-    const { tab, idCol } = ENTIDADES[cambio.entidad]
+  /** Relee la pestaña y ubica la fila por ID; solo vale si conserva la VERSION de antes (como `writeGuarded`). */
+  private async ubicar(e: Entidad, id: string, version: Celda): Promise<Destino> {
+    const { tab, idCol } = ENTIDADES[e]
+    const t = await this.releer(tab, 'escritura-fallida')
+    const indices = t.filas.flatMap((f, i) => (texto(t, f, idCol) === id ? [i] : []))
+    if (indices.length !== 1 || !iguales(valor(t, t.filas[indices[0]!]!, 'VERSION'), version)) throw new OperationError('conflicto-concurrente')
+    return { t, n: indices[0]! + 2 }
+  }
+
+  /** Alta: fila al final. Edición: en la fila que `ubicar` encontró (la del roll-forward se ubica aquí). */
+  private async aplicar(cambio: Cambio, libro: Libro, destino?: Destino) {
+    const { tab } = ENTIDADES[cambio.entidad]
     if (Object.keys(cambio.antes).length === 0) {
       try {
         await this.store.append(tab, [libro[tab].header.map((h) => cambio.despues[h] ?? '')])
@@ -589,11 +619,9 @@ export class EcoPipelineWriteService {
       }
       return
     }
-    const t = await this.releer(tab, 'escritura-fallida')
-    const indices = t.filas.flatMap((f, i) => (texto(t, f, idCol) === cambio.id ? [i] : []))
-    if (indices.length !== 1 || !iguales(valor(t, t.filas[indices[0]!]!, 'VERSION'), cambio.antes.VERSION!)) throw new OperationError('conflicto-concurrente')
+    const { t, n } = destino ?? await this.ubicar(cambio.entidad, cambio.id, cambio.antes.VERSION!)
     try {
-      await this.store.update(tab, indices[0]! + 2, Object.entries(cambio.despues).map(([c, v]) => ({ columna: t.indice.get(c)!, valor: v })))
+      await this.store.update(tab, n, Object.entries(cambio.despues).map(([c, v]) => ({ columna: t.indice.get(c)!, valor: v })))
     } catch {
       throw new OperationError('escritura-fallida')
     }

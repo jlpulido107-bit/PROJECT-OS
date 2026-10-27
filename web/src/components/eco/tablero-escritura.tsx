@@ -37,6 +37,8 @@ export function TableroEditable({ etiquetas, children }: { etiquetas: Record<Eta
   const [arrastrando, setArrastrando] = useState<Movible | null>(null)
   const [estado, setEstado] = useState<Estado>({ status: 'idle' })
   const [pendiente, setPendiente] = useState<Pendiente | null>(null)
+  /** ORD-POS-104 (H2): aviso de la respuesta ok cuando una PIPE_* se acerca al límite de filas. */
+  const [aviso, setAviso] = useState<string | null>(null)
   const dialogo = useRef<HTMLDialogElement>(null)
 
   async function enviar(p: Pendiente, motivo: string | null) {
@@ -48,10 +50,11 @@ export function TableroEditable({ etiquetas, children }: { etiquetas: Record<Eta
         body: JSON.stringify({ requestId: crypto.randomUUID(), expectedVersion: p.version, expectedEtapa: p.etapa, etapa: p.a, ...(motivo ? { motivo } : {}) }),
         credentials: 'same-origin',
       })
-      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: { mensaje?: string } } | null
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; aviso?: string; error?: { mensaje?: string } } | null
       if (json?.ok) {
         setEstado({ status: 'done', id: p.id })
         router.refresh()
+        setAviso(json.aviso ?? null)
       } else {
         setEstado({ status: 'error', id: p.id, mensaje: json?.error?.mensaje ?? 'No se pudo mover la tarjeta.' })
       }
@@ -86,6 +89,7 @@ export function TableroEditable({ etiquetas, children }: { etiquetas: Record<Eta
       {estado.status === 'error' ? (
         <div className="alert alert-danger" role="alert"><p><strong>No se movió {estado.id}.</strong> {estado.mensaje}</p></div>
       ) : null}
+      {aviso ? <div className="alert alert-warn" role="status"><p>{aviso}</p></div> : null}
       {estado.status === 'sending' ? <p className="small muted" role="status">Moviendo {estado.id}…</p> : null}
       {children}
       <dialog ref={dialogo} aria-labelledby="motivo-titulo" onClose={() => setPendiente(null)}>

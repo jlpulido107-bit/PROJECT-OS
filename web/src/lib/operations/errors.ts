@@ -55,6 +55,7 @@ export type OperationErrorCode =
   | 'factura-no-cuadra'
   | 'suscripcion-sin-confirmar'
   | 'eco-esquema-invalido'
+  | 'eco-pestana-llena'
   | 'campo-no-permitido'
   | 'campo-solo-lectura'
   | 'registro-inexistente'
@@ -119,6 +120,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'factura-no-cuadra': 409,
   'suscripcion-sin-confirmar': 409,
   'eco-esquema-invalido': 400,
+  'eco-pestana-llena': 409,
   'campo-no-permitido': 400,
   'campo-solo-lectura': 409,
   'registro-inexistente': 404,
@@ -184,6 +186,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'factura-no-cuadra': 'El total de factura no cuadra con la suscripción confirmada del corte; no se escribió nada.',
   'suscripcion-sin-confirmar': 'La suscripción de Claude cae en este corte y su recurrente no está confirmado; no se escribió nada.',
   'eco-esquema-invalido': 'RADAROS no tiene las pestañas PIPE_* o las columnas que exige el pipeline (o hay una repetida); no se escribió nada.',
+  'eco-pestana-llena': 'Una pestaña PIPE_* llegó al límite de filas; archívala (diseño /eco pipeline §7.2) y vuelve a intentarlo. No se escribió nada.',
   'campo-no-permitido': 'La solicitud trae campos que esta operación no admite; no se escribió nada.',
   'campo-solo-lectura': 'Esa celda es una fórmula de la hoja y es de solo lectura en el dashboard; no se escribió nada.',
   'registro-inexistente': 'El registro no existe en el pipeline.',
