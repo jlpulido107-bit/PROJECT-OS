@@ -1,15 +1,17 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { Badge, Empty, Section, StateBadge, Text } from '@/components/ui'
+import { ColumnaSoltable, TableroEditable, TarjetaMovible } from '@/components/eco/tablero-escritura'
 import { writeAccess } from '@/components/operations/write-access'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
 import {
   ETAPAS, ETIQUETAS_ETAPA, enEtapa, filtrarTarjetas, paraLector, type PipelineVista, type Tarjeta,
 } from '@/lib/radaros/pipeline'
+import { ecoPipelineCanWrite } from '@/lib/radaros/pipeline-escritura-config'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
 
-export const metadata: Metadata = { title: 'Pipeline de ECOMMERCE (solo lectura)' }
+export const metadata: Metadata = { title: 'Pipeline de ECOMMERCE' }
 
 type Search = { producto?: string; proveedor?: string; fproveedor?: string; origen?: string; vencidas?: string; estado?: string }
 
@@ -64,9 +66,9 @@ function Tabla({ filas, columnas, label, clave, enlace }: {
 const fichaProducto = (id: string) => `/eco/pipeline?producto=${encodeURIComponent(id)}#ficha-producto`
 const fichaProveedor = (id: string) => `/eco/pipeline?proveedor=${encodeURIComponent(id)}#ficha-proveedor`
 
-function TarjetaProducto({ t }: { t: Tarjeta }) {
+function ContenidoTarjeta({ t }: { t: Tarjeta }) {
   return (
-    <li className="card">
+    <>
       <p className="card-title"><a href={fichaProducto(t.id)}>{t.nombre ?? t.id}</a></p>
       <p className="small mono">{t.id}</p>
       <p className="small">
@@ -78,11 +80,26 @@ function TarjetaProducto({ t }: { t: Tarjeta }) {
       {t.alertas.length ? (
         <p><Badge tone="danger" title={t.alertas.map((a) => a.detalle).join(' ')}>Seguimiento vencido ({t.alertas.length})</Badge></p>
       ) : null}
-    </li>
+    </>
   )
 }
 
-function Tablero({ v, filtro }: { v: PipelineVista; filtro: Search }) {
+/** VERSION entera ≥ 1, o null: una fila sin VERSION (escrita a mano) no se puede mover desde el tablero. */
+function versionDe(t: Tarjeta): number | null {
+  const n = Number(t.fila.VERSION ?? '')
+  return Number.isInteger(n) && n >= 1 ? n : null
+}
+
+/** §2.1: con escritura, arrastrable y con «Mover a…»; sin ella, la misma tarjeta sin controles. */
+function TarjetaProducto({ t, editable }: { t: Tarjeta; editable: boolean }) {
+  const version = versionDe(t)
+  if (editable && t.etapa && version !== null) {
+    return <TarjetaMovible id={t.id} version={version} etapa={t.etapa} nombre={t.nombre ?? t.id}><ContenidoTarjeta t={t} /></TarjetaMovible>
+  }
+  return <li className="card"><ContenidoTarjeta t={t} />{editable ? <p className="small muted">Sin VERSION válida: no se mueve desde aquí.</p> : null}</li>
+}
+
+function Tablero({ v, filtro, editable }: { v: PipelineVista; filtro: Search; editable: boolean }) {
   return (
     <EstadoPipe bloque={v.productos}>
       {({ tarjetas, sinId }) => {
@@ -112,17 +129,25 @@ function Tablero({ v, filtro }: { v: PipelineVista; filtro: Search }) {
               <button type="submit">Filtrar</button>
             </form>
             {sinId ? <p className="small muted">{sinId} {sinId === 1 ? 'fila' : 'filas'} de PIPE_PRODUCTOS sin PRODUCTO_ID: no se muestran.</p> : null}
-            <div className="board">
-              {ETAPAS.map((e) => {
-                const lista = enEtapa(visibles, e)
-                return (
+            {editable ? (
+              <TableroEditable etiquetas={ETIQUETAS_ETAPA}>
+                <div className="board">
+                  {ETAPAS.map((e) => (
+                    <ColumnaSoltable key={e} etapa={e} label={ETIQUETAS_ETAPA[e]}>
+                      <Columna e={e} lista={enEtapa(visibles, e)} editable />
+                    </ColumnaSoltable>
+                  ))}
+                </div>
+              </TableroEditable>
+            ) : (
+              <div className="board">
+                {ETAPAS.map((e) => (
                   <section key={e} className="board-col" aria-label={ETIQUETAS_ETAPA[e]}>
-                    <h3>{ETIQUETAS_ETAPA[e]} <span className="muted">({lista.length})</span></h3>
-                    {lista.length ? <ul className="plain stack">{lista.map((t) => <TarjetaProducto key={t.id} t={t} />)}</ul> : <p className="small muted">Sin productos.</p>}
+                    <Columna e={e} lista={enEtapa(visibles, e)} editable={false} />
                   </section>
-                )
-              })}
-            </div>
+                ))}
+              </div>
+            )}
             {fuera.length ? (
               <div className="alert alert-warn" role="alert">
                 <p>Productos con <code>ETAPA</code> no reconocida (no se pintan en el tablero):</p>
@@ -133,6 +158,15 @@ function Tablero({ v, filtro }: { v: PipelineVista; filtro: Search }) {
         )
       }}
     </EstadoPipe>
+  )
+}
+
+function Columna({ e, lista, editable }: { e: (typeof ETAPAS)[number]; lista: Tarjeta[]; editable: boolean }) {
+  return (
+    <>
+      <h3>{ETIQUETAS_ETAPA[e]} <span className="muted">({lista.length})</span></h3>
+      {lista.length ? <ul className="plain stack">{lista.map((t) => <TarjetaProducto key={t.id} t={t} editable={editable} />)}</ul> : <p className="small muted">Sin productos.</p>}
+    </>
   )
 }
 
@@ -217,7 +251,7 @@ function Proveedores({ v, filtro, verContacto }: { v: PipelineVista; filtro: Sea
               </label>{' '}
               <button type="submit">Filtrar</button>
             </form>
-            {verContacto ? null : <p className="small muted"><code>CONTACTO</code> solo lo ve el escritor del dashboard.</p>}
+            {verContacto ? null : <p className="small muted"><code>CONTACTO</code> solo lo ve el escritor del dashboard, igual que las notas del proveedor.</p>}
             <Tabla filas={filas.filter((p) => !estado || p.ESTADO === estado)} columnas={columnas} label="Proveedores" clave="PROVEEDOR_ID"
               enlace={(p) => (p.PROVEEDOR_ID ? fichaProveedor(p.PROVEEDOR_ID) : null)} />
           </>
@@ -239,7 +273,7 @@ function FichaProveedor({ v, p, tarjetas, verContacto }: { v: PipelineVista; p: 
         {verContacto ? <Dato label="Contacto" value={p.CONTACTO} /> : null}
         <div><dt>Estado</dt><dd><StateBadge code={p.ESTADO ?? null} /></dd></div>
       </dl>
-      <p><Text value={p.NOTAS ?? null} empty="Sin notas." /></p>
+      {verContacto ? <p><Text value={p.NOTAS ?? null} empty="Sin notas." /></p> : null}
       <h3>Cotizaciones</h3>
       <EstadoPipe bloque={v.cotizaciones}>
         {() => cots.length ? (
@@ -281,7 +315,9 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
     )
   }
 
-  const verContacto = writeAccess(user.email).allowed
+  // §4.2: arrastre y «Mover a…» solo para ECO_PIPELINE_WRITER_EMAIL con la escritura activa; el servidor repite todo.
+  const editable = ecoPipelineCanWrite(user.email)
+  const verContacto = writeAccess(user.email).allowed || editable
   const v = paraLector(result.vista.pipeline, verContacto)
   const tarjetas = v.productos.estado === 'ok' ? v.productos.datos.tarjetas : []
   const producto = params.producto ? tarjetas.find((t) => t.id === params.producto) : undefined
@@ -290,9 +326,11 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
     <>
       <h1>Pipeline de ECOMMERCE</h1>
       <p className="muted small">
-        Solo lectura de las pestañas <code>PIPE_*</code> de la hoja de RADAROS, leída {formatInstant(result.fetchedAt)} (hora
-        Mérida). Esta página no escribe, no mueve tarjetas y no calcula costos: muestra lo que hay en la hoja. Vencido = fecha
-        esperada anterior a hoy ({v.hoy}).
+        Pestañas <code>PIPE_*</code> de la hoja de RADAROS, leídas {formatInstant(result.fetchedAt)} (hora Mérida).{' '}
+        {editable
+          ? 'Puedes arrastrar una tarjeta o usar «Mover a…»: solo cambia de columna cuando la hoja lo confirma.'
+          : 'Solo lectura: esta vista no mueve tarjetas.'}{' '}
+        No calcula costos: muestra lo que hay en la hoja. Vencido = fecha esperada anterior a hoy ({v.hoy}).
       </p>
       {v.parametros.bloque.estado === 'ok' ? null : (
         <p className="small muted">
@@ -303,7 +341,7 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         </p>
       )}
       {v.parametros.avisos.map((a) => <p key={a} className="small"><Badge tone="warn">Aviso</Badge> {a}</p>)}
-      <Section title="Tablero" id="tablero"><Tablero v={v} filtro={params} /></Section>
+      <Section title="Tablero" id="tablero"><Tablero v={v} filtro={params} editable={editable} /></Section>
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
       {producto ? <FichaProducto v={v} t={producto} /> : null}
       <Section title="Proveedores" id="proveedores"><Proveedores v={v} filtro={params} verContacto={verContacto} /></Section>

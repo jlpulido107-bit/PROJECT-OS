@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + segundoGemini(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas ni SEGUNDO_GEMINI_SUPERVISADO')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO ni SEGUNDO_GEMINI_SUPERVISADO')
   return output.replace(marker, writeBlock)
 }
 
@@ -269,6 +269,47 @@ function finanzasAgente(env, problems) {
     '                secretKeyRef:',
     '                  name: project-os-finanzas-agente-token-sha256',
     `                  key: '${version}'`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-102, docs/diseno-eco-pipeline.md §7.1): escritura del pipeline de /eco, apagada por defecto. Las
+ * tres variables van juntas y solo las exporta el propietario:
+ * - ECO_PIPELINE_WRITE_MODE: solo `sheets`; exige RADAROS_SHEET_ID.
+ * - ECO_PIPELINE_WRITE_SERVICE_ACCOUNT: cuenta exclusiva del pipeline, del mismo proyecto, distinta de la runtime
+ *   (lectura), de WRITE_SERVICE_ACCOUNT y de las dos de finanzas (FINANZAS_WRITE_SERVICE_ACCOUNT y
+ *   FINANZAS_AGENTE_SERVICE_ACCOUNT).
+ * - ECO_PIPELINE_WRITER_EMAIL: un único correo (el servidor exige además que esté en AUTH_ALLOWED_EMAILS).
+ * Es independiente de WRITE_MODE y de FINANZAS_WRITE_MODE. Sin ninguna de las tres, el YAML no cambia; nunca se imprime
+ * un valor.
+ */
+function ecoPipeline(env, problems) {
+  const mode = (env.ECO_PIPELINE_WRITE_MODE ?? '').trim()
+  const account = (env.ECO_PIPELINE_WRITE_SERVICE_ACCOUNT ?? '').trim()
+  const writer = (env.ECO_PIPELINE_WRITER_EMAIL ?? '').trim()
+  if (!mode && !account && !writer) return ''
+  const antes = problems.length
+  if (mode !== 'sheets') problems.push('ECO_PIPELINE_WRITE_MODE solo admite sheets')
+  if (!mode || !account || !writer) problems.push('ECO_PIPELINE_WRITE_MODE, ECO_PIPELINE_WRITE_SERVICE_ACCOUNT y ECO_PIPELINE_WRITER_EMAIL van juntas')
+  if (!(env.RADAROS_SHEET_ID ?? '').trim()) problems.push('ECO_PIPELINE_WRITE_MODE exige RADAROS_SHEET_ID')
+  if (account) {
+    if (!WRITE_SA.test(account)) problems.push('ECO_PIPELINE_WRITE_SERVICE_ACCOUNT no tiene el formato esperado')
+    else if (account === (env.RUNTIME_SA ?? '').trim()) problems.push('ECO_PIPELINE_WRITE_SERVICE_ACCOUNT no puede ser la cuenta runtime (lectura)')
+    else if (account === (env.WRITE_SERVICE_ACCOUNT ?? '').trim()) problems.push('ECO_PIPELINE_WRITE_SERVICE_ACCOUNT no puede ser la cuenta de escritura de PROJECT-OS')
+    else if (account === (env.FINANZAS_WRITE_SERVICE_ACCOUNT ?? '').trim()) problems.push('ECO_PIPELINE_WRITE_SERVICE_ACCOUNT no puede ser la cuenta de escritura de FINANZAS')
+    else if (account === (env.FINANZAS_AGENTE_SERVICE_ACCOUNT ?? '').trim()) problems.push('ECO_PIPELINE_WRITE_SERVICE_ACCOUNT no puede ser la cuenta del agente de finanzas')
+    else if (account.split('@')[1] !== `${(env.PROJECT_ID ?? '').trim()}.iam.gserviceaccount.com`) problems.push('ECO_PIPELINE_WRITE_SERVICE_ACCOUNT debe pertenecer a PROJECT_ID')
+  }
+  if (writer && !UN_CORREO.test(writer)) problems.push('ECO_PIPELINE_WRITER_EMAIL debe ser un único correo')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: ECO_PIPELINE_WRITE_MODE',
+    '              value: sheets',
+    '            - name: ECO_PIPELINE_WRITE_SERVICE_ACCOUNT',
+    `              value: ${account}`,
+    '            - name: ECO_PIPELINE_WRITER_EMAIL',
+    `              value: '${writer}'`,
     '',
   ].join('\n')
 }

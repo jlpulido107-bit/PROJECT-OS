@@ -1,0 +1,75 @@
+import { OperationError } from '../operations/errors'
+import type { RateLimiter } from '../operations/rate-limit'
+import { ecoPipelineWriteMode } from './pipeline-escritura-config'
+import { evaluateEcoWriteRequest, rejectAuthorization } from './pipeline-escritura-guard'
+import type { EcoContext, EcoPipelineWriteService, EcoResultado } from './pipeline-escritura-service'
+import { subirGeneracionEco } from './pipeline-generacion'
+
+/**
+ * Núcleo de las rutas de escritura del pipeline, sin Next (ORD-POS-102): se prueba con dobles de sesión, de token y
+ * de `fetch`. El servicio (y con él el proveedor de token) solo se pide DESPUÉS del guard: con la escritura apagada o
+ * la petición rechazada no hay ninguna llamada a IAM ni a Sheets (§7.1).
+ */
+export interface EcoHandlerDeps {
+  /** Correo de la sesión; no se llama si la petición trae `Authorization`. */
+  sessionEmail: () => Promise<string | null>
+  env: NodeJS.ProcessEnv
+  limiter: RateLimiter
+  service: () => EcoPipelineWriteService | null
+}
+
+export interface EcoRespuesta {
+  status: number
+  body: Record<string, unknown>
+}
+
+/** `conflicto-version` en el pipeline habla del registro, no de una tarea. */
+const MENSAJES: Partial<Record<string, string>> = {
+  'conflicto-version': 'El registro cambió desde que lo abriste (etapa o versión). Recarga y vuelve a intentarlo.',
+}
+
+function requestIdOf(body: unknown): string | undefined {
+  const id = body && typeof body === 'object' ? (body as Record<string, unknown>).requestId : undefined
+  return typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id) ? id : undefined
+}
+
+function errorBody(error: OperationError, operacion: string, requestId?: string): EcoRespuesta {
+  // §6.4: operación, código y requestId; nunca correos, contactos ni valores de campos.
+  if (error.status >= 409) console.warn(`[project-os] eco rechazada: ${operacion} ${error.code}${requestId ? ` req=${requestId}` : ''}`)
+  return {
+    status: error.status,
+    body: {
+      ok: false,
+      error: {
+        codigo: error.code, mensaje: MENSAJES[error.code] ?? error.message,
+        ...(error.fields ? { campos: error.fields } : {}), ...(error.detail ? { detalle: error.detail } : {}),
+      },
+      ...(requestId ? { requestId } : {}),
+    },
+  }
+}
+
+export async function ecoPipelineWrite(
+  request: Request,
+  deps: EcoHandlerDeps,
+  operacion: string,
+  run: (service: EcoPipelineWriteService, body: unknown, ctx: EcoContext) => Promise<EcoResultado>,
+  creado = 201,
+): Promise<EcoRespuesta> {
+  let requestId: string | undefined
+  try {
+    // Antes de leer la sesión o el cuerpo: cualquier Authorization (el token del PM o el del agente) es 401.
+    rejectAuthorization(request)
+    const { actor, body } = await evaluateEcoWriteRequest(request, { email: await deps.sessionEmail(), env: deps.env, limiter: deps.limiter })
+    requestId = requestIdOf(body)
+    const service = ecoPipelineWriteMode(deps.env) === 'sheets' ? deps.service() : null
+    if (!service) throw new OperationError('escritura-deshabilitada')
+    const result = await run(service, body, { actor })
+    subirGeneracionEco()
+    return { status: result.repetida ? 200 : creado, body: { ok: true, ...result, requestId } }
+  } catch (error) {
+    if (error instanceof OperationError) return errorBody(error, operacion, requestId)
+    console.error('[project-os] error inesperado en eco:', operacion, error instanceof Error ? error.name : 'desconocido')
+    return { status: 500, body: { ok: false, error: { codigo: 'error-interno', mensaje: 'No se pudo completar la operación.' } } }
+  }
+}

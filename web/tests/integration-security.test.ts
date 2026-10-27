@@ -34,7 +34,10 @@ describe('árbol integrado V1.3–V1.6', () => {
     const apiDir = path.join(SRC, 'app', 'api')
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts')).map((f) => path.relative(apiDir, f).split(path.sep).join('/')).sort()
     expect(routes).toEqual([
-      'auth/[...nextauth]/route.ts', 'control/route.ts', 'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts',
+      'auth/[...nextauth]/route.ts', 'control/route.ts',
+      'eco/pipeline/cotizaciones/[id]/route.ts', 'eco/pipeline/cotizaciones/route.ts', 'eco/pipeline/embarques/[id]/route.ts', 'eco/pipeline/embarques/route.ts',
+      'eco/pipeline/productos/[id]/etapa/route.ts', 'eco/pipeline/productos/[id]/route.ts', 'eco/pipeline/productos/route.ts', 'eco/pipeline/proveedores/[id]/route.ts', 'eco/pipeline/proveedores/route.ts',
+      'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts',
       'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/route.ts', 'resumen/route.ts',
     ])
     for (const route of routes) {
@@ -45,6 +48,11 @@ describe('árbol integrado V1.3–V1.6', () => {
       else if (route.startsWith('finanzas/agente/')) {
         expect(text, route).toMatch(/handleFinanzasAgente\(request,/)
         expect(text, route).not.toMatch(/export (async )?function (GET|PUT|PATCH|DELETE)/)
+      }
+      // ORD-POS-102: escritura del pipeline de /eco con su guard propio (sesión del único escritor, sin agente, sin DELETE).
+      else if (route.startsWith('eco/pipeline/')) {
+        expect(text, route).toMatch(/handleEcoWrite\(request,/)
+        expect(text, route).not.toMatch(/export (async )?function (GET|PUT|DELETE)/)
       }
       // ORD-POS-077: escritura de finanzas con su guard propio (sesión del único escritor, sin agente).
       else if (route.startsWith('finanzas/')) {

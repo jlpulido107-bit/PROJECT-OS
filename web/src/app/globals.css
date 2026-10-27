@@ -272,3 +272,4 @@ tbody th { font-weight: 500; }
 .board { display: grid; grid-template-columns: repeat(6, minmax(200px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 4px; }
 .board-col { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-width: 0; }
 .board-col h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+.board-col-over { outline: 2px dashed var(--accent, currentColor); outline-offset: -4px; }

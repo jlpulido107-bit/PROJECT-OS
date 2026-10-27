@@ -60,6 +60,8 @@ describe('sin escrituras ni aplicación automática', () => {
       if (rel.startsWith(`finanzas${path.sep}`) && /handleFinanzasWrite\(request,/.test(text)) continue
       // ORD-POS-092: las del agente de finanzas, igual, por su guard propio con token.
       if (rel.startsWith(`finanzas${path.sep}agente${path.sep}`) && /handleFinanzasAgente\(request,/.test(text)) continue
+      // ORD-POS-102: las del pipeline de /eco, solo POST y PATCH y siempre por su guard propio (sin DELETE).
+      if (rel.startsWith(`eco${path.sep}pipeline${path.sep}`) && /handleEcoWrite\(request,/.test(text) && !/export (async )?function (GET|PUT|DELETE)/.test(text)) continue
       expect(text, rel).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE)/)
     }
   })

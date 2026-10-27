@@ -4,6 +4,7 @@ import { cacheSeconds, ConfigError, radarosConfig } from '../config'
 import { createTokenProvider, type TokenProvider } from '../credentials'
 import { createSheetsReader, SheetsReadError, type SheetsErrorCode } from '../sheets-client'
 import { construirEco, ECO_LECTURA, type EcoVista } from './eco'
+import { generacionEco } from './pipeline-generacion'
 
 /**
  * Lector de RADAROS para /eco (docs/diseno-eco-radaros.md §2). Reutiliza el cliente de solo lectura (alcance
@@ -22,6 +23,8 @@ export interface EcoLoaderDeps {
   fetchImpl?: typeof fetch
   sleep?: (ms: number) => Promise<void>
   now?: () => number
+  /** Generación de escrituras del pipeline (ORD-POS-102): si cambió, la caché se descarta. */
+  generacion?: () => number
 }
 
 const ERROR_CACHE_MS = 10_000
@@ -30,13 +33,14 @@ const TRANSITORIOS: readonly SheetsErrorCode[] = ['quota', 'unavailable', 'timeo
 export function createEcoLoader(deps: EcoLoaderDeps = {}) {
   const env = deps.env ?? process.env
   const now = deps.now ?? Date.now
+  const generacion = deps.generacion ?? generacionEco
   let tokenProvider: TokenProvider | null = null
   const getAccessToken = deps.getAccessToken ?? (() => {
     tokenProvider ??= createTokenProvider(env)
     return tokenProvider.getAccessToken()
   })
-  let cached: { id: string; result: EcoResult; expiresAt: number } | null = null
-  let inFlight: { id: string; promise: Promise<EcoResult> } | null = null
+  let cached: { id: string; result: EcoResult; expiresAt: number; generacion: number } | null = null
+  let inFlight: { id: string; promise: Promise<EcoResult>; generacion: number } | null = null
 
   async function read(id: string): Promise<EcoResult> {
     const fetchedAt = now()
@@ -72,17 +76,18 @@ export function createEcoLoader(deps: EcoLoaderDeps = {}) {
     const config = radarosConfig(env)
     if (config.id === null) return { estado: 'no-configurado', motivo: config.motivo }
     const id = config.id
-    if (cached && cached.id === id && cached.expiresAt > now()) return cached.result
-    if (inFlight?.id === id) return inFlight.promise
+    const gen = generacion()
+    if (cached && cached.id === id && cached.expiresAt > now() && cached.generacion === gen) return cached.result
+    if (inFlight?.id === id && inFlight.generacion === gen) return inFlight.promise
     const promise = read(id)
       .then((result) => {
-        cached = { id, result, expiresAt: now() + ttlMs(result) }
+        cached = { id, result, expiresAt: now() + ttlMs(result), generacion: gen }
         return result
       })
       .finally(() => {
         if (inFlight?.promise === promise) inFlight = null
       })
-    inFlight = { id, promise }
+    inFlight = { id, promise, generacion: gen }
     return promise
   }
 
