@@ -193,7 +193,7 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
 
 ## 7. Cierre de tareas por el propietario (ORD-POS-106, DEC-POS-023)
 
-DEC-POS-023 (APROBADA, 2026-10-27, según el propietario al lanzar ORD-POS-106): el propietario puede marcar una tarea
+DEC-POS-023 (vigente solo si consta APROBADA en DECISIONES; ORD-POS-106): el propietario puede marcar una tarea
 como `COMPLETADO` desde el dashboard con su sesión de Google. Nunca con el token del agente PM. `CANCELADO` y reabrir
 siguen fuera del dashboard, y el PM sigue sin cerrar ni cambiar `ESTADO` o `BLOQUEO` (DEC-POS-005). Es un trabajo ALTO
 partido según DEC-POS-014: el código es inerte por defecto y solo el propietario lo activa.

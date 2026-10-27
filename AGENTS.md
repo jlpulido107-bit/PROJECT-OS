@@ -34,7 +34,7 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   REGISTRAR_PR del PM (ORD-POS-063) está apagado: solo con `PM_PUEDE_REGISTRAR_PR=true`, que enciende únicamente el
   propietario con `deploy.sh` tras registrar la decisión que amplía DEC-POS-011, registra el PR que /ordenes detecta.
   Ningún agente enciende esa bandera.
-  DEC-POS-023 (APROBADA, 2026-10-27; ORD-POS-106): el propietario puede marcar una tarea COMPLETADA desde el dashboard
+  DEC-POS-023 (vigente solo si consta APROBADA en DECISIONES; ORD-POS-106): el propietario puede marcar una tarea COMPLETADA desde el dashboard
   con su sesión de Google, nunca con el token del PM; CANCELADA y reabrir siguen fuera del dashboard. Está apagado: solo
   con `TAREAS_CIERRE_PROPIETARIO=true` y su correo en `TAREAS_CIERRE_PROPIETARIO_EMAIL`, que pone únicamente el
   propietario con `deploy.sh` ([escritura §7](docs/escritura-v1-8.md)). Ningún agente la enciende ni cierra tareas.
