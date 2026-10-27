@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { todayInMerida } from '../dates'
-import { CLOSED_TASK_STATES, ORDENES_SENSIBLE } from '../schema'
+import { CLOSED_TASK_STATES, ORDENES_SENSIBLE, TAREAS_INSTRUCCIONES } from '../schema'
 import {
   INITIAL_DECISION_STATE, INITIAL_ORDER_STATE, INITIAL_TASK_STATE, ORDER_RISKS, ORDER_TERMINAL_STATES, ORIGIN_PREFIX,
   WRITE_HEADERS, type EntityTab, type OperationName,
@@ -8,7 +8,7 @@ import {
 import { OperationError } from './errors'
 import { esSesionClaude, REPOSITORIOS, repoDeUrl } from './github'
 import {
-  cell, findById, readView, toRecord, toRow, type TableStore, type TableView,
+  cell, contractColumns, findById, readView, toRecord, toRow, type TableStore, type TableView,
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
@@ -72,6 +72,7 @@ const TASK_FIELD_COLUMNS: Record<keyof TaskChanges, string> = {
   horasEstimadas: 'HORAS_ESTIMADAS',
   criterioTerminado: 'CRITERIO_TERMINADO',
   bloqueo: 'BLOQUEO',
+  instrucciones: TAREAS_INSTRUCCIONES,
 }
 
 const ID_COLUMN: Record<EntityTab, string> = {
@@ -134,6 +135,7 @@ export class OperationsService {
 
       if (findById(proyectos, 'PROYECTO_ID', cmd.proyectoId).length === 0) throw new OperationError('proyecto-inexistente')
       this.checkHito(hitos, cmd.hitoId, cmd.proyectoId)
+      if (cmd.instrucciones && !tareas.index.has(TAREAS_INSTRUCCIONES)) throw new OperationError('instrucciones-sin-columna')
 
       const id = this.nextSequentialId(tareas, 'TAREA_ID', `${cmd.proyectoId}-`)
       const now = this.clock()
@@ -154,6 +156,7 @@ export class OperationsService {
         BLOQUEO: cmd.bloqueo ?? '',
         VERSION: '1',
         ACTUALIZADO_EN: meridaIsoTimestamp(now),
+        ...(cmd.instrucciones ? { [TAREAS_INSTRUCCIONES]: cmd.instrucciones } : {}),
       }
       await this.auditFirst(op, hash, cmd.requestId, ctx, 'TAREAS', id, creationDiff(record), now, audit)
       await this.appendEntity('TAREAS', tareas, record)
@@ -177,6 +180,7 @@ export class OperationsService {
       if (replay) return replay
 
       if (CLOSED_TASK_STATES.has(current.ESTADO!.toUpperCase())) throw new OperationError('tarea-cerrada')
+      if (cmd.changes.instrucciones !== undefined && !tareas.index.has(TAREAS_INSTRUCCIONES)) throw new OperationError('instrucciones-sin-columna')
       const currentVersion = parseVersion(current.VERSION!)
       if (currentVersion !== cmd.expectedVersion) {
         throw new OperationError('conflicto-version', { detail: { versionActual: currentVersion } })
@@ -653,8 +657,9 @@ export class OperationsService {
     if (!row || cell(fresh, row.cells, id.column) !== id.value || cell(fresh, row.cells, guard.column) !== guard.value) {
       throw new OperationError('conflicto-concurrente')
     }
-    const contract = WRITE_HEADERS[view.tab] as readonly string[]
-    const cells = fresh.header.map((name, i) => contract.includes(name) ? next[name] ?? '' : row.cells[i] ?? originalCells[i] ?? '')
+    const contract = contractColumns(fresh)
+    // Una columna opcional que apareció después de leer `next` no se pisa: se conserva lo que haya en la hoja.
+    const cells = fresh.header.map((name, i) => contract.includes(name) && Object.hasOwn(next, name) ? next[name] ?? '' : row.cells[i] ?? originalCells[i] ?? '')
     try {
       await this.store.writeRow(view.tab, sheetRow, cells)
     } catch (error) {
@@ -674,7 +679,8 @@ export class OperationsService {
   }
 
   private async verifyUpdated(id: string, next: Record<string, string>) {
-    await this.verifyCreated('TAREAS', id, Object.fromEntries((WRITE_HEADERS.TAREAS as readonly string[]).map((c) => [c, next[c] ?? ''])))
+    const columns = [...WRITE_HEADERS.TAREAS, ...(TAREAS_INSTRUCCIONES in next ? [TAREAS_INSTRUCCIONES] : [])]
+    await this.verifyCreated('TAREAS', id, Object.fromEntries(columns.map((c) => [c, next[c] ?? ''])))
   }
 
   private findAudited(audit: TableView, requestId: string): { op: AuditedOperation; later: AuditedOperation[] } | null {

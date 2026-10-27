@@ -232,6 +232,10 @@ tbody th { font-weight: 500; }
 
 .diagnostics { margin: 1rem 0; }
 .diagnostics summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+.instrucciones-tarea summary { cursor: pointer; padding: 4px 0; font-weight: 600; }
+.instrucciones ol, .instrucciones ul { margin: 4px 0 8px; padding-left: 24px; }
+.instrucciones p { margin: 4px 0; overflow-wrap: anywhere; }
+.instrucciones li { overflow-wrap: anywhere; }
 
 .login { padding-top: 3rem; }
 .login .button { margin: 1rem 0; }

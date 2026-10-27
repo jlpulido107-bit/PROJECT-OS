@@ -44,6 +44,8 @@ export interface Tarea {
   bloqueo: string | null
   version: string | null
   actualizadoEn: Timestamp | null
+  /** Columna opcional INSTRUCCIONES (ORD-POS-105): null si está vacía o la hoja aún no la tiene. */
+  instrucciones: string | null
 }
 
 export interface Capacidad {

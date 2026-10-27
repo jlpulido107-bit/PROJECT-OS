@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { LoadError } from '@/components/data-state'
+import { Instrucciones } from '@/components/instrucciones'
 import { EditTaskForm } from '@/components/operations/forms'
 import { WriteGate } from '@/components/operations/write-access'
 import { Text } from '@/components/ui'
@@ -22,6 +23,12 @@ export default async function EditTaskPage({ params }: { params: Promise<{ id: s
     <>
       <p className="breadcrumb"><Link href={`/tareas?q=${encodeURIComponent(task.id)}`}>← Tareas</Link></p>
       <h1><span className="mono">{task.id}</span> · <Text value={task.titulo} empty="Sin título" /></h1>
+      {task.instrucciones ? (
+        <section aria-labelledby="instrucciones-titulo">
+          <h2 id="instrucciones-titulo">Instrucciones</h2>
+          <Instrucciones texto={task.instrucciones} />
+        </section>
+      ) : null}
       <WriteGate email={user.email}>
         {closed ? (
           <div className="alert alert-info" role="note">
@@ -45,6 +52,7 @@ export default async function EditTaskPage({ params }: { params: Promise<{ id: s
               horasEstimadas: task.horasEstimadas === null ? '' : String(task.horasEstimadas),
               criterioTerminado: task.criterioTerminado ?? '',
               bloqueo: task.bloqueo ?? '',
+              instrucciones: task.instrucciones ?? '',
             }}
             milestones={result.data.hitos.filter((h) => h.proyectoId === task.proyectoId).map((h) => ({ value: h.id, label: `${h.id}${h.nombre ? ` · ${h.nombre}` : ''}` }))}
             taskTypes={[...new Set([...KNOWN_TASK_TYPES, ...result.data.tareas.map((t) => t.tipo).filter((t): t is string => Boolean(t))])].sort()}

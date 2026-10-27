@@ -146,6 +146,10 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
   una orden, las acciones `APROBAR`, `ENVIAR` y `REVISAR` (DEC-POS-011, ORD-POS-055, 057 y 059). `tarea.editar` solo
   cambia `titulo`, `descripcion`, `prioridad`, `hitoId`, `fechaPlan`, `fechaLimite`, `horasEstimadas` y
   `criterioTerminado`, con control de VERSION.
+  - `tarea.crear` admite `instrucciones` (ORD-POS-105): hasta 4000 caracteres multilínea, saneadas como `descripcion`
+    (fórmulas neutralizadas) y auditadas por campo. Solo si `TAREAS` tiene la columna `INSTRUCCIONES`
+    ([migración](migracion-instrucciones.md)); sin ella, 422 `instrucciones-sin-columna` sin escribir nada. Editarlas es
+    del propietario: `instrucciones` no está en la lista de campos de `tarea.editar` del PM (403).
   - `APROBAR` (BORRADOR → APROBADA y envío del issue) y `ENVIAR` (reintento del envío de una APROBADA, sin `url`) exigen
     `autorizacion` = `ORD-PRY-NNN «cita» AAAA-MM-DD`: el ID igual al de la ruta, la cita con «sí» como palabra y la fecha
     de hoy en Mérida con un día de margen; una cita y fecha valen para una sola orden. Nunca con riesgo ALTO

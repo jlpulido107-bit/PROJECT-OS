@@ -1,4 +1,4 @@
-import { WRITE_HEADERS, type WriteTab } from './constants'
+import { OPTIONAL_WRITE_COLUMNS, WRITE_HEADERS, type WriteTab } from './constants'
 import { OperationError } from './errors'
 
 /**
@@ -106,9 +106,14 @@ export function toRow(view: TableView, record: Record<string, string>): string[]
   return view.header.map((name) => record[name] ?? '')
 }
 
+/** Columnas del contrato que tiene esta vista: las obligatorias y las opcionales presentes en la hoja. */
+export function contractColumns(view: TableView): string[] {
+  return [...WRITE_HEADERS[view.tab], ...(OPTIONAL_WRITE_COLUMNS[view.tab] ?? []).filter((c) => view.index.has(c))]
+}
+
 export function toRecord(view: TableView, cells: string[]): Record<string, string> {
   const record: Record<string, string> = {}
-  for (const column of WRITE_HEADERS[view.tab]) record[column] = cell(view, cells, column)
+  for (const column of contractColumns(view)) record[column] = cell(view, cells, column)
   return record
 }
 

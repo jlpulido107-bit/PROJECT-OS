@@ -60,7 +60,9 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
 
    Anota `requestId` y la ruta del `.enviado.json` en la conversación: son los únicos que valen para repetir esta alta.
    - `tareas`: `proyectoId`, `titulo`, `tipo`, `prioridad`, `criterioTerminado`; opcionales `hitoId`, `descripcion`,
-     `responsable`, `fechaPlan`, `fechaLimite`, `horasEstimadas`.
+     `responsable`, `fechaPlan`, `fechaLimite`, `horasEstimadas` e `instrucciones` (ORD-POS-105): texto multilínea de
+     hasta 4000 caracteres, un paso por línea (`1. …`, `2. …`), solo en altas (el PM no las edita). Sin la columna
+     `INSTRUCCIONES` en `TAREAS` la API responde 422 `instrucciones-sin-columna` y no escribe nada: quítalas y reenvía.
    - `decisiones`: `proyectoId`, `asunto`, `decision`, `justificacion`, `responsable`; opcionales `fecha`, `evidenciaUrl`.
    - `ordenes`: `proyectoId`, `tareaId`, `titulo`, `objetivo`, `criterios`, `fueraDeAlcance`, `comoProbar`, `riesgo`;
      opcional `contexto`.

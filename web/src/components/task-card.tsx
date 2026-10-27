@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { dependenciesFor, isBlocked } from '@/lib/aggregate'
 import { CLOSED_TASK_STATES } from '@/lib/schema'
 import type { Dataset, Tarea } from '@/lib/types'
+import { Instrucciones } from './instrucciones'
 import { Badge, DateText, humanize, StateBadge, Text } from './ui'
 
 export function TaskCard({ task, data, canEdit = false }: { task: Tarea; data: Dataset; canEdit?: boolean }) {
@@ -20,6 +21,12 @@ export function TaskCard({ task, data, canEdit = false }: { task: Tarea; data: D
         </div>
       </header>
       {task.descripcion ? <p>{task.descripcion}</p> : null}
+      {task.instrucciones ? (
+        <details className="instrucciones-tarea">
+          <summary>Instrucciones</summary>
+          <Instrucciones texto={task.instrucciones} />
+        </details>
+      ) : null}
       <dl className="meta">
         <div><dt>Proyecto</dt><dd>{task.proyectoId ? <Link href={`/proyectos/${encodeURIComponent(task.proyectoId)}`}>{task.proyectoId}</Link> : <span className="muted">Sin proyecto</span>}</dd></div>
         <div><dt>Hito</dt><dd><Text value={task.hitoId} empty="Sin hito" /></dd></div>

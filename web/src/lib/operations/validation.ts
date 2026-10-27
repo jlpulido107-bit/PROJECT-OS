@@ -28,6 +28,8 @@ export interface CreateTaskCommand {
   horasEstimadas: string | null
   criterioTerminado: string
   bloqueo: string | null
+  /** Columna opcional INSTRUCCIONES (ORD-POS-105); se omite si no viene, así el hash de las altas de siempre no cambia. */
+  instrucciones?: string | null
 }
 
 export type TaskChanges = Partial<{
@@ -43,6 +45,7 @@ export type TaskChanges = Partial<{
   horasEstimadas: string | null
   criterioTerminado: string
   bloqueo: string | null
+  instrucciones: string | null
 }>
 
 export interface UpdateTaskCommand {
@@ -228,7 +231,7 @@ function checkDateOrder(c: Checker, plan: string | null, limite: string | null) 
 
 const CREATE_TASK_KEYS = [
   'requestId', 'proyectoId', 'hitoId', 'titulo', 'descripcion', 'tipo', 'prioridad', 'responsable', 'fechaPlan',
-  'fechaLimite', 'horasEstimadas', 'criterioTerminado', 'bloqueo',
+  'fechaLimite', 'horasEstimadas', 'criterioTerminado', 'bloqueo', 'instrucciones',
 ] as const
 
 export function parseCreateTask(body: unknown): CreateTaskCommand {
@@ -250,6 +253,8 @@ export function parseCreateTask(body: unknown): CreateTaskCommand {
     criterioTerminado: c.text('criterioTerminado', { required: true, min: 3, max: LIMITS.criterio, multiline: true }) ?? '',
     bloqueo: c.text('bloqueo', { required: false, max: LIMITS.bloqueo, multiline: true }),
   }
+  const instrucciones = c.text('instrucciones', { required: false, max: LIMITS.instrucciones, multiline: true })
+  if (instrucciones) cmd.instrucciones = instrucciones
   checkDateOrder(c, cmd.fechaPlan, cmd.fechaLimite)
   c.done()
   return cmd
@@ -257,7 +262,7 @@ export function parseCreateTask(body: unknown): CreateTaskCommand {
 
 const CHANGE_KEYS = [
   'hitoId', 'titulo', 'descripcion', 'tipo', 'estado', 'prioridad', 'responsable', 'fechaPlan', 'fechaLimite',
-  'horasEstimadas', 'criterioTerminado', 'bloqueo',
+  'horasEstimadas', 'criterioTerminado', 'bloqueo', 'instrucciones',
 ] as const
 
 export function parseUpdateTask(tareaId: string, body: unknown): UpdateTaskCommand {
@@ -290,6 +295,7 @@ export function parseUpdateTask(tareaId: string, body: unknown): UpdateTaskComma
   if (c.has('hitoId')) changes.hitoId = c.pattern('hitoId', ENTITY_ID, false, 'ID de hito no válido', (s) => s.trim().toUpperCase())
   if (c.has('titulo')) changes.titulo = c.text('titulo', { required: true, min: 3, max: LIMITS.titulo }) ?? undefined
   if (c.has('descripcion')) changes.descripcion = c.text('descripcion', { required: false, max: LIMITS.descripcion, multiline: true })
+  if (c.has('instrucciones')) changes.instrucciones = c.text('instrucciones', { required: false, max: LIMITS.instrucciones, multiline: true })
   if (c.has('tipo')) changes.tipo = c.pattern('tipo', CODE, true, 'Código en MAYÚSCULAS', (s) => s.trim().toUpperCase()) ?? undefined
   if (c.has('prioridad')) changes.prioridad = c.oneOf('prioridad', TASK_PRIORITIES, true) ?? undefined
   if (c.has('responsable')) changes.responsable = c.text('responsable', { required: false, max: LIMITS.responsable })
