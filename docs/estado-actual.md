@@ -15,8 +15,7 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
   y **DEC-POS-017** (despliegue, [operación](operacion.md#cuándo-se-despliega-dec-pos-017-aprobada)). **Hipótesis:** 010 y 015 viven solo en DECISIONES.
 - **DEC-POS-018** (APROBADA): agente de finanzas por cortes (días 15 y fin de mes). Fuente: [`diseno-finanzas-v3.md`](diseno-finanzas-v3.md), [#219](https://github.com/jlpulido107-bit/PROJECT-OS/pull/219), [#220](https://github.com/jlpulido107-bit/PROJECT-OS/pull/220).
 - **DEC-POS-019** (APROBADA): Fable como SEGUNDO solo en MEDIO sensible; columna SENSIBLE vacía = sensible. Fuente: [delegación](delegacion-codex.md), [#234](https://github.com/jlpulido107-bit/PROJECT-OS/pull/234).
-- **DEC-POS-020** (APROBADA): prueba de Gemini hasta el 2026-11-09, según el PM ([issue #240](https://github.com/jlpulido107-bit/PROJECT-OS/issues/240)). Fuente: [`prueba-gemini.md`](prueba-gemini.md), [#230](https://github.com/jlpulido107-bit/PROJECT-OS/pull/230);
-  ojo: su §5 fija la ventana del 2026-10-27 al 2026-11-02 (ORD-POS-099); el propietario aclara la fecha.
+- **DEC-POS-020** (APROBADA): prueba de Gemini hasta el 2026-11-02, como fija el §5 de [`prueba-gemini.md`](prueba-gemini.md), según el propietario (2026-10-27). Fuente: [#230](https://github.com/jlpulido107-bit/PROJECT-OS/pull/230).
 - **DEC-POS-021** (APROBADA): Gemini supervisado como SEGUNDO desde el 2026-11-03. Fuente: [`prueba-gemini.md` §8](prueba-gemini.md), [#237](https://github.com/jlpulido107-bit/PROJECT-OS/pull/237).
 - **DEC-POS-022** (APROBADA): origen gemini-supervisado en el código. Fuente: [escritura §6](escritura-v1-8.md), [#234](https://github.com/jlpulido107-bit/PROJECT-OS/pull/234), [#237](https://github.com/jlpulido107-bit/PROJECT-OS/pull/237).
 - Pendientes del propietario: **DEC-POS-009** (dictamen solo en el PR, [migración](migracion-supervision.md)) y **DEC-SIG-002** (texto en DECISIONES).
@@ -30,7 +29,9 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
   - /eco pipeline: 095 [#224](https://github.com/jlpulido107-bit/PROJECT-OS/pull/224) (diseño), 097 [#228](https://github.com/jlpulido107-bit/PROJECT-OS/pull/228) (tablero de lectura) y 102 [#239](https://github.com/jlpulido107-bit/PROJECT-OS/pull/239) (escritura, inerte sin `ECO_PIPELINE_WRITE_MODE`).
   - Revisión: 098 [#230](https://github.com/jlpulido107-bit/PROJECT-OS/pull/230) (prueba Gemini), 100 [#234](https://github.com/jlpulido107-bit/PROJECT-OS/pull/234) y 099 [#237](https://github.com/jlpulido107-bit/PROJECT-OS/pull/237) (SEGUNDO gemini-supervisado).
   - Según el PM, en la hoja 099 a 102 están CERRADA y ORD-POS-068 sigue en BORRADOR ([issue #240](https://github.com/jlpulido107-bit/PROJECT-OS/issues/240)).
-- Órdenes abiertas (GitHub, 2026-10-27): solo ORD-POS-103 ([issue #240](https://github.com/jlpulido107-bit/PROJECT-OS/issues/240), este estado).
+- Órdenes abiertas (GitHub, 2026-10-27): ORD-POS-103 ([issue #240](https://github.com/jlpulido107-bit/PROJECT-OS/issues/240), PR [#242](https://github.com/jlpulido107-bit/PROJECT-OS/pull/242), este estado) y
+  ORD-POS-104 ([issue #241](https://github.com/jlpulido107-bit/PROJECT-OS/issues/241), PR [#243](https://github.com/jlpulido107-bit/PROJECT-OS/pull/243)). Según el PM (hoja, 2026-10-27), las dos están en REVISADA;
+  la 104, MEDIO sensible, tiene su revisión PRIMERO en curso.
 - Despliegue: revisión activa `project-os-dashboard-00038-qcm` (commit `16c3eac`, con 099, 101 y 102; nota del PM en el [#239](https://github.com/jlpulido107-bit/PROJECT-OS/pull/239)),
   con `SEGUNDO_GEMINI_SUPERVISADO=on` y sin variables `ECO_PIPELINE_*`: /eco/pipeline inerte. Según el PM, la escritura de /finanzas
   del propietario sigue inerte y el agente de finanzas está activo ([issue #240](https://github.com/jlpulido107-bit/PROJECT-OS/issues/240)). **Hipótesis:** 00033 a 00037 (sin nota) llevaron 085 a 098 y 100.
@@ -41,10 +42,11 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
 ## Siguiente
 
 - ORD-POS-104 y la activación de /eco/pipeline (solo el propietario, [`diseno-eco-pipeline.md` §7.2](diseno-eco-pipeline.md)).
-  ORD-POS-104 no tiene issue abierto en GitHub (2026-10-27).
+  ORD-POS-104: [issue #241](https://github.com/jlpulido107-bit/PROJECT-OS/issues/241), PR [#243](https://github.com/jlpulido107-bit/PROJECT-OS/pull/243).
 - Renovar `PROJECT_OS_GH_READ_TOKEN` antes del 2026-11-07 (propietario).
 - POS-H1 vence el 2026-10-31; prueba real del agente de finanzas el 2026-11-01 (primer corte de fin de mes).
-- Cierre de la prueba Gemini el 2026-11-09 (DEC-POS-020; ver la nota de fechas arriba) y retiro de Fable según [§8](prueba-gemini.md).
+- Cierre de la prueba Gemini el 2026-11-02 (DEC-POS-020, según el propietario, 2026-10-27); desde el 2026-11-03 el SEGUNDO es
+  Gemini supervisado y se retira Fable según [§8](prueba-gemini.md).
 - Cancelar ORD-POS-068 (propietario) y decidir DEC-POS-009 y DEC-SIG-002.
 
 ## Cómo se actualiza
