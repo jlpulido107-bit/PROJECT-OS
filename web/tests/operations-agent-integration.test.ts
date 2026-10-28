@@ -17,7 +17,7 @@ import { auditTable, mockWriteTabs } from '@/lib/operations/runtime'
 const TOKEN = 'token-de-prueba-sintetico-0123456789'
 const SECRET = 'secreto-de-prueba-solo-para-tests-0123456789abcdef'
 const HOST = 'http://localhost:3000'
-const KEYS = ['PROJECT_OS_WRITE_MODE', 'DASHBOARD_DATA_SOURCE', 'PM_AGENT_TOKEN_SHA256', 'NEXTAUTH_SECRET', 'AUTH_ALLOWED_EMAILS', 'AUTH_WRITER_EMAILS', 'NEXTAUTH_URL', 'K_SERVICE']
+const KEYS = ['PROJECT_OS_WRITE_MODE', 'DASHBOARD_DATA_SOURCE', 'PM_AGENT_TOKEN_SHA256', 'NEXTAUTH_SECRET', 'AUTH_ALLOWED_EMAILS', 'AUTH_WRITER_EMAILS', 'NEXTAUTH_URL', 'K_SERVICE', 'TIEMPOS_AGENTE']
 const saved: Record<string, string | undefined> = {}
 let seq = 0
 const uuid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`
@@ -67,6 +67,7 @@ const tareasTable = async () => (mockWriteTabs()?.TAREAS ?? []) as unknown[][]
 const rows = async () => ((await auditTable()) ?? []).length
 const task = { proyectoId: 'POS', titulo: 'Tarea del PM', tipo: 'DESARROLLO', prioridad: 'MEDIA', criterioTerminado: 'Hecho' }
 const decision = { proyectoId: 'POS', asunto: 'Asunto', decision: 'Decisión', justificacion: 'Porque', responsable: 'PM' }
+const tiempo = { tareaId: 'DEMO-002', fecha: '2026-10-01', responsable: 'PM', minutos: 30, tipoTrabajo: 'DESARROLLO' }
 const order = { proyectoId: 'POS', tareaId: 'DEMO-002', titulo: 'Agregar prueba', objetivo: 'Cubrir X', criterios: '1. npm test pasa\n2. Lint sin errores', fueraDeAlcance: 'nada', comoProbar: 'npm test', riesgo: 'BAJO' }
 
 describe('agente PM: proxy → ruta → servicio', () => {
@@ -168,7 +169,6 @@ describe('agente PM: proxy → ruta → servicio', () => {
   it('operaciones prohibidas: el proxy las frena sin sesión y, saltándolo, la ruta responde 403; nunca hay filas', async () => {
     const before = await rows()
     const cases: Array<[Handler, string, string, string]> = [
-      [postTiempo as Handler, 'POST', '/api/operaciones/tiempos', 'X'],
       [ejecutarOrden as Handler, 'POST', '/api/operaciones/ordenes/ORD-POS-901/ejecutar', 'ORD-POS-901'],
     ]
     for (const [handler, method, path, id] of cases) {
@@ -177,6 +177,40 @@ describe('agente PM: proxy → ruta → servicio', () => {
       expect((await handler(request(), params(id))).status, path).toBe(403)
     }
     expect(await rows()).toBe(before)
+  })
+
+  it('tiempo.crear (ORD-POS-112) sin TIEMPOS_AGENTE=true: el proxy deja pasar y la ruta responde 403 sin filas', async () => {
+    const before = [await rows(), (mockWriteTabs()?.TIEMPOS ?? []).length]
+    for (const valor of [undefined, 'TRUE', '1']) {
+      if (valor === undefined) delete process.env.TIEMPOS_AGENTE
+      else process.env.TIEMPOS_AGENTE = valor
+      const r = await through(postTiempo as Handler, build('POST', '/api/operaciones/tiempos', { requestId: uuid(), ...tiempo }))
+      expect(r.status, String(valor)).toBe(403)
+      expect((r.json?.error as { codigo: string }).codigo).toBe('operacion-no-permitida')
+    }
+    delete process.env.TIEMPOS_AGENTE
+    expect([await rows(), (mockWriteTabs()?.TIEMPOS ?? []).length]).toEqual(before)
+  })
+
+  it('tiempo.crear con TIEMPOS_AGENTE=true: alta de TIEMPOS como agente-pm, auditada por campo e idempotente', async () => {
+    process.env.TIEMPOS_AGENTE = 'true'
+    try {
+      const body = { requestId: uuid(), ...tiempo }
+      const first = await through(postTiempo as Handler, build('POST', '/api/operaciones/tiempos', body))
+      expect(first).toMatchObject({ status: 201, passed: true, json: { ok: true, operacion: 'tiempo.crear', entidad: 'TIEMPOS', repetida: false } })
+      const id = first.json!.id as string
+      const audit = ((await auditTable()) ?? []).filter((row) => row[4] === id)
+      expect(audit.map((row) => row[5])).toEqual(expect.arrayContaining(['SESION_ID', 'TAREA_ID', 'FECHA', 'MINUTOS_REALES', 'TIPO_TRABAJO']))
+      expect(audit.every((row) => row[2] === 'agente-pm' && String(row[8]).includes('op=tiempo.crear') && String(row[8]).endsWith(';agente=pm'))).toBe(true)
+      const sesiones = (mockWriteTabs()?.TIEMPOS ?? []).length
+      const again = await through(postTiempo as Handler, build('POST', '/api/operaciones/tiempos', body))
+      expect(again).toMatchObject({ status: 200, json: { repetida: true, id } })
+      expect((mockWriteTabs()?.TIEMPOS ?? []).length).toBe(sesiones)
+      const otra = await through(postTiempo as Handler, build('POST', '/api/operaciones/tiempos', { ...body, minutos: 31 }))
+      expect((otra.json?.error as { codigo: string }).codigo).toBe('conflicto-idempotencia')
+    } finally {
+      delete process.env.TIEMPOS_AGENTE
+    }
   })
 
   it('cerrar, cancelar y demás transiciones reservadas → 403 transicion-reservada-pm sin filas (DEC-POS-011)', async () => {

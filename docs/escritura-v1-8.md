@@ -140,7 +140,8 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
 - **Proxy.** Sin sesión, el proxy (`web/src/lib/authz.ts`) solo deja pasar `POST` a `/api/operaciones/{tareas,decisiones,ordenes}`
   y `PATCH` a `/api/operaciones/tareas/<id>` y `/api/operaciones/ordenes/<id>` (DEC-POS-011) con `Bearer` cuyo SHA-256
   (Web Crypto) coincide con la variable. Cualquier otra ruta, método (incluido `GET`) o token sigue exigiendo sesión; la
-  API vuelve a verificar token, operación, acción y campos.
+  API vuelve a verificar token, operación, acción y campos. Desde ORD-POS-112 también deja pasar `POST` a
+  `/api/operaciones/tiempos` (`tiempo.crear`), que la API rechaza con 403 sin `TIEMPOS_AGENTE=true` (§8).
 - **Permitido** (lista blanca, `AGENT_OPERATIONS` y `AGENT_ORDER_ACTIONS` en `constants.ts`): `tarea.crear`,
   `tarea.editar`, `decision.crear` (siempre PENDIENTE), `orden.crear` (siempre BORRADOR, nunca ALTO) y, en el `PATCH` de
   una orden, las acciones `APROBAR`, `ENVIAR` y `REVISAR` (DEC-POS-011, ORD-POS-055, 057 y 059). `tarea.editar` solo
@@ -167,7 +168,7 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
     abierto; si no, `pr-no-detectado`. `AUTORIZACION` = `pr <url> head <sha>`.
   - Cada transición del PM queda en `AUDITORIA` con `AUTORIZACION` (la cita o el dictamen con head y comentario).
 - **Prohibido (403, no escribe nada):** cancelar, registrar PR (salvo con la bandera de arriba), cerrar y ejecutar órdenes (`transicion-reservada-pm`),
-  registrar tiempos y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`). Tampoco puede fijar `bloqueo` al crear una tarea (403).
+  registrar tiempos (salvo `tiempo.crear` con `TIEMPOS_AGENTE=true`, §8) y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`). Tampoco puede fijar `bloqueo` al crear una tarea (403).
   Cerrar una tarea (`POST …/tareas/<id>/completar`) tampoco: el proxy no deja pasar el token a esa ruta (401) y la API
   responde `cierre-no-permitido` a toda petición con `Authorization`, aun con `TAREAS_CIERRE_PROPIETARIO` encendida (§7).
 - **Auditoría.** `ACTOR=agente-pm` y `;agente=pm` al final de `ORIGEN`. La idempotencia por `requestId` es la de siempre.
@@ -241,3 +242,67 @@ Otro valor que `true`, una sola de las dos variables, un correo mal formado o un
 `web/deploy/cloudrun/deploy.sh --desde-activa --quitar TAREAS_CIERRE_PROPIETARIO` (quita también el correo). El botón
 desaparece y la ruta vuelve a `cierre-no-permitido`. Las tareas ya completadas no se reabren solas: reabrir sigue fuera
 del dashboard y lo hace el propietario en la hoja, con `AUDITORIA` como guía.
+
+## 8. Rol Tiempos: lectura de /api/planificacion y filas de TIEMPOS (ORD-POS-112, DEC-POS-025)
+
+DEC-POS-025 (**PENDIENTE**; vigente solo si consta APROBADA en DECISIONES) enmienda DEC-POS-024: el rol Tiempos lee
+`/api/planificacion` con un token propio y el PM da de alta filas de `TIEMPOS` de un «sí PAQ». Es un trabajo ALTO
+partido según DEC-POS-014: el código es inerte por defecto y solo el propietario lo activa.
+
+- **Bandera.** `TIEMPOS_AGENTE`: solo el valor exacto `true` la enciende (`web/src/lib/tiempos-agente.ts`). Enciende las
+  dos piezas a la vez.
+- **Token de Tiempos.** `TIEMPOS_AGENTE_TOKEN_SHA256` (64 hex, desde el secreto `project-os-tiempos-agente-token-sha256`).
+  Si es igual a `PM_AGENT_TOKEN_SHA256` o a `FINANZAS_AGENTE_TOKEN_SHA256`, no vale. Solo alcanza `GET /api/planificacion`
+  (la simulación de solo lectura, sin correos ni responsables); cualquier otro método recibe 405 (`Allow: GET`) y
+  cualquier otra ruta o página, 401 o `/login`. Con cookie de sesión no cuenta. No escribe nada.
+- **`tiempo.crear` del PM.** `POST /api/operaciones/tiempos` con el token del PM: alta de una fila de `TIEMPOS` con los
+  campos de `tiempo.registrar`, `AUDITORIA` por campo (`ACTOR=agente-pm`, `op=tiempo.crear`, `;agente=pm`) e
+  idempotencia por `requestId`. `TIEMPOS` no tiene `VERSION`: es solo alta; ninguna operación edita ni borra filas.
+  No está en `AGENT_OPERATIONS`: el guard la permite solo con la bandera. El token de Tiempos no escribe (401).
+- **Apagada (por defecto).** El token de Tiempos recibe 401 en `/api/planificacion`, y `tiempo.crear` responde 403
+  `operacion-no-permitida` sin escribir nada. Sin `TIEMPOS_AGENTE` ni `SECRET_VERSION_TIEMPOS_AGENTE`, el YAML no cambia.
+
+### Activar (solo el propietario, en Cloud Shell, con DEC-POS-025 APROBADA)
+
+Requisitos: la imagen que trae ORD-POS-112 desplegada; para `tiempo.crear`, además la escritura activa
+(`WRITE_MODE=sheets`) y el token del PM (§6). Ningún agente crea el token, toca Secret Manager o IAM, exporta estas
+variables ni despliega.
+
+```bash
+# 1. Token nuevo, fuera del repositorio: va solo a la configuración del entorno de las sesiones de Tiempos (no a Cloud
+#    Run, al repositorio ni al chat). A Secret Manager va solo su SHA-256.
+TOKEN="$(openssl rand -hex 32)"
+printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1 | tr -d '\n' | gcloud secrets create project-os-tiempos-agente-token-sha256 \
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=-
+gcloud secrets add-iam-policy-binding project-os-tiempos-agente-token-sha256 --project="$PROJECT_ID" --condition=None \
+  --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor --format=none
+# Guarda "$TOKEN" en el entorno de las sesiones de Tiempos (solo para /api/planificacion) y bórralo de aquí:
+unset TOKEN
+
+# 2. Variables y despliegue (la versión del secreto recién creado es 1):
+export TIEMPOS_AGENTE=true SECRET_VERSION_TIEMPOS_AGENTE=1
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ TIEMPOS_AGENTE» y «+ TIEMPOS_AGENTE_TOKEN_SHA256»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+Otro valor que `true`, una sola de las dos variables o una versión que no sea un número hacen fallar el render sin
+aplicar nada. `--desde-activa` las conserva en los despliegues siguientes. Para rotar el token, agrega una versión al
+secreto (`gcloud secrets versions add … --data-file=-`) y despliega con la nueva `SECRET_VERSION_TIEMPOS_AGENTE`.
+
+### Comprobar
+
+1. Hash distinto: el valor del secreto no es el de `project-os-pm-agent-token-sha256` ni el de
+   `project-os-finanzas-agente-token-sha256` (compáralos sin imprimirlos; si coinciden, el token de Tiempos no entra).
+2. Desde la sesión de Tiempos: `GET /api/planificacion` → 200 con `"simulacion": true` y sin correos; `POST` al mismo
+   path → 405; `GET /api/resumen` → 401. El token del PM en `GET /api/planificacion` → 401.
+3. Con un «sí PAQ» real y DEC-POS-025 APROBADA, el PM da de alta una fila de prueba con
+   `bash scripts/pm-alta.sh tiempos <archivo.json>`: 201; en `/operaciones`, «Tiempo registrado por el PM» con sus campos
+   y la conciliación «Sin pendientes»; repetir con `--repetir` da `repetida=true` sin otra fila.
+
+### Revertir
+
+`web/deploy/cloudrun/deploy.sh --desde-activa --quitar TIEMPOS_AGENTE` (quita también `TIEMPOS_AGENTE_TOKEN_SHA256`). El
+token de Tiempos vuelve a 401 y `tiempo.crear` a 403 sin escribir. Para revocar solo el token, deshabilita su versión
+(`gcloud secrets versions disable <versión> --secret=project-os-tiempos-agente-token-sha256`) después de quitarla del
+despliegue. Las filas de `TIEMPOS` ya creadas no se borran solas: el propietario las corrige en la hoja, con `AUDITORIA`
+como guía.

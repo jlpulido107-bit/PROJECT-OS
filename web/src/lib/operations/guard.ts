@@ -1,6 +1,7 @@
 import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, LIMITS, type OperationName } from './constants'
+import { tiemposAgenteHabilitado } from '../tiempos-agente'
+import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, type OperationName } from './constants'
 import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
@@ -58,7 +59,9 @@ async function evaluateAgentRequest(
   if (NEXTAUTH_SESSION_COOKIE.test(request.headers.get('cookie') ?? '')) throw new OperationError('credenciales-ambiguas')
   const token = /^Bearer (\S+)$/.exec(authorization)?.[1]
   if (!token || !ctx.agentLimiter || !agentTokenMatches(token, ctx.env)) throw new OperationError('no-autenticado')
-  if (!ctx.operation || !AGENT_OPERATIONS.includes(ctx.operation)) throw new OperationError('operacion-no-permitida')
+  // ORD-POS-112 (DEC-POS-025): el alta en TIEMPOS solo con la bandera del propietario; apagada, no permitida sin escribir.
+  const tiempos = ctx.operation === AGENT_TIEMPOS_OPERATION && tiemposAgenteHabilitado(ctx.env)
+  if (!ctx.operation || (!tiempos && !AGENT_OPERATIONS.includes(ctx.operation))) throw new OperationError('operacion-no-permitida')
   if (writeModeStatus(ctx.env).mode === 'disabled') throw new OperationError('escritura-deshabilitada')
 
   const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()

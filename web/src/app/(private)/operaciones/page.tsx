@@ -15,6 +15,7 @@ const OPS: Record<string, string> = {
   'tarea.editar': 'Tarea editada',
   'tarea.completar': 'Tarea completada',
   'tiempo.registrar': 'Tiempo registrado',
+  'tiempo.crear': 'Tiempo registrado por el PM',
   'decision.crear': 'Decisión registrada',
 }
 

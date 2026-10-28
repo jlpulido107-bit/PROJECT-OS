@@ -259,9 +259,12 @@ export class OperationsService {
     })
   }
 
-  logTime(cmd: LogTimeCommand, ctx: OperationContext): Promise<OperationResult> {
+  /**
+   * Alta en TIEMPOS: 'tiempo.registrar' (sesión del escritor) o 'tiempo.crear' (agente PM con TIEMPOS_AGENTE=true,
+   * ORD-POS-112). Solo agrega filas; ninguna operación edita ni borra TIEMPOS.
+   */
+  logTime(cmd: LogTimeCommand, ctx: OperationContext, op: 'tiempo.registrar' | 'tiempo.crear' = 'tiempo.registrar'): Promise<OperationResult> {
     return this.exclusive(async () => {
-      const op: OperationName = 'tiempo.registrar'
       const hash = payloadHash(op, cmd)
       const [tareas, tiempos, audit] = await this.views('TAREAS', 'TIEMPOS', 'AUDITORIA')
       const replay = await this.replayCreate(op, hash, cmd.requestId, audit, tiempos)
@@ -814,6 +817,7 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'tarea.editar': ['VERSION'],
   'tarea.completar': ['ESTADO', 'VERSION'],
   'tiempo.registrar': ['SESION_ID'],
+  'tiempo.crear': ['SESION_ID'],
   'decision.crear': ['DECISION_ID'],
   'orden.crear': ['ORDEN_ID', 'ESTADO'],
   'orden.aprobar': ['ESTADO'],

@@ -7,6 +7,7 @@ import { planWeek } from '@/lib/planning/engine'
 import { planningInputFromDataset } from '@/lib/planning/input'
 import { referenceDateFor } from '@/lib/planning/reference'
 import { ScenarioError, scenarioFromSearchParams } from '@/lib/planning/scenario'
+import { esTokenDeTiempos } from '@/lib/tiempos-agente'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,10 +17,14 @@ const NO_STORE = { 'Cache-Control': 'private, no-store, max-age=0' }
  * Propuesta de planificación (V1.5) en JSON. SOLO LECTURA: genera una simulación a partir de los datos y del
  * escenario de la URL; no guarda nada, no escribe en Sheets y no hay método para aplicar la propuesta.
  * Parámetros: los del escenario (ver docs/planificacion-v1-5.md) y `fecha=YYYY-MM-DD` para fijar la referencia.
+ * Con `Authorization`, solo el token del rol Tiempos (ORD-POS-112), inerte sin TIEMPOS_AGENTE=true; sin él, la sesión.
+ * Solo exporta GET: cualquier otro método recibe 405. La respuesta no lleva correos (planning/input.ts).
  */
 export async function GET(request: Request) {
-  const user = await currentUser()
-  if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401, headers: NO_STORE })
+  const autorizado = request.headers.has('authorization')
+    ? await esTokenDeTiempos(request.headers)
+    : (await currentUser()) !== null
+  if (!autorizado) return NextResponse.json({ error: 'No autenticado' }, { status: 401, headers: NO_STORE })
 
   const params = new URL(request.url).searchParams
   const fecha = params.get('fecha')
