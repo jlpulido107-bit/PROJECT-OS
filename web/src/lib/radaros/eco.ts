@@ -1,5 +1,6 @@
 import { civilDateInZone, parseTimestamp } from '../dates'
-import { parseNumber } from '../parse'
+import { cellText, parseNumber } from '../parse'
+import { MAX_DATA_ROWS } from '../schema'
 import { construirPipeline, PIPE_TABS, type PipelineVista, type PipeTab } from './pipeline'
 import { leerTabla, mapear, type Bloque, type Fila } from './tabla'
 
@@ -11,8 +12,11 @@ export type { Bloque, Fila } from './tabla'
  * Las columnas se buscan por nombre de encabezado (fila 1), nunca por posición; las no listadas se ignoran.
  */
 
-/** Pestañas que lee /eco (§3). `AMZ_CANDIDATOS` no se pide: sus columnas las fija el diseño de V1.3. */
-export const ECO_TABS = ['AMZ_CORRIDAS', 'SCORING', 'AMZ_RESUMEN', 'UNIT_ECONOMICS', 'ML_TRENDS_ANALISIS_AUTO'] as const
+/**
+ * Pestañas que lee /eco (§3). `AMZ_CANDIDATOS` no se pide: sus columnas las fija el diseño de V1.3. `PRODUCTS` (las
+ * ideas de RADAROS, solo lectura) da el nombre de cada idea (ORD-POS-113).
+ */
+export const ECO_TABS = ['AMZ_CORRIDAS', 'SCORING', 'AMZ_RESUMEN', 'UNIT_ECONOMICS', 'ML_TRENDS_ANALISIS_AUTO', 'PRODUCTS'] as const
 export type EcoTab = (typeof ECO_TABS)[number]
 export type EcoRaw = Partial<Record<EcoTab | PipeTab, unknown[][]>>
 /** Lo que pide el lector en un solo batchGet: /eco y las pestañas PIPE_* del pipeline (ORD-POS-097). */
@@ -45,6 +49,13 @@ export const GRUPOS_SCORING = {
   ],
   Tendencia: ['AMZ_TENDENCIA_BSR_30_VS_90', 'AMZ_TENDENCIA_VENTAS_DELTA90', 'AMZ_TENDENCIA_PRECIO_30_VS_90', 'AMZ_TENDENCIA_GTRENDS'],
 } as const
+/**
+ * ❓ Por confirmar en la activación (ORD-POS-113): encabezados de PRODUCTS. RADAROS solo documenta una columna de ID con
+ * `EC-004` a `EC-009` (docs/diseno-v1-2.md §1; sus pruebas usan `ID`) y no fija la del nombre («Producto» o similar).
+ * Se usa la primera que exista, sin distinguir mayúsculas ni acentos; sin columna de nombre, /eco muestra solo el ID.
+ */
+export const COLUMNAS_ID_PRODUCTS = [COLUMNA_ID_IDEA, 'ID'] as const
+export const COLUMNAS_NOMBRE_PRODUCTS = ['NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO', 'IDEA', 'DESCRIPCION'] as const
 const COLUMNAS_SCORING_AMZ = ['AMZ_SEMANA', ...Object.values(GRUPOS_SCORING).flat(), 'AMZ_ESTADO']
 
 export const COLUMNAS_RESUMEN = ['SEMANA', 'MARKETPLACE', 'IDEA_ID', 'ASINS_USADOS', 'ESTADO'] as const
@@ -109,8 +120,27 @@ function corridas(rows: unknown[][] | undefined, now: number): Bloque<Corridas> 
   })
 }
 
+/** Encabezado comparable: mayúsculas, sin acentos y con `_` en lugar de espacios. */
+const normalizarEncabezado = (h: string) => h.normalize('NFD').replace(/\p{M}/gu, '').trim().toUpperCase().replace(/\s+/g, '_')
+
+/** Nombre de cada idea leído de PRODUCTS por encabezado; sin pestaña o sin columnas reconocidas, un mapa vacío. */
+export function nombresIdeas(rows: unknown[][] | undefined): Map<string, string> {
+  const nombres = new Map<string, string>()
+  const header = (rows?.[0] ?? []).map((h) => normalizarEncabezado(cellText(h) ?? ''))
+  const buscar = (candidatas: readonly string[]) => candidatas.map((c) => header.indexOf(c)).find((i) => i >= 0)
+  const [iId, iNombre] = [buscar(COLUMNAS_ID_PRODUCTS), buscar(COLUMNAS_NOMBRE_PRODUCTS)]
+  if (!rows || iId === undefined || iNombre === undefined) return nombres
+  for (const row of rows.slice(1, MAX_DATA_ROWS + 1)) {
+    const [id, nombre] = [cellText(row[iId]), cellText(row[iNombre])]
+    if (id && nombre && !nombres.has(id)) nombres.set(id, nombre)
+  }
+  return nombres
+}
+
 export interface IdeaRanking {
   id: string
+  /** Nombre de PRODUCTS; null si no hay. */
+  nombre: string | null
   puntuacion: string | null
   campos: Fila
   resumen: { ultimaSemana: string; estado: string | null; semanas: number } | null
@@ -121,6 +151,8 @@ export interface Ranking {
   /** false si SCORING aún no tiene ninguna columna AMZ_* (antes de activar V1.2). */
   conColumnasAmz: boolean
   ideas: IdeaRanking[]
+  /** Nombre de PRODUCTS por ID de idea. */
+  nombres: Map<string, string>
   resumen: Bloque<null>
 }
 
@@ -143,7 +175,9 @@ function resumenPorIdea(rows: unknown[][] | undefined) {
   return { bloque: mapear(tabla, () => null), porIdea }
 }
 
-function ranking(scoring: unknown[][] | undefined, resumenRows: unknown[][] | undefined): Bloque<Ranking> {
+function ranking(
+  scoring: unknown[][] | undefined, resumenRows: unknown[][] | undefined, nombres: Map<string, string>,
+): Bloque<Ranking> {
   const columnas = [COLUMNA_ID_IDEA, ...COLUMNAS_PUNTUACION, ...COLUMNAS_SCORING_AMZ]
   const tabla = leerTabla('SCORING', scoring, columnas, [COLUMNA_ID_IDEA], NO_EXISTE('SCORING'), 'Sin ideas en SCORING.')
   const { bloque, porIdea } = resumenPorIdea(resumenRows)
@@ -153,7 +187,7 @@ function ranking(scoring: unknown[][] | undefined, resumenRows: unknown[][] | un
       const id = f[COLUMNA_ID_IDEA] as string
       const r = porIdea.get(id)
       return {
-        id, puntuacion: columnaPuntuacion ? (f[columnaPuntuacion] ?? null) : null, campos: f,
+        id, nombre: nombres.get(id) ?? null, puntuacion: columnaPuntuacion ? (f[columnaPuntuacion] ?? null) : null, campos: f,
         resumen: r ? { ultimaSemana: r.ultimaSemana, estado: r.estado, semanas: r.semanas.size } : null,
       }
     })
@@ -165,21 +199,24 @@ function ranking(scoring: unknown[][] | undefined, resumenRows: unknown[][] | un
       if ((x === null) !== (y === null)) return x === null ? 1 : -1
       return a.id.localeCompare(b.id, 'es')
     })
-    return { columnaPuntuacion, conColumnasAmz: COLUMNAS_SCORING_AMZ.some((c) => encabezados.has(c)), ideas, resumen: bloque }
+    return { columnaPuntuacion, conColumnasAmz: COLUMNAS_SCORING_AMZ.some((c) => encabezados.has(c)), ideas, nombres, resumen: bloque }
   })
 }
 
 export interface UnitEconomics {
   conColumnasAmz: boolean
   filas: Fila[]
+  /** Nombre de PRODUCTS por ID de idea. */
+  nombres: Map<string, string>
 }
 
-function unitEconomics(rows: unknown[][] | undefined): Bloque<UnitEconomics> {
+function unitEconomics(rows: unknown[][] | undefined, nombres: Map<string, string>): Bloque<UnitEconomics> {
   const tabla = leerTabla('UNIT_ECONOMICS', rows, [COLUMNA_ID_IDEA, ...COLUMNAS_UNIT], [COLUMNA_ID_IDEA],
     NO_EXISTE('UNIT_ECONOMICS'), 'Sin ideas en UNIT_ECONOMICS.')
   return mapear(tabla, ({ encabezados, filas }) => ({
     conColumnasAmz: COLUMNAS_UNIT.some((c) => encabezados.has(c)),
     filas: filas.filter((f) => f[COLUMNA_ID_IDEA]),
+    nombres,
   }))
 }
 
@@ -214,10 +251,11 @@ export interface EcoVista {
 
 /** Cada bloque resuelve su propio estado (diseño §4): un bloque con problema no impide pintar los demás. */
 export function construirEco(raw: EcoRaw, now: number): EcoVista {
+  const nombres = nombresIdeas(raw.PRODUCTS)
   return {
     corridas: corridas(raw.AMZ_CORRIDAS, now),
-    ranking: ranking(raw.SCORING, raw.AMZ_RESUMEN),
-    unitEconomics: unitEconomics(raw.UNIT_ECONOMICS),
+    ranking: ranking(raw.SCORING, raw.AMZ_RESUMEN, nombres),
+    unitEconomics: unitEconomics(raw.UNIT_ECONOMICS, nombres),
     candidatos: { estado: 'pendiente', mensaje: 'AMZ_CANDIDATOS: pendiente de V1.3 (sus columnas las fija el diseño de V1.3).' },
     tendencias: tendencias(raw.ML_TRENDS_ANALISIS_AUTO),
     pipeline: construirPipeline(raw, now),
