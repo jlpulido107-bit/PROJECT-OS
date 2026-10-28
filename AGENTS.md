@@ -43,9 +43,14 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   sección «Altas con sí PAQ»); aprobar, enviar, cancelar y cerrar no cambian: un «sí PAQ» nunca vale para ellos.
 - Rol Tiempos (Claude, skill `planear-tiempo`), **DEC-POS-024 APROBADA** (2026-10-28): lee la hoja
   (solo lectura) y la vista /planificacion y propone; nunca escribe en Sheets ni cambia ESTADO o BLOQUEO. Sus ediciones
-  (HORAS_ESTIMADAS, FECHA_PLAN, HITO_ID) y altas de tareas van en un paquete sin ID a POS · Ideas, que le pone el PAQ;
-  el PM solo las escribe con el «sí PAQ» verificado del propietario; nunca cierra ni cancela. CAPACIDAD_SEMANAL e
-  HITOS los registra el propietario. Sin rutina programada hasta una prueba real aprobada.
+  (HORAS_ESTIMADAS, FECHA_PLAN, HITO_ID) van en un paquete PAQ al PM, que solo las escribe con el «sí PAQ» verificado
+  del propietario y solo con DEC-POS-024 aprobada; nunca cierra ni cancela. CAPACIDAD_SEMANAL e HITOS los registra el
+  propietario. Sin rutina programada hasta una prueba real aprobada.
+  DEC-POS-025 (vigente solo si consta APROBADA en DECISIONES; ORD-POS-112), enmienda de DEC-POS-024: Tiempos lee
+  `GET /api/planificacion` con su propio token (solo GET, distinto del del PM y del de finanzas) y el PM da de alta filas
+  de TIEMPOS (`tiempo.crear`) solo con el «sí PAQ» verificado; nunca las edita ni las borra. Está apagado: solo con
+  `TIEMPOS_AGENTE=true`, que pone únicamente el propietario con `deploy.sh` ([escritura §8](docs/escritura-v1-8.md)).
+  Ningún agente la enciende.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.

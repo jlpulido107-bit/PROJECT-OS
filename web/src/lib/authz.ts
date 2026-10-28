@@ -1,6 +1,7 @@
 import { getToken } from 'next-auth/jwt'
 import { NextResponse, type NextRequest } from 'next/server'
 import { allowedEmails, isEmailAllowed, isPublicPath } from './access'
+import { esTokenDeTiempos, TIEMPOS_AGENTE_RUTA } from './tiempos-agente'
 
 export type AuthDecision =
   | { action: 'public' }
@@ -10,6 +11,8 @@ export type AuthDecision =
    * vuelve a verificar token, operación y campos.
    */
   | { action: 'agent' }
+  /** Token de Tiempos válido en /api/planificacion con un método distinto de GET (ORD-POS-112). */
+  | { action: 'method-not-allowed' }
   | { action: 'unauthenticated' }
   | { action: 'forbidden' }
 
@@ -19,7 +22,11 @@ export type AuthDecision =
  */
 export async function decide(
   req: NextRequest,
-  opts: { secret?: string; allowed?: Set<string>; agentTokenSha256?: string; finanzasAgenteTokenSha256?: string } = {},
+  opts: {
+    secret?: string; allowed?: Set<string>; agentTokenSha256?: string; finanzasAgenteTokenSha256?: string
+    /** Entorno del rol Tiempos (bandera y los tres hashes); por defecto process.env. */
+    tiemposEnv?: NodeJS.ProcessEnv
+  } = {},
 ): Promise<AuthDecision> {
   if (isPublicPath(req.nextUrl.pathname)) return { action: 'public' }
   const pmHash = opts.agentTokenSha256 ?? process.env.PM_AGENT_TOKEN_SHA256
@@ -27,6 +34,10 @@ export async function decide(
   const finanzasHash = opts.finanzasAgenteTokenSha256 ?? process.env.FINANZAS_AGENTE_TOKEN_SHA256
   // Un hash igual al del PM dejaría entrar el token del PM a las rutas de finanzas: nunca coincide (diseño v3 §2.3).
   if (normalHash(finanzasHash) !== normalHash(pmHash) && await isAgentRequest(req, finanzasHash, FINANZAS_AGENT_ROUTES)) return { action: 'agent' }
+  // ORD-POS-112: el token de Tiempos solo alcanza /api/planificacion y solo con GET; inerte sin TIEMPOS_AGENTE=true.
+  if (TIEMPOS_AGENTE_RUTA.test(req.nextUrl.pathname) && await esTokenDeTiempos(req.headers, opts.tiemposEnv ?? process.env)) {
+    return req.method === 'GET' ? { action: 'agent' } : { action: 'method-not-allowed' }
+  }
   const secret = opts.secret ?? process.env.NEXTAUTH_SECRET
   if (!secret) return { action: 'unauthenticated' }
   let token: Awaited<ReturnType<typeof getToken>> = null
@@ -40,9 +51,12 @@ export async function decide(
   return { action: 'allow', email: token.email }
 }
 
-/** Únicas rutas que el agente PM puede alcanzar sin sesión: POST de altas y PATCH de una tarea o de una orden (DEC-POS-011). */
+/**
+ * Únicas rutas que el agente PM puede alcanzar sin sesión: POST de altas y PATCH de una tarea o de una orden
+ * (DEC-POS-011). El alta en TIEMPOS (ORD-POS-112) pasa el proxy, pero la API la rechaza sin TIEMPOS_AGENTE=true.
+ */
 const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
-  ['POST', /^\/api\/operaciones\/(tareas|decisiones|ordenes)\/?$/],
+  ['POST', /^\/api\/operaciones\/(tareas|decisiones|ordenes|tiempos)\/?$/],
   ['PATCH', /^\/api\/operaciones\/(tareas|ordenes)\/[^/]+\/?$/],
 ]
 
@@ -83,6 +97,9 @@ const NO_STORE = { 'Cache-Control': 'private, no-store, max-age=0' }
 /** Respuesta del proxy: APIs → 401/403 JSON sin datos; páginas → redirección a /login. */
 export function respond(decision: AuthDecision, req: NextRequest): NextResponse {
   if (decision.action === 'public' || decision.action === 'allow' || decision.action === 'agent') return NextResponse.next()
+  if (decision.action === 'method-not-allowed') {
+    return NextResponse.json({ error: 'Método no permitido' }, { status: 405, headers: { ...NO_STORE, Allow: 'GET' } })
+  }
   const isApi = req.nextUrl.pathname.startsWith('/api/')
   if (isApi) {
     return decision.action === 'forbidden'

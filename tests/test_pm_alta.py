@@ -40,6 +40,17 @@ class TestPmAlta(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse((self.tmp / "args").exists())
 
+    def test_tiempos_usa_su_ruta_y_sus_limites(self):
+        self.escribir({"tareaId": "POS-035", "fecha": "2026-10-28", "responsable": "PM", "minutos": 30, "tipoTrabajo": "DESARROLLO"})
+        self.assertEqual(self.ejecutar("tiempos").returncode, 0)
+        args = (self.tmp / "args").read_text().split("\n")
+        self.assertEqual([a for a in args if a.startswith("http")], [URL.replace("/tareas", "/tiempos")])
+        (self.tmp / "tarea.enviado.json").unlink()
+        self.escribir({"tareaId": "POS-035", "notas": "x" * 1001})
+        r = self.ejecutar("tiempos")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("notas excede 1000", r.stderr)
+
     def test_limite_excedido(self):
         self.escribir({**TAREA, "titulo": "x" * 161})
         r = self.ejecutar()

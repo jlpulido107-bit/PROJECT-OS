@@ -55,6 +55,13 @@ case "$QUITAR" in
       [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
     done ;;
 esac
+# ORD-POS-112: lo mismo con el rol Tiempos (bandera y hash del token).
+case "$QUITAR" in
+  *" TIEMPOS_AGENTE "*|*" TIEMPOS_AGENTE_TOKEN_SHA256 "*)
+    for NOMBRE in TIEMPOS_AGENTE TIEMPOS_AGENTE_TOKEN_SHA256; do
+      [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
+    done ;;
+esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$(mktemp -d)"
@@ -94,7 +101,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
       SECRET_VERSION_FINANZAS_AGENTE: clave("FINANZAS_AGENTE_TOKEN_SHA256"), SEGUNDO_GEMINI_SUPERVISADO: literal("SEGUNDO_GEMINI_SUPERVISADO"),
       ECO_PIPELINE_WRITE_MODE: literal("ECO_PIPELINE_WRITE_MODE"), ECO_PIPELINE_WRITE_SERVICE_ACCOUNT: literal("ECO_PIPELINE_WRITE_SERVICE_ACCOUNT"),
       ECO_PIPELINE_WRITER_EMAIL: literal("ECO_PIPELINE_WRITER_EMAIL"), TAREAS_CIERRE_PROPIETARIO: literal("TAREAS_CIERRE_PROPIETARIO"),
-      TAREAS_CIERRE_PROPIETARIO_EMAIL: literal("TAREAS_CIERRE_PROPIETARIO_EMAIL"),
+      TAREAS_CIERRE_PROPIETARIO_EMAIL: literal("TAREAS_CIERRE_PROPIETARIO_EMAIL"), TIEMPOS_AGENTE: literal("TIEMPOS_AGENTE"),
+      SECRET_VERSION_TIEMPOS_AGENTE: clave("TIEMPOS_AGENTE_TOKEN_SHA256"),
     }
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
       m[`CLAUDE_ROUTINE_${n}_ID`] = literal(`CLAUDE_ROUTINE_${n}_ID`)
@@ -115,6 +123,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     for (const k of eco.split(" ")) de[k] = eco
     const cierre = "TAREAS_CIERRE_PROPIETARIO TAREAS_CIERRE_PROPIETARIO_EMAIL"
     for (const k of cierre.split(" ")) de[k] = cierre
+    const tiempos = "TIEMPOS_AGENTE TIEMPOS_AGENTE_TOKEN_SHA256"
+    for (const k of ["TIEMPOS_AGENTE", "SECRET_VERSION_TIEMPOS_AGENTE"]) de[k] = tiempos
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
       de[`CLAUDE_ROUTINE_${n}_ID`] = de[`SECRET_VERSION_CLAUDE_ROUTINE_${n}`] = `CLAUDE_ROUTINE_${n}_ID CLAUDE_ROUTINE_${n}_TOKEN`
     }

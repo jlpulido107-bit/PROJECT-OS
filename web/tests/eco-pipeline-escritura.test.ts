@@ -306,7 +306,8 @@ describe('criterio 2: guard propio sin rama de agente (§4.1 y §4.2)', () => {
     const lista = (nombre: string) => authz.slice(authz.indexOf(`const ${nombre}`), authz.indexOf(']\n', authz.indexOf(`const ${nombre}`)) + 1)
     expect(lista('AGENT_ROUTES')).toBe([
       'const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [',
-      "  ['POST', /^\\/api\\/operaciones\\/(tareas|decisiones|ordenes)\\/?$/],",
+      // ORD-POS-112: alta en TIEMPOS del PM, que la API rechaza sin TIEMPOS_AGENTE=true.
+      "  ['POST', /^\\/api\\/operaciones\\/(tareas|decisiones|ordenes|tiempos)\\/?$/],",
       "  ['PATCH', /^\\/api\\/operaciones\\/(tareas|ordenes)\\/[^/]+\\/?$/],",
       ']',
     ].join('\n'))

@@ -238,6 +238,27 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('TIEMPOS_AGENTE (ORD-POS-112): se conserva de la activa con su secreto y --quitar retira las dos', () => {
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'TIEMPOS_AGENTE', value: 'true' },
+        { name: 'TIEMPOS_AGENTE_TOKEN_SHA256', valueFrom: { secretKeyRef: { name: 'project-os-tiempos-agente-token-sha256', key: '4' } } })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('TIEMPOS_AGENTE')
+      for (const nombre of ['TIEMPOS_AGENTE', 'TIEMPOS_AGENTE_TOKEN_SHA256']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        expect(apagada.out).toMatch(/Variables quitadas:\n  - TIEMPOS_AGENTE\n  - TIEMPOS_AGENTE_TOKEN_SHA256\n/)
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, TIEMPOS_AGENTE: 'true', SECRET_VERSION_TIEMPOS_AGENTE: '4' } })
+      expect(nueva.code).toBe(0)
+      for (const nombre of ['TIEMPOS_AGENTE', 'TIEMPOS_AGENTE_TOKEN_SHA256']) expect(nueva.out).toContain(`  + ${nombre}\n`)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, TIEMPOS_AGENTE: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('RADAROS_SHEET_ID (ORD-POS-067): se conserva de la activa como literal, sin imprimir el valor, y se quita con --quitar', () => {
       const activa = JSON.parse(full)
       const id = 'LIBRO_RADAROS_SINTETICO_0123456789'

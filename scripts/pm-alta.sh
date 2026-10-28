@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Alta del PM por la API de operaciones del dashboard (pm-escribir-api, DEC-POS-005).
-# Uso: bash scripts/pm-alta.sh <tareas|decisiones|ordenes> <archivo.json> [--repetir]
+# Uso: bash scripts/pm-alta.sh <tareas|decisiones|ordenes|tiempos> <archivo.json> [--repetir]
 # El host y la ruta son fijos. El token lo añade el proxy del entorno: aquí no se lee ni se envía ninguna cabecera Authorization.
 set -euo pipefail
 
 DASHBOARD=https://project-os-dashboard-235975889400.northamerica-south1.run.app
-uso() { echo "Uso: bash scripts/pm-alta.sh <tareas|decisiones|ordenes> <archivo.json> [--repetir]" >&2; exit 2; }
+uso() { echo "Uso: bash scripts/pm-alta.sh <tareas|decisiones|ordenes|tiempos> <archivo.json> [--repetir]" >&2; exit 2; }
 
 [ $# -ge 2 ] && [ $# -le 3 ] || uso
 tipo=$1; archivo=$2; repetir=${3:-}
@@ -16,7 +16,9 @@ case "$tipo" in
   tareas) limites='{"titulo":160,"descripcion":2000,"criterioTerminado":1000,"responsable":80,"instrucciones":4000}' ;;
   decisiones) limites='{"asunto":200,"decision":2000,"justificacion":2000,"responsable":80,"evidenciaUrl":500}' ;;
   ordenes) limites='{"titulo":160,"objetivo":2000,"criterios":2000,"fueraDeAlcance":2000,"comoProbar":2000,"contexto":2000}' ;;
-  *) echo "Tipo no permitido: $tipo (solo tareas, decisiones u ordenes)" >&2; exit 2 ;;
+  # ORD-POS-112: alta de TIEMPOS (tiempo.crear); la API la rechaza (403) sin TIEMPOS_AGENTE=true.
+  tiempos) limites='{"responsable":80,"notas":1000}' ;;
+  *) echo "Tipo no permitido: $tipo (solo tareas, decisiones, ordenes o tiempos)" >&2; exit 2 ;;
 esac
 
 [ -f "$archivo" ] || { echo "No existe el archivo: $archivo" >&2; exit 2; }

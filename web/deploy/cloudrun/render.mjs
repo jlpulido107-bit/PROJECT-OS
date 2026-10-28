@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + tiemposAgente(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO ni TAREAS_CIERRE_PROPIETARIO')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO ni TIEMPOS_AGENTE')
   return output.replace(marker, writeBlock)
 }
 
@@ -179,6 +179,35 @@ function cierrePropietario(env, problems) {
     "              value: 'true'",
     '            - name: TAREAS_CIERRE_PROPIETARIO_EMAIL',
     `              value: '${owner}'`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-112, DEC-POS-025 y DEC-POS-014): rol Tiempos, apagado por defecto. Las dos van juntas y solo las
+ * exporta el propietario:
+ * - TIEMPOS_AGENTE: solo `true`. Enciende la lectura de /api/planificacion con el token de Tiempos y `tiempo.crear`
+ *   del PM.
+ * - SECRET_VERSION_TIEMPOS_AGENTE: versión del secreto project-os-tiempos-agente-token-sha256 (TIEMPOS_AGENTE_TOKEN_SHA256).
+ * Sin ninguna de las dos, el YAML no cambia; nunca se imprime un valor.
+ */
+function tiemposAgente(env, problems) {
+  const flag = (env.TIEMPOS_AGENTE ?? '').trim()
+  const version = (env.SECRET_VERSION_TIEMPOS_AGENTE ?? '').trim()
+  if (!flag && !version) return ''
+  const antes = problems.length
+  if (flag && flag !== 'true') problems.push('TIEMPOS_AGENTE solo admite true')
+  if (!flag || !version) problems.push('TIEMPOS_AGENTE y SECRET_VERSION_TIEMPOS_AGENTE van juntas')
+  if (version && !/^[1-9][0-9]*$/.test(version)) problems.push('SECRET_VERSION_TIEMPOS_AGENTE no tiene el formato esperado')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: TIEMPOS_AGENTE',
+    "              value: 'true'",
+    '            - name: TIEMPOS_AGENTE_TOKEN_SHA256',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-tiempos-agente-token-sha256',
+    `                  key: '${version}'`,
     '',
   ].join('\n')
 }

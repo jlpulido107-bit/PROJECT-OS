@@ -34,6 +34,8 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
   propietario encendió `PM_PUEDE_REGISTRAR_PR` en Cloud Run (nunca tú: no la pidas encender ni despliegues), envía
   `accion` y `expectedEstado` sin `url` ni `autorizacion`; la API registra el único PR abierto que /ordenes detecta y
   audita su URL y head; si no hay uno solo, `pr-no-detectado`. Pide el «sí» del propietario como para cualquier escritura.
+- **Filas de TIEMPOS** (`tiempo.crear`, ORD-POS-112): solo con «sí PAQ», condicionado a DEC-POS-025 `APROBADA` y a la
+  bandera del propietario; procedimiento en [Altas con sí PAQ](#altas-con-sí-paq-dec-pos-013). Nunca se editan ni se borran.
 - Nunca intentes cancelar, cerrar ni ejecutar órdenes (la API responde `transicion-reservada-pm`), ni
   borrar filas, ni crear una tarea con bloqueo, ni editar de una tarea `estado`, `bloqueo`, `tipo`, `responsable` u otro
   campo fuera de la lista de arriba (403).
@@ -56,7 +58,7 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
    **antes** de enviar y hace un solo `curl`, sin `Authorization`:
 
    ```bash
-   bash scripts/pm-alta.sh <tareas|decisiones|ordenes> <archivo.json>
+   bash scripts/pm-alta.sh <tareas|decisiones|ordenes|tiempos> <archivo.json>
    ```
 
    Anota `requestId` y la ruta del `.enviado.json` en la conversación: son los únicos que valen para repetir esta alta.
@@ -67,6 +69,7 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
    - `decisiones`: `proyectoId`, `asunto`, `decision`, `justificacion`, `responsable`; opcionales `fecha`, `evidenciaUrl`.
    - `ordenes`: `proyectoId`, `tareaId`, `titulo`, `objetivo`, `criterios`, `fueraDeAlcance`, `comoProbar`, `riesgo`;
      opcional `contexto`.
+   - `tiempos`: solo con «sí PAQ» y DEC-POS-025 `APROBADA` (ver [Altas con sí PAQ](#altas-con-sí-paq-dec-pos-013)).
 4. **Verificar.** Con `201`, relee la fila (una sola vez, con los valores propuestos) y `AUDITORIA` (`ACTOR` =
    `agente-pm`, `ORIGEN` termina en `;agente=pm`). Informa ID, fila y auditoría.
 5. **Errores.** Si el script termina con error, detente e informa código y mensaje (un 429 espera al menos un minuto).
@@ -136,6 +139,18 @@ y solo de `horasEstimadas`, `fechaPlan` e `hitoId` (`HORAS_ESTIMADAS`, `FECHA_PL
 del paquete invalida esa edición. Antes de cada una, relee la fila: si el valor actual ya no es el que trae el paquete
 (ya aplicada o cambiada), no la envíes y dilo. Envía con `expectedVersion` de la fila releída, por el procedimiento de
 [Edición y transiciones](#edición-y-transiciones) (paso 4). Nunca vale para `estado`, `bloqueo` ni para cerrar o cancelar.
+
+**Filas de TIEMPOS del rol Tiempos (condicional a DEC-POS-025, ORD-POS-112).** Solo cuando DEC-POS-025 esté `APROBADA`
+en `DECISIONES` (léela con el conector, **solo lectura**; si está `PENDIENTE` o no existe, no hay alta), un «sí PAQ»
+verificado autoriza también el alta de las filas de `TIEMPOS` del paquete (`tiempo.crear`). Es solo alta: nunca edites
+ni borres una fila de `TIEMPOS`, ni cambies con ella `ESTADO`, `BLOQUEO` o `FECHA_LIMITE` de la tarea.
+- Cuerpo: `tareaId`, `fecha` (no futura), `responsable` (80), `minutos` (1 a 960), `tipoTrabajo` (código en MAYÚSCULAS)
+  y opcional `notas` (1000). Sin correos ni datos personales en `responsable` ni en `notas`.
+- Antes de cada una, relee `TIEMPOS`: si ya hay una fila con la misma tarea, fecha, minutos y tipo, no la envíes y dilo.
+- Envía con `bash scripts/pm-alta.sh tiempos <archivo.json>` y sigue Pasos 4 a 7 (`AUDITORIA` con `op=tiempo.crear`
+  y `;agente=pm`). `TIEMPOS` no lleva `VERSION`: la idempotencia es la del `requestId`.
+- Si responde 403 `operacion-no-permitida`, la bandera `TIEMPOS_AGENTE` está apagada: detente y dilo. Nunca pidas
+  encenderla ni despliegues; solo el propietario la enciende ([escritura §8](../../../docs/escritura-v1-8.md)).
 
 1. **Verificar en la fuente**, antes de la primera alta del paquete:
    - Ubica la sesión POS · Ideas por la etiqueta `rol:ideas`: debe haber exactamente una.
