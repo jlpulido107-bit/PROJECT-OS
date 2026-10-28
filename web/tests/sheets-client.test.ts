@@ -22,7 +22,7 @@ describe('cliente de Google Sheets (solo lectura)', () => {
   })
 
   it('escapa nombres de pestaña en rangos A1 e incluye fila centinela', () => {
-    expect(tabRange("O'Brien")).toBe("'O''Brien'!A1:Z5002")
+    expect(tabRange("O'Brien")).toBe("'O''Brien'!A1:AZ5002")
   })
 
   it('lee solo pestañas existentes con GET y token en cabecera (no en la URL)', async () => {
@@ -47,7 +47,7 @@ describe('cliente de Google Sheets (solo lectura)', () => {
     }
     const batch = new URL(calls[1]!.url)
     expect(batch.pathname).toMatch(/\/values:batchGet$/)
-    expect(batch.searchParams.getAll('ranges')).toEqual(["'PROYECTOS'!A1:Z5002", "'TAREAS'!A1:Z5002"])
+    expect(batch.searchParams.getAll('ranges')).toEqual(["'PROYECTOS'!A1:AZ5002", "'TAREAS'!A1:AZ5002"])
     expect(batch.searchParams.get('valueRenderOption')).toBe('FORMATTED_VALUE')
   })
 

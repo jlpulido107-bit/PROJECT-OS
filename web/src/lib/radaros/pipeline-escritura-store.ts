@@ -1,4 +1,4 @@
-import { MAX_DATA_ROWS } from '../schema'
+import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
 
 /**
  * Almacén de ESCRITURA del pipeline en el libro de RADAROS (ORD-POS-102, docs/diseno-eco-pipeline.md §6.2). Es el único
@@ -50,8 +50,8 @@ export interface EcoSheetsStoreOptions {
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets/'
 const TIMEOUT_MS = 15_000
-/** 52 columnas: §3.1 ocupa 26 y el propietario puede añadir otras al final. */
-const ULTIMA = 'AZ'
+/** 52 columnas (la misma del lector): §3.1 ocupa 26 y el propietario puede añadir otras al final. */
+const ULTIMA = ULTIMA_COLUMNA
 
 /** 0 → A, 25 → Z, 26 → AA. */
 export function letraColumna(i: number): string {

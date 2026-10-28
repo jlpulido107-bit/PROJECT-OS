@@ -26,7 +26,8 @@ const SIN_ALERTA_ETAPA: readonly Etapa[] = ['EN_VENTA', 'DESCARTADO']
 
 const K = ['K1', 'K2', 'K3', 'K4', 'K5', 'K6'] as const
 
-// atajo: el lector pide A1:Z (26 columnas); §3.1 cabe justo. Si una pestaña crece más allá de Z, ampliar tabRange.
+// atajo: el lector pide A1:AZ (52 columnas, ULTIMA_COLUMNA en schema.ts); §3.1 ocupa 26. Si una pestaña crece más allá
+// de AZ, ampliar ULTIMA_COLUMNA.
 export const COLUMNAS_PRODUCTOS = [
   'PRODUCTO_ID', 'NOMBRE', 'ASIN', 'IDEA_ID', 'ORIGEN', 'ORIGEN_REF', 'ETAPA', 'ETAPA_DESDE', 'MOTIVO_DESCARTE',
   'KEEPA_FECHA', 'KEEPA_PRECIO_MXN_AVG90', 'KEEPA_BSR_AVG90', 'KEEPA_VENTAS_MES', 'KEEPA_OFERTAS', 'COSTO_MAX_MXN', ...K,
