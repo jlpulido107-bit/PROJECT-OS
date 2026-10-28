@@ -502,7 +502,7 @@ Decisiones de la construcción (las que el diseño dejaba abiertas o no fijaba):
 - **Edición celda por celda.** Un `PATCH` o un `mover` escribe solo las columnas que cambian, más `ACTUALIZADO` y
   `VERSION`, con rangos `'<PESTAÑA>'!X<n>:X<n>` en un `values:batchUpdate` RAW: no pisa fórmulas ni columnas que el
   propietario añada al final. Antes de auditar, la pestaña se relee y la fila se ubica por ID; solo se escribe si
-  conserva la `VERSION`, y en esa misma fila (ORD-POS-104).
+  conserva la `VERSION`; tras auditar se relee de nuevo y se escribe en la fila con ese ID y esa `VERSION` (ORD-POS-104 y 109).
 - **Fórmulas (❓ §12).** Antes de auditar, la fila ubicada en esa relectura se lee con `valueRenderOption=FORMULA`; si alguna celda que cambia
   es fórmula (por ejemplo `COSTO_MAX_MXN` o `COSTO_ATERRIZADO_MXN`), 409 `campo-solo-lectura` y nada se escribe. Así
   la ruta las rechaza sin fijar ahora cuáles son fórmulas.
@@ -534,6 +534,15 @@ Hallazgos no bloqueantes de los dictámenes del PR #239, corregidos en ORD-POS-1
 | PRIMERO H3 (BAJA): `IDEA_ID` solo valida el formato | Límite aceptado: la lista cerrada de §6.2 no cambia; comprobación manual en §7.2 paso 7 |
 | PRIMERO H4 (BAJA): apóstrofo visible en `CONTACTO` | Sin apóstrofo: RAW basta |
 | SEGUNDO H1 (BAJA): fórmulas en la fila de la lectura inicial | Las fórmulas se leen en la fila ubicada por ID en la misma relectura que usa la escritura |
+
+Hallazgos no bloqueantes de los dictámenes del PR #243 (head `9a9f5ab`), corregidos en ORD-POS-109
+([issue #253](https://github.com/jlpulido107-bit/PROJECT-OS/issues/253)), también inerte:
+
+| Hallazgo | Cómo quedó |
+| --- | --- |
+| PRIMERO H1 (MEDIA): la fila se ubica antes de auditar y `aplicar()` escribe sin releer | `aplicar()` relee y ubica la fila por ID y `VERSION` después de la auditoría: si se movió, escribe en su nueva posición; si cambió, 409 `conflicto-concurrente` sin escribir. Límite aceptado: la ventana entre esa relectura y el update (Sheets no tiene escritura condicional) la cubre la verificación |
+| PRIMERO H2 (BAJA): reintento en el tope de filas con 409 | El tope se mira después de la idempotencia: un reintento ya aplicado responde «repetida» aun con la pestaña en 5000 filas; un alta o edición nueva sigue con 409 `eco-pestana-llena`, y un roll-forward de alta, si su pestaña está en el tope |
+| SEGUNDO H1 (BAJA): `escritura-fallida` sin auditoría | La relectura previa a la auditoría falla con 503 `lectura-fallida` («no se escribió nada»); la de `aplicar()`, ya auditada, conserva `escritura-fallida` |
 
 ## 11. Fase 2 (bosquejo; depende de SP-API)
 

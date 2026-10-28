@@ -126,6 +126,12 @@ function tabla(rows: unknown[][], columnas: readonly string[], pestana: string):
 /** ORD-POS-104 (H2): al 100 % de MAX_DATA_ROWS se falla cerrado nombrando la pestaña; se archiva a mano (§7.2). */
 const llena = (pestana: string) => new OperationError('eco-pestana-llena', { detail: { pestana, limite: MAX_DATA_ROWS } })
 
+/** ORD-POS-109 (H2): el tope se mira tras replay(); un reintento ya aplicado responde «repetida» aun en el tope. */
+function conCupo(libro: Libro) {
+  const tope = ECO_WRITE_TABS.find((tab) => libro[tab].filas.length >= MAX_DATA_ROWS)
+  if (tope) throw llena(tope)
+}
+
 /** Al 80 % o más de MAX_DATA_ROWS, la respuesta ok lleva el aviso (casi siempre por PIPE_AUDITORIA). */
 function conAviso(libro: Libro, r: EcoResultado): EcoResultado {
   const casi = ECO_WRITE_TABS.filter((tab) => libro[tab].filas.length >= MAX_DATA_ROWS * 0.8)
@@ -227,6 +233,7 @@ export class EcoPipelineWriteService {
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      conCupo(libro)
 
       const { actual } = this.unica(libro, 'producto', id)
       const etapaTexto = celdaTexto(actual.ETAPA).toUpperCase()
@@ -438,6 +445,7 @@ export class EcoPipelineWriteService {
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      conCupo(libro)
       const registro = validar(libro, { ...cmd.valores })
       const id = this.siguienteId(libro, e)
       const stamp = this.stamp()
@@ -459,6 +467,7 @@ export class EcoPipelineWriteService {
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      conCupo(libro)
       const { actual } = this.unica(libro, e, id)
       const version = this.versionDe(actual)
       if (version !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { version } })
@@ -469,20 +478,21 @@ export class EcoPipelineWriteService {
     })
   }
 
-  /** Edición ya validada: relectura → fórmulas de esa fila → auditoría → celdas guardadas → verificación. */
+  /** Edición ya validada: relectura → fórmulas de esa fila → auditoría → relectura → celdas guardadas → verificación. */
   private async escribirEdicion(
     hash: string, requestId: string, ctx: EcoContext, op: EcoOperationName, e: Entidad, id: string, actual: Registro,
     cambios: Registro, libro: Libro, extra: Cambio['extra'],
   ): Promise<EcoResultado> {
-    // ORD-POS-104 (SEGUNDO H1): la misma relectura ubica la fila por ID para las fórmulas y para aplicar().
-    const destino = await this.ubicar(e, id, actual.VERSION!)
+    // ORD-POS-109 (SEGUNDO H1): sin auditoría todavía, un fallo de esta relectura es lectura-fallida.
+    const destino = await this.ubicar(e, id, actual.VERSION!, 'lectura-fallida')
     await this.sinFormulas(e, destino, Object.keys(cambios))
     const version = this.versionDe(actual)
     const despues: Registro = { ...cambios, ACTUALIZADO: this.stamp(), VERSION: version + 1 }
     const antes: Registro = Object.fromEntries(Object.keys(despues).map((c) => [c, actual[c] ?? '']))
     const cambio: Cambio = { entidad: e, id, antes, despues, extra }
     await this.auditar(hash, requestId, ctx, cambio, libro)
-    await this.aplicar(cambio, libro, destino)
+    // ORD-POS-109 (H1): aplicar() vuelve a ubicar la fila por ID y VERSION después de auditar.
+    await this.aplicar(cambio, libro)
     await this.verificar(cambio)
     return conAviso(libro, { operacion: op, id, version: version + 1, repetida: false })
   }
@@ -504,7 +514,8 @@ export class EcoPipelineWriteService {
 
   /* ------------------------------------ Lectura y escritura ------------------------------------ */
 
-  /** Las cinco pestañas PIPE_* que escribe el servicio, con sus encabezados; sin ellas, 400 y nada se escribe. */
+  /** Las cinco pestañas PIPE_* que escribe el servicio, con sus encabezados; sin ellas, 400 y nada se escribe. El tope de
+   * filas lo mira `conCupo` después de replay(). */
   private async leer(): Promise<Libro> {
     let titulos: string[]
     let datos: Partial<Record<EcoWriteTab, unknown[][]>>
@@ -520,13 +531,10 @@ export class EcoPipelineWriteService {
     } catch {
       throw new OperationError('lectura-fallida')
     }
-    const libro = Object.fromEntries(ECO_WRITE_TABS.map((tab) => [tab, tabla(datos[tab] ?? [], columnasDe(tab), tab)])) as Libro
-    const tope = ECO_WRITE_TABS.find((tab) => libro[tab].filas.length >= MAX_DATA_ROWS)
-    if (tope) throw llena(tope)
-    return libro
+    return Object.fromEntries(ECO_WRITE_TABS.map((tab) => [tab, tabla(datos[tab] ?? [], columnasDe(tab), tab)])) as Libro
   }
 
-  private async releer(tab: EcoWriteTab, error: 'escritura-fallida' | 'verificacion-fallida'): Promise<Tabla> {
+  private async releer(tab: EcoWriteTab, error: 'lectura-fallida' | 'escritura-fallida' | 'verificacion-fallida'): Promise<Tabla> {
     try {
       return tabla((await this.store.read([tab]))[tab] ?? [], columnasDe(tab), tab)
     } catch {
@@ -560,6 +568,7 @@ export class EcoPipelineWriteService {
     const coincide = (r: Registro) => filas.length === 1 && Object.entries(r).every(([c, v]) => iguales(valor(t, filas[0]!, c), v))
     if (coincide(despues)) return conAviso(libro, { operacion: op, id: a.id, version, repetida: true })
     if ((alta && filas.length === 0) || (!alta && coincide(antes))) {
+      if (alta && t.filas.length >= MAX_DATA_ROWS) throw llena(tab)
       await this.aplicar(cambio, libro)
       await this.verificar(cambio)
       return conAviso(libro, { operacion: op, id: a.id, version, repetida: true })
@@ -599,17 +608,20 @@ export class EcoPipelineWriteService {
     }
   }
 
-  /** Relee la pestaña y ubica la fila por ID; solo vale si conserva la VERSION de antes (como `writeGuarded`). */
-  private async ubicar(e: Entidad, id: string, version: Celda): Promise<Destino> {
+  /** Relee la pestaña y ubica la fila por ID; solo vale si conserva la VERSION de antes (como `writeGuarded`). Antes de
+   * auditar, un fallo de la relectura es `lectura-fallida`; después, `escritura-fallida` (se completa al reintentar). */
+  private async ubicar(e: Entidad, id: string, version: Celda, error: 'lectura-fallida' | 'escritura-fallida'): Promise<Destino> {
     const { tab, idCol } = ENTIDADES[e]
-    const t = await this.releer(tab, 'escritura-fallida')
+    const t = await this.releer(tab, error)
     const indices = t.filas.flatMap((f, i) => (texto(t, f, idCol) === id ? [i] : []))
     if (indices.length !== 1 || !iguales(valor(t, t.filas[indices[0]!]!, 'VERSION'), version)) throw new OperationError('conflicto-concurrente')
     return { t, n: indices[0]! + 2 }
   }
 
-  /** Alta: fila al final. Edición: en la fila que `ubicar` encontró (la del roll-forward se ubica aquí). */
-  private async aplicar(cambio: Cambio, libro: Libro, destino?: Destino) {
+  /** Alta: fila al final. Edición: en la fila que `ubicar` encuentra en una relectura posterior a la auditoría; si la
+   * fila se movió, se escribe en su nueva posición y, si cambió su VERSION o su ID, 409 sin escribir (ORD-POS-109, H1).
+   * atajo: queda la ventana entre esta relectura y el update (Sheets no tiene escritura condicional); la cubre verificar(). */
+  private async aplicar(cambio: Cambio, libro: Libro) {
     const { tab } = ENTIDADES[cambio.entidad]
     if (Object.keys(cambio.antes).length === 0) {
       try {
@@ -619,7 +631,7 @@ export class EcoPipelineWriteService {
       }
       return
     }
-    const { t, n } = destino ?? await this.ubicar(cambio.entidad, cambio.id, cambio.antes.VERSION!)
+    const { t, n } = await this.ubicar(cambio.entidad, cambio.id, cambio.antes.VERSION!, 'escritura-fallida')
     try {
       await this.store.update(tab, n, Object.entries(cambio.despues).map(([c, v]) => ({ columna: t.indice.get(c)!, valor: v })))
     } catch {

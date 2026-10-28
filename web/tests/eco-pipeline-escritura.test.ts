@@ -607,7 +607,10 @@ class FallaStore extends InMemoryEcoStore {
   fallar: string | null = null
   llamadas: string[] = []
   antesDeReleer: (() => void) | null = null
+  /** ORD-POS-109: se corre una vez en la primera lectura posterior a la auditoría. */
+  despuesDeAuditar: (() => void) | null = null
   private lecturas = 0
+  private auditado = false
   constructor(datos: Partial<Record<string, unknown[][]>>) {
     super(RADAROS, datos)
   }
@@ -620,7 +623,12 @@ class FallaStore extends InMemoryEcoStore {
     this.llamadas.push(`read-${tabs.join(',')}`)
     this.lecturas += 1
     if (this.fallar === 'read' || (this.fallar === 'releer' && this.lecturas > 1)) throw new Error('HTTP 503')
+    if (this.fallar === 'releer-tras-auditar' && this.auditado) throw new Error('HTTP 503')
     if (this.lecturas > 1 && this.antesDeReleer) this.antesDeReleer()
+    if (this.auditado && this.despuesDeAuditar) {
+      this.despuesDeAuditar()
+      this.despuesDeAuditar = null
+    }
     return super.read(tabs)
   }
   async formulas(tab: EcoWriteTab, n: number) {
@@ -630,6 +638,7 @@ class FallaStore extends InMemoryEcoStore {
   async append(tab: EcoWriteTab, rows: Celda[][]) {
     this.llamadas.push(`append-${tab}`)
     if (this.fallar === `append-${tab}`) throw new Error('HTTP 500')
+    if (tab === 'PIPE_AUDITORIA') this.auditado = true
     if (this.fallar === 'corromper' && tab !== 'PIPE_AUDITORIA') return super.append(tab, rows.map((r) => r.map((v, i) => (i === 1 ? 'otro' : v))))
     return super.append(tab, rows)
   }
@@ -648,7 +657,7 @@ describe('criterio 4: auditoría antes de la entidad y verificación después (�
     expect(f.llamadas).toEqual(['tabs', expect.stringMatching(/^read-PIPE_PRODUCTOS,/), 'append-PIPE_AUDITORIA', 'append-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
     f.llamadas = []
     await mover(servicio(f), 'PRD-0001', 'SUGERIDO', 'EVALUANDO', 1)
-    expect(f.llamadas).toEqual(['tabs', expect.stringMatching(/^read-PIPE_PRODUCTOS,/), 'read-PIPE_PRODUCTOS', 'formulas', 'append-PIPE_AUDITORIA', 'update-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
+    expect(f.llamadas).toEqual(['tabs', expect.stringMatching(/^read-PIPE_PRODUCTOS,/), 'read-PIPE_PRODUCTOS', 'formulas', 'append-PIPE_AUDITORIA', 'read-PIPE_PRODUCTOS', 'update-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
   })
 
   it.each([
@@ -1077,5 +1086,70 @@ describe('ORD-POS-104: hallazgos no bloqueantes de ORD-POS-102', () => {
     expect(diseno).toMatch(/H3 \(BAJA\).*IDEA_ID/)
     const paso7 = diseno.slice(diseno.indexOf('7. **Verificar:**'), diseno.indexOf('8. **Revertir:**'))
     expect(paso7).toContain('IDEA_ID')
+  })
+})
+
+describe('ORD-POS-109: hallazgos no bloqueantes de ORD-POS-104', () => {
+  const relleno = (n: number) => Array.from({ length: n }, (_, i) => fila(COLUMNAS_AUDITORIA, { AUDIT_ID: `MANUAL-${i}` }))
+  const datosDe = (s: InMemoryEcoStore) => (s as unknown as { data: Map<string, unknown[][]> }).data
+
+  it('criterio 1 (H1): una fila insertada entre la auditoría y el update no desvía la edición; otra VERSION, 409 sin escribir', async () => {
+    const f = new FallaStore(libro())
+    // PRD-0002 está en la fila 3 al auditar; la inserción la pasa a la 4 y deja a PRD-0001 en la 3.
+    f.despuesDeAuditar = () => void datosDe(f).get('PIPE_PRODUCTOS')!.splice(1, 0, prd('PRD-0009', 'SUGERIDO'))
+    const editar = () => servicio(f).editarProducto('PRD-0002', parseEco('eco.producto.editar', { requestId: rid(), expectedVersion: 2, notas: 'ok' }), CTX)
+    await editar()
+    expect(f.llamadas.slice(-4)).toEqual(['append-PIPE_AUDITORIA', 'read-PIPE_PRODUCTOS', 'update-PIPE_PRODUCTOS', 'read-PIPE_PRODUCTOS'])
+    expect(registro(f, 'PIPE_PRODUCTOS', 'PRD-0002')).toMatchObject({ NOTAS: 'ok', VERSION: 3 })
+    for (const otro of ['PRD-0001', 'PRD-0009']) expect(registro(f, 'PIPE_PRODUCTOS', otro)).toMatchObject({ NOTAS: '', VERSION: 1 })
+
+    // La fila cambió de VERSION tras la auditoría: conflicto-concurrente y ningún update.
+    const g = new FallaStore(libro())
+    g.despuesDeAuditar = () => void datosDe(g).get('PIPE_PRODUCTOS')![2]!.splice(COLUMNAS_PRODUCTOS.indexOf('VERSION'), 1, 7)
+    expect(await codigo(servicio(g).editarProducto('PRD-0002', parseEco('eco.producto.editar', { requestId: rid(), expectedVersion: 2, notas: 'ok' }), CTX))).toBe('conflicto-concurrente')
+    expect(g.llamadas.some((l) => l.startsWith('update'))).toBe(false)
+    expect(registro(g, 'PIPE_PRODUCTOS', 'PRD-0002').NOTAS).toBe('')
+  })
+
+  it('criterio 2 (H2): en MAX_DATA_ROWS, el reintento ya aplicado es «repetida» y un alta nueva sigue con 409', async () => {
+    const f = new FallaStore(libro())
+    const svc = servicio(f)
+    const body = { requestId: rid(), nombre: 'En el tope' }
+    const primero = await svc.crearProducto(parseEco('eco.producto.crear', body), CTX)
+    const aud = datosDe(f).get('PIPE_AUDITORIA')!
+    aud.push(...relleno(MAX_DATA_ROWS - (aud.length - 1)))
+    expect(aud).toHaveLength(MAX_DATA_ROWS + 1)
+    f.llamadas = []
+    expect(await svc.crearProducto(parseEco('eco.producto.crear', body), CTX)).toMatchObject({ id: primero.id, repetida: true })
+    expect(await codigo(crearProducto(svc))).toBe('eco-pestana-llena')
+    expect(await codigo(mover(svc, 'PRD-0001', 'SUGERIDO', 'EVALUANDO', 1))).toBe('eco-pestana-llena')
+    expect(f.llamadas.some((l) => l.startsWith('append') || l.startsWith('update'))).toBe(false)
+    expect(tabla(f, 'PIPE_PRODUCTOS').filter((r) => r[0] === primero.id)).toHaveLength(1)
+  })
+
+  it('criterio 3 (SEGUNDO H1): la relectura previa a la auditoría responde lectura-fallida; la de aplicar(), escritura-fallida', async () => {
+    const f = new FallaStore(libro())
+    f.fallar = 'releer'
+    expect(await codigo(mover(servicio(f), 'PRD-0001', 'SUGERIDO', 'EVALUANDO', 1))).toBe('lectura-fallida')
+    expect(auditoria(f)).toHaveLength(0)
+    expect(new OperationError('lectura-fallida').message).not.toMatch(/auditor/i)
+
+    // Tras auditar falla la relectura de aplicar(): escritura-fallida, y el reintento lo completa (roll-forward).
+    const g = new FallaStore(libro())
+    g.fallar = 'releer-tras-auditar'
+    const b = { requestId: rid(), expectedVersion: 1, expectedEtapa: 'SUGERIDO', etapa: 'EVALUANDO' }
+    const correr = () => servicio(g).moverProducto('PRD-0001', parseMover(b), CTX)
+    expect(await codigo(correr())).toBe('escritura-fallida')
+    expect(auditoria(g).length).toBeGreaterThan(0)
+    expect(registro(g, 'PIPE_PRODUCTOS', 'PRD-0001').ETAPA).toBe('SUGERIDO')
+    g.fallar = null
+    expect((await correr()).repetida).toBe(true)
+    expect(registro(g, 'PIPE_PRODUCTOS', 'PRD-0001')).toMatchObject({ ETAPA: 'EVALUANDO', VERSION: 2 })
+  })
+
+  it('criterio 5: §10.1 dice cómo quedó cada hallazgo de ORD-POS-109', () => {
+    const diseno = readFileSync(path.join(__dirname, '..', '..', 'docs', 'diseno-eco-pipeline.md'), 'utf8')
+    const tramo = diseno.slice(diseno.indexOf('corregidos en ORD-POS-109'), diseno.indexOf('## 11.'))
+    for (const h of ['PRIMERO H1 (MEDIA)', 'PRIMERO H2 (BAJA)', 'SEGUNDO H1 (BAJA)']) expect(tramo).toContain(h)
   })
 })
