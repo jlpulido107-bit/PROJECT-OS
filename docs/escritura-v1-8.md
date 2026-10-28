@@ -168,6 +168,8 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
   - Cada transición del PM queda en `AUDITORIA` con `AUTORIZACION` (la cita o el dictamen con head y comentario).
 - **Prohibido (403, no escribe nada):** cancelar, registrar PR (salvo con la bandera de arriba), cerrar y ejecutar órdenes (`transicion-reservada-pm`),
   registrar tiempos y cualquier otro campo de tarea (`estado`, `bloqueo`, `tipo`, `responsable`). Tampoco puede fijar `bloqueo` al crear una tarea (403).
+  Cerrar una tarea (`POST …/tareas/<id>/completar`) tampoco: el proxy no deja pasar el token a esa ruta (401) y la API
+  responde `cierre-no-permitido` a toda petición con `Authorization`, aun con `TAREAS_CIERRE_PROPIETARIO` encendida (§7).
 - **Auditoría.** `ACTOR=agente-pm` y `;agente=pm` al final de `ORIGEN`. La idempotencia por `requestId` es la de siempre.
 - **Frecuencia.** Límite propio (clave `agente-pm`): ráfaga de 5 y 1 operación por minuto; al excederlo, 429.
   El humano tiene ráfaga de 10 y 1 cada 20 s.
@@ -188,3 +190,54 @@ Sustituye la escritura interina con el conector (DEC-POS-006); retirarla es una 
   `deploy.sh --desde-activa --quitar SEGUNDO_GEMINI_SUPERVISADO`. Ningún agente exporta esta variable ni despliega.
 - **Revocar.** Desplegar sin `SECRET_VERSION_PM_AGENT` (`unset SECRET_VERSION_PM_AGENT`, renderizar y `services replace`):
   la variable `PM_AGENT_TOKEN_SHA256` desaparece y el acceso del agente queda deshabilitado (401). La escritura humana no se toca.
+
+## 7. Cierre de tareas por el propietario (ORD-POS-106, DEC-POS-023)
+
+DEC-POS-023 (vigente solo si consta APROBADA en DECISIONES; ORD-POS-106): el propietario puede marcar una tarea
+como `COMPLETADO` desde el dashboard con su sesión de Google. Nunca con el token del agente PM. `CANCELADO` y reabrir
+siguen fuera del dashboard, y el PM sigue sin cerrar ni cambiar `ESTADO` o `BLOQUEO` (DEC-POS-005). Es un trabajo ALTO
+partido según DEC-POS-014: el código es inerte por defecto y solo el propietario lo activa.
+
+- **Bandera.** `TAREAS_CIERRE_PROPIETARIO`: solo el valor exacto `true` la enciende. Exige
+  `TAREAS_CIERRE_PROPIETARIO_EMAIL` con **un único** correo que además esté en `AUTH_ALLOWED_EMAILS`; una lista, un
+  valor que no sea correo o un correo fuera de la lista de acceso la dejan apagada (`tareasCierrePropietario` en
+  `web/src/lib/operations/config.ts`).
+- **Apagada (por defecto).** `POST /api/operaciones/tareas/<id>/completar` responde 422 `cierre-no-permitido` sin
+  escribir nada, y la página de la tarea no muestra el botón. La edición sigue rechazando `COMPLETADO` y `CANCELADO`.
+- **Encendida.** En `/tareas/<id>/editar`, solo la sesión del propietario ve **Marcar completada**. La confirmación
+  muestra `CRITERIO_TERMINADO` y una nota de cierre opcional (hasta 500 caracteres) que va solo a `AUDITORIA`
+  (`CAMPO` = `NOTA_CIERRE`), no a la tarea. Cualquier otro escritor recibe `cierre-no-permitido`.
+- **Transición.** Solo de una tarea abierta a `COMPLETADO`, con `expectedVersion` (`conflicto-version` si no coincide),
+  auditoría antes de la escritura, verificación posterior e idempotencia por `requestId` como en la edición. Una tarea ya
+  cerrada da `tarea-cerrada`. La operación es `tarea.completar` y no está en `AGENT_OPERATIONS`.
+- **Agente PM.** Toda petición con `Authorization` a esa ruta recibe `cierre-no-permitido` en la API; antes, el proxy
+  ni siquiera la deja pasar sin sesión. Su lista de operaciones y de campos no cambia.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+Requisitos: la escritura activa (`WRITE_MODE=sheets`) y la imagen que trae ORD-POS-106 (la orden se fusiona y se
+despliega antes). Ningún agente exporta estas variables ni despliega.
+
+```bash
+export TAREAS_CIERRE_PROPIETARIO=true
+export TAREAS_CIERRE_PROPIETARIO_EMAIL='<correo del propietario>'
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ TAREAS_CIERRE_PROPIETARIO» y «+ TAREAS_CIERRE_PROPIETARIO_EMAIL»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+Otro valor que `true`, una sola de las dos variables, un correo mal formado o una lista, o la falta de
+`WRITE_MODE=sheets` hacen fallar el render sin aplicar nada. `--desde-activa` las conserva en los despliegues siguientes.
+
+### Comprobar
+
+1. Con la sesión del propietario, abre `/tareas/<id>/editar` de una tarea de prueba abierta: aparece **Marcar
+   completada**. Con otra cuenta de escritura, no aparece.
+2. Marca la tarea de prueba como completada con una nota. En `/operaciones`, «Tarea completada» muestra `ESTADO`,
+   `VERSION` y `NOTA_CIERRE`, y la conciliación dice «Sin pendientes».
+3. En la hoja, la tarea queda en `COMPLETADO` con `VERSION` + 1. La nota no está en `TAREAS`.
+
+### Revertir
+
+`web/deploy/cloudrun/deploy.sh --desde-activa --quitar TAREAS_CIERRE_PROPIETARIO` (quita también el correo). El botón
+desaparece y la ruta vuelve a `cierre-no-permitido`. Las tareas ya completadas no se reabren solas: reabrir sigue fuera
+del dashboard y lo hace el propietario en la hoja, con `AUDITORIA` como guía.

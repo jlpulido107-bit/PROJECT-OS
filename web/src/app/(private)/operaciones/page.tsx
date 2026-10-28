@@ -13,6 +13,7 @@ export const metadata: Metadata = { title: 'Operaciones' }
 const OPS: Record<string, string> = {
   'tarea.crear': 'Tarea creada',
   'tarea.editar': 'Tarea editada',
+  'tarea.completar': 'Tarea completada',
   'tiempo.registrar': 'Tiempo registrado',
   'decision.crear': 'Decisión registrada',
 }

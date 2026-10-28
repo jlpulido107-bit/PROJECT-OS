@@ -176,6 +176,12 @@ try {
   const close = await writer.write('PATCH', '/api/operaciones/tareas/POS-001', { requestId: randomUUID(), expectedVersion: 2, changes: { estado: 'COMPLETADO' } })
   const clj = await json(close)
   check('cerrar tarea → 422 cierre-no-permitido', close.status === 422 && clj.body?.error?.codigo === 'cierre-no-permitido', close.status)
+  // ORD-POS-106: sin TAREAS_CIERRE_PROPIETARIO, la ruta del propietario tampoco cierra y no hay botón.
+  const completar = await writer.write('POST', '/api/operaciones/tareas/POS-001/completar', { requestId: randomUUID(), expectedVersion: 2 })
+  const cpj = await json(completar)
+  check('completar sin la bandera → 422 cierre-no-permitido', completar.status === 422 && cpj.body?.error?.codigo === 'cierre-no-permitido', completar.status)
+  const editar = await (await writer.page('/tareas/POS-001/editar')).text()
+  check('sin la bandera no aparece «Marcar completada»', editar.includes('Guardar cambios') && !editar.includes('Marcar completada'))
   const closed = await writer.write('PATCH', '/api/operaciones/tareas/DEMO-001', { requestId: randomUUID(), expectedVersion: 1, changes: { prioridad: 'BAJA' } })
   const cdj = await json(closed)
   check('editar tarea cerrada → 422 tarea-cerrada', closed.status === 422 && cdj.body?.error?.codigo === 'tarea-cerrada', closed.status)

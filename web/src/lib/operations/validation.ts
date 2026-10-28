@@ -55,6 +55,14 @@ export interface UpdateTaskCommand {
   changes: TaskChanges
 }
 
+/** Cierre de una tarea a COMPLETADO por el propietario (ORD-POS-106). La nota solo va a AUDITORIA. */
+export interface CompleteTaskCommand {
+  requestId: string
+  tareaId: string
+  expectedVersion: number
+  nota: string | null
+}
+
 export interface LogTimeCommand {
   requestId: string
   tareaId: string
@@ -310,6 +318,20 @@ export function parseUpdateTask(tareaId: string, body: unknown): UpdateTaskComma
   for (const [key, message] of Object.entries(c.errors)) top.setError(key, message)
   top.done()
   return { requestId, tareaId: id, expectedVersion: version as number, changes }
+}
+
+/** Cierre del propietario (ORD-POS-106): solo requestId, versión esperada y una nota opcional; nunca el estado destino. */
+export function parseCompleteTask(tareaId: string, body: unknown): CompleteTaskCommand {
+  const input = asObject(body)
+  const c = new Checker(input, ['requestId', 'expectedVersion', 'nota'])
+  const requestId = c.requestId()
+  const id = tareaId.trim().toUpperCase()
+  if (!ENTITY_ID.test(id)) c.setError('tareaId', 'ID de tarea no válido')
+  const version = input.expectedVersion
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 0) c.setError('expectedVersion', 'Versión esperada requerida')
+  const nota = c.text('nota', { required: false, max: LIMITS.notaCierre, multiline: true })
+  c.done()
+  return { requestId, tareaId: id, expectedVersion: version as number, nota }
 }
 
 /** Valida que `fecha` no sea futura ni anterior al límite, respecto a `today` (Mérida). */

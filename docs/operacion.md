@@ -23,7 +23,7 @@ Cada función corre en una sesión separada; el revisor nunca es la sesión que 
 | Entorno | Qué corre ahí | Qué nunca corre ahí | Fuente |
 | --- | --- | --- | --- |
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
-| POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO con [`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh); marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el mismo head (DEC-POS-019; gemini-supervisado según DEC-POS-022, solo si el propietario encendió `SEGUNDO_GEMINI_SUPERVISADO`); registrar el PR detectado (ENVIADA → PR_ABIERTO) solo si el propietario encendió `PM_PUEDE_REGISTRAR_PR` (ORD-POS-063) | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
+| POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO con [`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh); marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el mismo head (DEC-POS-019; gemini-supervisado según DEC-POS-022, solo si el propietario encendió `SEGUNDO_GEMINI_SUPERVISADO`); registrar el PR detectado (ENVIADA → PR_ABIERTO) solo si el propietario encendió `PM_PUEDE_REGISTRAR_PR` (ORD-POS-063) | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas, también cerrarlas con `…/completar` (DEC-POS-023: solo el propietario) | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
 | POS · Ideas | Conversar las ideas con el propietario y entregar paquetes `PAQ-AAAA-MM-DD-NN` al PM, cada uno terminado en «Responde sí PAQ-… para autorizar las altas»; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS, salvo la escritura directa limitada en `_contexto/`, `*/contexto.md`, `*/referencia/` y la sección `## Referencia` de los `indice.md` ([notas](notas.md#escritura-directa-limitada-pos--ideas)); escribir en la hoja; tomar un «sí PAQ» por algo más que altas: nunca aprueba, envía, cancela ni cierra | Orden ORD-POS-056 y ORD-POS-060 (DEC-POS-013); [notas](notas.md) |
 | Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
 
@@ -135,7 +135,8 @@ copiada a [estado actual](estado-actual.md) con [`cerrar-orden`](../.claude/skil
 Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-POS-011, DEC-POS-013 y DEC-POS-014.
 
 - Cancelar y cerrar órdenes; aprobar o enviar órdenes de riesgo ALTO; decidir las decisiones; cambiar `ESTADO` o
-  `BLOQUEO` de tareas en la hoja.
+  `BLOQUEO` de tareas en la hoja. Desde el dashboard, con su sesión, puede marcar una tarea COMPLETADA (DEC-POS-023,
+  vigente solo si consta APROBADA en DECISIONES; ORD-POS-106) solo si encendió `TAREAS_CIERRE_PROPIETARIO`; cancelar y reabrir tareas siguen en la hoja.
 - Dar el «sí» literal a cada escritura del PM (vale dado al PM y reenviado al escritor, DEC-POS-008). Con ese «sí»,
   citado con la orden y su fecha, el PM aprueba y envía órdenes BAJO o MEDIO, y marca REVISADA solo con dictamen
   CONFORME de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el mismo head (DEC-POS-019; gemini-supervisado según DEC-POS-022) (DEC-POS-011, ORD-POS-057).
@@ -147,5 +148,7 @@ Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-
   encender la bandera en producción, crear o montar secretos). Ningún agente la aplica. Ejemplo: `PM_PUEDE_REGISTRAR_PR`
   (ORD-POS-063), que deja al PM registrar el PR detectado, la enciende solo el propietario con `deploy.sh`, después de
   registrar la decisión que amplía DEC-POS-011 ([`escritura-v1-8.md` §6](escritura-v1-8.md)).
+  Lo mismo con `TAREAS_CIERRE_PROPIETARIO` (ORD-POS-106, DEC-POS-023): comandos, comprobación y reversión en
+  [`escritura-v1-8.md` §7](escritura-v1-8.md#7-cierre-de-tareas-por-el-propietario-ord-pos-106-dec-pos-023).
 - Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP.
 - Habilitar cualquier ejecución con horario (`schedule`), tras aprobar una prueba real.

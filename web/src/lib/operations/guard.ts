@@ -1,7 +1,7 @@
 import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, LIMITS, type OperationName } from './constants'
-import { isWriter, pmPuedeRegistrarPr, writeModeStatus } from './config'
+import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
 
@@ -95,6 +95,8 @@ export async function evaluateWriteRequest(
   ctx: WriteRequestContext,
 ): Promise<{ actor: string; body: unknown; agent?: true }> {
   const authorization = request.headers.get('authorization')
+  // DEC-POS-023 y DEC-POS-005: con cualquier Authorization (token del PM o no), cerrar una tarea nunca, con o sin bandera.
+  if (authorization !== null && ctx.operation === 'tarea.completar') throw new OperationError('cierre-no-permitido')
   if (authorization !== null) return evaluateAgentRequest(request, ctx, authorization)
   if (!ctx.email) throw new OperationError('no-autenticado')
   if (!isEmailAllowed(ctx.email, parseAllowedEmails(ctx.env.AUTH_ALLOWED_EMAILS))) {
@@ -113,6 +115,8 @@ export async function evaluateWriteRequest(
 
   if (writeModeStatus(ctx.env).mode === 'disabled') throw new OperationError('escritura-deshabilitada')
   if (!isWriter(ctx.email, ctx.env)) throw new OperationError('sin-permiso-escritura')
+  // ORD-POS-106: solo el propietario con TAREAS_CIERRE_PROPIETARIO encendida; apagada, o con otro escritor, no se cierra.
+  if (ctx.operation === 'tarea.completar' && !puedeCerrarTareas(ctx.email, ctx.env)) throw new OperationError('cierre-no-permitido')
 
   const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
   if (type !== 'application/json') throw new OperationError('tipo-contenido')

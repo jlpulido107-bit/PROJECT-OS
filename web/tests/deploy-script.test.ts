@@ -214,6 +214,30 @@ describe('deploy.sh', () => {
       expect(apagada.out).toMatch(/Variables quitadas:\n  - SEGUNDO_GEMINI_SUPERVISADO\n/)
     })
 
+    it('TAREAS_CIERRE_PROPIETARIO (ORD-POS-106): se conserva de la activa sin imprimir el correo y --quitar retira las dos', () => {
+      const correo = 'dueno-sintetico@example.com'
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push(
+        { name: 'TAREAS_CIERRE_PROPIETARIO', value: 'true' }, { name: 'TAREAS_CIERRE_PROPIETARIO_EMAIL', value: correo })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('TAREAS_CIERRE_PROPIETARIO')
+      expect(sigue.out).not.toContain(correo)
+      for (const nombre of ['TAREAS_CIERRE_PROPIETARIO', 'TAREAS_CIERRE_PROPIETARIO_EMAIL']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        expect(apagada.out).toMatch(/Variables quitadas:\n  - TAREAS_CIERRE_PROPIETARIO\n  - TAREAS_CIERRE_PROPIETARIO_EMAIL\n/)
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, TAREAS_CIERRE_PROPIETARIO: 'true', TAREAS_CIERRE_PROPIETARIO_EMAIL: correo } })
+      expect(nueva.code).toBe(0)
+      for (const nombre of ['TAREAS_CIERRE_PROPIETARIO', 'TAREAS_CIERRE_PROPIETARIO_EMAIL']) expect(nueva.out).toContain(`  + ${nombre}\n`)
+      expect(nueva.out).not.toContain(correo)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, TAREAS_CIERRE_PROPIETARIO: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('RADAROS_SHEET_ID (ORD-POS-067): se conserva de la activa como literal, sin imprimir el valor, y se quita con --quitar', () => {
       const activa = JSON.parse(full)
       const id = 'LIBRO_RADAROS_SINTETICO_0123456789'
