@@ -101,8 +101,11 @@ Cuando el propietario pida pasar ideas al PM como tareas, decisiones u órdenes,
   (`PAQ-2026-10-22-01`, luego `-02`). Nunca reutilices un ID.
 - Cada alta propuesta con sus campos completos, como los pide [`pm-escribir-api`](../pm-escribir-api/SKILL.md).
 - Termina **cada** paquete con la línea: «Responde sí PAQ-AAAA-MM-DD-NN para autorizar las altas», con su ID.
+- Un paquete del rol Tiempos ([`planear-tiempo`](../planear-tiempo/SKILL.md)) llega sin ID: ponle el siguiente del
+  día y preséntalo igual, sin cambiar su contenido.
 
-El «sí PAQ» autoriza solo esas altas, tras verificarlo el PM (DEC-POS-013); nunca aprueba, envía, cancela ni cierra.
+El «sí PAQ» autoriza solo esas altas y, en un paquete del rol Tiempos, sus ediciones de `HORAS_ESTIMADAS`, `FECHA_PLAN`
+e `HITO_ID` (DEC-POS-024), tras verificarlo el PM (DEC-POS-013); nunca aprueba, envía, cancela ni cierra.
 Tú no das de alta nada: esperas el mensaje del PM con los IDs creados.
 
 ## Respuesta
