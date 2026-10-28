@@ -41,6 +41,11 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   DEC-POS-013 (enmienda de DEC-POS-008): el «sí PAQ-AAAA-MM-DD-NN» que el propietario da en la sesión POS · Ideas
   autoriza solo las altas de ese paquete, y solo después de que el PM lo verifica en la fuente (`pm-escribir-api`,
   sección «Altas con sí PAQ»); aprobar, enviar, cancelar y cerrar no cambian: un «sí PAQ» nunca vale para ellos.
+  Rol Tiempos (condicionado a la aprobación de DEC-POS-024, hoy PENDIENTE): una sesión de Claude con la etiqueta
+  `rol:tiempos` y la skill `planear-tiempo` lee la hoja (solo lectura) y la vista de Planificación y propone; no escribe
+  en Sheets ni programa rutinas, y nunca cierra, cancela ni cambia ESTADO o BLOQUEO. Si DEC-POS-024 consta APROBADA, su
+  «sí PAQ» verificado por el PM autoriza solo `tarea.editar` de HORAS_ESTIMADAS, FECHA_PLAN e HITO_ID (enmienda de
+  DEC-POS-013 solo para esos campos); CAPACIDAD_SEMANAL e HITOS los registra el propietario.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.

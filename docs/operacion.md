@@ -13,6 +13,7 @@ decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-23. Si algo a
 | Primer revisor | Revisa a ciegas (orden, diff y contrato, sin la descripción del PR) | Sonnet | DEC-POS-008; [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
 | Segundo revisor | Solo en MEDIO sensible, a ciegas y sin el dictamen del primero | Fable 5.1; desde el 2026-11-03, si el propietario lo activa, Sonnet supervisando a Gemini (nunca Opus) | DEC-POS-008, DEC-POS-019, DEC-POS-022; [delegación](delegacion-codex.md#medio-sensible-y-segundo-gemini-supervisado); [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md) |
 | Corrector | Corrige en el mismo PR, máximo 2 rondas por orden | Opus | DEC-POS-003, DEC-POS-008; [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
+| Tiempos | Condicionado a DEC-POS-024 (PENDIENTE). Lunes: propone `HORAS_ESTIMADAS`, `FECHA_PLAN` e `HITO_ID` como paquete `PAQ` para el PM y avisa de lo que parece terminado; diario: plan del día desde /planificacion; viernes: corte contra `TIEMPOS`. Lee la hoja (solo lectura); nunca escribe en Sheets, nunca cierra, cancela ni cambia `ESTADO` o `BLOQUEO`, y no programa rutinas. `CAPACIDAD_SEMANAL` e `HITOS` son del propietario | Claude (sesión `rol:tiempos`) | DEC-POS-024 (PENDIENTE); ORD-POS-107; [`planear-tiempo`](../.claude/skills/planear-tiempo/SKILL.md), que reutiliza [`revisar-desviaciones`](../.claude/skills/revisar-desviaciones/SKILL.md) |
 | Agente de finanzas | Por corte (días 15 y fin de mes): rendimiento de `reporte-consumo` y, con el total de factura que da el propietario, el cargo extra o el cierre «sin cargo», solo por `POST /api/finanzas/agente/…` con su token. Nunca estima, edita, borra ni registra la suscripción; inerte hasta que el propietario lo active ([/finanzas v3 §8.2](diseno-finanzas-v3.md#82-activación-solo-el-propietario-tras-aprobar-dec-pos-018-fusionar-y-desplegar-f-3)) | Claude | DEC-POS-018 (PENDIENTE); ORD-POS-092; [diseño v3](diseno-finanzas-v3.md) |
 
 Cada función corre en una sesión separada; el revisor nunca es la sesión que implementó y usa otro modelo (DEC-POS-002,
@@ -143,6 +144,9 @@ Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-
 - O dar el «sí PAQ-AAAA-MM-DD-NN» en POS · Ideas (DEC-POS-013, enmienda de DEC-POS-008): autoriza solo las altas de
   ese paquete, después de que el PM lo verifica en la fuente; aprobar, enviar, cancelar y cerrar no cambian
   ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013)).
+  Si DEC-POS-024 consta APROBADA, el «sí PAQ» de un paquete del rol Tiempos autoriza también, y solo, `tarea.editar`
+  de `HORAS_ESTIMADAS`, `FECHA_PLAN` e `HITO_ID`, tras verificarlo el PM en la sesión `rol:tiempos`
+  ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#ediciones-de-tiempo-con-sí-paq-condicional-a-dec-pos-024)).
 - Fusionar PRs, desplegar y cerrar tareas e issues.
 - Aplicar la activación del carril ALTO (DEC-POS-014): correr el script que enciende el mecanismo inerte (desplegar,
   encender la bandera en producción, crear o montar secretos). Ningún agente la aplica. Ejemplo: `PM_PUEDE_REGISTRAR_PR`
