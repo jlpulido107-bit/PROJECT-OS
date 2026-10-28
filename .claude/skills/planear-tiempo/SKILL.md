@@ -1,12 +1,12 @@
 ---
 name: planear-tiempo
-description: Rol Tiempos de PROJECT-OS (condicional a DEC-POS-024). Mantiene la planificación al día sin escribir en la hoja. LUNES propone HORAS_ESTIMADAS, FECHA_PLAN e HITO_ID de las tareas abiertas, cierres probables con evidencia y vencidas por reprogramar, y arma solo las ediciones de esos tres campos como paquete PAQ para el PM; DIARIO da el plan del día leído de /planificacion; VIERNES compara lo planeado con TIEMPOS. Usar cuando el propietario diga «planea la semana», «plan del día», «corte del viernes» o /planear-tiempo.
+description: Rol Tiempos de PROJECT-OS (DEC-POS-024 APROBADA). Mantiene la planificación al día sin escribir en la hoja. LUNES propone HORAS_ESTIMADAS, FECHA_PLAN e HITO_ID de las tareas abiertas, cierres probables con evidencia, vencidas por reprogramar, proyectos e hitos sin trabajo abierto y las altas de tareas que falten, y lo entrega como paquete sin ID a POS · Ideas; MEDIA SEMANA hace lo mismo con los días que quedan; DIARIO da el plan del día leído de /planificacion y pide los minutos reales de ayer; VIERNES compara lo planeado con TIEMPOS. Usar cuando el propietario diga «planea la semana», «replanea lo que queda de la semana», «plan del día», «corte del viernes» o /planear-tiempo.
 ---
 
 # Planear tiempo (rol Tiempos)
 
-Rol **condicional a DEC-POS-024** (PENDIENTE): mientras el propietario no la apruebe en `DECISIONES`, esta skill solo
-da lecturas y propuestas para conversar; ningún paquete suyo se escribe. Cómo encaja con los demás roles:
+Rol vigente con **DEC-POS-024 APROBADA** (2026-10-28, según la hoja): sus paquetes los escribe el PM solo con el
+«sí PAQ» verificado del propietario. Cómo encaja con los demás roles:
 [`docs/operacion.md`](../../../docs/operacion.md#roles-y-modelos).
 
 ## Reglas
@@ -29,22 +29,37 @@ da lecturas y propuestas para conversar; ningún paquete suyo se escribe. Cómo 
 ## Fuentes (solo lectura)
 
 1. **La hoja** `16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic`, con el conector de Google Drive y `read_file_content`,
-   **solo lectura**: `TAREAS` (`TAREA_ID`, `PROYECTO_ID`, `HITO_ID`, `TITULO`, `ESTADO`, `PRIORIDAD`, `FECHA_PLAN`,
-   `FECHA_LIMITE`, `HORAS_ESTIMADAS`, `BLOQUEO`, `VERSION`), `HITOS`, `ORDENES_CODEX`, `DEPENDENCIAS`,
-   `CAPACIDAD_SEMANAL`, `PLAN_DIARIO`, `PLAN_ITEMS` y `TIEMPOS` (columnas en
+   **solo lectura**: `PROYECTOS`, `TAREAS` (`TAREA_ID`, `PROYECTO_ID`, `HITO_ID`, `TITULO`, `ESTADO`, `PRIORIDAD`,
+   `FECHA_PLAN`, `FECHA_LIMITE`, `HORAS_ESTIMADAS`, `BLOQUEO`, `VERSION`), `HITOS`, `ORDENES_CODEX`, `DEPENDENCIAS`,
+   `DECISIONES`, `CAPACIDAD_SEMANAL`, `PLAN_DIARIO`, `PLAN_ITEMS` y `TIEMPOS` (columnas en
+   [`web/src/lib/schema.ts`](../../../web/src/lib/schema.ts); las de planeación, también en
    [`v1-5-planning-contract.md` §2](../../../docs/v1-5-planning-contract.md)).
 2. **La vista `/planificacion`** del dashboard (o el JSON de `/api/planificacion`), que pide sesión: la pega el
    propietario. Si no la tienes, dilo y no reimplementes el motor del planificador.
 3. **GitHub** del repositorio del proyecto: PRs `[ORD-` abiertos y fusionados.
 
+## Si no encuentras esta skill
+
+Claude Code carga las skills de `.claude/skills/` del checkout **al iniciar la sesión**: si el directorio de trabajo es
+el repositorio, salen con su nombre (`planear-tiempo`); si es una carpeta con varios repositorios, salen con el prefijo
+de su carpeta (`PROJECT-OS:planear-tiempo`). Una sesión cuyo checkout es anterior a la fusión (ORD-POS-107, #249) o
+está en una rama sin el archivo no la ve, aunque esté en `main`. **Hipótesis** sobre la primera corrida (2026-10-28):
+su checkout no tenía el archivo, por una de esas dos causas. Qué hacer: `git fetch origin main` y lee
+`.claude/skills/planear-tiempo/SKILL.md` de `origin/main` (`git show origin/main:.claude/skills/planear-tiempo/SKILL.md`)
+y síguelo; para que salga en la lista, abre una sesión nueva desde `main` al día. Nunca la reconstruyas de memoria.
+
 ## Formato del propietario
 
-Toda respuesta, en los tres modos:
+Toda respuesta, en todos los modos, tiene **máximo 5 secciones**, en este orden (omite las que no apliquen):
 
 1. **Acción primero:** la primera línea dice qué hacer ahora.
 2. **Pasos numerados**, cada uno con sus **minutos** estimados.
-3. **Listas de 5 o menos**; lo que sobre va en una línea «y N más: …» con los IDs.
-4. Última línea: `Siguiente: <la próxima acción concreta>`.
+3. **Alertas:** cierres probables, vencidas, huecos y desviaciones, juntos.
+4. **Paquete** para POS · Ideas, si lo hay.
+5. Última línea: `Siguiente: <la próxima acción concreta>`.
+
+Los pasos de cada modo son tu trabajo, no secciones de la respuesta. **Listas de 5 o menos**; lo que sobre va en una
+línea «y N más: …» con los IDs.
 
 ## Modo LUNES (planear la semana)
 
@@ -59,26 +74,32 @@ Toda respuesta, en los tres modos:
 5. **Huecos:** proyectos activos sin hito vigente (abierto y con `FECHA_OBJETIVO` ≥ hoy) y filas de `DEPENDENCIAS`
    viejas (activas con una tarea, de cualquiera de los dos lados, ya `COMPLETADO` o `CANCELADO`). Se señalan, no se
    proponen como cambios: hitos y dependencias son del propietario.
-6. **Desviaciones:** sigue [`revisar-desviaciones`](../revisar-desviaciones/SKILL.md) y resume su resultado en 5 líneas o menos.
-7. **Arma el paquete** (ver abajo) solo con las ediciones del paso 2.
+6. **Sin trabajo abierto:** señala (a) los proyectos activos con trabajo pendiente (un hito abierto, una orden sin
+   cerrar o un criterio del hito sin cumplir) que no tienen ninguna tarea abierta, y (b) los hitos aún `PENDIENTE` (o
+   abiertos) cuyas tareas están todas `COMPLETADO` o `CANCELADO`. Para lo que falte, propón **altas de tareas**
+   (`tarea.crear` con los campos que pide [`pm-escribir-api`](../pm-escribir-api/SKILL.md)), nunca ediciones de
+   `ESTADO`: cerrar el hito es del propietario.
+7. **Desviaciones:** sigue [`revisar-desviaciones`](../revisar-desviaciones/SKILL.md) y resume su resultado en 5 líneas o menos.
+8. **Arma el paquete** (ver abajo) con las ediciones del paso 2 y las altas del paso 6.
 
-### Paquete PAQ para el PM
+## Modo MEDIA SEMANA (replanear lo que queda)
 
-- Solo `tarea.editar` de `HORAS_ESTIMADAS` (`horasEstimadas`), `FECHA_PLAN` (`fechaPlan`) e `HITO_ID` (`hitoId`);
-  ningún otro campo y ninguna alta, transición, cierre ni cancelación.
-- Una línea por edición: `TAREA_ID`, `VERSION` leída, campo, valor actual → valor propuesto, motivo.
-- El ID `PAQ-AAAA-MM-DD-NN` lo pone POS · Ideas, con la numeración de
-  [`revisar-ideas`](../revisar-ideas/SKILL.md#paquetes-para-el-pm): entrégale el paquete sin ID y ella lo presenta al
-  propietario con su línea «Responde sí PAQ-AAAA-MM-DD-NN para autorizar las altas». El «sí PAQ» solo vale dado en
-  POS · Ideas y verificado por el PM ([`pm-escribir-api`](../pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013));
-  el PM escribe, nunca tú. Mientras DEC-POS-024 no esté aprobada, el paquete es solo una propuesta.
+Como LUNES, pero solo con los días que quedan de la semana ISO (de hoy al domingo, hoy incluido):
+
+1. **Pregunta las horas** que quedan. Como referencia, da la capacidad proporcional (**cálculo**):
+   `HORAS_DISPONIBLES` de `CAPACIDAD_SEMANAL` × días que quedan ÷ 7, con ambos números.
+2. Sigue los pasos 2 a 8 de LUNES con dos cambios: la suma de horas no pasa de las horas que quedan, y toda
+   `FECHA_PLAN` propuesta cae entre hoy y el domingo.
 
 ## Modo DIARIO (plan del día)
 
 1. Lee el día en `/planificacion` (fuente 2). Sin la vista, dilo y para: no lo calcules a mano.
 2. Da **máximo 5 puntos**, en el orden de la vista, cada uno con `TAREA_ID`, título corto y minutos.
 3. Marca lo que esté bloqueado o dependa de otra tarea abierta; no lo reordenes ni lo desbloquees.
-4. Sin escribir y sin paquete.
+4. **Pregunta los minutos reales de ayer**, por tarea. Si DEC-POS-025 consta `APROBADA` en `DECISIONES` (léela),
+   inclúyelos en el paquete como filas de `TIEMPOS` (`TAREA_ID`, `FECHA` de ayer, `MINUTOS_REALES`, `TIPO_TRABAJO`);
+   si está `PENDIENTE` o no existe, solo anótalos en la respuesta, sin paquete.
+5. Sin escribir; el paquete, solo el del paso 4.
 
 ## Modo VIERNES (corte de la semana)
 
@@ -87,6 +108,23 @@ Toda respuesta, en los tres modos:
 2. **Pasa a la semana siguiente:** lo planeado sin completar, con sus minutos pendientes.
 3. **Huecos de datos:** tareas con tiempo real sin plan o con plan sin tiempo real.
 4. Sin escribir; las propuestas de fechas nuevas esperan al modo LUNES.
+
+## Paquete para POS · Ideas
+
+- Solo puede llevar: `tarea.editar` de `HORAS_ESTIMADAS` (`horasEstimadas`), `FECHA_PLAN` (`fechaPlan`) e `HITO_ID`
+  (`hitoId`); altas de tareas (`tarea.crear`); y, con DEC-POS-025 aprobada, filas de `TIEMPOS`. Ningún otro campo ni
+  operación: ninguna transición, cierre, cancelación, decisión ni orden.
+- Una línea por edición: `TAREA_ID`, `VERSION` leída, campo, valor actual → valor propuesto, motivo. Una línea por alta,
+  con sus campos completos.
+- **Va sin ID.** Entrégalo a POS · Ideas (sesión con la etiqueta `rol:ideas`): con un solo mensaje si puedes enviar
+  mensajes entre sesiones, o en un bloque que el propietario pegue en esa sesión. POS · Ideas le pone el
+  `PAQ-AAAA-MM-DD-NN` con la numeración de [`revisar-ideas`](../revisar-ideas/SKILL.md#paquetes-para-el-pm) y lo
+  presenta al propietario.
+- **No pidas** al propietario que confirme o invente un ID, ni que dé el «sí» aquí o en el chat del PM: el «sí PAQ»
+  solo vale dado en POS · Ideas y verificado por el PM
+  ([`pm-escribir-api`](../pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013), DEC-POS-013). El PM escribe, nunca tú.
+- Las filas de `TIEMPOS` las escribe el PM solo si `pm-escribir-api` le da esa vía; hoy `tiempo.registrar` no está
+  entre las operaciones del agente (`AGENT_OPERATIONS`), así que quedan como propuesta.
 
 ## Límites
 
