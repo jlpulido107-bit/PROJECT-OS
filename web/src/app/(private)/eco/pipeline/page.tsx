@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { Badge, Empty, Section, StateBadge, Text } from '@/components/ui'
 import { ColumnaSoltable, TableroEditable, TarjetaMovible } from '@/components/eco/tablero-escritura'
+import { FormularioEco } from '@/components/eco/formularios-pipeline'
 import { writeAccess } from '@/components/operations/write-access'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
@@ -9,6 +10,8 @@ import {
   ETAPAS, ETIQUETAS_ETAPA, enEtapa, filtrarTarjetas, paraLector, type PipelineVista, type Tarjeta,
 } from '@/lib/radaros/pipeline'
 import { ecoPipelineCanWrite } from '@/lib/radaros/pipeline-escritura-config'
+import { CAMPOS, type EcoCampoOperacion } from '@/lib/radaros/pipeline-escritura-validacion'
+import { versionDeFila } from '@/lib/radaros/pipeline-formularios'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
 
 export const metadata: Metadata = { title: 'Pipeline de ECOMMERCE' }
@@ -61,6 +64,13 @@ function Tabla({ filas, columnas, label, clave, enlace }: {
       </table>
     </div>
   )
+}
+
+/** ORD-POS-110: formulario de edición con la VERSION de la fila; la clave lo rehace cuando la hoja sube la versión. */
+function Editar({ titulo, ruta, id, op, fila }: { titulo: string; ruta: string; id: string; op: EcoCampoOperacion; fila: Fila }) {
+  const version = versionDeFila(fila.VERSION)
+  if (version === null) return <p className="small muted">{titulo}: sin VERSION válida; no se edita desde aquí.</p>
+  return <FormularioEco key={`${id}-${version}`} titulo={titulo} url={`/api/eco/pipeline/${ruta}/${encodeURIComponent(id)}`} campos={CAMPOS[op]} iniciales={fila} version={version} />
 }
 
 const fichaProducto = (id: string) => `/eco/pipeline?producto=${encodeURIComponent(id)}#ficha-producto`
@@ -170,7 +180,7 @@ function Columna({ e, lista, editable }: { e: (typeof ETAPAS)[number]; lista: Ta
   )
 }
 
-function FichaProducto({ v, t }: { v: PipelineVista; t: Tarjeta }) {
+function FichaProducto({ v, t, editable }: { v: PipelineVista; t: Tarjeta; editable: boolean }) {
   const f = t.fila
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas.filter((c) => c.PRODUCTO_ID === t.id) : []
   const embs = v.embarques.estado === 'ok' ? v.embarques.datos.filas.filter((e) => e.PRODUCTO_ID === t.id) : []
@@ -188,6 +198,7 @@ function FichaProducto({ v, t }: { v: PipelineVista; t: Tarjeta }) {
         {f.MOTIVO_DESCARTE ? <Dato label="Motivo de descarte" value={f.MOTIVO_DESCARTE} /> : null}
       </dl>
       {f.IDEA_ID ? <p className="small"><a href="/eco#ranking">Datos vivos de la idea en el ranking de /eco</a></p> : null}
+      {editable ? <Editar titulo="Editar producto" ruta="productos" id={t.id} op="eco.producto.editar" fila={f} /> : null}
       <h3>Keepa (foto)</h3>
       <dl className="meta">
         <Dato label="Fecha" value={f.KEEPA_FECHA} /><Dato label="Precio MXN prom. 90 d" value={f.KEEPA_PRECIO_MXN_AVG90} />
@@ -207,6 +218,12 @@ function FichaProducto({ v, t }: { v: PipelineVista; t: Tarjeta }) {
             columnas={['COTIZACION_ID', 'PROVEEDOR_ID', 'ESTADO', 'PRECIO_UNIT', 'MONEDA', 'MOQ', 'PLAZO_PRODUCCION_DIAS', 'INCOTERM', 'COSTO_ATERRIZADO_MXN', 'MUESTRA_ESTADO']} />
         ) : <Empty>Sin cotizaciones.</Empty>}
       </EstadoPipe>
+      {editable ? (
+        <>
+          {cots.map((c) => c.COTIZACION_ID ? <Editar key={c.COTIZACION_ID} titulo={`Editar cotización ${c.COTIZACION_ID}`} ruta="cotizaciones" id={c.COTIZACION_ID} op="eco.cotizacion.editar" fila={c} /> : null)}
+          <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} iniciales={{ PRODUCTO_ID: t.id }} />
+        </>
+      ) : null}
       <h3>Seguimiento</h3>
       {t.alertas.length ? (
         <ul className="list" aria-label="Seguimiento vencido">{t.alertas.map((a, i) => <li key={i}><Badge tone="danger">Vencida</Badge> {a.detalle}</li>)}</ul>
@@ -222,6 +239,12 @@ function FichaProducto({ v, t }: { v: PipelineVista; t: Tarjeta }) {
             columnas={['EMBARQUE_ID', 'COTIZACION_ID', 'UNIDADES', 'ESTADO', 'FECHA_PAGO', 'FECHA_SALIDA', 'FECHA_LLEGADA_ESPERADA', 'FECHA_LLEGADA']} />
         ) : <Empty>Sin embarques.</Empty>}
       </EstadoPipe>
+      {editable ? (
+        <>
+          {embs.map((e) => e.EMBARQUE_ID ? <Editar key={e.EMBARQUE_ID} titulo={`Editar embarque ${e.EMBARQUE_ID}`} ruta="embarques" id={e.EMBARQUE_ID} op="eco.embarque.editar" fila={e} /> : null)}
+          <FormularioEco titulo="Nuevo embarque" url="/api/eco/pipeline/embarques" campos={CAMPOS['eco.embarque.crear']} iniciales={{ PRODUCTO_ID: t.id }} />
+        </>
+      ) : null}
       <h3>Notas e historial</h3>
       <p><Text value={f.NOTAS ?? null} empty="Sin notas." /></p>
       <EstadoPipe bloque={v.historial}>
@@ -261,7 +284,7 @@ function Proveedores({ v, filtro, verContacto }: { v: PipelineVista; filtro: Sea
   )
 }
 
-function FichaProveedor({ v, p, tarjetas, verContacto }: { v: PipelineVista; p: Fila; tarjetas: Tarjeta[]; verContacto: boolean }) {
+function FichaProveedor({ v, p, tarjetas, verContacto, editable }: { v: PipelineVista; p: Fila; tarjetas: Tarjeta[]; verContacto: boolean; editable: boolean }) {
   const id = p.PROVEEDOR_ID as string
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas.filter((c) => c.PROVEEDOR_ID === id) : []
   const elegidos = tarjetas.filter((t) => t.proveedorElegido?.id === id)
@@ -274,6 +297,7 @@ function FichaProveedor({ v, p, tarjetas, verContacto }: { v: PipelineVista; p: 
         <div><dt>Estado</dt><dd><StateBadge code={p.ESTADO ?? null} /></dd></div>
       </dl>
       {verContacto ? <p><Text value={p.NOTAS ?? null} empty="Sin notas." /></p> : null}
+      {editable ? <Editar titulo="Editar proveedor" ruta="proveedores" id={id} op="eco.proveedor.editar" fila={p} /> : null}
       <h3>Cotizaciones</h3>
       <EstadoPipe bloque={v.cotizaciones}>
         {() => cots.length ? (
@@ -315,7 +339,7 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
     )
   }
 
-  // §4.2: arrastre y «Mover a…» solo para ECO_PIPELINE_WRITER_EMAIL con la escritura activa; el servidor repite todo.
+  // §4.2: arrastre, «Mover a…» y los formularios (ORD-POS-110) solo para ECO_PIPELINE_WRITER_EMAIL con la escritura activa; el servidor repite todo.
   const editable = ecoPipelineCanWrite(user.email)
   const verContacto = writeAccess(user.email).allowed || editable
   const v = paraLector(result.vista.pipeline, verContacto)
@@ -341,12 +365,18 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         </p>
       )}
       {v.parametros.avisos.map((a) => <p key={a} className="small"><Badge tone="warn">Aviso</Badge> {a}</p>)}
-      <Section title="Tablero" id="tablero"><Tablero v={v} filtro={params} editable={editable} /></Section>
+      <Section title="Tablero" id="tablero">
+        {editable ? <FormularioEco titulo="Nuevo producto" url="/api/eco/pipeline/productos" campos={CAMPOS['eco.producto.crear']} /> : null}
+        <Tablero v={v} filtro={params} editable={editable} />
+      </Section>
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
-      {producto ? <FichaProducto v={v} t={producto} /> : null}
-      <Section title="Proveedores" id="proveedores"><Proveedores v={v} filtro={params} verContacto={verContacto} /></Section>
+      {producto ? <FichaProducto v={v} t={producto} editable={editable} /> : null}
+      <Section title="Proveedores" id="proveedores">
+        {editable ? <FormularioEco titulo="Nuevo proveedor" url="/api/eco/pipeline/proveedores" campos={CAMPOS['eco.proveedor.crear']} /> : null}
+        <Proveedores v={v} filtro={params} verContacto={verContacto} />
+      </Section>
       {params.proveedor && !proveedor ? <div className="alert alert-warn" role="status"><p>No hay un proveedor con ese ID.</p></div> : null}
-      {proveedor ? <FichaProveedor v={v} p={proveedor} tarjetas={tarjetas} verContacto={verContacto} /> : null}
+      {proveedor ? <FichaProveedor v={v} p={proveedor} tarjetas={tarjetas} verContacto={verContacto} editable={editable} /> : null}
     </>
   )
 }
