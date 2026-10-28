@@ -161,9 +161,14 @@ ni borres una fila de `TIEMPOS`, ni cambies con ella `ESTADO`, `BLOQUEO` o `FECH
    - Si algo falla (ninguna sesión o más de una, ningún mensaje válido, ID distinto, otra fecha, mensaje sintético o de
      otra sesión), **no hay alta**: díselo al propietario con el motivo.
 2. **ID ya usado.** Busca el ID del paquete en `ORDENES_CODEX` (`CONTEXTO`) y `DECISIONES` (`JUSTIFICACION`) con el
-   conector de Drive, **solo lectura**. Si ya aparece, el paquete ya se usó: **no hay alta**; dilo.
+   conector de Drive, **solo lectura**. Si ya aparece, el paquete ya se usó: **no hay alta**; dilo. Un paquete sin
+   orden ni decisión (solo tareas o ediciones del rol Tiempos) no deja el ID en la hoja (`tarea.crear` y
+   `tarea.editar` no llevan contexto, y el `requestId` es un UUID): busca además el ID en tus avisos anteriores a
+   POS · Ideas (paso 4), en los eventos de esa sesión que ya lees en el paso 1. Si aparece ahí, ya se usó: no hay alta
+   ni edición; dilo.
 3. **Citar al escritor.** Con cada alta, el PM cita al escritor el texto literal del «sí PAQ», el ID de la sesión de
    Ideas y el `uuid` del evento verificado. El ID del paquete va en `contexto` de la orden o en `justificacion` de la
    decisión. El resto sigue Pasos 1 y 3 a 7.
 4. **Avisar.** Tras las altas, envía **un solo mensaje** a POS · Ideas con el ID de cada alta, su estado, el PR si
-   existe y el ID del paquete.
+   existe y el ID del paquete. Cada edición va con `TAREA_ID`, campo, valor nuevo y `requestId`: ese mensaje es el
+   rastro del ID del paquete que usa el paso 2.
