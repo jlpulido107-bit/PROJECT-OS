@@ -521,8 +521,15 @@ Decisiones de la construcción (las que el diseño dejaba abiertas o no fijaba):
   iniciales siguen rechazados. Las `NOTAS` del proveedor se ocultan a quien no escribe, como `CONTACTO` (H1 de la revisión de P-1).
 - **Caché.** Tras una escritura correcta sube una generación en el proceso y el lector de /eco descarta su caché: la
   tarjeta aparece en su nueva columna al refrescar.
-- **Alta y edición desde la pantalla.** Esta orden pinta solo el arrastre y «Mover a…» (criterio 7); las rutas de alta
-  y edición existen y están probadas, y sus formularios quedan para otra orden.
+- **Alta y edición desde la pantalla.** ORD-POS-102 pintó solo el arrastre y «Mover a…» (criterio 7). Los formularios
+  quedaron construidos en ORD-POS-110 ([issue #255](https://github.com/jlpulido107-bit/PROJECT-OS/issues/255)), solo UI
+  sobre las 8 rutas de §4.1, sin cambiar el servidor (`web/src/components/eco/formularios-pipeline.tsx`,
+  `web/src/lib/radaros/pipeline-formularios.ts`): alta de producto y proveedor en el tablero y en Proveedores; edición
+  del producto, alta de cotización y embarque y edición de cada una en la ficha de producto; edición del proveedor en
+  su ficha. Los campos salen de la lista cerrada `CAMPOS` de la validación; cada envío lleva un `requestId` nuevo, la
+  edición manda solo las columnas que cambiaron y `expectedVersion`, y un 409 se muestra con la versión actual sin
+  reintentar. Nada se da por guardado antes del ok; tras él la vista se relee de la hoja. Solo los ve
+  `ecoPipelineCanWrite`.
 
 Hallazgos no bloqueantes de los dictámenes del PR #239, corregidos en ORD-POS-104
 ([issue #241](https://github.com/jlpulido107-bit/PROJECT-OS/issues/241)), también inerte:
