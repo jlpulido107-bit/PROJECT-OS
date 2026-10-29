@@ -7,6 +7,7 @@ import {
   COLUMNA_ID_IDEA, COLUMNAS_PUNTUACION, filtrarTendencias, GRUPOS_SCORING, type Bloque, type Corridas, type Fila,
   type Ranking, type Tendencias, type UnitEconomics,
 } from '@/lib/radaros/eco'
+import { ayudaColumna, etiquetaIdea, formatearValor, SIN_DATO, tituloColumna } from '@/lib/radaros/eco-columnas'
 
 export const metadata: Metadata = { title: 'RADAROS (solo lectura)' }
 
@@ -36,17 +37,45 @@ function EstadoBloque<T>({ bloque, children }: { bloque: Bloque<T>; children: (d
   )
 }
 
-function Celda({ fila, col }: { fila: Fila; col: string }) {
-  return <td><Text value={fila[col] ?? null} empty="—" /></td>
+/** «—» con su leyenda: vacío, columna sin leer (más allá de Z) o no numérico en una columna numérica. */
+function SinDato() {
+  return <span className="muted" title={SIN_DATO}><span aria-hidden="true">—</span><span className="visually-hidden">{SIN_DATO}</span></span>
 }
 
-function TablaColumnas({ filas, columnas, label, clave }: { filas: Fila[]; columnas: readonly string[]; label: string; clave: string }) {
+function Celda({ fila, col }: { fila: Fila; col: string }) {
+  const valor = formatearValor(col, fila[col] ?? null)
+  return <td>{valor === null ? <SinDato /> : valor}</td>
+}
+
+/** Título en español con ayuda (ⓘ) de una línea; sin traducción, el encabezado tal cual. */
+function Encabezado({ col }: { col: string }) {
+  const titulo = tituloColumna(col)
+  const ayuda = ayudaColumna(col)
+  return (
+    <th scope="col">
+      {titulo === col ? <code>{col}</code> : titulo}
+      {ayuda ? <>{' '}<span title={ayuda} role="img" aria-label={`Ayuda: ${ayuda}`}>ⓘ</span></> : null}
+    </th>
+  )
+}
+
+const LEYENDA_SIN_DATO = <p className="small muted">«—» = {SIN_DATO}.</p>
+
+function TablaColumnas({ filas, columnas, label, clave, nombres }: {
+  filas: Fila[]; columnas: readonly string[]; label: string; clave: string; nombres?: Map<string, string>
+}) {
   return (
     <div className="table-wrap">
       <table aria-label={label}>
-        <thead><tr>{columnas.map((c) => <th key={c} scope="col"><code>{c}</code></th>)}</tr></thead>
+        <thead><tr>{columnas.map((c) => (nombres && c === COLUMNA_ID_IDEA ? <th key={c} scope="col">Idea</th> : <Encabezado key={c} col={c} />))}</tr></thead>
         <tbody>
-          {filas.map((f, i) => <tr key={`${f[clave] ?? ''}-${i}`}>{columnas.map((c) => <Celda key={c} fila={f} col={c} />)}</tr>)}
+          {filas.map((f, i) => (
+            <tr key={`${f[clave] ?? ''}-${i}`}>
+              {columnas.map((c) => (nombres && c === COLUMNA_ID_IDEA
+                ? <th key={c} scope="row">{etiquetaIdea(f[c] ?? '', nombres.get(f[c] ?? ''))}</th>
+                : <Celda key={c} fila={f} col={c} />))}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -91,15 +120,15 @@ function BloqueRanking({ datos }: { datos: Ranking }) {
         <table aria-label="Ranking de ideas">
           <thead>
             <tr>
-              <th scope="col">Idea</th><th scope="col">Puntuación</th><th scope="col">Semana AMZ</th><th scope="col">Estado AMZ</th>
+              <th scope="col">Idea</th><th scope="col">Puntuación</th><Encabezado col="AMZ_SEMANA" /><Encabezado col="AMZ_ESTADO" />
               <th scope="col">Última semana en AMZ_RESUMEN</th><th scope="col">Semanas con historial</th>
             </tr>
           </thead>
           <tbody>
             {datos.ideas.map((idea) => (
               <tr key={idea.id}>
-                <th scope="row" className="mono">{idea.id}</th>
-                <td><Text value={idea.puntuacion} empty="—" /></td>
+                <th scope="row">{etiquetaIdea(idea.id, idea.nombre)}</th>
+                <td>{idea.puntuacion ?? <SinDato />}</td>
                 <Celda fila={idea.campos} col="AMZ_SEMANA" />
                 <Celda fila={idea.campos} col="AMZ_ESTADO" />
                 <td>{idea.resumen ? <>{idea.resumen.ultimaSemana} <StateBadge code={idea.resumen.estado} /></> : <span className="muted">—</span>}</td>
@@ -115,9 +144,10 @@ function BloqueRanking({ datos }: { datos: Ranking }) {
       {Object.entries(GRUPOS_SCORING).map(([grupo, columnas]) => (
         <details key={grupo}>
           <summary>{grupo}</summary>
-          <TablaColumnas filas={datos.ideas.map((i) => i.campos)} columnas={[COLUMNA_ID_IDEA, ...columnas]} label={`Insumos de ${grupo}`} clave={COLUMNA_ID_IDEA} />
+          <TablaColumnas filas={datos.ideas.map((i) => i.campos)} columnas={[COLUMNA_ID_IDEA, ...columnas]} label={`Insumos de ${grupo}`} clave={COLUMNA_ID_IDEA} nombres={datos.nombres} />
         </details>
       ))}
+      {LEYENDA_SIN_DATO}
     </>
   )
 }
@@ -127,8 +157,9 @@ function BloqueUnit({ datos }: { datos: UnitEconomics }) {
     <>
       <p className="small"><strong>Las tarifas de SP-API son estimaciones no garantizadas.</strong></p>
       {datos.conColumnasAmz ? null : <p className="small muted">UNIT_ECONOMICS todavía no tiene columnas <code>AMZ_*</code>: se agregan en la activación de V1.2.</p>}
-      <TablaColumnas filas={datos.filas} label="Unit economics por idea" clave={COLUMNA_ID_IDEA}
+      <TablaColumnas filas={datos.filas} label="Unit economics por idea" clave={COLUMNA_ID_IDEA} nombres={datos.nombres}
         columnas={[COLUMNA_ID_IDEA, 'AMZ_ASIN_REF', 'AMZ_PRECIO_MXN', 'AMZ_PRECIO_MXN_AVG90', 'AMZ_COMISION_MXN', 'AMZ_COMISION_PCT', 'AMZ_FBA_MXN', 'AMZ_OTRAS_TARIFAS_MXN', 'AMZ_TARIFAS_FECHA']} />
+      {LEYENDA_SIN_DATO}
     </>
   )
 }

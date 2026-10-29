@@ -69,6 +69,7 @@ esta semana». Obligatorias: `SEMANA`, `INICIO`, `ESTADO`; las demás, si faltan
 | --- | --- | --- |
 | `SCORING` | columna de ID de la idea (❓ nombre exacto; **hipótesis:** `IDEA_ID`, valores `EC-004` a `EC-009`, V1.2 §1); columna de puntuación final (❓ nombre exacto, la definen las fórmulas actuales); `AMZ_SEMANA`, `AMZ_DEMANDA_BSR_AVG90`, `AMZ_DEMANDA_CAIDAS_BSR_30D`, `AMZ_DEMANDA_VENTAS_MES`, `AMZ_DEMANDA_RANK_CATEGORIA`, `AMZ_COMPETENCIA_OFERTAS`, `AMZ_COMPETENCIA_OFERTAS_FBA`, `AMZ_COMPETENCIA_AMAZON_VENDE`, `AMZ_COMPETENCIA_RESENAS`, `AMZ_COMPETENCIA_RATING`, `AMZ_TENDENCIA_BSR_30_VS_90`, `AMZ_TENDENCIA_VENTAS_DELTA90`, `AMZ_TENDENCIA_PRECIO_30_VS_90`, `AMZ_TENDENCIA_GTRENDS`, `AMZ_ESTADO` | Tabla del ranking, ordenada por la puntuación de SCORING (mayor primero); con sus insumos en columnas plegables (Demanda, Competencia, Tendencia) |
 | `AMZ_RESUMEN` | `SEMANA`, `MARKETPLACE`, `IDEA_ID`, `ASINS_USADOS`, `ESTADO` | Por idea: estado de la última semana y cuántas semanas tiene historial (no recalcula nada; los valores ya están en SCORING) |
+| `PRODUCTS` (ORD-POS-113) | columna de ID (❓ la primera de `IDEA_ID` o `ID`; las pruebas de RADAROS usan `ID`) y columna de nombre (❓ la primera de `NOMBRE`, `PRODUCTO`, `NOMBRE_PRODUCTO`, `IDEA`, `DESCRIPCION`), sin distinguir mayúsculas ni acentos | «ID · nombre» en el ranking, en las tablas de Demanda, Competencia y Tendencia y en Unit economics; sin pestaña, sin columnas reconocidas o sin nombre, solo el ID |
 
 Reglas: la página **no ordena por su cuenta con otro criterio**; sin columna de puntuación, el bloque muestra las
 ideas por ID con el aviso «SCORING no tiene columna de puntuación reconocida». Las dos ❓ quedan como constantes en
@@ -76,6 +77,15 @@ ideas por ID con el aviso «SCORING no tiene columna de puntuación reconocida»
 encabezados reales: `COLUMNA_ID_IDEA = IDEA_ID` (hipótesis: el nombre de `AMZ_IDEA_ASIN` y `AMZ_RESUMEN`, V1.2 §5) y
 `COLUMNAS_PUNTUACION` (la primera que exista de `PUNTUACION_FINAL`, `PUNTUACION`, `SCORE_FINAL`, `SCORE`). Si el
 nombre real es otro, se cambia la constante y su prueba.
+
+Presentación (ORD-POS-113): los encabezados `AMZ_*` se muestran con su título en español, su unidad y una ayuda (ⓘ)
+de una línea, todo en un solo mapa constante,
+[`web/src/lib/radaros/eco-columnas.ts`](../web/src/lib/radaros/eco-columnas.ts) (significados de V1.2 §2.1 y §2.2);
+un encabezado sin traducción se muestra tal cual. Formato: separador de miles, MXN con su signo y porcentaje con `%`;
+vacío, no numérico en una columna numérica o columna sin leer (el lector pide `A1:Z`, así que una `AMZ_*` después de
+`Z` no llega) se muestra «—» con la leyenda «sin dato», nunca un error. Las columnas de nombre de `PRODUCTS` son ❓
+hasta la activación: confirmar con los encabezados reales y, si es otro, ajustar `COLUMNAS_NOMBRE_PRODUCTS` en
+[`eco.ts`](../web/src/lib/radaros/eco.ts) y su prueba.
 
 ### 3.3 Unit economics — `UNIT_ECONOMICS` (📄 V1.2 §2.2)
 
