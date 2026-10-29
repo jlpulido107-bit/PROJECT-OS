@@ -137,7 +137,7 @@ Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-
 
 - Cancelar y cerrar órdenes; aprobar o enviar órdenes de riesgo ALTO; decidir las decisiones; cambiar `ESTADO` o
   `BLOQUEO` de tareas en la hoja. Desde el dashboard, con su sesión, puede marcar una tarea COMPLETADA (DEC-POS-023,
-  vigente solo si consta APROBADA en DECISIONES; ORD-POS-106) solo si encendió `TAREAS_CIERRE_PROPIETARIO`; cancelar y reabrir tareas siguen en la hoja.
+  APROBADA en DECISIONES, 2026-10-29; ORD-POS-106) solo si encendió `TAREAS_CIERRE_PROPIETARIO`; cancelar y reabrir tareas siguen en la hoja.
 - Dar el «sí» literal a cada escritura del PM (vale dado al PM y reenviado al escritor, DEC-POS-008). Con ese «sí»,
   citado con la orden y su fecha, el PM aprueba y envía órdenes BAJO o MEDIO, y marca REVISADA solo con dictamen
   CONFORME de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el mismo head (DEC-POS-019; gemini-supervisado según DEC-POS-022) (DEC-POS-011, ORD-POS-057).
