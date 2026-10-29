@@ -17,7 +17,7 @@ Quién hace qué, en qué entorno y cómo fluye una orden: [`operacion.md`](oper
 - **DEC-POS-019** (APROBADA): Fable como SEGUNDO solo en MEDIO sensible; columna SENSIBLE vacía = sensible. Fuente: [delegación](delegacion-codex.md), [#234](https://github.com/jlpulido107-bit/PROJECT-OS/pull/234).
 - **DEC-POS-020** (APROBADA): prueba de Gemini hasta el 2026-11-02, como fija el §5 de [`prueba-gemini.md`](prueba-gemini.md). Fuente: [#230](https://github.com/jlpulido107-bit/PROJECT-OS/pull/230).
 - **DEC-POS-021** y **DEC-POS-022** (APROBADA): Gemini supervisado como SEGUNDO desde el 2026-11-03 y su origen en el código. Fuente: [§8](prueba-gemini.md), [escritura §6](escritura-v1-8.md), [#237](https://github.com/jlpulido107-bit/PROJECT-OS/pull/237).
-- **DEC-POS-009** (dictamen solo en el PR, [migración](migracion-supervision.md)), y **DEC-POS-023** a **DEC-POS-025** constan APROBADA
+- **DEC-POS-009** (dictamen solo en el PR, [migración](migracion-supervision.md)) y **DEC-POS-023** a **DEC-POS-025** constan APROBADA
   (PM, hoja, 2026-10-29): 023 cierre de tareas por el propietario ([#247](https://github.com/jlpulido107-bit/PROJECT-OS/pull/247)), 024 rol Tiempos ([#249](https://github.com/jlpulido107-bit/PROJECT-OS/pull/249)) y
   025 lectura de /api/planificacion para Tiempos ([#260](https://github.com/jlpulido107-bit/PROJECT-OS/pull/260)); 023 y 025 inertes sin sus variables ([escritura §7 y §8](escritura-v1-8.md)).
 - Pendiente del propietario: **DEC-SIG-002** (texto en DECISIONES). **Hipótesis:** sigue sin decidir.
