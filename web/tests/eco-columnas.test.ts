@@ -142,3 +142,70 @@ describe('ayuda (criterio 4)', () => {
     expect(h).toContain(`<span title="${ayuda}" role="img" aria-label="Ayuda: ${ayuda}">ⓘ</span>`)
   })
 })
+
+describe('comisión de Amazon en porcentaje real (ORD-POS-115, criterios 1 y 2)', () => {
+  it('fracción entre 0 y 1 sin %: se multiplica por 100', () => {
+    expect(formatearValor('AMZ_COMISION_PCT', '0.1293118772')).toBe('12.93 %')
+    expect(formatearValor('AMZ_COMISION_PCT', '0.129325173')).toBe('12.93 %')
+  })
+
+  it('valor que ya viene como porcentaje: igual que hoy', () => {
+    expect(formatearValor('AMZ_COMISION_PCT', '12.9')).toBe('12.9 %')
+    expect(formatearValor('AMZ_COMISION_PCT', '12.9%')).toBe('12.9 %')
+    expect(formatearValor('AMZ_COMISION_PCT', '0.5%')).toBe('0.5 %')
+  })
+
+  it('0 y 1 exactos: fracción (0 % y 100 %)', () => {
+    expect(formatearValor('AMZ_COMISION_PCT', '0')).toBe('0 %')
+    expect(formatearValor('AMZ_COMISION_PCT', '1')).toBe('100 %')
+    expect(formatearValor('AMZ_COMISION_PCT', '1%')).toBe('1 %')
+  })
+
+  it('vacío o no numérico: sin dato', () => {
+    expect(formatearValor('AMZ_COMISION_PCT', null)).toBeNull()
+    expect(formatearValor('AMZ_COMISION_PCT', '#N/A')).toBeNull()
+  })
+
+  it('solo AMZ_COMISION_PCT usa la regla de fracción; los demás pct no cambian', () => {
+    expect(Object.entries(COLUMNAS_ECO).filter(([, c]) => c.formato === 'fraccion_pct').map(([col]) => col)).toEqual(['AMZ_COMISION_PCT'])
+    expect(COLUMNAS_ECO.AMZ_TENDENCIA_VENTAS_DELTA90?.formato).toBe('pct')
+    expect(formatearValor('AMZ_TENDENCIA_VENTAS_DELTA90', '0.5')).toBe('0.5 %')
+    expect(formatearValor('AMZ_TENDENCIA_VENTAS_DELTA90', '1')).toBe('1 %')
+    expect(formatearValor('AMZ_TENDENCIA_VENTAS_DELTA90', '0')).toBe('0 %')
+    expect(formatearValor('AMZ_TENDENCIA_BSR_30_VS_90', '0.8')).toBe('0.8')
+  })
+})
+
+describe('fecha de la estimación de tarifas (ORD-POS-115, criterio 3)', () => {
+  it('número de serie de Sheets: AAAA-MM-DD, sin convertir por UTC', () => {
+    expect(COLUMNAS_ECO.AMZ_TARIFAS_FECHA?.formato).toBe('fecha_serie')
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '46323.43388')).toBe('2026-10-28')
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '46323')).toBe('2026-10-28')
+    // 00:30 y 23:59 de la hoja: el mismo día civil, nunca el anterior ni el siguiente.
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '46323.02')).toBe('2026-10-28')
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '46323.999')).toBe('2026-10-28')
+  })
+
+  it('fecha en texto: tal cual', () => {
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '2026-10-28')).toBe('2026-10-28')
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '28/10/2026 10:24:47')).toBe('28/10/2026 10:24:47')
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '2026-10-28T10:24:47Z')).toBe('2026-10-28T10:24:47Z')
+  })
+
+  it('vacío o no numérico: sin dato', () => {
+    expect(formatearValor('AMZ_TARIFAS_FECHA', null)).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '')).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', 'pendiente')).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '#N/A')).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '0')).toBeNull()
+  })
+
+  it('el render de Precio y tarifas muestra 12.93 % y la fecha', async () => {
+    const UNIT_ECONOMICS = [['IDEA_ID', 'AMZ_COMISION_PCT', 'AMZ_TARIFAS_FECHA'], ['EC-006', '0.1293118772', '46323.43388']]
+    const h = await html({ SCORING, PRODUCTS, UNIT_ECONOMICS })
+    expect(h).toContain('>12.93 %<')
+    expect(h).toContain('>2026-10-28<')
+    expect(h).not.toContain('0.13 %')
+    expect(h).not.toContain('46323')
+  })
+})
