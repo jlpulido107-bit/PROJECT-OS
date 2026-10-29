@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { ConfigError } from './config'
-import { MAX_DATA_ROWS } from './schema'
+import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from './schema'
 
 /**
  * Cliente de SOLO LECTURA de Google Sheets API v4.
@@ -58,7 +58,7 @@ function statusError(status: number): SheetsReadError {
 /** Rango A1 con el nombre de pestaña escapado. */
 export function tabRange(tab: string): string {
   // Encabezado + MAX_DATA_ROWS + 1 fila centinela para detectar truncamiento.
-  return `'${tab.replace(/'/g, "''")}'!A1:Z${MAX_DATA_ROWS + 2}`
+  return `'${tab.replace(/'/g, "''")}'!A1:${ULTIMA_COLUMNA}${MAX_DATA_ROWS + 2}`
 }
 
 export function createSheetsReader(options: SheetsReaderOptions) {

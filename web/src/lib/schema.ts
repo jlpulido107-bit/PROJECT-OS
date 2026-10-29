@@ -97,6 +97,9 @@ export const TABS_READ = Object.keys(TAB_HEADERS) as TabName[]
 /** Máximo de filas de datos leídas por pestaña; si se supera se marca la pestaña como truncada. */
 export const MAX_DATA_ROWS = 5000
 
+/** Última columna que se lee de cada pestaña (52 columnas, A–AZ; ORD-POS-114). Solo aquí. */
+export const ULTIMA_COLUMNA = 'AZ'
+
 /**
  * Estados de tarea que se consideran cerrados. Cualquier otro estado no vacío es "abierta".
  * COMPLETADO es el estado registrado manualmente en Sheets; el dashboard no lo infiere.

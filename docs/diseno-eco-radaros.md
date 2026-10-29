@@ -44,7 +44,7 @@ Reglas (criterio 2):
    como `sheetTitles()`) y un `values:batchGet` solo con las pestañas de §3 que existen. Caché en memoria de
    `DASHBOARD_CACHE_SECONDS` (60 s por defecto), separada de la caché de PROJECT-OS. Con 1 o 2 usuarios queda muy
    por debajo de la cuota (R9).
-5. Mismo límite de filas que el dashboard (`MAX_DATA_ROWS`, 5000) y rango `A1:Z`: si una pestaña lo supera, el
+5. Mismo límite de filas que el dashboard (`MAX_DATA_ROWS`, 5000) y rango `A1:AZ` (`ULTIMA_COLUMNA`, ORD-POS-114): si una pestaña lo supera, el
    bloque lo dice («truncado») en lugar de mostrar datos parciales sin aviso.
 
 ## 3. Bloques y sus fuentes (criterio 1)

@@ -172,6 +172,48 @@ describe('lector de RADAROS (criterio 2)', () => {
   })
 })
 
+describe('SCORING más ancho que Z (ORD-POS-114)', () => {
+  /** A → 1, Z → 26, AZ → 52. */
+  const columnas = (letras: string) => [...letras].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0)
+  // A–Q del propietario (17), R–AF las 15 AMZ_* (32 en total) y PUNTUACION_FINAL en AG (33).
+  const propias = Array.from({ length: 17 }, (_, i) => (i === 0 ? 'IDEA_ID' : `COL_${i}`))
+  const amz = ['AMZ_SEMANA', 'AMZ_DEMANDA_BSR_AVG90', 'AMZ_DEMANDA_CAIDAS_BSR_30D', 'AMZ_DEMANDA_VENTAS_MES',
+    'AMZ_DEMANDA_RANK_CATEGORIA', 'AMZ_COMPETENCIA_OFERTAS', 'AMZ_COMPETENCIA_OFERTAS_FBA', 'AMZ_COMPETENCIA_AMAZON_VENDE',
+    'AMZ_COMPETENCIA_RESENAS', 'AMZ_COMPETENCIA_RATING', 'AMZ_TENDENCIA_BSR_30_VS_90', 'AMZ_TENDENCIA_VENTAS_DELTA90',
+    'AMZ_TENDENCIA_PRECIO_30_VS_90', 'AMZ_TENDENCIA_GTRENDS', 'AMZ_ESTADO']
+  const encabezado = [...propias, ...amz, 'PUNTUACION_FINAL']
+  const fila = (id: string, puntuacion: string) => encabezado.map((c) =>
+    c === 'IDEA_ID' ? id : c === 'PUNTUACION_FINAL' ? puntuacion : c === 'AMZ_ESTADO' ? 'OK' : c === 'AMZ_TENDENCIA_GTRENDS' ? '1,2' : '')
+  const ancho = [encabezado, fila('EC-004', '40'), fila('EC-005', '90')]
+
+  it('lee AMZ_ESTADO, AMZ_TENDENCIA_* y PUNTUACION_FINAL después de Z con un doble que corta en la columna pedida', async () => {
+    expect(ancho[0]).toHaveLength(33)
+    expect(encabezado.indexOf('AMZ_ESTADO')).toBe(columnas('AF') - 1)
+    // El doble devuelve solo las columnas que el rango pide, como Sheets API.
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input))
+      if (!url.pathname.endsWith('values:batchGet')) return jsonResponse({ sheets: [{ properties: { title: 'SCORING' } }] })
+      const rangos = url.searchParams.getAll('ranges')
+      return jsonResponse({ valueRanges: rangos.map((r) => {
+        const [, tab, ultima] = /^'(.+)'!A1:([A-Z]+)\d+$/.exec(r)!
+        return { values: tab === 'SCORING' ? ancho.map((f) => f.slice(0, columnas(ultima!))) : undefined }
+      }) })
+    }) as unknown as typeof fetch
+    const l = createEcoLoader({
+      env: { SHEETS_SPREADSHEET_ID: PROPIA, RADAROS_SHEET_ID: RADAROS } as unknown as NodeJS.ProcessEnv,
+      getAccessToken: async () => 'ya29.token-de-prueba-no-real', fetchImpl, sleep: async () => {}, now: () => NOW,
+    })
+    const r = await l.load()
+    expect(r.estado).toBe('ok')
+    if (r.estado !== 'ok' || r.vista.ranking.estado !== 'ok') throw new Error('ranking no ok')
+    const ranking = r.vista.ranking.datos
+    expect(ranking.columnaPuntuacion).toBe('PUNTUACION_FINAL')
+    expect(ranking.conColumnasAmz).toBe(true)
+    expect(ranking.ideas.map((i) => [i.id, i.puntuacion])).toEqual([['EC-005', '90'], ['EC-004', '40']])
+    expect(ranking.ideas[0]!.campos).toMatchObject({ AMZ_ESTADO: 'OK', AMZ_TENDENCIA_GTRENDS: '1,2' })
+  })
+})
+
 describe('bloques y estados de §4 (criterios 3 y 5)', () => {
   const todo = { AMZ_CORRIDAS: CORRIDAS, SCORING, AMZ_RESUMEN: RESUMEN, UNIT_ECONOMICS: UNIT, ML_TRENDS_ANALISIS_AUTO: TRENDS }
 
