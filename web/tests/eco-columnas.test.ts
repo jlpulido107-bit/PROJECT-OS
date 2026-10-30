@@ -200,6 +200,14 @@ describe('fecha de la estimación de tarifas (ORD-POS-115, criterio 3)', () => {
     expect(formatearValor('AMZ_TARIFAS_FECHA', '0')).toBeNull()
   })
 
+  it('serie fuera de rango (p. ej. un timestamp Unix): sin dato, sin lanzar', () => {
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '2958465')).toBe('9999-12-31')
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '2958466')).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '100000000')).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '1761700000')).toBeNull()
+    expect(formatearValor('AMZ_TARIFAS_FECHA', '1761700000000')).toBeNull()
+  })
+
   it('el render de Precio y tarifas muestra 12.93 % y la fecha', async () => {
     const UNIT_ECONOMICS = [['IDEA_ID', 'AMZ_COMISION_PCT', 'AMZ_TARIFAS_FECHA'], ['EC-006', '0.1293118772', '46323.43388']]
     const h = await html({ SCORING, PRODUCTS, UNIT_ECONOMICS })

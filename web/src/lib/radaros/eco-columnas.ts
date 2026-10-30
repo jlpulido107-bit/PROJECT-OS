@@ -113,6 +113,8 @@ const FECHA_TEXTO = /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\
 const DIA_MS = 86_400_000
 /** Día 0 de los números de serie de Sheets (1899-12-30) en días desde la época Unix. */
 const SERIE_EPOCA_UNIX = 25_569
+/** Último serie admitido: 9999-12-31, el mismo tope que Sheets; más allá `Date` da años de 6 cifras o lanza RangeError. */
+const SERIE_MAXIMO = 2_958_465
 
 /**
  * Fecha AAAA-MM-DD de una celda `fecha_serie` (ORD-POS-115), o `null` = sin dato.
@@ -121,14 +123,14 @@ const SERIE_EPOCA_UNIX = 25_569
  *   atajo: supone que la hoja de RADAROS está en America/Merida; con otra zona, la fecha sería la de esa zona.
  *   Mejorarlo si la hoja cambia de zona horaria.
  * - Fecha en texto (la columna con formato de fecha llega así por FORMATTED_VALUE): tal cual.
- * - Vacío o cualquier otro texto: sin dato.
+ * - Vacío, cualquier otro texto o un serie fuera de 1…9999-12-31 (p. ej. un timestamp Unix): sin dato.
  */
 function fechaDeSerie(raw: string): string | null {
   const t = raw.trim()
   if (FECHA_TEXTO.test(t)) return t
   if (!SERIE.test(t)) return null
   const dias = Math.floor(Number(t))
-  if (dias < 1) return null
+  if (dias < 1 || dias > SERIE_MAXIMO) return null
   return new Date((dias - SERIE_EPOCA_UNIX) * DIA_MS).toISOString().slice(0, 10)
 }
 
