@@ -6,7 +6,11 @@ import { parseNumber } from '../parse'
  * RADAROS docs/diseno-v1-2.md §2.1 y §2.2. Un encabezado que no está en el mapa se muestra tal cual.
  */
 
-export type Formato = 'entero' | 'decimal' | 'mxn' | 'pct' | 'texto'
+/**
+ * `fraccion_pct`: porcentaje que la hoja puede guardar como fracción (0.1293 = 12.93 %); ver `porcentajeDeFraccion`.
+ * `fecha_serie`: fecha que la hoja puede guardar como número de serie de Sheets; ver `fechaDeSerie` (ORD-POS-115).
+ */
+export type Formato = 'entero' | 'decimal' | 'mxn' | 'pct' | 'fraccion_pct' | 'fecha_serie' | 'texto'
 
 export interface Columna {
   titulo: string
@@ -59,10 +63,10 @@ export const COLUMNAS_ECO: Readonly<Record<string, Columna>> = {
   AMZ_PRECIO_MXN: { titulo: 'Precio con Buy Box (MXN)', formato: 'mxn', ayuda: 'Precio de la oferta ganadora, envío incluido.' },
   AMZ_PRECIO_MXN_AVG90: { titulo: 'Precio promedio 90 días (MXN)', formato: 'mxn', ayuda: 'Precio promedio de 90 días, para no evaluar sobre una oferta puntual.' },
   AMZ_COMISION_MXN: { titulo: 'Comisión de Amazon (MXN)', formato: 'mxn', ayuda: 'Comisión por referencia sobre el precio con Buy Box.' },
-  AMZ_COMISION_PCT: { titulo: 'Comisión de Amazon (%)', formato: 'pct', ayuda: 'Comisión entre el precio con Buy Box.' },
+  AMZ_COMISION_PCT: { titulo: 'Comisión de Amazon (%)', formato: 'fraccion_pct', ayuda: 'Comisión entre el precio con Buy Box.' },
   AMZ_FBA_MXN: { titulo: 'Tarifa FBA por unidad (MXN)', formato: 'mxn', ayuda: 'Tarifa de logística de Amazon por unidad (estimación).' },
   AMZ_OTRAS_TARIFAS_MXN: { titulo: 'Otras tarifas (MXN)', formato: 'mxn', ayuda: 'Resto de las tarifas estimadas (cierre variable y otras).' },
-  AMZ_TARIFAS_FECHA: { titulo: 'Fecha de la estimación de tarifas', formato: 'texto', ayuda: 'Cuándo se pidió la estimación a SP-API.' },
+  AMZ_TARIFAS_FECHA: { titulo: 'Fecha de la estimación de tarifas', formato: 'fecha_serie', ayuda: 'Cuándo se pidió la estimación a SP-API.' },
 }
 
 export const SIN_DATO = 'sin dato'
@@ -94,6 +98,42 @@ function numeroCelda(raw: string): number | null {
   return parseNumber(t).value
 }
 
+/**
+ * Regla de `fraccion_pct` (ORD-POS-115): un valor con `%` (la columna con formato de porcentaje en la hoja) ya es
+ * porcentaje y se muestra igual; sin `%`, un número entre 0 y 1, ambos incluidos, es fracción y se multiplica por 100
+ * (0.1293 → 12.93 %, 1 → 100 %, 0 → 0 %); mayor que 1 o negativo ya es porcentaje (12.9 → 12.9 %). RADAROS escribe
+ * AMZ_COMISION_PCT como comisión ÷ precio, así que 1 es una comisión igual al precio y no un 1 %.
+ */
+function porcentajeDeFraccion(raw: string, n: number): number {
+  return !raw.includes('%') && n >= 0 && n <= 1 ? n * 100 : n
+}
+
+const SERIE = /^\d+(?:\.\d+)?$/
+const FECHA_TEXTO = /^(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})(?:\D|$)/
+const DIA_MS = 86_400_000
+/** Día 0 de los números de serie de Sheets (1899-12-30) en días desde la época Unix. */
+const SERIE_EPOCA_UNIX = 25_569
+/** Último serie admitido: 9999-12-31, el mismo tope que Sheets; más allá `Date` da años de 6 cifras o lanza RangeError. */
+const SERIE_MAXIMO = 2_958_465
+
+/**
+ * Fecha AAAA-MM-DD de una celda `fecha_serie` (ORD-POS-115), o `null` = sin dato.
+ * - Número de serie de Sheets (46323.43388): su parte entera es el día. El serie ya es la hora de pared de la hoja,
+ *   así que no se convierte por UTC (misma regla que lib/dates.ts).
+ *   atajo: supone que la hoja de RADAROS está en America/Merida; con otra zona, la fecha sería la de esa zona.
+ *   Mejorarlo si la hoja cambia de zona horaria.
+ * - Fecha en texto (la columna con formato de fecha llega así por FORMATTED_VALUE): tal cual.
+ * - Vacío, cualquier otro texto o un serie fuera de 1…9999-12-31 (p. ej. un timestamp Unix): sin dato.
+ */
+function fechaDeSerie(raw: string): string | null {
+  const t = raw.trim()
+  if (FECHA_TEXTO.test(t)) return t
+  if (!SERIE.test(t)) return null
+  const dias = Math.floor(Number(t))
+  if (dias < 1 || dias > SERIE_MAXIMO) return null
+  return new Date((dias - SERIE_EPOCA_UNIX) * DIA_MS).toISOString().slice(0, 10)
+}
+
 const ENTERO = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 })
 const DECIMAL = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 })
 const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' })
@@ -101,16 +141,18 @@ const MXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' 
 /**
  * Valor listo para mostrar; `null` = «sin dato» (vacío, columna sin leer o no numérico en una columna numérica).
  * Porcentaje: `25%` o `25` se muestran «25 %» (❓ RADAROS docs/diseno-v1-2.md §2.1: Keepa da el delta en puntos
- * porcentuales); nunca se multiplica por 100.
+ * porcentuales); nunca se multiplica por 100. Solo `fraccion_pct` multiplica una fracción (ver `porcentajeDeFraccion`).
  */
 export function formatearValor(col: string, raw: string | null): string | null {
   if (raw === null) return null
   const formato = COLUMNAS_ECO[col]?.formato ?? 'texto'
   if (formato === 'texto') return raw
+  if (formato === 'fecha_serie') return fechaDeSerie(raw)
   const n = numeroCelda(raw)
   if (n === null) return null
   if (formato === 'entero') return ENTERO.format(n)
   if (formato === 'mxn') return MXN.format(n)
   if (formato === 'pct') return `${DECIMAL.format(n)} %`
+  if (formato === 'fraccion_pct') return `${DECIMAL.format(porcentajeDeFraccion(raw, n))} %`
   return DECIMAL.format(n)
 }
