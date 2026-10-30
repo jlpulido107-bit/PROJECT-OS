@@ -34,7 +34,7 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   REGISTRAR_PR del PM (ORD-POS-063) está apagado: solo con `PM_PUEDE_REGISTRAR_PR=true`, que enciende únicamente el
   propietario con `deploy.sh` tras registrar la decisión que amplía DEC-POS-011, registra el PR que /ordenes detecta.
   Ningún agente enciende esa bandera.
-  DEC-POS-023 (vigente solo si consta APROBADA en DECISIONES; ORD-POS-106): el propietario puede marcar una tarea COMPLETADA desde el dashboard
+  DEC-POS-023 (APROBADA en DECISIONES, 2026-10-29; ORD-POS-106): el propietario puede marcar una tarea COMPLETADA desde el dashboard
   con su sesión de Google, nunca con el token del PM; CANCELADA y reabrir siguen fuera del dashboard. Está apagado: solo
   con `TAREAS_CIERRE_PROPIETARIO=true` y su correo en `TAREAS_CIERRE_PROPIETARIO_EMAIL`, que pone únicamente el
   propietario con `deploy.sh` ([escritura §7](docs/escritura-v1-8.md)). Ningún agente la enciende ni cierra tareas.
@@ -43,10 +43,10 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   sección «Altas con sí PAQ»); aprobar, enviar, cancelar y cerrar no cambian: un «sí PAQ» nunca vale para ellos.
 - Rol Tiempos (Claude, skill `planear-tiempo`), **DEC-POS-024 APROBADA** (2026-10-28): lee la hoja
   (solo lectura) y la vista /planificacion y propone; nunca escribe en Sheets ni cambia ESTADO o BLOQUEO. Sus ediciones
-  (HORAS_ESTIMADAS, FECHA_PLAN, HITO_ID) van en un paquete PAQ al PM, que solo las escribe con el «sí PAQ» verificado
-  del propietario y solo con DEC-POS-024 aprobada; nunca cierra ni cancela. CAPACIDAD_SEMANAL e HITOS los registra el
-  propietario. Sin rutina programada hasta una prueba real aprobada.
-  DEC-POS-025 (vigente solo si consta APROBADA en DECISIONES; ORD-POS-112), enmienda de DEC-POS-024: Tiempos lee
+  (HORAS_ESTIMADAS, FECHA_PLAN, HITO_ID) y altas de tareas van en un paquete sin ID a POS · Ideas, que le pone el PAQ;
+  el PM solo las escribe con el «sí PAQ» verificado del propietario; nunca cierra ni cancela. CAPACIDAD_SEMANAL e
+  HITOS los registra el propietario. Sin rutina programada hasta una prueba real aprobada.
+  DEC-POS-025 (APROBADA en DECISIONES, 2026-10-29; ORD-POS-112), enmienda de DEC-POS-024: Tiempos lee
   `GET /api/planificacion` con su propio token (solo GET, distinto del del PM y del de finanzas) y el PM da de alta filas
   de TIEMPOS (`tiempo.crear`) solo con el «sí PAQ» verificado; nunca las edita ni las borra. Está apagado: solo con
   `TIEMPOS_AGENTE=true`, que pone únicamente el propietario con `deploy.sh` ([escritura §8](docs/escritura-v1-8.md)).

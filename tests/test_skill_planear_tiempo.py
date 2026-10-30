@@ -47,11 +47,19 @@ class TestSkillPlanearTiempo(unittest.TestCase):
         self.assertIn("../revisar-desviaciones/SKILL.md", self.texto)
         self.assertNotIn("órdenes atoradas más de 3 días", self.texto.lower())
 
-    def test_pm_escribir_api_condiciona_las_ediciones_a_dec_pos_024(self):
+    def test_pm_escribir_api_limita_las_ediciones_de_dec_pos_024(self):
         pm = (SKILLS / "pm-escribir-api" / "SKILL.md").read_text(encoding="utf-8")
         paq = pm.split("## Altas con sí PAQ (DEC-POS-013)", 1)[1]
-        self.assertIn("**Ediciones del rol Tiempos (condicional a DEC-POS-024).**", paq)
+        self.assertIn("**Ediciones del rol Tiempos (DEC-POS-024 `APROBADA` en `DECISIONES`", paq)
         self.assertIn("solo de `horasEstimadas`, `fechaPlan` e `hitoId`", paq)
+        self.assertNotIn("condicional a DEC-POS-02", pm)
+
+    def test_agents_paquete_sin_id_a_ideas(self):
+        # ORD-POS-117: recupera la redacción de ORD-POS-111 que perdió la fusión de ORD-POS-112.
+        texto = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("y altas de tareas van en un paquete sin ID a POS · Ideas, que le pone el PAQ", texto)
+        self.assertNotIn("paquete PAQ al PM", texto)
+        self.assertNotIn("vigente solo si", texto)
 
     def test_rol_en_agents_y_operacion(self):
         for ruta in ("AGENTS.md", "docs/operacion.md"):
