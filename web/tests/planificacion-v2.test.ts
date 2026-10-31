@@ -185,12 +185,17 @@ describe('tarjetas y botón de cierre (criterio 2)', () => {
 describe('página /planificacion (criterios 2 y 4)', () => {
   const page = readFileSync(path.join(import.meta.dirname, '..', 'src', 'app', '(private)', 'planificacion', 'page.tsx'), 'utf8')
 
-  it('Hoy arriba y la vista actual debajo, plegada como «Detalle del plan», con la misma entrada', () => {
+  it('Hoy arriba y la vista actual debajo, con la capa Semana visible y el resto plegado como «Detalle del plan», con la misma entrada', () => {
     const hoy = page.indexOf('<HoyView')
-    const detalle = page.indexOf('<summary>Detalle del plan</summary>')
     expect(hoy).toBeGreaterThan(0)
-    expect(detalle).toBeGreaterThan(hoy)
-    expect(page.indexOf('<PlanningView input={input}')).toBeGreaterThan(detalle)
+    expect(page.indexOf('<PlanningView input={input}')).toBeGreaterThan(hoy)
+    // ORD-POS-121: la capa Semana sigue el escenario del cliente, así que PlanningView la pinta antes de su propio detalle plegado.
+    const vista = readFileSync(path.join(import.meta.dirname, '..', 'src', 'components', 'planning', 'planning-view.tsx'), 'utf8')
+    const semana = vista.indexOf('<CapaSemana')
+    const detalle = vista.indexOf('<summary>Detalle del plan</summary>')
+    expect(semana).toBeGreaterThan(0)
+    expect(detalle).toBeGreaterThan(semana)
+    expect(vista.indexOf('<details', semana)).toBeLessThan(detalle)
   })
 
   it('el botón depende de puedeCerrarTareas y la capa no escribe', () => {

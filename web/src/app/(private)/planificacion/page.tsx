@@ -4,6 +4,7 @@ import { HoyView } from '@/components/planning/hoy'
 import { PlanningView } from '@/components/planning/planning-view'
 import { MERIDA_TZ } from '@/lib/dates'
 import { canWrite, puedeCerrarTareas } from '@/lib/operations/config'
+import { hitosSemana } from '@/lib/planificacion-semana-hitos'
 import { capaHoy } from '@/lib/planificacion-v2'
 import { planWeek } from '@/lib/planning/engine'
 import { planningInputFromDataset } from '@/lib/planning/input'
@@ -29,12 +30,10 @@ export default async function PlanningPage() {
     <>
       <h1>Planificación semanal y diaria</h1>
       <Freshness data={data} />
-      <TabWarnings data={data} tabs={['PROYECTOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS']} />
+      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS']} />
       <HoyView capa={hoy} puedeCerrar={puedeCerrar} />
-      <details className="diagnostics">
-        <summary>Detalle del plan</summary>
-        <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} />
-      </details>
+      {/* Semana visible y «Detalle del plan» plegado: los pinta PlanningView, porque la capa Semana sigue el escenario del cliente. */}
+      <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} />
     </>
   )
 }
