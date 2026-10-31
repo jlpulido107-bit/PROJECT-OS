@@ -21,17 +21,19 @@ PM en la petición. Esta sesión no lee la hoja ni usa el conector de Google She
 2. **Leer.** `docs/estado-actual.md`, `AGENTS.md`, issues y PRs abiertos, y decisiones citadas en `docs/`.
 3. **Rama.** Parte de `main` actualizado; rama propia `claude/…`, nunca `main`.
 4. **Reescribir solo** las secciones `## Decisiones vigentes`, `## En curso` y `## Siguiente`, y la fecha de la
-   cabecera. No toques las demás secciones ni otros archivos.
+   cabecera, y **agregar** el historial en `docs/historial.md`. No toques las demás secciones ni otros archivos.
    - Cada dato lleva su fuente (enlace a issue, PR, documento o pestaña).
    - Lo que no verificaste va como **hipótesis**; no inventes progreso. Metas y tareas sin dato del propietario:
      hipótesis.
-   - Quita de «En curso» lo ya fusionado; no escribas que algo está «cerrado».
-   - El archivo no pasa de **60 líneas**.
+   - Quita de «En curso» lo ya fusionado y lo que deja de ser vigente (despliegues anteriores, fechas pasadas) y
+     agrégalo arriba en `docs/historial.md`, con sus enlaces; no escribas que algo está «cerrado».
+   - `docs/estado-actual.md` guarda solo lo vigente: cada decisión en una línea, lo abierto, la revisión en producción y
+     lo siguiente. No pasa de **60 líneas**.
 5. **Pendientes del propietario.** En el cuerpo del PR (no en el archivo), lista lo que el propietario debe marcar en
    el dashboard (`REVISADA` o `CERRADA`), con su orden y PR. Tú no cambias estados.
 6. **Pruebas.** `python -m unittest discover -s tests`; pega la salida en el PR.
 7. **PR.** Título `[estado] Actualiza docs/estado-actual.md tras ORD-…`; las órdenes en el cuerpo; el diff toca solo
-   `docs/estado-actual.md`. Ábrelo como borrador. No fusiones.
+   `docs/estado-actual.md` y `docs/historial.md`. Ábrelo como borrador. No fusiones.
 
 ## Límites
 
