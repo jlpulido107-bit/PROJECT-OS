@@ -52,3 +52,17 @@
   .dayList { grid-template-columns: minmax(0, 1fr); }
   .form { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Capa Semana (ORD-POS-121): barras en CSS sin color de «bien» o «mal»; el exceso se dice con texto. */
+.supuesto { background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; padding: 6px 10px; }
+.semanaBarras, .semanaHitos { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; gap: 6px; }
+.semanaDia { display: grid; grid-template-columns: 6.5rem minmax(80px, 1fr) minmax(0, 1.4fr); gap: 4px 10px; align-items: center; }
+.semanaDia[data-hoy] { font-weight: 600; }
+.semanaHitos li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(80px, 1fr) minmax(0, 0.8fr); gap: 4px 10px; align-items: center; overflow-wrap: anywhere; }
+.semanaFecha { white-space: nowrap; }
+.semanaPista { display: block; height: 0.75rem; background: var(--muted-bg); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.semanaPista[data-vacia] { background: transparent; border-style: dashed; }
+.semanaRelleno { display: block; height: 100%; background: var(--accent); }
+@media (max-width: 640px) {
+  .semanaDia, .semanaHitos li { grid-template-columns: 1fr; }
+}
