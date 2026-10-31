@@ -225,9 +225,12 @@ describe('solo lectura y GitHub con la caché de /agentes (criterio 6)', () => {
 
   it('la página no importa ninguna vía de escritura', () => {
     const src = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'page.tsx'), 'utf8')
-    expect(src).toMatch(/githubDeAgentes\(client, filtro, null\)/)
+    // ORD-POS-122: las listas de PRs (sin órdenes) y los dictámenes del propietario van en githubDeInicio, con el mismo cliente.
+    const esperando = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'esperando.ts'), 'utf8')
+    expect(src).toMatch(/githubDeInicio\(client, filtro, data\.ordenes, propietario\)/)
+    expect(esperando).toMatch(/githubDeAgentes\(client, filtro, null\)/)
     expect(src).toMatch(/githubClient\(process\.env, \{ maxLlamadas: LLAMADAS_AGENTES \}\)/)
-    expect(src).not.toMatch(/operationsService|escritura|auditTable|'use server'|method: 'POST'/)
+    for (const s of [src, esperando]) expect(s).not.toMatch(/operationsService|escritura|auditTable|'use server'|method: 'POST'/)
   })
 })
 

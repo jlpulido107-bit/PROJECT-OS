@@ -15,6 +15,11 @@ export interface DatosInicio {
   pendientes: Pendientes
   finanzas: Indicador<FinanzasInicio>
   ordenes: Indicador<ConteoOrdenes>
+  /**
+   * «Esperando por ti» (ORD-POS-122) ya muestra a esta sesión las REVISADA, las decisiones y lo que vence hoy o venció:
+   * «Mis pendientes» deja solo lo que el bloque no cubre.
+   */
+  cubiertoPorEsperando?: boolean
 }
 
 const conFiltro = (path: string, filtro: ProyectoAgentes | null) => (filtro ? `${path}?proyecto=${filtro}` : path)
@@ -99,11 +104,13 @@ function EstadoRecurrente({ p }: { p: Pendiente }) {
   return p.atrasado ? <Badge tone="danger">Atrasado</Badge> : p.aunNoVence ? <Badge tone="muted">Aún no vence</Badge> : <Badge tone="warn">Pendiente</Badge>
 }
 
-function BloquePendientes({ p, filtro }: { p: Pendientes; filtro: ProyectoAgentes | null }) {
+function BloquePendientes({ p, filtro, cubierto = false }: { p: Pendientes; filtro: ProyectoAgentes | null; cubierto?: boolean }) {
   const pr = p.prSinRegistrar
+  const tareas: Pendientes['tareas'] = cubierto && p.tareas.estado === 'ok' ? { estado: 'ok', datos: p.tareas.datos.filter((t) => t.dias > 0) } : p.tareas
   return (
     <>
-      <Lista titulo="Tareas vencidas o que vencen en 7 días" indicador={p.tareas} vacio="Ninguna tarea tuya vence en los próximos 7 días.">
+      {cubierto ? <p className="muted small">Las órdenes revisadas, las decisiones y las tareas que vencen hoy o están vencidas están en <a href="#esperando">Esperando por ti</a>.</p> : null}
+      <Lista titulo={cubierto ? 'Tareas que vencen en los próximos 7 días' : 'Tareas vencidas o que vencen en 7 días'} indicador={tareas} vacio="Ninguna tarea tuya vence en los próximos 7 días.">
         {({ tarea, dias, marca }) => (
           <li key={tarea.id}>
             <Link href={`/tareas?q=${encodeURIComponent(tarea.id)}`} className="mono">{tarea.id}</Link>{' '}
@@ -111,7 +118,7 @@ function BloquePendientes({ p, filtro }: { p: Pendientes; filtro: ProyectoAgente
           </li>
         )}
       </Lista>
-      <Lista titulo="Órdenes REVISADA por cerrar" indicador={p.revisadas} vacio="Ninguna orden revisada espera tu cierre.">
+      {cubierto ? null : <Lista titulo="Órdenes REVISADA por cerrar" indicador={p.revisadas} vacio="Ninguna orden revisada espera tu cierre.">
         {(o) => {
           const issue = urlGithub(o.issueUrl)
           return (
@@ -121,7 +128,7 @@ function BloquePendientes({ p, filtro }: { p: Pendientes; filtro: ProyectoAgente
             </li>
           )
         }}
-      </Lista>
+      </Lista>}
       <h3>Órdenes con PR sin registrar{pr.estado === 'ok' ? ` (${pr.datos.lista.length})` : null}</h3>
       <Tarjeta indicador={pr}>
         {(d) => (
@@ -140,14 +147,14 @@ function BloquePendientes({ p, filtro }: { p: Pendientes; filtro: ProyectoAgente
           </>
         )}
       </Tarjeta>
-      <Lista titulo="Decisiones PENDIENTE" indicador={p.decisiones} vacio="Ninguna decisión pendiente.">
+      {cubierto ? null : <Lista titulo="Decisiones PENDIENTE" indicador={p.decisiones} vacio="Ninguna decisión pendiente.">
         {(d) => (
           <li key={d.id}>
             {d.proyectoId ? <Link href={`/proyectos/${encodeURIComponent(d.proyectoId)}`} className="mono">{d.id}</Link> : <span className="mono">{d.id}</span>}{' '}
             <Text value={d.asunto} empty="Sin asunto" />
           </li>
         )}
-      </Lista>
+      </Lista>}
       <Lista titulo="Recurrentes del mes sin confirmar" indicador={p.recurrentes} vacio="Todos los recurrentes del mes están confirmados.">
         {(r) => (
           <li key={r.movId}>
@@ -185,17 +192,21 @@ function BloqueFinanzas({ f }: { f: FinanzasInicio }) {
   )
 }
 
-/** `tablero`: la franja de Inicio v2 (ORD-POS-096), entre el filtro y los bloques de siempre. */
-export function VistaInicio({ d, tablero }: { d: DatosInicio; tablero?: ReactNode }) {
+/**
+ * `esperando`: el bloque «Esperando por ti» (ORD-POS-122), arriba, antes del tablero. `tablero`: la franja de Inicio v2
+ * (ORD-POS-096), entre el filtro y los bloques de siempre.
+ */
+export function VistaInicio({ d, tablero, esperando }: { d: DatosInicio; tablero?: ReactNode; esperando?: ReactNode }) {
   return (
     <>
       <FiltroInicio filtro={d.filtro} />
+      {esperando}
       {tablero}
       <Section title="Proyectos" id="proyectos" actions={<Link href="/estado">Ver estado →</Link>}>
         <Tarjeta indicador={d.proyectos}>{(p) => <BloqueProyectos proyectos={p} />}</Tarjeta>
       </Section>
       <Section title="Mis pendientes" id="pendientes" actions={<Link href="/ordenes">Ver órdenes →</Link>}>
-        <BloquePendientes p={d.pendientes} filtro={d.filtro} />
+        <BloquePendientes p={d.pendientes} filtro={d.filtro} cubierto={d.cubiertoPorEsperando} />
       </Section>
       <Section title="Finanzas" id="finanzas" actions={<Link href="/finanzas">Ver finanzas →</Link>}>
         <Tarjeta indicador={d.finanzas}>{(f) => <BloqueFinanzas f={f} />}</Tarjeta>

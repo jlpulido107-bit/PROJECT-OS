@@ -1,16 +1,19 @@
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
+import { BloqueEsperando } from '@/components/inicio/esperando'
 import { VistaInicio } from '@/components/inicio/inicio'
 import { TableroInicio } from '@/components/inicio/tablero'
 import { Badge, humanize } from '@/components/ui'
 import { conteoOrdenes, ordenesDelFiltro } from '@/lib/agentes'
-import { githubDeAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { leerAuditoria } from '@/lib/auditoria'
 import { todayInMerida } from '@/lib/dates'
+import { esperandoPorTi, githubDeInicio } from '@/lib/esperando'
 import { finanzasAgenteMode } from '@/lib/finanzas/agente-config'
 import { getFinanzas } from '@/lib/finanzas/data'
 import { finanzasInicio, misPendientes, parseFiltroInicio, proyectosInicio, recurrentesSinConfirmar } from '@/lib/inicio'
 import { tablero, type FuenteFinanzas } from '@/lib/inicio-tablero'
 import { eventosOrdenes } from '@/lib/metricas'
+import { isWriter } from '@/lib/operations/config'
 import { githubClient } from '@/lib/operations/dispatch'
 import { privateData } from '@/lib/page-data'
 import type { Dataset } from '@/lib/types'
@@ -23,6 +26,9 @@ type Search = Record<string, string | string[] | undefined>
  * (githubDeAgentes sin órdenes: no lee dictámenes). Cada bloque sin fuente dice «sin datos».
  * El tablero de Inicio v2 (ORD-POS-096) reusa esas mismas lecturas y AUDITORIA con la caché compartida con /metricas y
  * /agentes (lib/auditoria.ts, solo para escritores): ninguna llamada nueva a GitHub.
+ * «Esperando por ti» (ORD-POS-122, solo para la sesión del propietario) lee además los dictámenes de las PR_ABIERTO con
+ * dictamenDeOrden y su caché (la de /ordenes), con el mismo cliente de tope LLAMADAS_AGENTES y lo que queda de
+ * LIMITE_GLOBAL_MS en esta carga; lo que no cupo queda «sin datos».
  */
 export default async function HomePage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams
@@ -36,7 +42,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const hoy = todayInMerida(ahora)
 
   const client = githubClient(process.env, { maxLlamadas: LLAMADAS_AGENTES })
-  const gh = client ? await githubDeAgentes(client, filtro, null) : null
+  const propietario = isWriter(user.email)
+  const lecturas = client ? await githubDeInicio(client, filtro, data.ordenes, propietario) : null
+  const gh = lecturas?.gh ?? null
+  const listos = lecturas?.listos ?? null
   const finanzas = await getFinanzas()
   const vista = finanzas.estado === 'ok' ? finanzas.vista : null
   const motivo = finanzas.estado === 'no-configurado' ? 'FINANZAS no está configurado en este despliegue (sin FINANZAS_SHEET_ID).' : 'No se pudo leer FINANZAS.'
@@ -44,6 +53,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const proyectos = proyectosInicio(data, hoy, filtro)
   const fuenteFinanzas: FuenteFinanzas = finanzas.estado === 'ok' ? { estado: 'ok', vista: finanzas.vista }
     : finanzas.estado === 'no-configurado' ? { estado: 'no-configurado' } : { estado: 'error', motivo }
+  const pendientes = misPendientes(data, hoy, filtro, { prs: gh?.prs ?? null, recurrentes: recurrentesSinConfirmar(vista, motivo) })
+  const esperando = esperandoPorTi({ propietario, ordenes: data.ordenes, ordenesOk: data.tabs.ORDENES_CODEX.ok, filtro, pendientes, listos })
   const t = tablero({
     ds: data, hoy, now, filtro, proyectos, gh, finanzas: fuenteFinanzas, audit, agenteFinanzas: finanzasAgenteMode() === 'sheets',
     eventos: audit.estado === 'ok' ? { estado: 'ok', datos: eventosOrdenes(data.ordenes, audit.datos) } : audit,
@@ -55,10 +66,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <Freshness data={data} />
       <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DECISIONES', 'ORDENES_CODEX']} />
       <p className="muted small">Solo lectura: nada de esta página escribe en la hoja, en FINANZAS ni en GitHub.</p>
-      <VistaInicio tablero={<TableroInicio t={t} />} d={{
+      <VistaInicio esperando={<BloqueEsperando e={esperando} filtro={filtro} />} tablero={<TableroInicio t={t} />} d={{
         filtro,
         proyectos,
-        pendientes: misPendientes(data, hoy, filtro, { prs: gh?.prs ?? null, recurrentes: recurrentesSinConfirmar(vista, motivo) }),
+        pendientes,
+        cubiertoPorEsperando: esperando.estado === 'ok',
         finanzas: finanzasInicio(vista, motivo, now, filtro),
         ordenes: conteoOrdenes(ordenesDelFiltro(data.ordenes, null, { proyecto: filtro, desde: null, hasta: null })),
       }} />
