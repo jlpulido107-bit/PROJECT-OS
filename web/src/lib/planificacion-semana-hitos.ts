@@ -1,8 +1,9 @@
 import { daysBetween } from './dates'
 import { marcaDe, type Marca } from './inicio'
 import type { Bloque } from './planificacion-semana'
+import { etiqueta } from './planificacion-v2'
 import { COMPLETED_STATE } from './schema'
-import type { Dataset, Hito } from './types'
+import type { Dataset } from './types'
 
 /**
  * Hitos de la capa Semana (ORD-POS-121, POS-040; docs/diseno-planificacion-v2.md §5). Se calculan en el servidor sobre
@@ -25,15 +26,6 @@ export interface HitoSemana {
   avance: string
 }
 
-/**
- * atajo: helper local hasta que F1 (ORD-POS-120) fusione `etiqueta` (§2); sustituirlo por `etiqueta` entonces. Nombre
- * primero y el ID después; sin nombre, el marcador de §2.
- */
-export function textoHito(h: Pick<Hito, 'id' | 'nombre'>): string {
-  const nombre = h.nombre?.trim()
-  return `${nombre ? nombre : '(hito sin nombre)'} · ${h.id}`
-}
-
 const legible = (ds: Pick<Dataset, 'tabs'>, tab: 'HITOS' | 'TAREAS') => ds.tabs[tab]?.ok === true && !ds.tabs[tab]?.truncated
 
 /** Hitos abiertos (ni COMPLETADO ni CANCELADO), con días restantes y avance, primero el que vence antes. */
@@ -50,7 +42,7 @@ export function hitosSemana(ds: Pick<Dataset, 'tabs' | 'hitos' | 'tareas'>, hoy:
         const dias = h.fechaObjetivo ? daysBetween(hoy, h.fechaObjetivo) : null
         return {
           id: h.id,
-          texto: textoHito(h),
+          texto: etiqueta({ tipo: 'hito', id: h.id, nombre: h.nombre }).texto,
           fecha: h.fechaObjetivo,
           dias,
           marca: dias === null ? null : marcaDe(dias),

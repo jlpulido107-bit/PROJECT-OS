@@ -7,7 +7,8 @@ import { planWeek } from '@/lib/planning/engine'
 import { normalizeScenario } from '@/lib/planning/scenario'
 import type { PlanningInput, Scenario } from '@/lib/planning/types'
 import { diasSemana, fechaCorta, minutosTexto, textoDia, textoDias, type Bloque, type DiasSemana } from '@/lib/planificacion-semana'
-import { hitosSemana, textoHito, type HitoSemana } from '@/lib/planificacion-semana-hitos'
+import { hitosSemana, type HitoSemana } from '@/lib/planificacion-semana-hitos'
+import { etiqueta } from '@/lib/planificacion-v2'
 import type { Dataset } from '@/lib/types'
 import { baseInput, task, week } from './helpers/planning-data'
 
@@ -151,8 +152,8 @@ describe('capa Semana: hitos (HITOS, TAREAS)', () => {
   })
 
   it('regla de lenguaje (F1 sin fusionar): el nombre va junto al ID, primero el nombre', () => {
-    expect(textoHito({ id: 'POS-H2', nombre: 'Dashboard usable a diario' })).toBe('Dashboard usable a diario · POS-H2')
-    expect(textoHito({ id: 'POS-H3', nombre: '  ' })).toBe('(hito sin nombre) · POS-H3')
+    expect(etiqueta({ tipo: 'hito', id: 'POS-H2', nombre: 'Dashboard usable a diario' }).texto).toBe('Dashboard usable a diario · POS-H2')
+    expect(etiqueta({ tipo: 'hito', id: 'POS-H3', nombre: '  ' }).texto).toBe('(hito sin nombre) · POS-H3')
     const h = ok(hitosSemana(datos, MIE))
     const html = renderToStaticMarkup(createElement(CapaSemana, { dias: { estado: 'sin-datos', motivo: 'x' }, hitos: { estado: 'ok', datos: h } }))
     for (const x of h) {

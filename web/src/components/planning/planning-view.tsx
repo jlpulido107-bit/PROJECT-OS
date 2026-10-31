@@ -139,6 +139,9 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
 
       <CapaSemana dias={diasSemana(plan, input.pestanasNoDisponibles)} hitos={hitosSemana} />
 
+      <details className="diagnostics">
+        <summary>Detalle del plan</summary>
+
       {plan.estado === 'datos-insuficientes' ? (
         <section className="alert alert-warn" aria-labelledby="diag-titulo">
           <h2 id="diag-titulo">Faltan datos para proponer un plan</h2>
@@ -274,6 +277,7 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
       <p className="muted small">
         Motor determinista {plan.version} · huella de entrada <span className="mono">{plan.huella}</span>. La misma huella con el mismo escenario produce siempre la misma propuesta.
       </p>
+      </details>
     </div>
   )
 }
