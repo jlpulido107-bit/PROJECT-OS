@@ -44,12 +44,21 @@ export const conPrAbierto = (ordenes: Orden[]): Orden[] =>
  * guardar el fallo. Nunca rechaza.
  */
 export async function leerListos(
-  client: GitHubClient, ordenes: Orden[],
-  { ahora = Date.now(), limiteMs = LIMITE_GLOBAL_MS, leer = dictamenDeOrden }: {
-    ahora?: number; limiteMs?: number; leer?: typeof dictamenDeOrden
-  } = {},
+  client: GitHubClient, ordenes: Orden[], opciones: OpcionesLectura = {},
 ): Promise<LecturaListos> {
-  const pendientes = conPrAbierto(ordenes)
+  return leerDictamenes(client, conPrAbierto(ordenes), opciones)
+}
+
+export interface OpcionesLectura { ahora?: number; limiteMs?: number; leer?: typeof dictamenDeOrden }
+
+/**
+ * Dictámenes de `pendientes` (órdenes con `prUrl`, en ese orden) con dictamenDeOrden y su caché, PARALELO a la vez y con
+ * el tiempo máximo `limiteMs`. Lo comparten «Esperando por ti» (ORD-POS-122) y la capa Flujo (ORD-POS-123). Nunca rechaza.
+ */
+export async function leerDictamenes(
+  client: GitHubClient, pendientes: Orden[],
+  { ahora = Date.now(), limiteMs = LIMITE_GLOBAL_MS, leer = dictamenDeOrden }: OpcionesLectura = {},
+): Promise<LecturaListos> {
   const evaluaciones = new Map<string, EvaluacionDictamen | null>()
   let vencido = limiteMs <= 0
   let reloj: ReturnType<typeof setTimeout> | undefined
@@ -62,7 +71,7 @@ export async function leerListos(
     while (i < pendientes.length && !vencido) {
       const o = pendientes[i++]!
       const ev = await leer(client, o, ahora).catch((error: unknown) => {
-        console.warn(`[project-os] Inicio: lectura del dictamen fallida: ${codigoFalloGitHub(error)}`)
+        console.warn(`[project-os] lectura del dictamen fallida: ${codigoFalloGitHub(error)}`)
         return null
       })
       if (!vencido) evaluaciones.set(o.id, ev)
