@@ -54,6 +54,7 @@ export type OperationErrorCode =
   | 'monto-excede-tope'
   | 'factura-no-cuadra'
   | 'suscripcion-sin-confirmar'
+  | 'tipo-cambio-sin-dato'
   | 'eco-esquema-invalido'
   | 'eco-pestana-llena'
   | 'campo-no-permitido'
@@ -120,6 +121,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'monto-excede-tope': 400,
   'factura-no-cuadra': 409,
   'suscripcion-sin-confirmar': 409,
+  'tipo-cambio-sin-dato': 409,
   'eco-esquema-invalido': 400,
   'eco-pestana-llena': 409,
   'campo-no-permitido': 400,
@@ -187,6 +189,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'monto-excede-tope': 'El monto supera el tope de 3,000.00 USD por fila; se captura a mano. No se escribió nada.',
   'factura-no-cuadra': 'El total de factura no cuadra con la suscripción confirmada del corte; no se escribió nada.',
   'suscripcion-sin-confirmar': 'La suscripción de Claude cae en este corte y su recurrente no está confirmado; no se escribió nada.',
+  'tipo-cambio-sin-dato': 'Falta TIPO_CAMBIO_DEFECTO válido en PARAMETROS para aplicar el tope en USD a un cargo en MXN; no se escribió nada.',
   'eco-esquema-invalido': 'RADAROS no tiene las pestañas PIPE_* o las columnas que exige el pipeline (o hay una repetida); no se escribió nada.',
   'eco-pestana-llena': 'Una pestaña PIPE_* llegó al límite de filas; archívala (diseño /eco pipeline §7.2) y vuelve a intentarlo. No se escribió nada.',
   'campo-no-permitido': 'La solicitud trae campos que esta operación no admite; no se escribió nada.',

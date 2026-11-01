@@ -120,11 +120,14 @@ v3 §8.2), el script recibe 401 o 403: dilo en el reporte, no reintentes y deja 
 
    Más de 3,000 USD: no lo envíes (tope de DEC-POS-018); repórtalo al propietario.
 2. **Pide el total de factura al propietario.** Pregunta, con el corte escrito: «¿Cuál es el total que Anthropic te
-   facturó con fecha dentro del corte `AAAA-MM-Qn`, en USD? ¿La suscripción cayó en este corte? Si cayó en el otro,
+   facturó con fecha dentro del corte `AAAA-MM-Qn`, y en qué moneda (USD o MXN)?
+   ¿La suscripción cayó en este corte? Si cayó en el otro,
    dame el total sin ella; si cayó en este, el total con ella.» El servidor resta la suscripción confirmada
    (`REC-CLAUDE-AAAA-MM`) del corte en que cae (diseño v3 §5): un total que la excluye cuando cayó en este corte deja un
    cargo extra falso o `factura-no-cuadra`. Si el propietario no dice en qué corte cayó, pregúntalo antes de enviar;
-   nunca sumes ni restes la suscripción tú.
+   nunca sumes ni restes la suscripción tú. **Moneda** (ORD-POS-133): la del total, como la dice el propietario, que
+   debe ser la de su suscripción (`REC-CLAUDE-AAAA-MM`, p. ej. MXN). Nunca conviertas el total ni supongas USD: si no
+   dice la moneda, pregúntala antes de enviar.
 3. **Cita literal fechada.** `fuente` = `<corte> «<cita literal del propietario>» AAAA-MM-DD`: sus palabras tal cual,
    con el total y en qué corte cayó la suscripción (p. ej. `2027-02-Q2 «total del corte: 20.00 USD, la suscripción
    cayó en el otro corte» 2027-03-01`), y la fecha de hoy en Mérida, la del dato. Hasta 200 caracteres, sin correos,
@@ -142,7 +145,9 @@ v3 §8.2), el script recibe 401 o 403: dilo en el reporte, no reintentes y deja 
    bash scripts/agente-finanzas.sh cargo-extra <carpeta>/<corte>-cargo-extra.json
    ```
 
-   El script valida los campos, genera el `requestId`, lo guarda en `<archivo>.enviado.json` **antes** de enviar y
+   El cuerpo de `cargo-extra` lleva `corte`, `reporte`, `facturaTotal` (el total tal cual), `moneda` (`USD` o `MXN`, la
+   que dijo el propietario), `fuente` y `proyecto`; `tipoCambio` solo con `USD` y solo si el propietario lo da. El
+   script valida los campos, genera el `requestId`, lo guarda en `<archivo>.enviado.json` **antes** de enviar y
    reintenta con el mismo cuerpo con `--repetir`. El token lo pone el proxy del entorno: nunca lo leas, lo imprimas, lo
    pidas ni pongas una cabecera `Authorization`; no uses `curl` a mano.
 6. **Según la respuesta** (el script lo indica):
@@ -151,6 +156,10 @@ v3 §8.2), el script recibe 401 o 403: dilo en el reporte, no reintentes y deja 
      `--repetir`; mientras tanto, el corte sigue **pendiente de factura**.
    - 409 `factura-no-cuadra`: el total no incluye la suscripción que cayó en el corte, o no cuadra con la confirmada;
      pide al propietario el total correcto y envía un JSON corregido (`requestId` nuevo).
+   - 409 `factura-no-cuadra` con motivo `moneda-distinta`: el total no está en la moneda de `REC-CLAUDE-AAAA-MM`; pide
+     al propietario el total en esa moneda (sin convertir) y envía un JSON corregido (`requestId` nuevo).
+   - 409 `tipo-cambio-sin-dato` (cargo en MXN): falta `TIPO_CAMBIO_DEFECTO` en PARAMETROS para aplicar el tope de
+     3,000 USD; avisa al propietario y, cuando lo capture, repite con `--repetir`.
    - 409 `corte-ya-registrado`: ya está; no repitas.
    - Fallo de transporte, 5xx, 429 u otro 409: resultado incierto; repite **solo** con `--repetir` (mismo `requestId`),
      nunca con un cuerpo nuevo.

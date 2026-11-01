@@ -498,7 +498,7 @@ describe('auditoría de §6 antes de la fila y verificación después', () => {
     expect(aud).toHaveLength(12) // los 15 campos menos PRODUCTO_ID, IVA_MXN y AJUSTE_DE, vacíos
     for (const f of aud) {
       expect(f.slice(2, 5)).toEqual(['agente-finanzas', 'MOVIMIENTOS', 'CLAUDE-EXTRA-2027-02-Q2'])
-      expect(String(f[8])).toMatch(new RegExp(`^agente-finanzas;modo=sheets;req=${body.requestId};hash=[0-9a-f]{16};reporte=${REPORTE};fuente=`))
+      expect(String(f[8])).toMatch(new RegExp(`^agente-finanzas;modo=sheets;req=${body.requestId};hash=[0-9a-f]{16};reporte=${REPORTE};moneda=USD;fuente=`))
     }
     const [op] = auditoriaAgente(tabla(s.snapshot().AUDITORIA!, COLUMNAS_AUDITORIA, 'AUDITORIA'))
     expect(op).toMatchObject({ requestId: body.requestId, integridad: 'completa', sinCargo: false, fuente: body.fuente, id: 'CLAUDE-EXTRA-2027-02-Q2' })
@@ -566,7 +566,7 @@ describe('criterio 4: analizador propio del ORIGEN; la fuente no altera req ni h
     const f = fuente('2027-02-Q2', cita, '2027-03-01')
     const origen = origenAgente(REQ, 'abcdef0123456789', REPORTE, f)
     expect(origen.slice(origen.indexOf(';fuente=') + 8)).not.toMatch(/[;=]/)
-    expect(leerOrigenAgente(origen)).toEqual({ requestId: REQ, hash: 'abcdef0123456789', reporte: REPORTE, fuente: f })
+    expect(leerOrigenAgente(origen)).toEqual({ requestId: REQ, hash: 'abcdef0123456789', reporte: REPORTE, moneda: null, fuente: f })
     expect(codificarFuente(f)).not.toContain(';')
   })
 
@@ -603,6 +603,184 @@ describe('criterio 4: analizador propio del ORIGEN; la fuente no altera req ni h
     for (const over of [{ facturaTotalUsd: undefined }, { facturaTotalUsd: '-1' }, { proyecto: undefined }, { proyecto: 'RADAROS' }, { tipoCambio: '0' }]) {
       expect(() => parseCargoExtra(cargo('2027-02-Q2', '20', '2027-03-01', over)), JSON.stringify(over)).toThrow(OperationError)
     }
+  })
+})
+
+/* ------------------------- ORD-POS-133: cargo extra con suscripción en MXN ------------------------- */
+
+describe('ORD-POS-133: cargo extra en la moneda de REC-CLAUDE (MXN), sin convertir T ni S', () => {
+  /** `REC-CLAUDE-AAAA-MM` confirmado en MXN como lo deja «Recurrentes del mes»: MONTO_ORIG y TIPO_CAMBIO vacíos. */
+  const recMxn = (mes: string, fecha: string, mxn = 900) => mov({
+    MOV_ID: `REC-CLAUDE-${mes}`, FECHA: fecha, PROYECTO: 'POS', TIPO: 'Gasto', CATEGORIA: 'Herramientas', CONCEPTO: 'Suscripción Claude',
+    MONTO_MXN: mxn, MONEDA_ORIG: 'MXN', FUENTE: 'recurrente', COMPROBANTE: 'sí',
+  })
+  /** Recurrente CLAUDE de 900.00 MXN con DIA_COBRO = 10 (cifras sintéticas). */
+  const REC_MXN = [ENC_REC, ['CLAUDE', 'Suscripción Claude', 'POS', 'Herramientas', 900, 'MXN', 10, '2026-01', '']]
+  const libroMxn = (movs: Celda[][] = [], over: Partial<Record<string, unknown[][]>> = {}) => libro({ MOVIMIENTOS: [...libro().MOVIMIENTOS, ...movs], RECURRENTES: REC_MXN, ...over })
+  const cargoMxn = (corte: string, total: string, fecha: string, over: Record<string, unknown> = {}) => ({
+    requestId: rid(), corte, reporte: REPORTE, moneda: 'MXN', facturaTotal: total, fuente: fuente(corte, `total de Anthropic ${total} MXN`, fecha), proyecto: 'POS', ...over,
+  })
+  const extras = (s: InMemoryFinanzasStore) => filas(s, 'MOVIMIENTOS').filter((f) => String(col(f, 'MOV_ID')).startsWith('CLAUDE-EXTRA-'))
+  async function detalle(p: Promise<unknown>) {
+    const e = await p.catch((x: unknown) => x)
+    expect(e).toBeInstanceOf(OperationError)
+    return { codigo: (e as OperationError).code, motivo: (e as OperationError).detail?.motivo }
+  }
+
+  it('criterio 1: moneda opcional (USD por defecto); facturaTotalUsd = facturaTotal en USD, mismo comando y mismo hash', async () => {
+    const base = { requestId: rid(), corte: '2027-02-Q2', reporte: REPORTE, proyecto: 'POS', fuente: fuente('2027-02-Q2', 'total 20.00 USD', '2027-03-01') }
+    const viejo = parseCargoExtra({ ...base, facturaTotalUsd: '20.00' })
+    const nuevo = parseCargoExtra({ ...base, facturaTotal: '20.00', moneda: 'USD' })
+    expect(viejo).toEqual(nuevo)
+    expect(nuevo).toMatchObject({ moneda: 'USD', facturaTotalCentavos: 2000 })
+    expect(parseCargoExtra({ ...base, facturaTotal: '20.00' }).moneda).toBe('USD')
+    expect(parseCargoExtra(cargoMxn('2027-02-Q2', '360.00', '2027-03-01', { moneda: 'mxn' }))).toMatchObject({ moneda: 'MXN', facturaTotalCentavos: 36000, tipoCambioDiezmil: null })
+    // Con el mismo requestId, el cuerpo viejo y el nuevo son la misma solicitud; el MXN, otra (el hash lleva la moneda).
+    const s = new InMemoryFinanzasStore(FINANZAS, libro())
+    await svc(s, dia('2027-03-01')).registrarCargoExtra(viejo)
+    expect(await svc(s, dia('2027-03-01')).registrarCargoExtra(nuevo)).toMatchObject({ repetida: true })
+    expect(await codigo(svc(s, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra({ ...base, facturaTotal: '20.00', moneda: 'MXN', fuente: fuente('2027-02-Q2', 'total 20.00 MXN', '2027-03-01') })))).toBe('conflicto-idempotencia')
+  })
+
+  // «400» de la orden = rechazo de validación sin escribir: `validacion` responde 422 en toda la API, como el resto de esta ruta.
+  it('criterio 1: moneda inválida, los dos totales, facturaTotalUsd con MXN, tipoCambio con MXN o sin total: validacion', async () => {
+    const malos: Array<[Record<string, unknown>, string]> = [
+      [{ moneda: 'EUR' }, 'moneda'], [{ moneda: 7 }, 'moneda'], [{ moneda: 'US D' }, 'moneda'],
+      [{ facturaTotalUsd: '360.00' }, 'facturaTotal'],
+      [{ facturaTotal: undefined, facturaTotalUsd: '360.00' }, 'facturaTotalUsd'],
+      [{ tipoCambio: '18.5' }, 'tipoCambio'],
+      [{ facturaTotal: undefined }, 'facturaTotal'], [{ facturaTotal: '-1' }, 'facturaTotal'], [{ facturaTotal: '1.234' }, 'facturaTotal'],
+    ]
+    for (const [over, campo] of malos) {
+      const e = (() => { try { parseCargoExtra(cargoMxn('2027-02-Q2', '360.00', '2027-03-01', over)) } catch (x) { return x } })()
+      expect(e, JSON.stringify(over)).toBeInstanceOf(OperationError)
+      expect((e as OperationError).code).toBe('validacion')
+      expect((e as OperationError).status).toBe(422)
+      expect(Object.keys((e as OperationError).fields ?? {}), JSON.stringify(over)).toContain(campo)
+    }
+    // El handler responde 400 sin escribir a una moneda inválida.
+    const s = new Espia(new InMemoryFinanzasStore(FINANZAS, libroMxn()))
+    expect(await codigo(() => svc(s, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '360.00', '2027-03-01', { moneda: 'EUR' }))))).toBe('validacion')
+    expect(s.appends).toEqual([])
+  })
+
+  it('criterio 2 y 3: mes sin cargo extra en MXN (2027-01): dos cierres «sin cargo»', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libroMxn([recMxn('2027-01', '2027-01-10')]))
+    const r = [
+      await svc(s, dia('2027-01-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-01-Q1', '900.00', '2027-01-16'))),
+      await svc(s, dia('2027-02-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-01-Q2', '0.00', '2027-02-01'))),
+    ]
+    expect(r.map((x) => [x.id, x.sinCargo])).toEqual([['CLAUDE-EXTRA-2027-01-Q1', true], ['CLAUDE-EXTRA-2027-01-Q2', true]])
+    expect(extras(s)).toEqual([])
+    for (const f of filas(s, 'AUDITORIA')) expect(leerOrigenAgente(String(f[8]))).toMatchObject({ moneda: 'MXN' })
+  })
+
+  it('criterio 2 y 3: mes con cargo extra en MXN (2027-02): CLAUDE-EXTRA-2027-02-Q2 con MONTO_ORIG = MONTO_MXN = 360.00 y sin TIPO_CAMBIO', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libroMxn([recMxn('2027-02', '2027-02-10')]))
+    expect(await svc(s, dia('2027-02-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q1', '900.00', '2027-02-16')))).toMatchObject({ sinCargo: true })
+    const espia = new Espia(s)
+    expect(await svc(espia, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '360.00', '2027-03-01')))).toEqual({ operacion: 'finanzas.agente.cargo-extra', id: 'CLAUDE-EXTRA-2027-02-Q2', repetida: false, sinCargo: false })
+    expect(espia.appends).toEqual(['AUDITORIA', 'MOVIMIENTOS'])
+    const [fila] = extras(s)
+    expect(Object.fromEntries(ENC_MOV.map((c) => [c, col(fila!, c) ?? '']))).toEqual({
+      MOV_ID: 'CLAUDE-EXTRA-2027-02-Q2', FECHA: '2027-02-28', PROYECTO: 'POS', TIPO: 'Gasto', CATEGORIA: 'Herramientas',
+      CONCEPTO: 'Claude: cargo adicional 2027-02-Q2', PRODUCTO_ID: '', MONTO_MXN: 360, MONEDA_ORIG: 'MXN', MONTO_ORIG: 360,
+      TIPO_CAMBIO: '', IVA_MXN: '', FUENTE: 'agente-finanzas', COMPROBANTE: 'sí', AJUSTE_DE: '',
+    })
+    // Comprobación mensual en MXN: suma de T − REC del mes = suma de extras; la vista la acepta y la suma una vez.
+    expect(900 + 360 - 900).toBe(360)
+    const l = leerMovimientos(s.snapshot().MOVIMIENTOS)
+    if (l.estado !== 'ok') throw new Error('lectura')
+    expect(l.problemas).toEqual([])
+    expect(gastoClaudeMensual(l.movimientos)).toEqual([{ mes: '2027-02', gasto: { ECO: 0, POS: 90000 + 36000 } }])
+    // Repetición: repetida, sin otra fila.
+    const aud = auditoriaAgente(tabla(s.snapshot().AUDITORIA!, COLUMNAS_AUDITORIA, 'AUDITORIA')).find((o) => o.id === 'CLAUDE-EXTRA-2027-02-Q2')!
+    expect(aud).toMatchObject({ moneda: 'MXN', integridad: 'completa', sinCargo: false })
+    expect(String(filas(s, 'AUDITORIA').at(-1)![8])).toMatch(/;reporte=session_[A-Za-z0-9]+;moneda=MXN;fuente=/)
+  })
+
+  it('variante MXN: suscripción y extra en la misma factura de Q1 (1,260.00) da el mismo mes', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libroMxn([recMxn('2027-02', '2027-02-10')]))
+    await svc(s, dia('2027-02-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q1', '1260.00', '2027-02-16', { fuente: fuente('2027-02-Q1', 'total de Anthropic 1,260.00 MXN', '2027-02-16') })))
+    await svc(s, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '0.00', '2027-03-01')))
+    expect(extras(s).map((f) => [col(f, 'MOV_ID'), col(f, 'MONTO_ORIG'), col(f, 'MONTO_MXN'), col(f, 'MONEDA_ORIG')])).toEqual([['CLAUDE-EXTRA-2027-02-Q1', 360, 360, 'MXN']])
+  })
+
+  it('criterio 2: T y S en otra moneda: 409 factura-no-cuadra con motivo moneda-distinta, sin escribir', async () => {
+    const casos: Array<[Partial<Record<string, unknown[][]>>, Record<string, unknown>, string, string]> = [
+      // REC en USD y total en MXN (aunque el REC caiga en el otro corte).
+      [{ MOVIMIENTOS: [...libro().MOVIMIENTOS, recClaude('2027-02', '2027-02-10')] }, cargoMxn('2027-02-Q1', '900.00', '2027-02-16'), '2027-02-16', 'Q1'],
+      [{ MOVIMIENTOS: [...libro().MOVIMIENTOS, recClaude('2027-02', '2027-02-10')] }, cargoMxn('2027-02-Q2', '360.00', '2027-03-01'), '2027-03-01', 'Q2'],
+      // REC en MXN y total en USD, con el cuerpo viejo o con moneda USD.
+      [{ MOVIMIENTOS: [...libro().MOVIMIENTOS, recMxn('2027-02', '2027-02-10')], RECURRENTES: REC_MXN }, cargo('2027-02-Q1', '50.00', '2027-02-16'), '2027-02-16', 'Q1'],
+      [{ MOVIMIENTOS: [...libro().MOVIMIENTOS, recMxn('2027-02', '2027-02-10')], RECURRENTES: REC_MXN }, cargoMxn('2027-02-Q2', '20.00', '2027-03-01', { moneda: 'USD' }), '2027-03-01', 'Q2'],
+      // Sin REC del mes y fuera del DIA_COBRO: la moneda es la del recurrente CLAUDE vigente.
+      [{ RECURRENTES: REC_MXN }, cargo('2027-02-Q2', '20.00', '2027-03-01'), '2027-03-01', 'Q2'],
+      [{}, cargoMxn('2027-02-Q2', '360.00', '2027-03-01'), '2027-03-01', 'Q2'],
+    ]
+    for (const [over, body, hoy, q] of casos) {
+      const s = new Espia(new InMemoryFinanzasStore(FINANZAS, libro(over)))
+      expect(await detalle(svc(s, dia(hoy)).registrarCargoExtra(parseCargoExtra(body))), q).toEqual({ codigo: 'factura-no-cuadra', motivo: 'moneda-distinta' })
+      expect(s.appends).toEqual([])
+    }
+    // Sin REC y sin recurrente CLAUDE vigente no hay moneda que exigir: S = 0 y el total es extra.
+    const libre = new InMemoryFinanzasStore(FINANZAS, libro({ RECURRENTES: [ENC_REC] }))
+    expect(await svc(libre, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '360.00', '2027-03-01')))).toMatchObject({ sinCargo: false })
+  })
+
+  it('criterio 3: T − S < 0 en MXN: factura-no-cuadra; DIA_COBRO en el corte sin REC: suscripcion-sin-confirmar', async () => {
+    const s = new Espia(new InMemoryFinanzasStore(FINANZAS, libroMxn([recMxn('2027-02', '2027-02-10')])))
+    expect(await detalle(svc(s, dia('2027-02-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q1', '899.99', '2027-02-16'))))).toEqual({ codigo: 'factura-no-cuadra', motivo: undefined })
+    const sinRec = new Espia(new InMemoryFinanzasStore(FINANZAS, libroMxn()))
+    expect(await codigo(svc(sinRec, dia('2027-02-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q1', '900.00', '2027-02-16'))))).toBe('suscripcion-sin-confirmar')
+    // REC en MXN sin MONTO_MXN: no se adivina S.
+    const sinMonto = new Espia(new InMemoryFinanzasStore(FINANZAS, libroMxn([mov({ MOV_ID: 'REC-CLAUDE-2027-02', FECHA: '2027-02-10', MONEDA_ORIG: 'MXN' })])))
+    expect(await detalle(svc(sinMonto, dia('2027-02-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q1', '900.00', '2027-02-16'))))).toEqual({ codigo: 'factura-no-cuadra', motivo: 'suscripcion-sin-monto' })
+    expect([...s.appends, ...sinRec.appends, ...sinMonto.appends]).toEqual([])
+  })
+
+  it('criterio 4: tope de 3,000 USD en MXN con TIPO_CAMBIO_DEFECTO, en el límite; sin tipo de cambio válido, 409 sin escribir', async () => {
+    // 3,000.00 USD × 18.5 = 55,500.00 MXN; sin REC ni DIA_COBRO en Q2, todo el total es extra.
+    const enLimite = new InMemoryFinanzasStore(FINANZAS, libroMxn())
+    expect(await svc(enLimite, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '55500.00', '2027-03-01')))).toMatchObject({ sinCargo: false })
+    expect(extras(enLimite).map((f) => [col(f, 'MONTO_MXN'), col(f, 'MONTO_ORIG'), col(f, 'TIPO_CAMBIO')])).toEqual([[55500, 55500, '']])
+    const sobre = new Espia(new InMemoryFinanzasStore(FINANZAS, libroMxn()))
+    expect(await codigo(svc(sobre, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '55500.01', '2027-03-01'))))).toBe('monto-excede-tope')
+    // Con un tipo de cambio con decimales: 3,000 × 17.1234 = 51,370.20 MXN exactos.
+    const tc = { PARAMETROS: [['PARAMETRO', 'VALOR'], ['TIPO_CAMBIO_DEFECTO', 17.1234]] }
+    expect(await svc(new InMemoryFinanzasStore(FINANZAS, libroMxn([], tc)), dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '51370.20', '2027-03-01')))).toMatchObject({ sinCargo: false })
+    expect(await codigo(svc(new InMemoryFinanzasStore(FINANZAS, libroMxn([], tc)), dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '51370.21', '2027-03-01'))))).toBe('monto-excede-tope')
+    // Sin TIPO_CAMBIO_DEFECTO, vacío, 0, texto o sin PARAMETROS: 409 tipo-cambio-sin-dato.
+    for (const over of [
+      { PARAMETROS: [['PARAMETRO', 'VALOR'], ['MES_INICIO', '2026-09']] },
+      { PARAMETROS: [['PARAMETRO', 'VALOR'], ['TIPO_CAMBIO_DEFECTO', '']] },
+      { PARAMETROS: [['PARAMETRO', 'VALOR'], ['TIPO_CAMBIO_DEFECTO', 0]] },
+      { PARAMETROS: [['PARAMETRO', 'VALOR'], ['TIPO_CAMBIO_DEFECTO', 'dieciocho']] },
+    ]) {
+      const s = new Espia(new InMemoryFinanzasStore(FINANZAS, libroMxn([], over)))
+      const e = await svc(s, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q2', '360.00', '2027-03-01'))).catch((x: unknown) => x)
+      expect((e as OperationError).code, JSON.stringify(over)).toBe('tipo-cambio-sin-dato')
+      expect((e as OperationError).status).toBe(409)
+      expect(s.appends).toEqual([])
+    }
+    // Un cierre «sin cargo» en MXN no necesita tipo de cambio.
+    const sinTc = new InMemoryFinanzasStore(FINANZAS, libroMxn([recMxn('2027-02', '2027-02-10')], { PARAMETROS: [['PARAMETRO', 'VALOR']] }))
+    expect(await svc(sinTc, dia('2027-02-16')).registrarCargoExtra(parseCargoExtra(cargoMxn('2027-02-Q1', '900.00', '2027-02-16')))).toMatchObject({ sinCargo: true })
+  })
+
+  it('criterio 5: ORIGEN con moneda= en el cargo extra, nunca en el rendimiento; una moneda alterada en una fila es inconsistente', async () => {
+    const s = new InMemoryFinanzasStore(FINANZAS, libroMxn())
+    const body = cargoMxn('2027-02-Q2', '360.00', '2027-03-01')
+    await svc(s, dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(body))
+    await svc(s, dia('2027-03-01')).registrarRendimiento(parseRendimiento(rend('2027-02-Q2', '1')))
+    const ops = auditoriaAgente(tabla(s.snapshot().AUDITORIA!, COLUMNAS_AUDITORIA, 'AUDITORIA'))
+    expect(ops.map((o) => [o.entidad, o.moneda])).toEqual([['MOVIMIENTOS', 'MXN'], ['RENDIMIENTO_CLAUDE', null]])
+    expect(origenAgente(body.requestId, 'abcdef0123456789', REPORTE, body.fuente, 'MXN')).toContain(`reporte=${REPORTE};moneda=MXN;fuente=`)
+    expect(leerOrigenAgente(`agente-finanzas;modo=sheets;req=${body.requestId};hash=abcdef0123456789;reporte=${REPORTE};moneda=EUR;fuente=x`)).toBeNull()
+    const alterada = s.snapshot()
+    const i = alterada.AUDITORIA!.findIndex((f) => String(f[8]).includes('moneda=MXN'))
+    alterada.AUDITORIA![i]![8] = String(alterada.AUDITORIA![i]![8]).replace('moneda=MXN', 'moneda=USD')
+    expect(await codigo(svc(new InMemoryFinanzasStore(FINANZAS, alterada), dia('2027-03-01')).registrarCargoExtra(parseCargoExtra(body)))).toBe('auditoria-inconsistente')
   })
 })
 

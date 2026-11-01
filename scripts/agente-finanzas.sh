@@ -15,7 +15,8 @@ tipo=$1; archivo=$2; repetir=${3:-}
 # Campos de cada ruta (web/src/lib/finanzas/agente-validacion.ts): obligatorios y opcionales.
 case "$tipo" in
   rendimiento) obligatorios='["corte","reporte","costoEquivUsd","sesiones","sesionesSinDato"]'; opcionales='["tokensEntrada","tokensSalida"]' ;;
-  cargo-extra) obligatorios='["corte","reporte","facturaTotalUsd","fuente","proyecto"]'; opcionales='["tipoCambio"]' ;;
+  # La moneda del total la dice el propietario (ORD-POS-133): se pide siempre, sin USD por defecto.
+  cargo-extra) obligatorios='["corte","reporte","facturaTotal","moneda","fuente","proyecto"]'; opcionales='["tipoCambio"]' ;;
   *) echo "Tipo no permitido: $tipo (solo rendimiento o cargo-extra)" >&2; exit 2 ;;
 esac
 
@@ -39,7 +40,9 @@ else
       (select(txt("reporte") != "" and (txt("reporte") | test("^session_[A-Za-z0-9]{10,40}$") | not)) | "reporte: ID de la sesión de reporte-consumo (session_…)"),
       (select(has("costoEquivUsd") and (monto("costoEquivUsd") | not)) | "costoEquivUsd: número ≥ 0, hasta 2 decimales"),
       (select(has("costoEquivUsd") and monto("costoEquivUsd") and (txt("costoEquivUsd") | tonumber) > 3000) | "costoEquivUsd excede el tope de 3,000 USD: no se envía"),
-      (select(has("facturaTotalUsd") and (monto("facturaTotalUsd") | not)) | "facturaTotalUsd: número ≥ 0, hasta 2 decimales, el total que dio el propietario"),
+      (select(has("facturaTotal") and (monto("facturaTotal") | not)) | "facturaTotal: número ≥ 0, hasta 2 decimales, el total que dio el propietario en su moneda"),
+      (select(has("moneda") and (txt("moneda") | IN("USD", "MXN") | not)) | "moneda: USD o MXN, la del total que dio el propietario"),
+      (select(has("tipoCambio") and txt("moneda") == "MXN") | "tipoCambio: solo con moneda USD"),
       (select(has("fuente") and ((txt("fuente") | length) > 200
           or (txt("fuente") | startswith(txt("corte") + " «") | not)
           or (txt("fuente") | test("^[^«»]+ «[^«»]+» [0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)))
@@ -59,6 +62,7 @@ codigo=$(curl -sS --max-time 60 -o "$respuesta" -w '%{http_code}' -X POST "$DASH
   -H 'Content-Type: application/json' --data-binary @"$enviado") || { echo "Fallo de transporte: el resultado es incierto; usa --repetir (mismo requestId)" >&2; exit 1; }
 echo "HTTP $codigo"; cat "$respuesta"; echo
 error=$(jq -r '.error.codigo // empty' "$respuesta" 2>/dev/null || true)
+motivo=$(jq -r '.error.detalle.motivo // empty' "$respuesta" 2>/dev/null || true)
 rechazar() { rechazado="${enviado%.enviado.json}.rechazado.json"; mv -f "$enviado" "$rechazado"
   echo "$1 No se escribió nada. $enviado pasó a $rechazado; corrige $archivo y reenvíalo (requestId nuevo)" >&2; exit 1; }
 case "$codigo" in
@@ -68,7 +72,11 @@ case "$codigo" in
   409) case "$error" in
       corte-ya-registrado) echo "El corte ya está registrado con otro requestId: no se escribió nada. No lo repitas. Se conserva $enviado" >&2 ;;
       suscripcion-sin-confirmar) echo "Suscripción sin confirmar: el propietario confirma REC-CLAUDE del mes y luego usa --repetir (mismo requestId). Se conserva $enviado" >&2 ;;
-      factura-no-cuadra) rechazar "El total no cuadra con la suscripción (HTTP 409 factura-no-cuadra): pide al propietario el total correcto." ;;
+      factura-no-cuadra) if [ "$motivo" = "moneda-distinta" ]; then
+          rechazar "La moneda del total no es la de REC-CLAUDE del mes (HTTP 409 factura-no-cuadra, moneda-distinta): pide al propietario el total en la moneda de su suscripción; no conviertas."
+        fi
+        rechazar "El total no cuadra con la suscripción (HTTP 409 factura-no-cuadra${motivo:+, $motivo}): pide al propietario el total correcto." ;;
+      tipo-cambio-sin-dato) echo "Falta TIPO_CAMBIO_DEFECTO en PARAMETROS para el tope de un cargo en MXN: no se escribió nada. Avisa al propietario y, cuando lo capture, usa --repetir (mismo requestId). Se conserva $enviado" >&2 ;;
       # verificacion-fallida, auditoria-inconsistente, estado-divergente y conflicto-*: pueden llegar tras escribir.
       *) echo "HTTP 409 ${error:-sin código}: resultado incierto; no cambies el cuerpo: usa --repetir (mismo requestId). Se conserva $enviado" >&2 ;;
     esac; exit 1 ;;

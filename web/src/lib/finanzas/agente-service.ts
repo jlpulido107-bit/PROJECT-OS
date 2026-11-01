@@ -11,7 +11,7 @@ import {
 import { celdaTexto, COLUMNAS_AUDITORIA, COLUMNAS_MOVIMIENTOS_ESCRITURA, iguales, tabla, type FinanzasServiceOptions, type Tabla } from './escritura-service'
 import type { Celda, FinanzasStore, FinanzasWriteTab } from './escritura-store'
 import { aNumero, convertirCentavos, decimalEscalado } from './escritura-validacion'
-import { fechaCobro, leerRecurrentes, movIdRecurrente, numeroCelda, tipoCambioDefecto, vigenteEn } from './finanzas'
+import { fechaCobro, leerRecurrentes, MONEDAS, movIdRecurrente, numeroCelda, tipoCambioDefecto, vigenteEn, type Moneda } from './finanzas'
 
 /**
  * Servicio del agente de finanzas (ORD-POS-092, docs/diseno-finanzas-v3.md §3 a §6). Mismo libro FINANZAS que la
@@ -35,8 +35,11 @@ export const SIN_CARGO = 'sin-cargo'
 
 const NUMERICAS = new Set(['MONTO_MXN', 'MONTO_ORIG', 'TIPO_CAMBIO', 'IVA_MXN', 'COSTO_EQUIV_USD', 'SESIONES', 'SESIONES_SIN_DATO', 'TOKENS_ENTRADA', 'TOKENS_SALIDA'])
 const ORIGIN_PREFIX = `${FINANZAS_AGENTE_ACTOR};modo=sheets`
-/** Analizador propio del ORIGEN del agente; `fuente` va codificada y nunca trae `;` ni `=` (criterio 4). */
-const ORIGIN = /^agente-finanzas;modo=sheets;req=([0-9a-f-]{36});hash=([0-9a-f]{16});reporte=(session_[A-Za-z0-9]{10,40});fuente=([^;=]*)$/
+/**
+ * Analizador propio del ORIGEN del agente; `fuente` va codificada y nunca trae `;` ni `=` (criterio 4). `moneda=` va solo
+ * en el cargo extra (ORD-POS-133): la del total de factura.
+ */
+const ORIGIN = /^agente-finanzas;modo=sheets;req=([0-9a-f-]{36});hash=([0-9a-f]{16});reporte=(session_[A-Za-z0-9]{10,40})(?:;moneda=(USD|MXN))?;fuente=([^;=]*)$/
 const AUDIT_ID = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})-(\d{2})$/
 
 type Entidad = 'MOVIMIENTOS' | 'RENDIMIENTO_CLAUDE'
@@ -70,6 +73,8 @@ export interface AuditadaAgente {
   requestId: string
   hash: string
   reporte: string
+  /** Moneda del total en el cargo extra; null en el rendimiento. */
+  moneda: Moneda | null
   fuente: string
   entidad: string
   id: string
@@ -83,15 +88,15 @@ export function codificarFuente(fuente: string): string {
   return fuente.replace(/%/g, '%25').replace(/;/g, '%3B').replace(/=/g, '%3D')
 }
 
-export function origenAgente(requestId: string, hash: string, reporte: string, fuente: string): string {
-  return `${ORIGIN_PREFIX};req=${requestId};hash=${hash};reporte=${reporte};fuente=${codificarFuente(fuente)}`
+export function origenAgente(requestId: string, hash: string, reporte: string, fuente: string, moneda: Moneda | null = null): string {
+  return `${ORIGIN_PREFIX};req=${requestId};hash=${hash};reporte=${reporte}${moneda ? `;moneda=${moneda}` : ''};fuente=${codificarFuente(fuente)}`
 }
 
-export function leerOrigenAgente(origen: string): { requestId: string; hash: string; reporte: string; fuente: string } | null {
+export function leerOrigenAgente(origen: string): { requestId: string; hash: string; reporte: string; moneda: Moneda | null; fuente: string } | null {
   const m = ORIGIN.exec(origen)
   if (!m) return null
   try {
-    return { requestId: m[1]!, hash: m[2]!, reporte: m[3]!, fuente: decodeURIComponent(m[4]!) }
+    return { requestId: m[1]!, hash: m[2]!, reporte: m[3]!, moneda: (m[4] as Moneda | undefined) ?? null, fuente: decodeURIComponent(m[5]!) }
   } catch {
     return null
   }
@@ -114,7 +119,7 @@ export function auditoriaAgente(t: Tabla): AuditadaAgente[] {
     if (!op) {
       op = { ...o, entidad, id, campos: new Map(), sinCargo: false, integridad: 'completa', lote, total: a ? Number(a[3]) : null, indices: [] }
       ops.set(o.requestId, op)
-    } else if (op.hash !== o.hash || op.reporte !== o.reporte || op.fuente !== o.fuente || op.entidad !== entidad || op.id !== id || op.lote !== lote) {
+    } else if (op.hash !== o.hash || op.reporte !== o.reporte || op.moneda !== o.moneda || op.fuente !== o.fuente || op.entidad !== entidad || op.id !== id || op.lote !== lote) {
       op.integridad = 'inconsistente'
     }
     if ((entidad !== 'MOVIMIENTOS' && entidad !== 'RENDIMIENTO_CLAUDE') || texto(t, fila, 'ACTOR') !== FINANZAS_AGENTE_ACTOR) op.integridad = 'inconsistente'
@@ -216,42 +221,63 @@ export class FinanzasAgenteService {
       const id = idCargoExtra(corte.id)
       this.revisarNoRegistrado(id, libro, A_MOVIMIENTOS)
 
-      // §5: cargo extra = T − S, con S anclada a la FECHA del REC-CLAUDE del mes.
-      const extra = cmd.facturaTotalCentavos - this.suscripcionDelCorte(corte, libro)
+      // §5: cargo extra = T − S en la moneda de REC-CLAUDE del mes (ORD-POS-133), con S anclada a su FECHA. T y S
+      // nunca se convierten para restarlos: otra moneda es 409 sin escribir.
+      const s = this.suscripcionDelCorte(corte, libro)
+      if (s.moneda !== null && s.moneda !== cmd.moneda) throw new OperationError('factura-no-cuadra', { detail: { motivo: 'moneda-distinta' } })
+      const extra = cmd.facturaTotalCentavos - s.centavos
       if (extra < 0) throw new OperationError('factura-no-cuadra')
-      if (extra > TOPE_USD_CENTAVOS) throw new OperationError('monto-excede-tope')
+      if (cmd.moneda === 'USD' && extra > TOPE_USD_CENTAVOS) throw new OperationError('monto-excede-tope')
       if (extra === 0) {
-        await this.auditar(hash, cmd.requestId, cmd.reporte, cmd.fuente, 'MOVIMIENTOS', id, { ESTADO: SIN_CARGO }, libro)
+        await this.auditar(hash, cmd.requestId, cmd.reporte, cmd.fuente, 'MOVIMIENTOS', id, { ESTADO: SIN_CARGO }, libro, cmd.moneda)
         await this.verificarSinCargo(cmd.requestId, id)
         return { operacion: op, id, repetida: false, sinCargo: true }
       }
+      if (cmd.moneda === 'MXN') return this.cargoMxn(cmd, corte, id, extra, hash, libro)
 
       const tc = cmd.tipoCambioDiezmil ?? decimalEscalado(tipoCambioDefecto(libro.parametros), 4)
       if (tc === null) throw new OperationError('validacion', { fields: { tipoCambio: 'Sin TIPO_CAMBIO_DEFECTO en PARAMETROS: hace falta el tipo de cambio.' } })
       const montoMxn = convertirCentavos(extra, tc)
       if (montoMxn <= 0) throw new OperationError('validacion', { fields: { tipoCambio: 'El monto en MXN redondeado no puede ser 0.' } })
-      const registro: Registro = {
-        MOV_ID: id,
-        FECHA: corte.fin,
-        PROYECTO: cmd.proyecto,
-        TIPO: 'Gasto',
-        CATEGORIA: 'Herramientas',
-        CONCEPTO: `Claude: cargo adicional ${corte.id}`,
-        PRODUCTO_ID: '',
-        MONTO_MXN: aNumero(montoMxn, 2),
-        MONEDA_ORIG: 'USD',
-        MONTO_ORIG: aNumero(extra, 2),
-        TIPO_CAMBIO: aNumero(tc, 4),
-        IVA_MXN: '',
-        FUENTE: FUENTE_AGENTE,
-        COMPROBANTE: 'sí',
-        AJUSTE_DE: '',
-      }
-      await this.auditar(hash, cmd.requestId, cmd.reporte, cmd.fuente, A_MOVIMIENTOS.entidad, id, registro, libro)
+      const registro: Registro = { ...this.registroCargo(cmd, corte, id), MONTO_MXN: aNumero(montoMxn, 2), MONEDA_ORIG: 'USD', MONTO_ORIG: aNumero(extra, 2), TIPO_CAMBIO: aNumero(tc, 4) }
+      await this.auditar(hash, cmd.requestId, cmd.reporte, cmd.fuente, A_MOVIMIENTOS.entidad, id, registro, libro, cmd.moneda)
       await this.anexar(registro, libro, A_MOVIMIENTOS)
       await this.verificar(id, registro, A_MOVIMIENTOS)
       return { operacion: op, id, repetida: false, sinCargo: false }
     })
+  }
+
+  /**
+   * Cargo extra en MXN (ORD-POS-133): MONTO_ORIG = MONTO_MXN = extra, sin TIPO_CAMBIO. El tope sigue en USD: se compara
+   * extra ÷ TIPO_CAMBIO_DEFECTO de PARAMETROS; sin él, 409 sin escribir (no se adivina el tipo de cambio).
+   */
+  private async cargoMxn(cmd: CargoExtraCommand, corte: Corte, id: string, extra: number, hash: string, libro: Libro): Promise<FinanzasAgenteResultado> {
+    const tc = decimalEscalado(tipoCambioDefecto(libro.parametros), 4)
+    if (tc === null || tc <= 0) throw new OperationError('tipo-cambio-sin-dato')
+    // extra (centavos MXN) ÷ (tc / 10⁴) > tope (centavos USD), en enteros: sin redondeo en el límite.
+    if (extra * 10_000 > TOPE_USD_CENTAVOS * tc) throw new OperationError('monto-excede-tope')
+    const registro = { ...this.registroCargo(cmd, corte, id), MONTO_MXN: aNumero(extra, 2), MONEDA_ORIG: 'MXN', MONTO_ORIG: aNumero(extra, 2), TIPO_CAMBIO: '' }
+    await this.auditar(hash, cmd.requestId, cmd.reporte, cmd.fuente, A_MOVIMIENTOS.entidad, id, registro, libro, cmd.moneda)
+    await this.anexar(registro, libro, A_MOVIMIENTOS)
+    await this.verificar(id, registro, A_MOVIMIENTOS)
+    return { operacion: 'finanzas.agente.cargo-extra', id, repetida: false, sinCargo: false }
+  }
+
+  /** Columnas del cargo extra que no dependen de la moneda (§4.3). */
+  private registroCargo(cmd: CargoExtraCommand, corte: Corte, id: string): Registro {
+    return {
+      MOV_ID: id,
+      FECHA: corte.fin,
+      PROYECTO: cmd.proyecto,
+      TIPO: 'Gasto',
+      CATEGORIA: 'Herramientas',
+      CONCEPTO: `Claude: cargo adicional ${corte.id}`,
+      PRODUCTO_ID: '',
+      IVA_MXN: '',
+      FUENTE: FUENTE_AGENTE,
+      COMPROBANTE: 'sí',
+      AJUSTE_DE: '',
+    }
   }
 
   /* ------------------------------------ Lectura ------------------------------------ */
@@ -287,22 +313,24 @@ export class FinanzasAgenteService {
   }
 
   /**
-   * `S` de §5, con una sola ancla: si existe `REC-CLAUDE-AAAA-MM`, su FECHA decide en qué corte cae (y su MONTO_ORIG en
-   * USD es `S`); `DIA_COBRO` de RECURRENTES solo cuenta si ese REC todavía no existe, y entonces no se resta un monto
-   * esperado: 409 `suscripcion-sin-confirmar`.
+   * `S` de §5 y su moneda, con una sola ancla: si existe `REC-CLAUDE-AAAA-MM`, su FECHA decide en qué corte cae y su
+   * MONEDA_ORIG es la del corte (ORD-POS-133): en USD, `S` = MONTO_ORIG; en MXN, `S` = MONTO_MXN (la confirmación en MXN
+   * deja MONTO_ORIG vacío). `DIA_COBRO` de RECURRENTES solo cuenta si ese REC todavía no existe, y entonces no se resta un
+   * monto esperado: 409 `suscripcion-sin-confirmar`; sin REC, la moneda es la del recurrente `CLAUDE` vigente, si lo hay.
    */
-  private suscripcionDelCorte(corte: Corte, libro: Libro): number {
+  private suscripcionDelCorte(corte: Corte, libro: Libro): { centavos: number; moneda: Moneda | null } {
     const t = libro.movimientos!
     const recId = movIdRecurrente('CLAUDE', corte.mes)
     const recs = t.filas.filter((f) => texto(t, f, 'MOV_ID') === recId)
     if (recs.length > 1) throw new OperationError('factura-no-cuadra', { detail: { motivo: 'suscripcion-duplicada' } })
     if (recs.length === 1) {
       const fecha = parseCivilDate(texto(t, recs[0]!, 'FECHA')).value
-      const monto = numeroCelda(valor(t, recs[0]!, 'MONTO_ORIG'))
-      if (fecha === null || texto(t, recs[0]!, 'MONEDA_ORIG').toUpperCase() !== 'USD' || monto === null || monto <= 0) {
-        throw new OperationError('factura-no-cuadra', { detail: { motivo: 'suscripcion-no-usd' } })
+      const moneda = MONEDAS.find((m) => m === texto(t, recs[0]!, 'MONEDA_ORIG').toUpperCase()) ?? null
+      const monto = moneda === null ? null : numeroCelda(valor(t, recs[0]!, moneda === 'USD' ? 'MONTO_ORIG' : 'MONTO_MXN'))
+      if (fecha === null || moneda === null || monto === null || monto <= 0) {
+        throw new OperationError('factura-no-cuadra', { detail: { motivo: 'suscripcion-sin-monto' } })
       }
-      return fecha >= corte.inicio && fecha <= corte.fin ? Math.round(monto * 100) : 0
+      return { centavos: fecha >= corte.inicio && fecha <= corte.fin ? Math.round(monto * 100) : 0, moneda }
     }
     const lectura = leerRecurrentes(libro.recurrentes)
     if (lectura.estado === 'no-disponible') throw new OperationError('finanzas-esquema-invalido', { detail: { pestana: 'RECURRENTES' } })
@@ -312,8 +340,9 @@ export class FinanzasAgenteService {
     if (rec && vigenteEn(rec, corte.mes)) {
       const cobro = fechaCobro(rec.diaCobro, corte.mes)
       if (cobro >= corte.inicio && cobro <= corte.fin) throw new OperationError('suscripcion-sin-confirmar')
+      return { centavos: 0, moneda: rec.moneda }
     }
-    return 0
+    return { centavos: 0, moneda: null }
   }
 
   /** Otro requestId para el mismo corte: la fila, o cualquier auditoría con ese ID (incluido «sin cargo»), ya existe. */
@@ -360,14 +389,14 @@ export class FinanzasAgenteService {
   }
 
   /** AUDITORIA de FINANZAS primero, una fila por campo no vacío: si falla, no se escribe la fila (fail-closed). */
-  private async auditar(hash: string, requestId: string, reporte: string, fuente: string, entidad: Entidad, id: string, registro: Registro, libro: Libro) {
+  private async auditar(hash: string, requestId: string, reporte: string, fuente: string, entidad: Entidad, id: string, registro: Registro, libro: Libro, moneda: Moneda | null = null) {
     const now = this.clock()
     const stamp = meridaIsoTimestamp(now)
     const compact = stamp.slice(0, 19).replace(/[-:T]/g, '')
     const lote = this.randomHex(4).toUpperCase()
     const campos = Object.entries(registro).filter(([, v]) => v !== '')
     const total = String(campos.length).padStart(2, '0')
-    const origen = origenAgente(requestId, hash, reporte, fuente)
+    const origen = origenAgente(requestId, hash, reporte, fuente, moneda)
     const rows = campos.map(([campo, v], i) => libro.auditoria.header.map((h) => ({
       AUDIT_ID: `AUD-${compact}-${lote}-${String(i + 1).padStart(2, '0')}-${total}`,
       FECHA_HORA: stamp,

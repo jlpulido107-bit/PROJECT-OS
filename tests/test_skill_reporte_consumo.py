@@ -115,6 +115,14 @@ class TestSkillReporteConsumo(unittest.TestCase):
             self.assertIn(frase, registrar)
         self.assertTrue((ROOT / "scripts" / "agente-finanzas.sh").is_file())
 
+    def test_pide_y_envia_la_moneda_del_total_sin_convertir(self):
+        registrar = self.registrar()
+        for frase in ("y en qué moneda (USD o MXN)?", "Nunca conviertas el total ni supongas USD",
+                      "`facturaTotal` (el total tal cual), `moneda` (`USD` o `MXN`", "`tipoCambio` solo con `USD`",
+                      "motivo `moneda-distinta`", "409 `tipo-cambio-sin-dato`"):
+            self.assertIn(frase, registrar)
+        self.assertNotIn("facturaTotalUsd", registrar)
+
     def test_ejemplo_de_fuente_cumple_el_formato(self):
         ejemplo = "`2027-02-Q2 «total del corte: 20.00 USD, la suscripción\n   cayó en el otro corte» 2027-03-01`"
         self.assertIn(ejemplo, self.registrar())
