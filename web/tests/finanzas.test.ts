@@ -122,9 +122,10 @@ describe('inercia (criterio 6)', () => {
     expect(page).toContain("privateFinanzas('/finanzas')")
     const layout = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'layout.tsx'), 'utf8')
     expect(layout).toContain('showFinanzas={finanzasSheetId() !== null}')
-    const nav = readFileSync(path.join(__dirname, '..', 'src', 'components', 'nav-links.tsx'), 'utf8')
-    expect(nav).toMatch(/showFinanzas \? \[\{ href: '\/finanzas'/)
+    const nav = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'nav.ts'), 'utf8')
+    expect(nav).toMatch(/showFinanzas \? \[\{ id: 'finanzas', [^\n]*\{ href: '\/finanzas'/)
     expect(nav).toContain('showFinanzas = false')
+    expect(readFileSync(path.join(__dirname, '..', 'src', 'components', 'nav-links.tsx'), 'utf8')).toContain('showFinanzas = false')
   })
 })
 

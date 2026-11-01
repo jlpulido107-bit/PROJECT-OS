@@ -295,8 +295,8 @@ describe('/eco/pipeline: render', () => {
 
 describe('navegación (criterio 3)', () => {
   it('el enlace a /eco/pipeline solo aparece con showEco, que depende solo de RADAROS_SHEET_ID', () => {
-    const nav = readFileSync(path.join(__dirname, '..', 'src', 'components', 'nav-links.tsx'), 'utf8')
-    expect(nav).toMatch(/showEco \? \[\{ href: '\/eco\/pipeline'/)
+    const nav = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'nav.ts'), 'utf8')
+    expect(nav).toMatch(/showEco\s*\? \[\{ id: 'radaros', [^\n]*\{ href: '\/eco\/pipeline'/)
     expect(nav.match(/'\/eco\/pipeline'/g)).toHaveLength(1)
     const layout = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'layout.tsx'), 'utf8')
     expect(layout).toContain('showEco={radarosSheetId() !== null}')

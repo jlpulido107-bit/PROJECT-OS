@@ -12,6 +12,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   colorScheme: 'light dark',
+  // Con «cover», env(safe-area-inset-bottom) toma el valor real en iPhone y la barra inferior del menú lo respeta.
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
