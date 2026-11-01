@@ -123,8 +123,11 @@ try {
   // 2) Navegación por rol.
   const readerHome = await (await reader.page('/')).text()
   const writerHome = await (await writer.page('/')).text()
-  check('lectora ve Planificación y Control, no Operaciones', NAV(readerHome, '/planificacion') && NAV(readerHome, '/control') && !NAV(readerHome, '/operaciones'))
-  check('escritor (mock) ve Planificación, Control y Operaciones', NAV(writerHome, '/planificacion') && NAV(writerHome, '/control') && NAV(writerHome, '/operaciones'))
+  // ORD-POS-126: Control es subpestaña del grupo Órdenes; se enlaza al entrar al grupo (/ordenes).
+  const readerOrdenes = await (await reader.page('/ordenes')).text()
+  const writerOrdenes = await (await writer.page('/ordenes')).text()
+  check('lectora ve Planificación y Control, no Operaciones', NAV(readerHome, '/planificacion') && NAV(readerHome, '/ordenes') && NAV(readerOrdenes, '/control') && !NAV(readerHome, '/operaciones') && !NAV(readerOrdenes, '/operaciones'))
+  check('escritor (mock) ve Planificación, Control y Operaciones', NAV(writerHome, '/planificacion') && NAV(writerHome, '/ordenes') && NAV(writerOrdenes, '/control') && NAV(writerHome, '/operaciones'))
   const readerForm = await (await reader.page('/tareas/nueva')).text()
   check('lectora en /tareas/nueva: sin formulario', !readerForm.includes('<form') || !readerForm.includes('Crear tarea'))
 
