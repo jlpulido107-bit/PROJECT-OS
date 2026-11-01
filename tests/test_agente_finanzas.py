@@ -17,8 +17,11 @@ printf '%s' "${CUERPO_FALSO:-{\\"ok\\":true\\}}" > "$salida"; printf '%s' "${COD
 TOKEN_SINTETICO = "tok-sintetico-que-nunca-debe-salir"
 RENDIMIENTO = {"corte": "2027-02-Q2", "reporte": "session_abcdefghij12", "costoEquivUsd": "450.00", "sesiones": 12,
                "sesionesSinDato": 1}
-CARGO = {"corte": "2027-02-Q2", "reporte": "session_abcdefghij12", "facturaTotalUsd": "20.00", "proyecto": "POS",
-         "fuente": "2027-02-Q2 «total del corte: 20.00 USD, la suscripción cayó en el otro corte» 2027-03-01"}
+CARGO = {"corte": "2027-02-Q2", "reporte": "session_abcdefghij12", "moneda": "USD", "facturaTotal": "20.00",
+         "proyecto": "POS", "fuente": "2027-02-Q2 «total del corte: 20.00 USD, la suscripción cayó en el otro corte» 2027-03-01"}
+# ORD-POS-133: suscripción en MXN (cifras sintéticas).
+CARGO_MXN = {**CARGO, "moneda": "MXN", "facturaTotal": "360.00",
+             "fuente": "2027-02-Q2 «total del corte: 360.00 MXN, la suscripción cayó en el otro corte» 2027-03-01"}
 
 
 def error(codigo):
@@ -89,7 +92,7 @@ class TestAgenteFinanzas(unittest.TestCase):
         self.no_envio(self.ejecutar())
 
     def test_nunca_estima_sin_total_de_factura(self):
-        for falta in ("facturaTotalUsd", "fuente", "proyecto"):
+        for falta in ("moneda", "facturaTotal", "fuente", "proyecto"):
             self.escribir({k: v for k, v in CARGO.items() if k != falta})
             r = self.ejecutar()
             self.no_envio(r)
@@ -111,12 +114,53 @@ class TestAgenteFinanzas(unittest.TestCase):
 
     def test_formatos(self):
         for cambio, campo in (({"corte": "2027-2-Q2"}, "corte:"), ({"reporte": "x"}, "reporte:"),
-                              ({"facturaTotalUsd": "-1"}, "facturaTotalUsd:"), ({"facturaTotalUsd": "1.234"}, "facturaTotalUsd:"),
+                              ({"facturaTotal": "-1"}, "facturaTotal:"), ({"facturaTotal": "1.234"}, "facturaTotal:"),
+                              ({"moneda": "EUR"}, "moneda:"), ({"moneda": "mxn"}, "moneda:"),
                               ({"proyecto": "SIG"}, "proyecto:")):
             self.escribir({**CARGO, **cambio})
             r = self.ejecutar()
             self.no_envio(r)
             self.assertIn(campo, r.stderr)
+
+    def test_moneda_mxn_se_envia_tal_cual(self):
+        self.escribir(CARGO_MXN)
+        r = self.ejecutar()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        enviado = self.enviado()
+        self.assertEqual({k: v for k, v in enviado.items() if k != "requestId"}, CARGO_MXN)
+        self.assertEqual((enviado["moneda"], enviado["facturaTotal"]), ("MXN", "360.00"))
+
+    def test_campo_legado_facturaTotalUsd_no_lo_envia_el_script(self):
+        self.escribir({**{k: v for k, v in CARGO.items() if k != "facturaTotal"}, "facturaTotalUsd": "20.00"})
+        r = self.ejecutar()
+        self.no_envio(r)
+        self.assertIn("Campo no permitido: facturaTotalUsd", r.stderr)
+
+    def test_tipo_cambio_solo_con_usd(self):
+        self.escribir({**CARGO_MXN, "tipoCambio": "18.5"})
+        r = self.ejecutar()
+        self.no_envio(r)
+        self.assertIn("tipoCambio: solo con moneda USD", r.stderr)
+        self.escribir({**CARGO, "tipoCambio": "18.5"})
+        self.assertEqual(self.ejecutar().returncode, 0)
+
+    def test_409_moneda_distinta_pide_el_total_en_la_moneda_de_la_suscripcion(self):
+        self.escribir(CARGO_MXN)
+        cuerpo = json.dumps({"ok": False, "error": {"codigo": "factura-no-cuadra", "detalle": {"motivo": "moneda-distinta"}}})
+        r = self.ejecutar(codigo="409", cuerpo=cuerpo)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("moneda de la suscripción", r.stderr)
+        self.assertIn("nunca lo conviertas", r.stderr)
+        self.assertTrue((self.tmp / "corte.rechazado.json").exists())
+
+    def test_409_tipo_cambio_sin_dato_conserva_para_repetir(self):
+        self.escribir(CARGO_MXN)
+        r = self.ejecutar(codigo="409", cuerpo=error("tipo-cambio-sin-dato"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("TIPO_CAMBIO_DEFECTO", r.stderr)
+        primero = self.enviado()
+        self.assertEqual(self.ejecutar("cargo-extra", "--repetir").returncode, 0)
+        self.assertEqual(self.enviado()["requestId"], primero["requestId"])
 
     def test_tope_de_3000_usd_en_el_rendimiento(self):
         self.escribir({**RENDIMIENTO, "costoEquivUsd": "3000.01"})

@@ -88,7 +88,7 @@ class TestSkillReporteConsumo(unittest.TestCase):
 
     def test_registro_pide_total_con_cita_literal_fechada_y_nunca_estima(self):
         registrar = self.registrar()
-        for frase in ("**Pide el total de factura al propietario.**", "**Cita literal fechada.**",
+        for frase in ("**Pide el total de factura y su moneda al propietario.**", "**Cita literal fechada.**",
                       "`<corte> «<cita literal del propietario>» AAAA-MM-DD`", "no la edites", "**Nunca estimes.**",
                       "Nunca uses `cost_usd`, el monto de RECURRENTES ni otro corte como total",
                       "envía solo `rendimiento`"):
@@ -102,10 +102,21 @@ class TestSkillReporteConsumo(unittest.TestCase):
 
     def test_pide_que_el_total_excluya_la_suscripcion_o_diga_en_que_corte_cayo(self):
         registrar = self.registrar()
-        for frase in ("¿La suscripción cayó en este corte?", "Si cayó en el otro,\n   dame el total sin ella",
-                      "si cayó en este, el total con ella", "Si el propietario no dice en qué corte cayó, pregúntalo antes de enviar",
+        for frase in ("¿La suscripción cayó en\n   este corte?", "Si cayó en el otro, dame el total sin ella",
+                      "si cayó en este, el total con ella", "Si el propietario no dice en qué corte cayó o en qué\n   moneda, pregúntalo antes de enviar",
                       "nunca sumes ni restes la suscripción tú"):
             self.assertIn(frase, registrar)
+
+    def test_pide_y_envia_la_moneda_del_total_sin_convertir(self):
+        # ORD-POS-133: el total va en la moneda de REC-CLAUDE-AAAA-MM; nunca se convierte.
+        registrar = self.registrar()
+        for frase in ("y en qué moneda (USD o MXN)?", "**en la moneda de ese REC**",
+                      "(`moneda` = `USD` o `MXN`, `facturaTotal` en ella)", "ni conviertas el total con un tipo de\n   cambio",
+                      "`corte`, `reporte`, `moneda`, `facturaTotal`, `fuente`, `proyecto`", "motivo `moneda-distinta`",
+                      "409 `tipo-cambio-sin-dato`"):
+            self.assertIn(frase, registrar)
+        script = (ROOT / "scripts" / "agente-finanzas.sh").read_text(encoding="utf-8")
+        self.assertIn('"corte","reporte","moneda","facturaTotal","fuente","proyecto"', script)
 
     def test_envia_solo_con_el_script_sin_token(self):
         registrar = self.registrar()
