@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { gruposMenu } from '@/lib/nav'
 
 /**
  * Garantías del árbol integrado V1.3–V1.6 en `main`: todas las páginas y APIs con autorización del
@@ -70,14 +71,16 @@ describe('árbol integrado V1.3–V1.6', () => {
   })
 
   it('navegación: Planificación y Control para lectores; Operaciones solo con showOperations (escritor en mock)', () => {
-    const nav = read(path.join('components', 'nav-links.tsx'))
-    const base = nav.slice(nav.indexOf('const LINKS'), nav.indexOf(']') + 1)
-    expect(base).toContain("'/planificacion'")
-    expect(base).toContain("'/control'")
+    // ORD-POS-126: los grupos viven en lib/nav.ts; sin booleanos solo quedan los de lectura.
+    const nav = read(path.join('lib', 'nav.ts'))
+    const base = gruposMenu().flatMap((g) => g.items.map((i) => i.href))
+    expect(base).toContain('/planificacion')
+    expect(base).toContain('/control')
     expect(base).not.toContain('/operaciones')
-    expect(nav).toMatch(/showOperations \? \[\{ href: '\/operaciones'/)
-    expect(nav).toMatch(/showEco \? \[\{ href: '\/eco'/)
-    expect(nav).toMatch(/showFinanzas \? \[\{ href: '\/finanzas'/)
+    expect(gruposMenu({ showOperations: true }).flatMap((g) => g.items.map((i) => i.href))).toContain('/operaciones')
+    expect(nav).toMatch(/showOperations \? \[\{ id: 'operaciones', [^\n]*\{ href: '\/operaciones'/)
+    expect(nav).toMatch(/showEco\s*\? \[\{ id: 'radaros', [^\n]*\{ href: '\/eco'/)
+    expect(nav).toMatch(/showFinanzas \? \[\{ id: 'finanzas', [^\n]*\{ href: '\/finanzas'/)
     const layout = read(path.join('app', '(private)', 'layout.tsx'))
     expect(layout).toMatch(/showOperations=\{/)
   })

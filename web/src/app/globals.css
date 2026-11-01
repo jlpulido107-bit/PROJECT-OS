@@ -82,21 +82,63 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 }
 .brand { font-weight: 700; margin: 0; }
 .brand-sub { display: block; font-weight: 400; font-size: 0.8rem; color: var(--muted); }
-.nav-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
-.nav-links a {
-  display: inline-block; padding: 8px 10px; border-radius: 8px; text-decoration: none; color: var(--text);
-  min-height: 40px;
-}
-.nav-links a:hover { background: var(--neutral-bg); }
-.nav-links a[aria-current="page"] { background: var(--info-bg); color: var(--info-fg); font-weight: 600; }
 .user { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .user-email { font-size: 0.85rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 
-@media (max-width: 720px) {
-  .topbar nav { width: 100%; min-width: 0; }
-  .nav-links a { padding: 8px; white-space: nowrap; }
-  .user { margin-left: 0; width: 100%; justify-content: space-between; }
+/* ------------------- Menú en 9 grupos con subpestañas (ORD-POS-126) ------------------- */
+.app-body { display: grid; grid-template-columns: 210px minmax(0, 1fr); max-width: 1400px; margin: 0 auto; }
+.app-main { min-width: 0; }
+.nav-principal {
+  position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto;
+  padding: 12px 8px; border-right: 1px solid var(--border);
 }
+.nav-groups, .nav-subs, .nav-subtabs, .nav-bottom, .nav-hoja ul { list-style: none; margin: 0; padding: 0; }
+.nav-groups { display: flex; flex-direction: column; gap: 2px; }
+.nav-groups a, .nav-subtabs a, .nav-hoja a {
+  display: flex; align-items: center; min-height: 40px; padding: 8px 10px; border-radius: 8px;
+  text-decoration: none; color: var(--text);
+}
+.nav-groups a:hover, .nav-subtabs a:hover, .nav-hoja a:hover { background: var(--neutral-bg); }
+.nav-groups > li > a[aria-current="page"] { font-weight: 700; }
+.nav-subs { margin: 2px 0 6px 12px; padding-left: 8px; border-left: 2px solid var(--border); }
+.nav-subs a { font-size: 0.92rem; }
+.nav-subs a[aria-current="page"], .nav-subtabs a[aria-current="page"], .nav-hoja a[aria-current="page"],
+.nav-groups > li:not(:has(.nav-subs)) > a[aria-current="page"] {
+  background: var(--info-bg); color: var(--info-fg); font-weight: 600;
+}
+.nav-subtabs, .nav-bottom { display: none; }
+
+@media (max-width: 720px) {
+  .user { margin-left: 0; width: 100%; justify-content: space-between; }
+  .app-body { display: block; }
+  .app-main { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .nav-principal { position: static; max-height: none; overflow: visible; padding: 0; border-right: 0; }
+  .nav-groups { display: none; }
+  .nav-subtabs {
+    display: flex; gap: 4px; overflow-x: auto; padding: 8px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-subtabs a { white-space: nowrap; }
+  .nav-bottom {
+    display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  }
+  .nav-bottom a, .nav-mas {
+    display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; padding: 4px;
+    border: 0; border-radius: 8px; background: none; font: inherit; font-size: 0.85rem; color: var(--text);
+    text-decoration: none; cursor: pointer;
+  }
+  .nav-bottom a[aria-current="page"], .nav-mas-activo { background: var(--info-bg); color: var(--info-fg); font-weight: 600; }
+}
+
+.nav-hoja-fondo { position: fixed; inset: 0; z-index: 30; background: rgb(0 0 0 / 40%); display: flex; align-items: flex-end; }
+.nav-hoja {
+  width: 100%; max-height: 80vh; overflow-y: auto; background: var(--surface); color: var(--text);
+  border-radius: var(--radius) var(--radius) 0 0; padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.nav-hoja-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.nav-hoja-grupo h3 { font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
 
 .footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 1rem; }
 

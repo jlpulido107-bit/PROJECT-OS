@@ -107,8 +107,8 @@ describe('inercia (criterio 4)', () => {
     expect(page).toContain("privateEco('/eco')")
     const layout = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'layout.tsx'), 'utf8')
     expect(layout).toContain('showEco={radarosSheetId() !== null}')
-    const nav = readFileSync(path.join(__dirname, '..', 'src', 'components', 'nav-links.tsx'), 'utf8')
-    expect(nav).toMatch(/showEco \? \[\{ href: '\/eco'/)
+    const nav = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'nav.ts'), 'utf8')
+    expect(nav).toMatch(/showEco\s*\? \[\{ id: 'radaros', label: 'RADAROS', corto: 'RADAROS', items: \[\{ href: '\/eco'/)
   })
 })
 
