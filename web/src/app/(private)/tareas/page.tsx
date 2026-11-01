@@ -7,6 +7,7 @@ import { Empty, humanize, Pagination } from '@/components/ui'
 import {
   distinctValues, FILTER_EMPTY_VALUE, filterTasks, paginate, parseTaskFilters, sortTasks, type TaskFilters,
 } from '@/lib/aggregate'
+import { puedeCerrarTareas } from '@/lib/operations/config'
 import { privateData } from '@/lib/page-data'
 
 export const metadata: Metadata = { title: 'Tareas' }
@@ -21,6 +22,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   if (!result.ok) return <><h1>Tareas</h1><LoadError result={result} /></>
   const data = result.data
   const canEdit = writeAccess(user.email).allowed
+  const puedeCerrar = canEdit && puedeCerrarTareas(user.email)
   const filters = parseTaskFilters(params)
   const filtered = sortTasks(filterTasks(data.tareas, filters))
   const page = paginate(filtered, params.pagina, PAGE_SIZE)
@@ -42,7 +44,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       ) : page.total === 0 ? (
         <Empty>Ninguna tarea coincide con los filtros. Las fechas filtran por FECHA_LIMITE (o FECHA_PLAN si no hay límite); tareas sin fecha se excluyen al filtrar por fecha.</Empty>
       ) : (
-        <div className="stack">{page.items.map((t) => <TaskCard key={t.id} task={t} data={data} canEdit={canEdit} />)}</div>
+        <div className="stack">{page.items.map((t) => <TaskCard key={t.id} task={t} data={data} canEdit={canEdit} puedeCerrar={puedeCerrar} />)}</div>
       )}
       <Pagination page={page} basePath="/tareas" params={{ ...filters }} />
     </>

@@ -3,11 +3,17 @@ import { dependenciesFor, isBlocked } from '@/lib/aggregate'
 import { CLOSED_TASK_STATES } from '@/lib/schema'
 import type { Dataset, Tarea } from '@/lib/types'
 import { Instrucciones } from './instrucciones'
+import { CompleteTaskForm } from './operations/forms'
 import { Badge, DateText, humanize, StateBadge, Text } from './ui'
 
-export function TaskCard({ task, data, canEdit = false }: { task: Tarea; data: Dataset; canEdit?: boolean }) {
+/**
+ * `puedeCerrar` (ORD-POS-129, DEC-POS-023): la página lo calcula con `puedeCerrarTareas` y `canWrite`; la tarjeta además
+ * exige `canEdit` y tarea abierta. Solo decide si se pinta `CompleteTaskForm` tal cual: el servidor lo vuelve a verificar.
+ */
+export function TaskCard({ task, data, canEdit = false, puedeCerrar = false }: { task: Tarea; data: Dataset; canEdit?: boolean; puedeCerrar?: boolean }) {
   const deps = dependenciesFor(task.id, data)
   const blocked = isBlocked(task)
+  const open = task.estado === null || !CLOSED_TASK_STATES.has(task.estado)
   return (
     <article className={`card task${blocked ? ' task-blocked' : ''}`} aria-labelledby={`t-${task.id}`} id={`tarea-${task.id}`}>
       <header className="card-head">
@@ -66,11 +72,17 @@ export function TaskCard({ task, data, canEdit = false }: { task: Tarea; data: D
       ) : null}
       {canEdit ? (
         <div className="card-actions">
-          {task.estado === null || !CLOSED_TASK_STATES.has(task.estado) ? (
+          {open ? (
             <Link className="button" href={`/tareas/${encodeURIComponent(task.id)}/editar`}>Editar</Link>
           ) : null}
           <Link className="button" href={`/tiempos/nuevo?tarea=${encodeURIComponent(task.id)}`}>Registrar tiempo</Link>
         </div>
+      ) : null}
+      {canEdit && puedeCerrar && open ? (
+        <CompleteTaskForm
+          key={`cerrar-${task.version ?? '0'}`}
+          task={{ id: task.id, version: Number(task.version ?? '0') || 0, criterioTerminado: task.criterioTerminado ?? '' }}
+        />
       ) : null}
     </article>
   )
