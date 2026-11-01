@@ -1,9 +1,13 @@
 import type { Metadata } from 'next'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
+import { FlujoView } from '@/components/planning/flujo'
 import { HoyView } from '@/components/planning/hoy'
 import { PlanningView } from '@/components/planning/planning-view'
+import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { MERIDA_TZ } from '@/lib/dates'
 import { canWrite, puedeCerrarTareas } from '@/lib/operations/config'
+import { githubClient } from '@/lib/operations/dispatch'
+import { capaFlujo, githubDeFlujo } from '@/lib/planificacion-flujo'
 import { hitosSemana } from '@/lib/planificacion-semana-hitos'
 import { capaHoy } from '@/lib/planificacion-v2'
 import { planWeek } from '@/lib/planning/engine'
@@ -24,14 +28,20 @@ export default async function PlanningPage() {
   const hoy = capaHoy(data, planWeek(input, DEFAULT_SCENARIO, { referenceDate, timeZone: MERIDA_TZ }))
   // El botón de cierre solo para el propietario con la bandera encendida y la escritura habilitada; el guard lo repite.
   const puedeCerrar = puedeCerrarTareas(user.email) && canWrite(user.email)
+  // Capa Flujo (ORD-POS-123): solo lectura de GitHub con el cliente de tope LLAMADAS_AGENTES, la caché de listas de
+  // /agentes y la de dictámenes de /ordenes, dentro de LIMITE_GLOBAL_MS; lo que no cupo queda «sin datos».
+  const client = githubClient(process.env, { maxLlamadas: LLAMADAS_AGENTES })
+  const ordenesOk = data.tabs.ORDENES_CODEX.ok && !data.tabs.ORDENES_CODEX.truncated
+  const flujo = capaFlujo(data.ordenes, ordenesOk, client && ordenesOk ? await githubDeFlujo(client, data.ordenes) : null)
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para
   // simular escenarios al instante, sin enviar nada de vuelta.
   return (
     <>
       <h1>Planificación semanal y diaria</h1>
       <Freshness data={data} />
-      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS']} />
+      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS', 'ORDENES_CODEX']} />
       <HoyView capa={hoy} puedeCerrar={puedeCerrar} />
+      <FlujoView capa={flujo} />
       {/* Semana visible y «Detalle del plan» plegado: los pinta PlanningView, porque la capa Semana sigue el escenario del cliente. */}
       <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} />
     </>
