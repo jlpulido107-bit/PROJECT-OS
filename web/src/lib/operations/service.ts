@@ -15,6 +15,10 @@ import {
   derivedRequestId, payloadHash, type CompleteTaskCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
   type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
+import {
+  auditDiff, comprobarIdea, escribirIdea, idOcupado, leerLibroIdeas, planDesdeAuditoria, planIdea, siguienteIdIdea,
+  type AltaIdeaCommand, type IdeasAltaStore,
+} from '../radaros/ideas-alta'
 
 /**
  * Servicio de aplicación V1.4 (contrato: docs/v1-4-write-contract.md).
@@ -31,9 +35,12 @@ export interface OperationContext {
   autorizacion?: string
 }
 
+/** Entidad auditada: una pestaña de PROJECT-OS o PRODUCTS del libro de RADAROS (alta de ideas, ORD-POS-131). */
+export type AuditEntity = EntityTab | 'PRODUCTS'
+
 export interface OperationResult {
   operacion: OperationName
-  entidad: EntityTab
+  entidad: AuditEntity
   id: string
   version?: number
   /** La solicitud ya se había aplicado (idempotencia) o se completó una intención auditada (roll-forward). */
@@ -291,6 +298,39 @@ export class OperationsService {
       await this.appendEntity('TIEMPOS', tiempos, record)
       await this.verifyCreated('TIEMPOS', id, record)
       return { operacion: op, entidad: 'TIEMPOS', id, repetida: false }
+    })
+  }
+
+  /**
+   * Alta de una idea en RADAROS por el agente PM (ORD-POS-131, DEC-ECO-007): una fila nueva en PRODUCTS (A:P) y otra en
+   * SCORING (A:L) del libro de RADAROS, con ID EC-NNN automático. Orden: encabezados y plan (si SCORING no tiene las
+   * fórmulas M a P en la fila nueva, no se escribe nada) → idempotencia → AUDITORIA de PROJECT-OS (ACTOR agente-pm,
+   * AUTORIZACION con el «sí PAQ») → libro de RADAROS → verificación (filas iguales y M con valor). El mismo requestId
+   * repite sin duplicar; si la escritura quedó a medias, completa lo que falte con lo auditado.
+   */
+  altaIdea(cmd: AltaIdeaCommand, ctx: OperationContext, ideas: IdeasAltaStore): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'idea.alta'
+      const hash = payloadHash(op, cmd)
+      const audit = await readView(this.store, 'AUDITORIA')
+      const found = this.findAudited(audit, cmd.requestId)
+      if (found) {
+        if (found.op.operacion !== op || found.op.hash !== hash || found.op.entidad !== 'PRODUCTS') throw new OperationError('conflicto-idempotencia')
+        const plan = planDesdeAuditoria(found.op.id, found.op.fields)
+        await escribirIdea(ideas, plan)
+        return { operacion: op, entidad: 'PRODUCTS', id: plan.id, repetida: true }
+      }
+
+      const libro = await leerLibroIdeas(ideas)
+      const id = siguienteIdIdea(libro.products)
+      if (idOcupado(libro, id)) throw new OperationError('conflicto-concurrente')
+      const plan = planIdea(id, cmd)
+      // Fila libre y fórmulas de las dos pestañas ANTES de auditar: si fallan, no queda nada escrito, ni la auditoría.
+      // escribirIdea relee y las repite justo antes de escribir.
+      comprobarIdea(plan, libro)
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'PRODUCTS', id, auditDiff(plan, cmd.autorizacion), this.clock(), audit)
+      await escribirIdea(ideas, plan)
+      return { operacion: op, entidad: 'PRODUCTS', id, repetida: false }
     })
   }
 
@@ -652,7 +692,7 @@ export class OperationsService {
 
   /** Escribe la auditoría ANTES que la entidad. Si falla, no se escribe nada (fail-closed). */
   private async auditFirst(
-    op: OperationName, hash: string, requestId: string, ctx: OperationContext, entidad: EntityTab, id: string,
+    op: OperationName, hash: string, requestId: string, ctx: OperationContext, entidad: AuditEntity, id: string,
     diff: Map<string, { antes: string; despues: string }>, now: Date, auditView: TableView,
   ) {
     const stamp = meridaIsoTimestamp(now)
@@ -819,6 +859,7 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'tiempo.registrar': ['SESION_ID'],
   'tiempo.crear': ['SESION_ID'],
   'decision.crear': ['DECISION_ID'],
+  'idea.alta': ['PRODUCT_ID', 'AUTORIZACION'],
   'orden.crear': ['ORDEN_ID', 'ESTADO'],
   'orden.aprobar': ['ESTADO'],
   'orden.cancelar': ['ESTADO'],

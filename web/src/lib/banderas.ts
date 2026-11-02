@@ -2,6 +2,7 @@ import 'server-only'
 
 import { pmPuedeRegistrarPr, segundoGeminiSupervisado, tareasCierrePropietario } from './operations/config'
 import { finanzasAgenteMode } from './finanzas/agente-config'
+import { ecoIdeasAltaHabilitada } from './radaros/ideas-alta'
 import { ecoPipelineWriteMode } from './radaros/pipeline-escritura-config'
 import { tiemposAgenteHabilitado } from './tiempos-agente'
 
@@ -25,6 +26,7 @@ export const BANDERAS: Readonly<Record<string, Bandera>> = {
   TIEMPOS_AGENTE: { nombre: 'Agente de Tiempos (lectura de /api/planificacion)', encendida: tiemposAgenteHabilitado },
   FINANZAS_AGENTE_MODE: { nombre: 'Agente de finanzas (registro de cortes)', encendida: (env) => finanzasAgenteMode(env) === 'sheets' },
   ECO_PIPELINE_WRITE_MODE: { nombre: 'Escritura del pipeline de /eco', encendida: (env) => ecoPipelineWriteMode(env) === 'sheets' },
+  ECO_IDEAS_ALTA: { nombre: 'Alta de ideas en RADAROS por el PM', encendida: ecoIdeasAltaHabilitada },
 }
 
 /** Clave de la celda BANDERA: sin espacios y en mayúsculas; null si está vacía. */

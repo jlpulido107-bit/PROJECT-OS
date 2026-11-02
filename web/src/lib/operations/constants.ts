@@ -71,6 +71,8 @@ export type OperationName =
   | 'tarea.crear' | 'tarea.editar' | 'tiempo.registrar' | 'decision.crear'
   /** Alta de una fila de TIEMPOS por el agente PM (ORD-POS-112, DEC-POS-025), solo con TIEMPOS_AGENTE=true. */
   | 'tiempo.crear'
+  /** Alta de una idea en PRODUCTS y SCORING de RADAROS por el agente PM (ORD-POS-131, DEC-ECO-007), solo con ECO_IDEAS_ALTA=true. */
+  | 'idea.alta'
   /** Cierre de una tarea a COMPLETADO por el propietario (ORD-POS-106, DEC-POS-023). Nunca del agente PM. */
   | 'tarea.completar'
   | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
@@ -94,6 +96,8 @@ export const AGENT_OPERATIONS: readonly OperationName[] = ['tarea.crear', 'tarea
 /** DEC-POS-011: en PATCH de una orden (operación 'orden.aprobar') el PM solo usa estas acciones; el resto es del propietario. */
 /** ORD-POS-112: operación del PM fuera de AGENT_OPERATIONS que solo se permite con TIEMPOS_AGENTE=true (guard.ts). */
 export const AGENT_TIEMPOS_OPERATION: OperationName = 'tiempo.crear'
+/** ORD-POS-131 (DEC-ECO-007): operación SOLO del PM, fuera de AGENT_OPERATIONS; el guard la permite con ECO_IDEAS_ALTA=true. */
+export const AGENT_IDEAS_OPERATION: OperationName = 'idea.alta'
 export const AGENT_ORDER_ACTIONS: readonly string[] = ['APROBAR', 'ENVIAR', 'REVISAR']
 export const AGENT_EDITABLE_TASK_FIELDS = [
   'titulo', 'descripcion', 'prioridad', 'hitoId', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'criterioTerminado',

@@ -66,6 +66,10 @@ export type OperationErrorCode =
   | 'asin-duplicado'
   | 'elegida-duplicada'
   | 'instrucciones-sin-columna'
+  | 'idea-encabezados-distintos'
+  | 'idea-fila-ocupada'
+  | 'scoring-sin-formulas'
+  | 'idea-sin-calculo'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -134,6 +138,10 @@ const STATUS: Record<OperationErrorCode, number> = {
   'asin-duplicado': 409,
   'elegida-duplicada': 409,
   'instrucciones-sin-columna': 422,
+  'idea-encabezados-distintos': 409,
+  'idea-fila-ocupada': 409,
+  'scoring-sin-formulas': 409,
+  'idea-sin-calculo': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -203,6 +211,10 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'asin-duplicado': 'Ese ASIN ya está en otro producto (uno descartado solo vuelve con «reabrir»); no se escribió nada.',
   'elegida-duplicada': 'El producto ya tiene una cotización ELEGIDA; no se escribió nada.',
   'instrucciones-sin-columna': 'La pestaña TAREAS aún no tiene la columna INSTRUCCIONES (la añade el propietario con la migración); quita las instrucciones o espera la migración. No se escribió nada.',
+  'idea-encabezados-distintos': 'Los encabezados de PRODUCTS (A a P) o de SCORING (A a L) del libro de RADAROS no son los esperados (detalle: columnas); no se escribió nada.',
+  'idea-fila-ocupada': 'La primera fila con PRODUCT_ID vacío en PRODUCTS tiene otros datos; no se editan filas existentes. No se escribió nada.',
+  'scoring-sin-formulas': 'La fila nueva de SCORING no tiene las fórmulas M a P copiadas (las prepara el propietario a mano); no se escribió nada, tampoco en PRODUCTS.',
+  'idea-sin-calculo': 'La idea se escribió, pero la columna M de su fila de SCORING quedó sin valor; revisa las fórmulas de SCORING.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')

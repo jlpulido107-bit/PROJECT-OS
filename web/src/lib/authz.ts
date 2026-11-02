@@ -53,10 +53,11 @@ export async function decide(
 
 /**
  * Únicas rutas que el agente PM puede alcanzar sin sesión: POST de altas y PATCH de una tarea o de una orden
- * (DEC-POS-011). El alta en TIEMPOS (ORD-POS-112) pasa el proxy, pero la API la rechaza sin TIEMPOS_AGENTE=true.
+ * (DEC-POS-011). El alta en TIEMPOS (ORD-POS-112) pasa el proxy, pero la API la rechaza sin TIEMPOS_AGENTE=true; igual
+ * el alta de ideas en RADAROS (ORD-POS-131) sin ECO_IDEAS_ALTA=true.
  */
 const AGENT_ROUTES: Array<[method: string, path: RegExp]> = [
-  ['POST', /^\/api\/operaciones\/(tareas|decisiones|ordenes|tiempos)\/?$/],
+  ['POST', /^\/api\/operaciones\/(tareas|decisiones|ordenes|tiempos|ideas)\/?$/],
   ['PATCH', /^\/api\/operaciones\/(tareas|ordenes)\/[^/]+\/?$/],
 ]
 

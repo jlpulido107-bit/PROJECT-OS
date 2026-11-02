@@ -1,7 +1,8 @@
 import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { ecoIdeasAltaFlag } from '../radaros/ideas-alta'
 import { tiemposAgenteHabilitado } from '../tiempos-agente'
-import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, type OperationName } from './constants'
+import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_IDEAS_OPERATION, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, type OperationName } from './constants'
 import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
@@ -61,7 +62,9 @@ async function evaluateAgentRequest(
   if (!token || !ctx.agentLimiter || !agentTokenMatches(token, ctx.env)) throw new OperationError('no-autenticado')
   // ORD-POS-112 (DEC-POS-025): el alta en TIEMPOS solo con la bandera del propietario; apagada, no permitida sin escribir.
   const tiempos = ctx.operation === AGENT_TIEMPOS_OPERATION && tiemposAgenteHabilitado(ctx.env)
-  if (!ctx.operation || (!tiempos && !AGENT_OPERATIONS.includes(ctx.operation))) throw new OperationError('operacion-no-permitida')
+  // ORD-POS-131 (DEC-ECO-007 e): el alta de ideas en RADAROS solo con ECO_IDEAS_ALTA=true; apagada, inerte sin leer el cuerpo.
+  const ideas = ctx.operation === AGENT_IDEAS_OPERATION && ecoIdeasAltaFlag(ctx.env)
+  if (!ctx.operation || (!tiempos && !ideas && !AGENT_OPERATIONS.includes(ctx.operation))) throw new OperationError('operacion-no-permitida')
   if (writeModeStatus(ctx.env).mode === 'disabled') throw new OperationError('escritura-deshabilitada')
 
   const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
@@ -105,6 +108,8 @@ export async function evaluateWriteRequest(
   if (!isEmailAllowed(ctx.email, parseAllowedEmails(ctx.env.AUTH_ALLOWED_EMAILS))) {
     throw new OperationError('sin-permiso-lectura')
   }
+  // ORD-POS-131: el alta de ideas en RADAROS es solo del token del PM; ninguna sesión de navegador la usa.
+  if (ctx.operation === AGENT_IDEAS_OPERATION) throw new OperationError('operacion-no-permitida')
 
   const origin = request.headers.get('origin')
   const fetchSite = request.headers.get('sec-fetch-site')
