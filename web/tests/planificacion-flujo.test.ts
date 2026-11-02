@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { FlujoView } from '@/components/planning/flujo'
 import { limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
 import { limpiarCacheDespliegue, MOTIVO_NO_LEIDO_DESPLIEGUE, MOTIVO_SIN_COMMIT, MOTIVO_SOLO_POS } from '@/lib/despliegue'
 import { MOTIVO_F5 } from '@/lib/esperando'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
@@ -187,11 +188,11 @@ describe('criterio 2: «no aplica» según DEC-POS-008 y DEC-POS-019', () => {
 })
 
 describe('criterio 3: Desplegada y Activada apagadas; sin GitHub, sin datos', () => {
-  it('sin el commit desplegado, Desplegada «apagada» con «el despliegue no informa su commit»; Activada con el motivo de F5', () => {
+  it('sin el commit desplegado, Desplegada «apagada» con «el despliegue no informa su commit»; Activada, sin la columna BANDERA (ORD-POS-125)', () => {
     for (const o of [orden(1, 'BORRADOR'), orden(2, 'PR_ABIERTO'), orden(3, 'REVISADA')]) {
       const l = lineaFlujo(o, gh([2, 3]))
       expect(l.pasos.slice(-2)).toEqual([
-        { paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }, { paso: 'Activada', estado: 'apagada', motivo: MOTIVO_F5 },
+        { paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }, { paso: 'Activada', estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
       ])
     }
     expect(MOTIVO_SIN_COMMIT.toLowerCase()).toBe('el despliegue no informa su commit.')
@@ -230,7 +231,7 @@ describe('criterio 4: encabezado, etiqueta y tope de llamadas', () => {
     expect(html).toContain('Esperan por ti: 2 · por Claude: 1 · por revisor: 1')
     expect(html).toContain(`Orden 1 · <a class="mono small" href="/ordenes#orden-${id(1)}">${id(1)}</a>`)
     expect(html).toContain(`(orden sin título) · <a class="mono small" href="/ordenes#orden-${id(4)}">`)
-    expect(html).toContain(MOTIVO_F5)
+    expect(html).not.toContain(MOTIVO_F5)
   })
 
   it('lee el dictamen con dictamenDeOrden: un CONFORME del head actual en BAJO deja la orden en tu decisión', async () => {

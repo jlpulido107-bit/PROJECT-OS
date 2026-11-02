@@ -7,6 +7,7 @@ import { conteoOrdenes, ordenesDelFiltro } from '@/lib/agentes'
 import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { leerAuditoria } from '@/lib/auditoria'
 import { todayInMerida } from '@/lib/dates'
+import { fuenteBanderas } from '@/lib/banderas'
 import { commitDesplegado } from '@/lib/despliegue'
 import { esperandoPorTi, githubDeInicio } from '@/lib/esperando'
 import { finanzasAgenteMode } from '@/lib/finanzas/agente-config'
@@ -57,9 +58,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const fuenteFinanzas: FuenteFinanzas = finanzas.estado === 'ok' ? { estado: 'ok', vista: finanzas.vista }
     : finanzas.estado === 'no-configurado' ? { estado: 'no-configurado' } : { estado: 'error', motivo }
   const pendientes = misPendientes(data, hoy, filtro, { prs: gh?.prs ?? null, recurrentes: recurrentesSinConfirmar(vista, motivo) })
+  // 6.4 (ORD-POS-125): la columna BANDERA y el estado de cada bandera, solo para la sesión del propietario; la fusión sale
+  // de las listas de PRs ya leídas (cero llamadas nuevas).
   const esperando = esperandoPorTi({
     propietario, ordenes: data.ordenes, ordenesOk: data.tabs.ORDENES_CODEX.ok, filtro, pendientes, listos, commit,
     despliegue: lecturas ? { prs: gh?.prs.POS ?? null, sinDesplegar: lecturas.sinDesplegar } : null,
+    banderas: fuenteBanderas(data.ordenesConBandera, propietario), prs: gh?.prs ?? null, truncados: gh?.truncados ?? [],
   })
   const t = tablero({
     ds: data, hoy, now, filtro, proyectos, gh, finanzas: fuenteFinanzas, audit, agenteFinanzas: finanzasAgenteMode() === 'sheets',

@@ -9,6 +9,7 @@ import {
   esperandoPorTi, githubDeInicio, leerListos, MOTIVO_F5, MOTIVO_NO_LEIDO, MOTIVO_NO_LEIDO_SIN_DESPLEGAR, MOTIVO_NO_PROPIETARIO,
   MOTIVO_SIN_GITHUB, MOTIVO_SIN_GITHUB_DESPLIEGUE, motivoTruncado, type FuentesEsperando,
 } from '@/lib/esperando'
+import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
 import { misPendientes } from '@/lib/inicio'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
 import { createGitHubClient, type PrFusion } from '@/lib/operations/github'
@@ -204,10 +205,10 @@ describe('criterios 2 y 3: decisiones, vencen hoy y grupos apagados', () => {
     ])
   })
 
-  it('sin el commit desplegado, 6.2 está apagada con «el despliegue no informa su commit»; 6.4, con el motivo de F5', () => {
+  it('sin el commit desplegado, 6.2 está apagada con «el despliegue no informa su commit»; 6.4, sin la columna BANDERA (ORD-POS-125)', () => {
     const e = esperandoPorTi(fuentes([]))
     expect(e.estado === 'ok' && [e.datos.fusionadoSinDesplegar, e.datos.banderas]).toEqual([
-      { estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }, { estado: 'apagada', motivo: MOTIVO_F5 },
+      { estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }, { estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
     ])
     expect(MOTIVO_SIN_COMMIT).toBe('El despliegue no informa su commit.')
     expect(MOTIVO_F5).toBe('Falta la fuente; la añade la fase F5.')
@@ -250,7 +251,8 @@ describe('criterio 4: propietario, contador, filtro y «Mis pendientes»', () =>
     expect(h).toContain(`https://github.com/${REPO}/pull/4`)
     expect(h).toContain('Fuente de Desplegada')
     expect(h).toContain('Renovar el token')
-    expect(h.match(/Falta la fuente; la añade la fase F5\./g)).toHaveLength(1)
+    expect(h).not.toContain(MOTIVO_F5)
+    expect(h).toContain(MOTIVO_SIN_COLUMNA_BANDERA)
     expect(h).toContain(MOTIVO_SIN_COMMIT)
     expect(h).not.toMatch(/TAREAS_CIERRE_PROPIETARIO|TIEMPOS_AGENTE|SEGUNDO_GEMINI|PM_PUEDE|FINANZAS_AGENTE|ECO_PIPELINE|@/)
   })

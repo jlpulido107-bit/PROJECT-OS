@@ -154,6 +154,8 @@ export interface Orden {
   riesgo: string | null
   /** Columna SENSIBLE (DEC-POS-019): `SI`, `NO` o null si está vacía o falta; solo `NO` es no sensible. */
   sensible: string | null
+  /** Columna opcional BANDERA (ORD-POS-125): la bandera que la orden deja inerte; null si está vacía o falta. */
+  bandera?: string | null
   estado: string | null
   issueUrl: string | null
   prUrl: string | null
@@ -234,6 +236,8 @@ export interface Dataset {
   decisiones: Decision[]
   syncRuns: SyncRun[]
   ordenes: Orden[]
+  /** ORDENES_CODEX tiene la columna opcional BANDERA (ORD-POS-125); sin ella, Activada y 6.4 quedan apagadas. */
+  ordenesConBandera: boolean
   supervision: Supervision[]
   issues: DataIssue[]
   /** Hay más incidencias de las que se conservaron. */

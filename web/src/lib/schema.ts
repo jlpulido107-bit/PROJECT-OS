@@ -72,6 +72,14 @@ export const TAB_HEADERS = {
 export const ORDENES_SENSIBLE = 'SENSIBLE'
 
 /**
+ * Columna opcional de ORDENES_CODEX (ORD-POS-125, DEC-POS-028 punto 3; docs/migracion-ordenes-codex.md): el nombre de la
+ * bandera que la orden deja inerte (p. ej. `TIEMPOS_AGENTE`) o vacía si no deja ninguna. Va al final, la añade y la llena
+ * solo el propietario a mano; no está en el contrato de escritura. Sin ella, Activada y «Banderas sin encender» quedan
+ * apagadas.
+ */
+export const ORDENES_BANDERA = 'BANDERA'
+
+/**
  * Columna opcional de TAREAS (ORD-POS-105, docs/escritura-v1-8.md §6): instrucciones paso a paso, hasta 4000 caracteres.
  * Va al final y solo la añade el propietario (docs/migracion-instrucciones.md). Se lee si existe; sin ella, la tarea se lee
  * y se escribe igual que antes y las instrucciones se rechazan.
