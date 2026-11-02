@@ -21,6 +21,8 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
 - No modificar código de repositorios fuente desde aquí.
 - Google Sheets es la fuente operativa; jamás inventar progreso. Las sesiones de implementación y de revisión no
   escriben en Sheets reales ni usan el conector de Google Sheets.
+- Excepción de lectura para SIG (DEC-SIG-003, punto 1): las sesiones de SIG pueden leer con el conector, solo lectura,
+  los libros de prueba y SUSULA_ENSAYO, y SUSULA V3 solo para diagnóstico. Nadie escribe en ellos con el conector.
 - Escritura del PM (DEC-POS-005): solo la sesión PM (Claude) escribe, únicamente por la API de operaciones del dashboard
   (tareas, decisiones PENDIENTE y órdenes BORRADOR), con la skill `pm-escribir-api` y tras el «sí» explícito del
   propietario; nunca cancela ni cierra nada ni cambia ESTADO o BLOQUEO de tareas. DEC-POS-011 (2026-10-21): con el «sí»
