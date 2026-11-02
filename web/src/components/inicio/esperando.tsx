@@ -8,7 +8,8 @@ import { urlGithub } from '@/lib/estado'
 /**
  * Bloque «Esperando por ti» (ORD-POS-122; docs/diseno-planificacion-v2.md §6). Solo pinta lo que calcula
  * lib/esperando.ts. Regla de lenguaje (§2): el nombre primero y el ID después, en monoespaciada y pequeño. «Sin datos»
- * y «apagada» dicen su motivo, nunca un 0. Las banderas (6.4) están apagadas hasta F5: no se muestra ningún valor.
+ * y «apagada» dicen su motivo, nunca un 0. Las banderas (6.4, ORD-POS-125) salen por su nombre en palabras y solo como
+ * apagadas: nunca su valor ni un correo.
  */
 
 function Id({ children, href }: { children: string; href?: string }) {
@@ -92,7 +93,34 @@ function Grupos({ d }: { d: Esperando }) {
           </ul>
         )}
       </GrupoEsperando>
-      <GrupoEsperando titulo="Banderas sin encender" grupo={d.banderas}>{() => null}</GrupoEsperando>
+      <GrupoEsperando titulo="Banderas sin encender" grupo={d.banderas}>
+        {(b) => (
+          <>
+            {b.lista.length === 0 ? <Vacio>Ninguna orden fusionada espera una bandera apagada.</Vacio> : (
+              <ul className="list" aria-label="Banderas sin encender">
+                {b.lista.map(({ orden, nombre }) => (
+                  <li key={orden.id}>
+                    {nombre} <Badge tone="warn">apagada</Badge> · <Nombre value={orden.titulo} vacio="(orden sin título)" /> ·{' '}
+                    <Id href="/ordenes">{orden.id}</Id> → encender con deploy.sh
+                  </li>
+                ))}
+              </ul>
+            )}
+            {b.desconocidas.length ? (
+              <p role="note"><Badge tone="muted">Sin datos</Badge>{' '}
+                {b.desconocidas.map(({ orden, nombre }, i) => (
+                  <span key={orden.id}>{i ? '; ' : ''}Bandera {nombre} no reconocida · <Id href="/ordenes">{orden.id}</Id></span>
+                ))}
+              </p>
+            ) : null}
+            {b.sinDatos.length ? (
+              <p role="note"><Badge tone="muted">Sin datos</Badge> {b.motivoSinDatos}{' '}
+                {b.sinDatos.map((o, i) => <span key={o.id}>{i ? ', ' : ''}<Id href="/ordenes">{o.id}</Id></span>)}
+              </p>
+            ) : null}
+          </>
+        )}
+      </GrupoEsperando>
       <GrupoEsperando titulo="Vencen hoy" grupo={d.vencenHoy}>
         {(ts) => ts.length === 0 ? <Vacio>Ninguna tarea tuya vence hoy ni está vencida.</Vacio> : (
           <ul className="list" aria-label="Vencen hoy">

@@ -7,6 +7,7 @@ import { limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import {
   esperandoPorTi, githubDeInicio, leerListos, MOTIVO_F5, MOTIVO_NO_LEIDO, MOTIVO_NO_PROPIETARIO, MOTIVO_SIN_GITHUB, type FuentesEsperando,
 } from '@/lib/esperando'
+import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
 import { misPendientes } from '@/lib/inicio'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
 import { createGitHubClient } from '@/lib/operations/github'
@@ -202,10 +203,10 @@ describe('criterios 2 y 3: decisiones, vencen hoy y grupos apagados', () => {
     ])
   })
 
-  it('6.2 y 6.4 están apagadas con el motivo de F5', () => {
+  it('6.2 está apagada con el motivo de F5; 6.4, sin la columna BANDERA (ORD-POS-125)', () => {
     const e = esperandoPorTi(fuentes([]))
     expect(e.estado === 'ok' && [e.datos.fusionadoSinDesplegar, e.datos.banderas]).toEqual([
-      { estado: 'apagada', motivo: MOTIVO_F5 }, { estado: 'apagada', motivo: MOTIVO_F5 },
+      { estado: 'apagada', motivo: MOTIVO_F5 }, { estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
     ])
     expect(MOTIVO_F5).toBe('Falta la fuente; la añade la fase F5.')
   })
@@ -247,7 +248,8 @@ describe('criterio 4: propietario, contador, filtro y «Mis pendientes»', () =>
     expect(h).toContain(`https://github.com/${REPO}/pull/4`)
     expect(h).toContain('Fuente de Desplegada')
     expect(h).toContain('Renovar el token')
-    expect(h.match(/Falta la fuente; la añade la fase F5\./g)).toHaveLength(2)
+    expect(h.match(/Falta la fuente; la añade la fase F5\./g)).toHaveLength(1)
+    expect(h).toContain(MOTIVO_SIN_COLUMNA_BANDERA)
     expect(h).not.toMatch(/TAREAS_CIERRE_PROPIETARIO|TIEMPOS_AGENTE|SEGUNDO_GEMINI|PM_PUEDE|FINANZAS_AGENTE|ECO_PIPELINE|@/)
   })
 

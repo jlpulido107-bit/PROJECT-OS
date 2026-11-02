@@ -1,4 +1,5 @@
 import { proyectoDeOrden } from './agentes'
+import { estadoBandera, MOTIVO_SIN_COLUMNA_BANDERA, motivoDesconocida, type EstadoBandera, type FuenteBanderas } from './banderas'
 import { githubDeAgentes, LIMITE_GLOBAL_MS, type GitHubAgentes } from './agentes-data'
 import { leerDictamenes, MOTIVO_F5, type LecturaListos, type OpcionesLectura } from './esperando'
 import type { GitHubClient, PrFusion } from './operations/github'
@@ -12,7 +13,11 @@ import type { Orden } from './types'
  * Planificación v2, fase F4 (ORD-POS-123, POS-041; docs/diseno-planificacion-v2.md §4, §4.1 y §7): capa Flujo. En qué paso
  * va cada orden abierta y a quién espera, de Borrador a Fusionada. Solo lectura: ORDENES_CODEX, las listas de PRs de la
  * caché de /agentes (githubDeAgentes) y los dictámenes con dictamenDeOrden y su caché (la de /ordenes), con el cliente de
- * tope LLAMADAS_AGENTES y el tiempo LIMITE_GLOBAL_MS. Desplegada y Activada nacen apagadas hasta la fase F5.
+ * tope LLAMADAS_AGENTES y el tiempo LIMITE_GLOBAL_MS. Desplegada nace apagada hasta la fase F5.
+ *
+ * Fase F5b (ORD-POS-125, §4.1 y §9, DEC-POS-028 punto 3): Activada sale de la columna opcional BANDERA de ORDENES_CODEX y
+ * del estado de esa bandera en el servidor (lib/banderas.ts), solo para la sesión del propietario. Sin la columna, o para
+ * otro lector, queda apagada con su motivo; una bandera desconocida queda sin datos.
  */
 
 export const PASOS = ['Borrador', 'Enviada', 'PR', 'PRIMERO', 'SEGUNDO', 'Revisada', 'Fusionada', 'Desplegada', 'Activada'] as const
@@ -37,6 +42,8 @@ export interface LineaFlujo {
   /** A quién espera el paso actual y qué hace falta; sin `quien` si no hay paso actual. */
   espera: { quien: Quien | null; texto: string }
   pr: { url: string; numero: number } | null
+  /** La bandera de Activada por su nombre en palabras y solo encendida o apagada; null si no hay o no se ve. */
+  bandera: { nombre: string; estado: 'encendida' | 'apagada' } | null
 }
 
 export type CapaFlujo =
@@ -47,6 +54,17 @@ export const MOTIVO_SIN_GITHUB_FLUJO = 'No se pudo leer GitHub.'
 export const MOTIVO_NO_LEIDO_FLUJO = 'No se pudo leer el dictamen en GitHub en esta carga (tope de llamadas, tiempo o fallo): se intenta en la siguiente.'
 export const MOTIVO_SOLO_DOCS = 'BAJO de solo documentación: sin revisor automático (DEC-POS-008).'
 export const MOTIVO_SIN_SEGUNDO = 'Sin segundo revisor en BAJO ni en MEDIO no sensible (DEC-POS-019).'
+export const MOTIVO_SIN_BANDERA = 'La orden no deja ninguna bandera por encender (BANDERA vacía).'
+const SIN_COLUMNA: FuenteBanderas = { estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA }
+
+/** Paso Activada (§4.1): hecho con la bandera encendida; no aplica sin bandera; sin datos si no se reconoce. */
+function pasoActivada(o: Orden, fuente: FuenteBanderas): { paso: Omit<Paso, 'paso'>; bandera: EstadoBandera | null } {
+  if (fuente.estado === 'apagada') return { paso: { estado: 'apagada', motivo: fuente.motivo }, bandera: null }
+  const b = estadoBandera(o.bandera, fuente.env)
+  if (b === null) return { paso: { estado: 'no-aplica', motivo: MOTIVO_SIN_BANDERA }, bandera: null }
+  if (b.tipo === 'desconocida') return { paso: { estado: 'sin-datos', motivo: motivoDesconocida(b.nombre) }, bandera: b }
+  return { paso: { estado: b.tipo === 'encendida' ? 'hecho' : 'pendiente', motivo: `${b.nombre}: ${b.tipo}.` }, bandera: b }
+}
 
 /** Estados de una orden que siguen en el Flujo; CERRADA y CANCELADA quedan solo en /ordenes. */
 const ABIERTOS: readonly EstadoOrden[] = ['BORRADOR', 'APROBADA', 'ENVIADA', 'PR_ABIERTO', 'REVISADA']
@@ -119,7 +137,10 @@ const primeroHecho = (ev: EvaluacionDictamen) => ev.estado.tipo === 'vigente' &&
  * Una línea del Flujo (§4.1). `soloDocs`: si la orden BAJO es de solo documentación; null si no se sabe (ninguna fuente
  * de §4.1 lo dice): entonces PRIMERO aplica, para no pintar como «no aplica» una revisión que quizá sí toca.
  */
-export function lineaFlujo(o: Orden, gh: GitHubFlujo | null, { soloDocs = null }: { soloDocs?: boolean | null } = {}): LineaFlujo {
+export function lineaFlujo(
+  o: Orden, gh: GitHubFlujo | null,
+  { soloDocs = null, banderas = SIN_COLUMNA }: { soloDocs?: boolean | null; banderas?: FuenteBanderas } = {},
+): LineaFlujo {
   const estado = estadoOrden(o.estado)!
   const riesgo = o.riesgo?.trim().toUpperCase() || null
   const sensible = ordenSensible(o.sensible)
@@ -133,6 +154,7 @@ export function lineaFlujo(o: Orden, gh: GitHubFlujo | null, { soloDocs = null }
   const deGitHub = (hecho: boolean | null, motivo = MOTIVO_SIN_GITHUB_FLUJO): Omit<Paso, 'paso'> =>
     hecho === null ? { estado: 'sin-datos', motivo } : { estado: hecho ? 'hecho' : 'pendiente' }
 
+  const activada = pasoActivada(o, banderas)
   const enviada = ENVIADOS.includes(estado) && Boolean(o.issueUrl)
   const crudos: Array<Omit<Paso, 'paso'>> = [
     { estado: 'hecho' },
@@ -150,7 +172,7 @@ export function lineaFlujo(o: Orden, gh: GitHubFlujo | null, { soloDocs = null }
         : pr.fusion ? { estado: pr.fusion.fusionMs !== null ? 'hecho' : 'pendiente' }
           : deGitHub(null, 'El PR registrado no está en la lista de PRs de GitHub de esta carga.'),
     { estado: 'apagada', motivo: MOTIVO_F5 },
-    { estado: 'apagada', motivo: MOTIVO_F5 },
+    activada.paso,
   ]
   const pasos: Paso[] = crudos.map((c, i) => ({ paso: PASOS[i]!, ...c }))
 
@@ -165,7 +187,7 @@ export function lineaFlujo(o: Orden, gh: GitHubFlujo | null, { soloDocs = null }
     }
     p.estado = 'actual'
     actual = p.paso
-    espera = esperaDe(p.paso, estado, ev, sinPrimero)
+    espera = esperaDe(p.paso, estado, ev, sinPrimero, activada.bandera)
     break
   }
   return {
@@ -177,10 +199,14 @@ export function lineaFlujo(o: Orden, gh: GitHubFlujo | null, { soloDocs = null }
     actual,
     espera,
     pr: conPr ? { url: pr.url, numero: pr.numero } : null,
+    bandera: activada.bandera && activada.bandera.tipo !== 'desconocida'
+      ? { nombre: activada.bandera.nombre, estado: activada.bandera.tipo } : null,
   }
 }
 
-function esperaDe(paso: NombrePaso, estado: EstadoOrden, ev: EvaluacionDictamen | null, sinRevisor: boolean): LineaFlujo['espera'] {
+function esperaDe(
+  paso: NombrePaso, estado: EstadoOrden, ev: EvaluacionDictamen | null, sinRevisor: boolean, bandera: EstadoBandera | null,
+): LineaFlujo['espera'] {
   switch (paso) {
     case 'Enviada':
       return { quien: 'propietario', texto: estado === 'BORRADOR' ? SIGUIENTE_PASO.BORRADOR.texto : SIGUIENTE_PASO.APROBADA.texto }
@@ -194,15 +220,17 @@ function esperaDe(paso: NombrePaso, estado: EstadoOrden, ev: EvaluacionDictamen 
       return { quien: 'propietario', texto: sinRevisor ? 'Decidir con el PR (sin revisor, DEC-POS-008)' : ev?.siguiente === LISTO_PARA_DECISION ? LISTO_PARA_DECISION : 'Decidir y marcar REVISADA' }
     case 'Fusionada':
       return { quien: 'propietario', texto: SIGUIENTE_PASO.REVISADA.texto }
+    case 'Activada':
+      return { quien: 'propietario', texto: `Encender ${bandera?.nombre ?? 'la bandera'} con deploy.sh (DEC-POS-014)` }
     default:
       return { quien: 'propietario', texto: 'Desplegar (DEC-POS-017)' }
   }
 }
 
 /** La capa entera: una línea por orden abierta y el encabezado «Esperan por ti · por Claude · por revisor». */
-export function capaFlujo(ordenes: Orden[], ordenesOk: boolean, gh: GitHubFlujo | null): CapaFlujo {
+export function capaFlujo(ordenes: Orden[], ordenesOk: boolean, gh: GitHubFlujo | null, banderas: FuenteBanderas = SIN_COLUMNA): CapaFlujo {
   if (!ordenesOk) return { estado: 'sin-datos', motivo: 'La pestaña ORDENES_CODEX no se pudo leer completa: no se sabe qué órdenes están abiertas.' }
-  const lineas = ordenesDelFlujo(ordenes).map((o) => lineaFlujo(o, gh))
+  const lineas = ordenesDelFlujo(ordenes).map((o) => lineaFlujo(o, gh, { banderas }))
   const encabezado: Record<Quien, number> = { propietario: 0, claude: 0, revisor: 0 }
   for (const l of lineas) if (l.espera.quien) encabezado[l.espera.quien]++
   const parcial = gh !== null && (gh.dictamenes.vencido || Object.values(gh.prs).some((p) => p === null) || lineas.some((l) => l.pasos.some((p) => p.estado === 'sin-datos')))

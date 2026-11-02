@@ -5,7 +5,8 @@ import { HoyView } from '@/components/planning/hoy'
 import { PlanningView } from '@/components/planning/planning-view'
 import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { MERIDA_TZ } from '@/lib/dates'
-import { canWrite, puedeCerrarTareas } from '@/lib/operations/config'
+import { fuenteBanderas } from '@/lib/banderas'
+import { canWrite, isWriter, puedeCerrarTareas } from '@/lib/operations/config'
 import { githubClient } from '@/lib/operations/dispatch'
 import { capaFlujo, githubDeFlujo } from '@/lib/planificacion-flujo'
 import { hitosSemana } from '@/lib/planificacion-semana-hitos'
@@ -32,7 +33,9 @@ export default async function PlanningPage() {
   // /agentes y la de dictámenes de /ordenes, dentro de LIMITE_GLOBAL_MS; lo que no cupo queda «sin datos».
   const client = githubClient(process.env, { maxLlamadas: LLAMADAS_AGENTES })
   const ordenesOk = data.tabs.ORDENES_CODEX.ok && !data.tabs.ORDENES_CODEX.truncated
-  const flujo = capaFlujo(data.ordenes, ordenesOk, client && ordenesOk ? await githubDeFlujo(client, data.ordenes) : null)
+  // Activada (ORD-POS-125): la columna BANDERA y el estado de la bandera, solo para la sesión del propietario.
+  const flujo = capaFlujo(data.ordenes, ordenesOk, client && ordenesOk ? await githubDeFlujo(client, data.ordenes) : null,
+    fuenteBanderas(data.ordenesConBandera, isWriter(user.email)))
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para
   // simular escenarios al instante, sin enviar nada de vuelta.
   return (

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { FlujoView } from '@/components/planning/flujo'
 import { limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
 import { MOTIVO_F5 } from '@/lib/esperando'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
 import { createGitHubClient, type PrFusion } from '@/lib/operations/github'
@@ -167,11 +168,11 @@ describe('criterio 2: «no aplica» según DEC-POS-008 y DEC-POS-019', () => {
 })
 
 describe('criterio 3: Desplegada y Activada apagadas; sin GitHub, sin datos', () => {
-  it('Desplegada y Activada siempre «apagada» con el motivo de F5', () => {
+  it('Desplegada «apagada» con el motivo de F5; Activada, sin la columna BANDERA (ORD-POS-125)', () => {
     for (const o of [orden(1, 'BORRADOR'), orden(2, 'PR_ABIERTO'), orden(3, 'REVISADA')]) {
       const l = lineaFlujo(o, gh([2, 3]))
       expect(l.pasos.slice(-2)).toEqual([
-        { paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_F5 }, { paso: 'Activada', estado: 'apagada', motivo: MOTIVO_F5 },
+        { paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_F5 }, { paso: 'Activada', estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
       ])
     }
     expect(MOTIVO_F5.toLowerCase()).toBe('falta la fuente; la añade la fase f5.')

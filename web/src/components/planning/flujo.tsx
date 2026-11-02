@@ -39,10 +39,11 @@ function Linea({ l }: { l: LineaFlujo }) {
         <p className="small">
           {l.espera.quien ? <><strong>Espera {QUIEN[l.espera.quien]}:</strong> {l.espera.texto}</> : <span className="muted">{l.espera.texto}</span>}
           {l.pr ? <> · <ExternalLink href={l.pr.url}>{`PR #${l.pr.numero}`}</ExternalLink></> : null}
+          {l.bandera ? <> · Bandera: {l.bandera.nombre} ({l.bandera.estado})</> : null}
         </p>
-        {l.pasos.some((p) => p.estado === 'sin-datos' || p.estado === 'no-aplica') ? (
+        {l.pasos.some((p) => p.estado === 'sin-datos' || p.estado === 'no-aplica' || (p.paso === 'Activada' && p.estado === 'apagada')) ? (
           <ul className="muted small">
-            {l.pasos.filter((p) => p.estado === 'sin-datos' || p.estado === 'no-aplica').map((p) => <li key={p.paso}>{p.paso}: {p.motivo}</li>)}
+            {l.pasos.filter((p) => p.estado === 'sin-datos' || p.estado === 'no-aplica' || (p.paso === 'Activada' && p.estado === 'apagada')).map((p) => <li key={p.paso}>{p.paso}: {p.motivo}</li>)}
           </ul>
         ) : null}
       </article>
@@ -66,7 +67,7 @@ export function FlujoView({ capa }: { capa: CapaFlujo }) {
       ) : (
         <>
           <p className="muted small">
-            ● hecho · ◉ paso actual · ○ pendiente · · no aplica · ? sin datos · – fuente apagada. Desplegada y Activada: {MOTIVO_F5}
+            ● hecho · ◉ paso actual · ○ pendiente · · no aplica · ? sin datos · – fuente apagada. Desplegada: {MOTIVO_F5}
             {capa.github === 'sin-token' ? ' Sin token de GitHub en este servidor: lo que sale de GitHub queda sin datos.' : null}
             {capa.github === 'parcial' ? ' Parte de GitHub no se leyó en esta carga: se intenta en la siguiente; esas órdenes no cuentan en el encabezado.' : null}
           </p>
