@@ -13,6 +13,7 @@ import { ecoPipelineCanWrite } from '@/lib/radaros/pipeline-escritura-config'
 import { CAMPOS, type EcoCampoOperacion } from '@/lib/radaros/pipeline-escritura-validacion'
 import { versionDeFila } from '@/lib/radaros/pipeline-formularios'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
+import { FiltroAuto } from '@/components/filtro-auto'
 
 export const metadata: Metadata = { title: 'Pipeline de ECOMMERCE' }
 
@@ -123,6 +124,7 @@ function Tablero({ v, filtro, editable }: { v: PipelineVista; filtro: Search; ed
         return (
           <>
             <form method="get" action="/eco/pipeline#tablero" className="filters" aria-label="Filtrar el tablero">
+              <FiltroAuto />
               <label>Proveedor{' '}
                 <select name="fproveedor" defaultValue={proveedor ?? ''}>
                   <option value="">Todos</option>
@@ -266,6 +268,7 @@ function Proveedores({ v, filtro, verContacto }: { v: PipelineVista; filtro: Sea
         return (
           <>
             <form method="get" action="/eco/pipeline#proveedores" className="filters" aria-label="Filtrar proveedores">
+              <FiltroAuto />
               <label>Estado{' '}
                 <select name="estado" defaultValue={estado ?? ''}>
                   <option value="">Todos</option>

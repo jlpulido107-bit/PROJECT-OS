@@ -161,6 +161,8 @@ export const leeDictamen = (o: Pick<Orden, 'estado'>): boolean => !ESTADOS_SIN_D
 
 export interface FilaDictamenes {
   ordenId: string
+  /** TITULO de la orden en ORDENES_CODEX; null si está vacío (ORD-POS-130). */
+  titulo: string | null
   prUrl: string
   /** Rondas de corrección lanzadas desde el dashboard (eventosOrdenes); null sin AUDITORIA. */
   rondas: number | null
@@ -199,7 +201,7 @@ export function dictamenesPorOrden(
     const omitida = !leeDictamen(o)
     const d = omitida ? null : dictamenes.get(o.id) ?? null
     const n = (v: Veredicto) => (d === null ? null : d.filter((x) => x.veredicto === v).length)
-    return [{ ordenId: o.id, prUrl: pr.url, rondas: rondas ? rondas.get(o.id) ?? 0 : null, conforme: n('CONFORME'), cambios: n('CAMBIOS'), omitida }]
+    return [{ ordenId: o.id, titulo: o.titulo, prUrl: pr.url, rondas: rondas ? rondas.get(o.id) ?? 0 : null, conforme: n('CONFORME'), cambios: n('CAMBIOS'), omitida }]
   }).sort((a, b) => b.ordenId.localeCompare(a.ordenId))
   if (filas.length === 0) return sinDatos('Ninguna orden del filtro tiene un PR detectado en GitHub.')
   return {

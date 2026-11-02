@@ -5,6 +5,7 @@ import { EVIDENCE_CLASS_LABEL, EvidenceItem } from '@/components/evidence-item'
 import { Empty, Pagination } from '@/components/ui'
 import { classifyEvidence, distinctValues, indexTasks, paginate, type EvidenceClass } from '@/lib/aggregate'
 import { privateData } from '@/lib/page-data'
+import { FiltroAuto } from '@/components/filtro-auto'
 
 export const metadata: Metadata = { title: 'Actividad' }
 
@@ -43,6 +44,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
         </p>
       </div>
       <form className="filters" method="get" action="/actividad" aria-label="Filtrar actividad">
+        <FiltroAuto />
         <label className="field">
           <span>Proyecto</span>
           <select name="proyecto" defaultValue={proyecto ?? ''}>

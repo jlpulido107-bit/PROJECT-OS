@@ -226,6 +226,19 @@ export interface TaskFilters {
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 const SIN = '__SIN__'
 export const FILTER_EMPTY_VALUE = SIN
+/** Estado «Abiertas» de /tareas (ORD-POS-130): todo lo que no está en CLOSED_TASK_STATES, sin estado incluido. */
+export const FILTER_OPEN_VALUE = '__ABIERTAS__'
+const TASK_FILTER_KEYS = ['proyecto', 'estado', 'responsable', 'prioridad', 'desde', 'hasta', 'bloqueo', 'q'] as const
+
+/**
+ * Filtros de la vista /tareas (ORD-POS-130): sin ningún parámetro de filtro en la URL (solo `/tareas` o `?pagina=N`)
+ * arranca con Estado = abiertas. Cualquier URL con un parámetro de filtro, aunque esté vacío, se lee igual que antes.
+ */
+export function parseTaskViewFilters(params: Record<string, string | string[] | undefined>): TaskFilters {
+  const f = parseTaskFilters(params)
+  const conFiltro = TASK_FILTER_KEYS.some((k) => params[k] !== undefined)
+  return conFiltro ? f : { ...f, estado: FILTER_OPEN_VALUE }
+}
 
 function pickParam(value: string | string[] | undefined): string | undefined {
   const v = Array.isArray(value) ? value[0] : value
@@ -260,7 +273,9 @@ export function filterTasks(tareas: Tarea[], f: TaskFilters): Tarea[] {
   const q = f.q?.toLocaleLowerCase('es')
   return tareas.filter((t) => {
     if (!matches(t.proyectoId, f.proyecto)) return false
-    if (!matches(t.estado, f.estado)) return false
+    if (f.estado === FILTER_OPEN_VALUE) {
+      if (t.estado !== null && CLOSED_TASK_STATES.has(t.estado)) return false
+    } else if (!matches(t.estado, f.estado)) return false
     if (!matches(t.responsable, f.responsable, (s) => s.toLocaleLowerCase('es'))) return false
     if (!matches(t.prioridad, f.prioridad)) return false
     if (f.bloqueo === 'si' && !isBlocked(t)) return false

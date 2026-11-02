@@ -6,6 +6,7 @@ import { PROYECTOS_AGENTES, type ConteoOrdenes, type Indicador, type ProyectoAge
 import { urlGithub } from '@/lib/estado'
 import { formatoMoneda, formatoMxn, type Pendiente } from '@/lib/finanzas/finanzas'
 import type { FinanzasInicio, Marca, Pendientes, ProyectoInicio } from '@/lib/inicio'
+import { FiltroAuto } from '@/components/filtro-auto'
 
 /** Bloques del inicio (ORD-POS-090). Solo pintan lo que calcula lib/inicio.ts; «sin datos» nunca es un cero. */
 
@@ -39,6 +40,7 @@ function Dias({ dias }: { dias: number }) {
 export function FiltroInicio({ filtro }: { filtro: ProyectoAgentes | null }) {
   return (
     <form className="filters" method="get" action="/" aria-label="Filtrar el inicio por proyecto">
+      <FiltroAuto />
       <label className="field">
         <span>Proyecto</span>
         <select name="proyecto" defaultValue={filtro ?? ''}>

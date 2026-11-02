@@ -41,7 +41,6 @@ export function TaskCard({ task, data, canEdit = false, puedeCerrar = false }: {
         <div><dt>Fecha plan</dt><dd><DateText value={task.fechaPlan} /></dd></div>
         <div><dt>Fecha límite</dt><dd><DateText value={task.fechaLimite} /></dd></div>
         <div><dt>Horas estimadas</dt><dd>{task.horasEstimadas === null ? <span className="muted">Sin estimar</span> : task.horasEstimadas}</dd></div>
-        <div><dt>Versión</dt><dd><Text value={task.version} /></dd></div>
       </dl>
       <p><strong>Criterio de terminado:</strong> <Text value={task.criterioTerminado} empty="Sin criterio registrado" /></p>
       {task.bloqueo ? <p className="blocker"><strong>Bloqueo:</strong> {task.bloqueo}</p> : null}

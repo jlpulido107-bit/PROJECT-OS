@@ -5,10 +5,11 @@ import { writeAccess } from '@/components/operations/write-access'
 import { TaskCard } from '@/components/task-card'
 import { Empty, humanize, Pagination } from '@/components/ui'
 import {
-  distinctValues, FILTER_EMPTY_VALUE, filterTasks, paginate, parseTaskFilters, sortTasks, type TaskFilters,
+  distinctValues, FILTER_EMPTY_VALUE, FILTER_OPEN_VALUE, filterTasks, paginate, parseTaskViewFilters, sortTasks, type TaskFilters,
 } from '@/lib/aggregate'
 import { puedeCerrarTareas } from '@/lib/operations/config'
 import { privateData } from '@/lib/page-data'
+import { FiltroAuto } from '@/components/filtro-auto'
 
 export const metadata: Metadata = { title: 'Tareas' }
 
@@ -23,7 +24,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const data = result.data
   const canEdit = writeAccess(user.email).allowed
   const puedeCerrar = canEdit && puedeCerrarTareas(user.email)
-  const filters = parseTaskFilters(params)
+  const filters = parseTaskViewFilters(params)
   const filtered = sortTasks(filterTasks(data.tareas, filters))
   const page = paginate(filtered, params.pagina, PAGE_SIZE)
   const active = Object.values(filters).some((v) => v !== undefined)
@@ -37,7 +38,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       <Filters data={data} filters={filters} />
       <p role="status" className="result-count">
         {page.total === 0 ? 'Ninguna tarea coincide' : `Mostrando ${page.from}–${page.to} de ${page.total} tareas`}
-        {active ? <> · <Link href="/tareas">Quitar filtros</Link></> : null}
+        {active ? <> · <Link href="/tareas?estado=">Quitar filtros</Link></> : null}
       </p>
       {data.tareas.length === 0 ? (
         <Empty>No hay tareas registradas en la pestaña TAREAS.</Empty>
@@ -46,19 +47,21 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       ) : (
         <div className="stack">{page.items.map((t) => <TaskCard key={t.id} task={t} data={data} canEdit={canEdit} puedeCerrar={puedeCerrar} />)}</div>
       )}
-      <Pagination page={page} basePath="/tareas" params={{ ...filters }} />
+      <Pagination page={page} basePath="/tareas" params={{ ...filters }} keepEmpty={['estado']} />
     </>
   )
 }
 
-function Select({ name, label, value, options, emptyLabel }: {
+function Select({ name, label, value, options, emptyLabel, extra }: {
   name: string; label: string; value: string | undefined; options: Array<[string, string]>; emptyLabel?: string
+  extra?: [string, string]
 }) {
   return (
     <label className="field">
       <span>{label}</span>
       <select name={name} defaultValue={value ?? ''}>
         <option value="">Todos</option>
+        {extra ? <option value={extra[0]}>{extra[1]}</option> : null}
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         {emptyLabel ? <option value={FILTER_EMPTY_VALUE}>{emptyLabel}</option> : null}
       </select>
@@ -71,13 +74,15 @@ function Filters({ data, filters }: { data: Parameters<typeof TaskCard>[0]['data
   const asOptions = (values: string[], human = false): Array<[string, string]> => values.map((v) => [v, human ? humanize(v) : v])
   return (
     <form className="filters" method="get" action="/tareas" aria-label="Filtrar tareas">
+      <FiltroAuto />
       <label className="field field-wide">
         <span>Buscar</span>
         <input type="search" name="q" defaultValue={filters.q ?? ''} placeholder="ID, título o descripción" maxLength={120} />
       </label>
       <Select name="proyecto" label="Proyecto" value={filters.proyecto}
         options={data.proyectos.map((p) => [p.id, `${p.id}${p.nombre ? ` · ${p.nombre}` : ''}`])} emptyLabel="Sin proyecto" />
-      <Select name="estado" label="Estado" value={filters.estado} options={asOptions(distinctValues(t, (x) => x.estado), true)} emptyLabel="Sin estado" />
+      <Select name="estado" label="Estado" value={filters.estado} options={asOptions(distinctValues(t, (x) => x.estado), true)} emptyLabel="Sin estado"
+        extra={[FILTER_OPEN_VALUE, 'Abiertas']} />
       <Select name="responsable" label="Responsable" value={filters.responsable} options={asOptions(distinctValues(t, (x) => x.responsable))} emptyLabel="Sin responsable" />
       <Select name="prioridad" label="Prioridad" value={filters.prioridad} options={asOptions(distinctValues(t, (x) => x.prioridad), true)} emptyLabel="Sin prioridad" />
       <label className="field">

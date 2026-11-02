@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import { Badge, Empty, ExternalLink, humanize } from '@/components/ui'
 import {
-  ESTADOS_SIN_DICTAMEN, PROYECTOS_AGENTES, type ConteoOrdenes, type Dictamenes, type FiltroAgentes, type FusionProyecto, type GastoClaude,
+  ESTADOS_SIN_DICTAMEN, PROYECTOS_AGENTES, type ConteoOrdenes, type Dictamenes, type FilaDictamenes, type FiltroAgentes, type FusionProyecto, type GastoClaude,
   type Indicador, type MapaLanzamientos,
 } from '@/lib/agentes'
 import { formatoMxn } from '@/lib/finanzas/finanzas'
 import { MAX_PRS_LISTA } from '@/lib/operations/github'
 import styles from './agentes.module.css'
+import { FiltroAuto } from '@/components/filtro-auto'
 
 /** Tarjetas de /agentes (ORD-POS-078). Solo pintan lo que calcula lib/agentes.ts; «sin datos» nunca es un cero. */
 
@@ -21,6 +22,7 @@ export function Tarjeta<T>({ indicador, children }: { indicador: Indicador<T>; c
 export function FiltroForm({ filtro }: { filtro: FiltroAgentes }) {
   return (
     <form className="filters" method="get" action="/agentes" aria-label="Filtrar indicadores">
+      <FiltroAuto />
       <label className="field">
         <span>Proyecto</span>
         <select name="proyecto" defaultValue={filtro.proyecto ?? ''}>
@@ -89,6 +91,8 @@ export function TarjetaFusion({ filas }: { filas: FusionProyecto[] }) {
 const valor = (n: number | null) => (n === null ? <span className="muted">Sin datos</span> : n)
 
 export function TarjetaDictamenes({ d }: { d: Dictamenes }) {
+  const vigentes = d.filas.filter((f) => !f.omitida)
+  const historico = d.filas.filter((f) => f.omitida)
   return (
     <>
       <div className="badges">
@@ -98,21 +102,34 @@ export function TarjetaDictamenes({ d }: { d: Dictamenes }) {
       </div>
       {d.omitidas ? <p className="muted small">{d.omitidas} órdenes {ESTADOS_SIN_DICTAMEN.join(' o ')}: sus dictámenes no se leen de GitHub (fuera de los totales).</p> : null}
       {d.rondasSinDatos ? <p className="muted small">Sin AUDITORIA no se cuentan las rondas de corrección.</p> : null}
-      <div className="table-wrap">
-        <table aria-label="Rondas y dictámenes por orden">
-          <thead><tr><th scope="col">Orden</th><th scope="col">Rondas de corrección</th><th scope="col">CONFORME</th><th scope="col">CAMBIOS</th></tr></thead>
-          <tbody>
-            {d.filas.map((f) => (
-              <tr key={f.ordenId}>
-                <th scope="row"><ExternalLink href={f.prUrl}>{f.ordenId}</ExternalLink></th>
-                <td>{valor(f.rondas)}</td>
-                {f.omitida ? <td colSpan={2} className="muted">No se lee (CERRADA o CANCELADA)</td> : <><td>{valor(f.conforme)}</td><td>{valor(f.cambios)}</td></>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {vigentes.length > 0 ? <TablaDictamenes filas={vigentes} label="Rondas y dictámenes por orden" /> : <Empty>Ninguna orden vigente con PR en el filtro.</Empty>}
+      {historico.length > 0 ? (
+        <details className="historico-dictamenes">
+          <summary>Ver histórico ({historico.length})</summary>
+          <TablaDictamenes filas={historico} label="Histórico: órdenes CERRADA o CANCELADA" />
+        </details>
+      ) : null}
     </>
+  )
+}
+
+/** Columna Orden: «título · ID» con enlace al PR; sin título, solo el ID (ORD-POS-130). */
+function TablaDictamenes({ filas, label }: { filas: FilaDictamenes[]; label: string }) {
+  return (
+    <div className="table-wrap">
+      <table aria-label={label}>
+        <thead><tr><th scope="col">Orden</th><th scope="col">Rondas de corrección</th><th scope="col">CONFORME</th><th scope="col">CAMBIOS</th></tr></thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.ordenId}>
+              <th scope="row"><ExternalLink href={f.prUrl}>{f.titulo ? <>{f.titulo} · <span className="mono">{f.ordenId}</span></> : <span className="mono">{f.ordenId}</span>}</ExternalLink></th>
+              <td>{valor(f.rondas)}</td>
+              {f.omitida ? <td colSpan={2} className="muted">No se lee (CERRADA o CANCELADA)</td> : <><td>{valor(f.conforme)}</td><td>{valor(f.cambios)}</td></>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
