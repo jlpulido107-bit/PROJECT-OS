@@ -397,6 +397,34 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('ECO_IDEAS_ALTA (ORD-POS-131): se conserva de la activa, --quitar la retira y exige la escritura del pipeline', () => {
+      const activa = JSON.parse(full)
+      const cuenta = 'project-os-eco@project-os-511102.iam.gserviceaccount.com'
+      const correo = 'dueno-sintetico@example.com'
+      const id = 'LIBRO_RADAROS_SINTETICO_0123456789'
+      activa.spec.template.spec.containers[0].env.push(
+        { name: 'RADAROS_SHEET_ID', value: id }, { name: 'ECO_PIPELINE_WRITE_MODE', value: 'sheets' },
+        { name: 'ECO_PIPELINE_WRITE_SERVICE_ACCOUNT', value: cuenta }, { name: 'ECO_PIPELINE_WRITER_EMAIL', value: correo },
+        { name: 'ECO_IDEAS_ALTA', value: 'true' })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('ECO_IDEAS_ALTA')
+      const apagada = run(['--desde-activa', '--quitar', 'ECO_IDEAS_ALTA', '--dry-run'], { raw, env: min })
+      expect(apagada.code).toBe(0)
+      expect(apagada.out).toContain('  - ECO_IDEAS_ALTA\n')
+      expect(apagada.out).not.toContain('  - ECO_PIPELINE_WRITE_MODE')
+      // Sin la escritura del pipeline (su cuenta), la bandera no se despliega.
+      const sinPipeline = run(['--desde-activa', '--quitar', 'ECO_PIPELINE_WRITE_MODE'], { raw, env: min, input: 'desplegar\n' })
+      expect(sinPipeline.code).toBe(1)
+      expect(sinPipeline.out).toContain('ECO_IDEAS_ALTA exige ECO_PIPELINE_WRITE_MODE=sheets')
+      expect(sinPipeline.calls).not.toContain('replace')
+      const mala = run(['--desde-activa'], { raw, env: { ...min, ECO_IDEAS_ALTA: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.out).toContain('ECO_IDEAS_ALTA solo admite true')
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('DEPLOY_COMMIT_SHA (ORD-POS-124): si la activa no la tiene, es «variable nueva» y no falla; nunca se toma de la activa', () => {
       const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, DEPLOY_COMMIT_SHA: SHA_NUEVO } })
       expect(nueva.code).toBe(0)

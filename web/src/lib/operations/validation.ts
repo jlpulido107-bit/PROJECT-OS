@@ -119,7 +119,7 @@ const CODE = /^[A-Z][A-Z0-9_]{1,29}$/
 const HOURS = /^\d{1,4}(\.\d{1,2})?$/
 
 /** Acumula errores por campo y produce un único OperationError('validacion'). */
-class Checker {
+export class Checker {
   readonly errors: Record<string, string> = {}
 
   constructor(private readonly input: Record<string, unknown>, allowed: readonly string[], prefix = '') {
@@ -228,7 +228,7 @@ class Checker {
   }
 }
 
-function asObject(body: unknown): Record<string, unknown> {
+export function asObject(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new OperationError('json-invalido')
   return body as Record<string, unknown>
 }

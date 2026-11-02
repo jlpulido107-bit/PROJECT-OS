@@ -306,3 +306,65 @@ token de Tiempos vuelve a 401 y `tiempo.crear` a 403 sin escribir. Para revocar 
 (`gcloud secrets versions disable <versión> --secret=project-os-tiempos-agente-token-sha256`) después de quitarla del
 despliegue. Las filas de `TIEMPOS` ya creadas no se borran solas: el propietario las corrige en la hoja, con `AUDITORIA`
 como guía.
+
+## 9. Alta de ideas en RADAROS por el PM (ORD-POS-131, DEC-ECO-007)
+
+DEC-ECO-007 amplía DEC-POS-005 y DEC-POS-011 al libro de RADAROS, solo para dar de alta ideas: una fila nueva al final
+de `PRODUCTS` (A a P) y otra de `SCORING` (A a L), solo por esta API y solo con el «sí PAQ» del propietario (DEC-POS-013).
+El código es inerte por defecto y solo el propietario lo activa.
+
+- **Operación.** `POST /api/operaciones/ideas` (`idea.alta`), solo con el token del PM; una sesión de navegador recibe
+  403 `operacion-no-permitida`. No está en `AGENT_OPERATIONS`: el guard la permite solo con la bandera.
+- **Cuerpo.** `requestId` (UUID v4), `autorizacion` (`PAQ-AAAA-MM-DD-NN «sí PAQ-AAAA-MM-DD-NN …» AAAA-MM-DD`, con el
+  mismo paquete en la cita), `producto` (PRODUCTS B, obligatorio) y, opcionales, `categoria`, `bucket`,
+  `clienteObjetivo`, `problema`, `canalInicial`, `nivel`, `estado`, `confidence`, `precioObservadoMxn`,
+  `capitalPruebaMxn` (números), `redFlag`, `porValidar`, `siguienteDecision`, `owner` (C a P) y `puntajes`
+  (`demanda`, `competencia`, `unitEconomics`, `diferenciacion`, `capital`, `logistica`, `riesgo`, `tendencia`,
+  `complejidad`, `marca`: enteros del 1 al 5 o vacíos; son hipótesis que el propietario revisa en el paquete).
+  Cualquier otro campo se rechaza (422).
+- **ID.** Automático: el siguiente `EC-NNN` según la columna A de `PRODUCTS`. Si ese ID ya está en `SCORING`, no escribe
+  (409 `conflicto-concurrente`). SCORING B se copia de PRODUCTS B: el nombre es uno solo.
+- **Antes de escribir** (si algo falla, no escribe nada, ni la auditoría):
+  - encabezados exactos de `PRODUCTS` A a P y de `SCORING` A a L (`web/src/lib/radaros/ideas-alta.ts`); si difieren,
+    409 `idea-encabezados-distintos` con las letras de columna;
+  - fila de `PRODUCTS`: la primera con A vacía; si tiene algo en B a P, 409 `idea-fila-ocupada`;
+  - fila de `SCORING`: la primera con A a L vacías, que debe traer ya las fórmulas por fila de M a P (no son
+    ARRAYFORMULA); si no, 409 `scoring-sin-formulas` y tampoco se escribe `PRODUCTS`. Preparar filas con fórmulas lo
+    hace el propietario a mano.
+- **Escritura.** Un solo rango por pestaña, `A<n>:P<n>` y `A<n>:L<n>`, con `values:batchUpdate` en `RAW`; nunca
+  `append`, nunca otra pestaña ni las columnas M en adelante de `SCORING` (`web/src/lib/radaros/ideas-alta-store.ts`,
+  lista cerrada `PRODUCTS` y `SCORING`).
+- **Después de escribir.** Relee las dos filas: deben coincidir y M de `SCORING` debe tener valor; si M queda vacía,
+  409 `idea-sin-calculo` (la fila queda escrita y se reporta).
+- **Auditoría e idempotencia.** `AUDITORIA` de PROJECT-OS antes de escribir en RADAROS: `ACTOR=agente-pm`,
+  `ENTIDAD=PRODUCTS`, `REGISTRO_ID=EC-NNN`, una fila por celda (`PRODUCT_ID`, `PRODUCTS!<encabezado>`,
+  `SCORING!<encabezado>`) y `AUTORIZACION` con el «sí PAQ»; `ORIGEN` con `op=idea.alta` y `;agente=pm`. El mismo
+  `requestId` no duplica: responde `repetida` y, si la escritura quedó a medias, completa lo que falta con lo auditado.
+- **Cuenta y libro (criterio 2).** Usa la cuenta de escritura del pipeline de /eco (`ECO_PIPELINE_WRITE_SERVICE_ACCOUNT`,
+  Editor del libro de RADAROS) y `RADAROS_SHEET_ID`, con todas las comprobaciones de `ecoPipelineWriteStatus`. No hace
+  falta una cuenta dedicada: ese libro ya es de esa cuenta y DEC-ECO-007 no amplía a otro libro. La auditoría usa la
+  escritura de PROJECT-OS (`PROJECT_OS_WRITE_MODE=sheets`).
+- **Apagada (por defecto).** Sin `ECO_IDEAS_ALTA=true` exacto, 403 `operacion-no-permitida` sin leer el cuerpo. Con la
+  bandera pero sin la escritura del pipeline activa o sin la de PROJECT-OS en `sheets`, 403 `escritura-deshabilitada`.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+Requisitos: la imagen que trae ORD-POS-131 desplegada, `WRITE_MODE=sheets` con el token del PM (§6) y la escritura del
+pipeline de /eco activa (`ECO_PIPELINE_WRITE_MODE=sheets`, docs/diseno-eco-pipeline.md). `render.mjs` rechaza la bandera
+sin ellos. Ningún agente exporta la variable ni despliega.
+
+```bash
+export ECO_IDEAS_ALTA=true
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ ECO_IDEAS_ALTA»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+`--desde-activa` conserva la bandera en los despliegues siguientes.
+
+### Revertir
+
+```bash
+web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_IDEAS_ALTA
+```
+
+Quitar `ECO_PIPELINE_WRITE_MODE` sin quitar también `ECO_IDEAS_ALTA` hace fallar el render: no se aplica nada.

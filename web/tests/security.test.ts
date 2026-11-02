@@ -34,12 +34,16 @@ describe('garantías de seguridad del código', () => {
   // lista cerrada de pestañas PIPE_*, y su propio runtime, que suplanta a la cuenta exclusiva del pipeline.
   const ECO_ADAPTER = path.join('lib', 'radaros', 'pipeline-escritura-store.ts')
   const ECO_RUNTIME = path.join('lib', 'radaros', 'pipeline-escritura-runtime.ts')
+  // ORD-POS-131 (DEC-ECO-007): el alta de ideas tiene su propio adaptador, ligado solo al libro de RADAROS y a PRODUCTS y
+  // SCORING (A:P y A:L), y su propio runtime, que suplanta a la misma cuenta del pipeline de /eco.
+  const IDEAS_ADAPTER = path.join('lib', 'radaros', 'ideas-alta-store.ts')
+  const IDEAS_RUNTIME = path.join('lib', 'radaros', 'ideas-alta-runtime.ts')
   // Módulos de V1.4 que solo pueden ejecutarse en el servidor (estado simulado y manejo de escrituras).
-  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http', 'lib/finanzas/escritura-runtime', 'lib/finanzas/escritura-http', 'lib/finanzas/agente-runtime', 'lib/finanzas/agente-http', 'lib/radaros/pipeline-escritura-runtime', 'lib/radaros/pipeline-escritura-http')
+  SERVER_ONLY_MODULES.push('lib/operations/runtime', 'lib/operations/http', 'lib/finanzas/escritura-runtime', 'lib/finanzas/escritura-http', 'lib/finanzas/agente-runtime', 'lib/finanzas/agente-http', 'lib/radaros/pipeline-escritura-runtime', 'lib/radaros/pipeline-escritura-http', 'lib/radaros/ideas-alta-runtime')
 
   it('ningún código llama endpoints de escritura de Sheets ni usa el alcance de escritura', () => {
     for (const { file, text } of sources) {
-      if (file !== WRITE_ADAPTER && file !== FINANZAS_ADAPTER && file !== ECO_ADAPTER) {
+      if (file !== WRITE_ADAPTER && file !== FINANZAS_ADAPTER && file !== ECO_ADAPTER && file !== IDEAS_ADAPTER) {
         expect(text, file).not.toMatch(/:append|:batchUpdate|:clear|values:update|batchUpdateByDataFilter/)
         // Quien hable con las APIs de Google solo puede leer (salvo pedir el token de escritura a IAM Credentials).
         if (/googleapis\.com/.test(text) && file !== WRITE_CREDENTIALS) expect(text, file).not.toMatch(/method:\s*'(PUT|POST|PATCH|DELETE)'/)
@@ -54,8 +58,9 @@ describe('garantías de seguridad del código', () => {
     for (const { file, text } of sources) {
       if (!RUNTIMES_FINANZAS.includes(file)) expect(text, file).not.toMatch(/new FinanzasSheetsStore/)
       if (file !== ECO_RUNTIME) expect(text, file).not.toMatch(/new EcoSheetsStore/)
+      if (file !== IDEAS_RUNTIME) expect(text, file).not.toMatch(/new IdeasSheetsStore/)
       if (file === WRITE_ADAPTER || file === WRITE_RUNTIME) continue
-      if (!RUNTIMES_FINANZAS.includes(file) && file !== ECO_RUNTIME) expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
+      if (!RUNTIMES_FINANZAS.includes(file) && file !== ECO_RUNTIME && file !== IDEAS_RUNTIME) expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*write-credentials['"]/)
       expect(text, file).not.toMatch(/(from|import\(|require\()\s*['"][^'"]*sheets-table-store['"]/)
       expect(text, file).not.toMatch(/new SheetsTableStore/)
     }
@@ -87,6 +92,17 @@ describe('garantías de seguridad del código', () => {
     expect(ecoRuntime).toMatch(/radarosSheetId\(env\)/)
     expect(ecoRuntime).toMatch(/ecoPipelineWriteServiceAccount\(env\)/)
     expect(ecoRuntime).not.toMatch(/finanzas|FINANZAS|spreadsheetId\(\)|SHEETS_SPREADSHEET_ID|writeServiceAccount\(|PROJECT_OS_WRITE_SERVICE_ACCOUNT|SheetsTableStore|OperationsService/)
+    // ORD-POS-131: el adaptador del alta de ideas solo escribe un rango por llamada con values:batchUpdate en RAW (sin
+    // append ni borrado); su runtime usa solo RADAROS_SHEET_ID y la cuenta del pipeline, y exige la bandera.
+    const ideas = sources.find((s) => s.file === IDEAS_ADAPTER)!.text
+    expect(ideas).toMatch(/valueInputOption: 'RAW'/)
+    expect(ideas).not.toMatch(/process\.env|google-auth-library|readFileSync|:append|:clear|values:update|batchUpdateByDataFilter|deleteDimension|method:\s*'(PUT|PATCH|DELETE)'/)
+    expect(ideas.match(/:batchUpdate/g)).toEqual([':batchUpdate'])
+    const ideasRuntime = sources.find((s) => s.file === IDEAS_RUNTIME)!.text
+    expect(ideasRuntime).toMatch(/radarosSheetId\(env\)/)
+    expect(ideasRuntime).toMatch(/ecoPipelineWriteServiceAccount\(env\)/)
+    expect(ideasRuntime).toMatch(/ecoIdeasAltaHabilitada\(env\)/)
+    expect(ideasRuntime).not.toMatch(/finanzas|FINANZAS|spreadsheetId\(\)|SHEETS_SPREADSHEET_ID|writeServiceAccount\(|PROJECT_OS_WRITE_SERVICE_ACCOUNT|SheetsTableStore|OperationsService/)
   })
 
   it('las rutas de finanzas pasan por su guard propio, que rechaza Authorization antes de la sesión y del cuerpo', () => {
@@ -127,7 +143,7 @@ describe('garantías de seguridad del código', () => {
 
   it('todas las rutas de escritura pasan por la guarda del servidor', () => {
     const routes = sources.filter((s) => s.file.startsWith(path.join('app', 'api', 'operaciones')) && s.file.endsWith('route.ts'))
-    expect(routes.length).toBe(9)
+    expect(routes.length).toBe(10)
     for (const { file, text } of routes) {
       expect(text, file).toMatch(/handleWrite\(request,/)
       expect(text, file).not.toMatch(/export async function (GET|PUT|DELETE)/)

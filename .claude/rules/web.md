@@ -14,7 +14,10 @@ Se suman a [`AGENTS.md`](../../AGENTS.md); no las repiten.
   finanzas (ORD-POS-092), solo en FINANZAS, con su cuenta, su token y su guard propio, inertes sin `FINANZAS_AGENTE_MODE`
   (`web/src/lib/finanzas/agente-*.ts`; ver [`docs/diseno-finanzas-v3.md`](../../docs/diseno-finanzas-v3.md)), y la escritura del pipeline de /eco
   (ORD-POS-102), solo en las pestañas `PIPE_*` del libro de RADAROS, con su cuenta exclusiva y su guard sin agente, inerte sin
-  `ECO_PIPELINE_WRITE_MODE` (`web/src/lib/radaros/pipeline-escritura-*.ts`; ver [`docs/diseno-eco-pipeline.md`](../../docs/diseno-eco-pipeline.md)).
+  `ECO_PIPELINE_WRITE_MODE` (`web/src/lib/radaros/pipeline-escritura-*.ts`; ver [`docs/diseno-eco-pipeline.md`](../../docs/diseno-eco-pipeline.md)),
+  y el alta de ideas del PM (ORD-POS-131, DEC-ECO-007), solo filas nuevas en `PRODUCTS` (A:P) y `SCORING` (A:L) del libro
+  de RADAROS, por la API de operaciones con el token del PM y la cuenta del pipeline, inerte sin `ECO_IDEAS_ALTA`
+  (`web/src/lib/radaros/ideas-alta*.ts`; ver [`docs/escritura-v1-8.md`](../../docs/escritura-v1-8.md) §9).
   No crear otras vías de escritura.
 - Escritura del PM (DEC-POS-005): solo la sesión PM escribe, por la API de operaciones y con la skill `pm-escribir-api`
   (ver [`AGENTS.md`](../../AGENTS.md)). Nadie escribe en la hoja con el conector; implementación y revisión tampoco.
