@@ -210,8 +210,8 @@ describe('rondas y dictámenes', () => {
     const base = ordenesDelFiltro(ordenes, eventos, TODO)
     expect(dictamenesPorOrden(base, eventos, prs, gh.dictamenes)).toEqual({ estado: 'ok', datos: {
       filas: [
-        { ordenId: 'ORD-POS-002', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: 0, conforme: 0, cambios: 0, omitida: false },
-        { ordenId: 'ORD-POS-001', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', rondas: 1, conforme: 1, cambios: 1, omitida: false },
+        { ordenId: 'ORD-POS-002', titulo: 't', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: 0, conforme: 0, cambios: 0, omitida: false },
+        { ordenId: 'ORD-POS-001', titulo: 't', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', rondas: 1, conforme: 1, cambios: 1, omitida: false },
       ],
       totalConforme: 1, totalCambios: 1, sinLeer: 0, omitidas: 0, rondasSinDatos: false,
     } })
@@ -238,7 +238,7 @@ describe('rondas y dictámenes', () => {
     const base = ordenesDelFiltro(ordenes, null, TODO)
     const d = dictamenesPorOrden(base, null, gh.prs, gh.dictamenes)
     expect(d).toMatchObject({ datos: { totalConforme: 1, totalCambios: 1, sinLeer: 1, rondasSinDatos: true } })
-    expect(d.estado === 'ok' && d.datos.filas[0]).toEqual({ ordenId: 'ORD-POS-002', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: null, conforme: null, cambios: null, omitida: false })
+    expect(d.estado === 'ok' && d.datos.filas[0]).toEqual({ ordenId: 'ORD-POS-002', titulo: 't', prUrl: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', rondas: null, conforme: null, cambios: null, omitida: false })
   })
 
   it('GitHub caído o sin token: «sin datos»', async () => {

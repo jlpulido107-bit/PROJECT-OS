@@ -24,6 +24,7 @@ export default async function EditTaskPage({ params }: { params: Promise<{ id: s
     <>
       <p className="breadcrumb"><Link href={`/tareas?q=${encodeURIComponent(task.id)}`}>← Tareas</Link></p>
       <h1><span className="mono">{task.id}</span> · <Text value={task.titulo} empty="Sin título" /></h1>
+      <p className="muted small">Versión: <Text value={task.version} /></p>
       {task.instrucciones ? (
         <section aria-labelledby="instrucciones-titulo">
           <h2 id="instrucciones-titulo">Instrucciones</h2>

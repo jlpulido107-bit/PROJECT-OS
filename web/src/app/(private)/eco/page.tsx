@@ -8,6 +8,7 @@ import {
   type Ranking, type Tendencias, type UnitEconomics,
 } from '@/lib/radaros/eco'
 import { ayudaColumna, etiquetaIdea, formatearValor, SIN_DATO, tituloColumna } from '@/lib/radaros/eco-columnas'
+import { FiltroAuto } from '@/components/filtro-auto'
 
 export const metadata: Metadata = { title: 'RADAROS (solo lectura)' }
 
@@ -171,6 +172,7 @@ function BloqueTendencias({ datos, filtro }: { datos: Tendencias; filtro: Search
   return (
     <>
       <form method="get" action="/eco#tendencias" className="filters" aria-label="Filtrar tendencias">
+        <FiltroAuto />
         <label>Estado{' '}
           <select name="estado" defaultValue={estado ?? ''}>
             <option value="">Todos</option>

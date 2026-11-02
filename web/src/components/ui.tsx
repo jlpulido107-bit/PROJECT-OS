@@ -84,15 +84,18 @@ export function ExternalLink({ href, children }: { href: string; children: React
   )
 }
 
-export function Pagination({ page, basePath, params }: {
+export function Pagination({ page, basePath, params, keepEmpty = [] }: {
   page: Page<unknown>
   basePath: string
   params: Record<string, string | undefined>
+  /** Claves que viajan aunque estén vacías (p. ej. `estado=` en /tareas, que significa «Todos»; ORD-POS-130). */
+  keepEmpty?: string[]
 }) {
   if (page.pageCount <= 1) return null
   const href = (n: number) => {
     const query = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) if (v) query.set(k, v)
+    for (const k of keepEmpty) if (!params[k]) query.set(k, '')
     query.set('pagina', String(n))
     return `${basePath}?${query.toString()}`
   }
