@@ -135,6 +135,39 @@ describe('deploy.sh', () => {
     expect(igual.out).toMatch(/Cambios valor↔secreto:\n  \(ninguno\)/)
   })
 
+  describe('DEPLOY_COMMIT_SHA (ORD-POS-124)', () => {
+    const SHA = '0123456789abcdef0123456789abcdef01234567'
+    const head = spawnSync('git', ['-C', path.dirname(SCRIPT), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
+
+    it('sin exportarla sale de git rev-parse HEAD; la prueba en seco la muestra y el YAML la trae como variable nueva', () => {
+      expect(head).toMatch(/^[0-9a-f]{40}$/)
+      const r = run(['--dry-run'], { names: ['NEXTAUTH_URL', 'PM_AGENT_TOKEN_SHA256'] })
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`Commit desplegado (DEPLOY_COMMIT_SHA): ${head}\n`)
+      expect(r.out).toMatch(/Variables nuevas:\n(  \+ [A-Z_0-9]+\n)*  \+ DEPLOY_COMMIT_SHA\n/)
+      expect(r.calls).not.toContain('replace')
+    })
+
+    it('exportada prevalece sobre git; con un valor inválido el render falla sin aplicar', () => {
+      const r = run(['--dry-run'], { env: { ...RENDER_ENV, DEPLOY_COMMIT_SHA: SHA } })
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`Commit desplegado (DEPLOY_COMMIT_SHA): ${SHA}\n`)
+      const mala = run([], { env: { ...RENDER_ENV, DEPLOY_COMMIT_SHA: 'abc1234' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.out).toContain('DEPLOY_COMMIT_SHA debe ser un SHA completo')
+      expect(mala.calls).toBe('')
+    })
+
+    it('sin exportarla y sin git: se detiene sin llamar a gcloud', () => {
+      writeFileSync(path.join(dir, 'git'), '#!/usr/bin/env bash\nexit 128\n')
+      chmodSync(path.join(dir, 'git'), 0o755)
+      const r = run([], { input: 'desplegar\n' })
+      expect(r.code).toBe(1)
+      expect(r.out).toContain('DETENTE: no se pudo leer el commit con git rev-parse HEAD; exporta DEPLOY_COMMIT_SHA')
+      expect(r.calls).toBe('')
+    })
+  })
+
   describe('--desde-activa', () => {
     const { IMAGE: _i, RUNTIME_SA: _r, SERVICE_URL: _s, OAUTH_CLIENT_ID: _o, ...base } = RENDER_ENV
     void [_i, _r, _s, _o]
@@ -170,6 +203,7 @@ describe('deploy.sh', () => {
     })
 
     const min = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
+    const SHA_NUEVO = 'c'.repeat(40)
 
     it('--quitar PM_AGENT_TOKEN_SHA256: no se toma de la activa, el YAML no la trae y se lista como quitada', () => {
       const r = run(['--desde-activa', '--quitar', 'PM_AGENT_TOKEN_SHA256', '--dry-run'], { raw: full, env: min })
@@ -361,6 +395,21 @@ describe('deploy.sh', () => {
       expect(mala.code).toBe(1)
       expect(mala.out).toContain('no puede ser la cuenta de escritura de PROJECT-OS')
       expect(mala.calls).not.toContain('replace')
+    })
+
+    it('DEPLOY_COMMIT_SHA (ORD-POS-124): si la activa no la tiene, es «variable nueva» y no falla; nunca se toma de la activa', () => {
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, DEPLOY_COMMIT_SHA: SHA_NUEVO } })
+      expect(nueva.code).toBe(0)
+      expect(nueva.out).toMatch(/Variables nuevas:\n(  \+ [A-Z_]+\n)*  \+ DEPLOY_COMMIT_SHA\n/)
+      expect(nueva.out).toContain(`Commit desplegado (DEPLOY_COMMIT_SHA): ${SHA_NUEVO}\n`)
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'DEPLOY_COMMIT_SHA', value: 'e'.repeat(40) })
+      const sigue = run(['--desde-activa', '--dry-run'], { raw: JSON.stringify(activa), env: { ...min, DEPLOY_COMMIT_SHA: SHA_NUEVO } })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('+ DEPLOY_COMMIT_SHA')
+      expect(sigue.out).not.toContain('e'.repeat(40))
+      expect(sigue.out).toContain(`Commit desplegado (DEPLOY_COMMIT_SHA): ${SHA_NUEVO}\n`)
+      expect(sigue.out).toMatch(/Variables sobrescritas[^\n]*\n  \(ninguna\)/)
     })
 
     it('IMAGE exportada vacía: el render falla sin aplicar', () => {

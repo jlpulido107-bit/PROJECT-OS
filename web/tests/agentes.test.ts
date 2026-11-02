@@ -196,8 +196,8 @@ describe('rondas y dictámenes', () => {
     const { prs } = gh
     expect(gh.vencido).toBe(false)
     expect([...prs.POS!.entries()]).toEqual([
-      ['ORD-POS-002', { url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', number: 3, fusionMs: null }],
-      ['ORD-POS-001', { url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', number: 1, fusionMs: Date.parse('2026-10-21T10:00:00Z') }],
+      ['ORD-POS-002', { url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/3', number: 3, fusionMs: null, mergeSha: null }],
+      ['ORD-POS-001', { url: 'https://github.com/jlpulido107-bit/PROJECT-OS/pull/1', number: 1, fusionMs: Date.parse('2026-10-21T10:00:00Z'), mergeSha: null }],
     ])
     // Caché: una segunda carga no vuelve a llamar a GitHub (ni la lista ni los dictámenes).
     const antes = llamadas.length

@@ -7,6 +7,7 @@ import { conteoOrdenes, ordenesDelFiltro } from '@/lib/agentes'
 import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { leerAuditoria } from '@/lib/auditoria'
 import { todayInMerida } from '@/lib/dates'
+import { commitDesplegado } from '@/lib/despliegue'
 import { esperandoPorTi, githubDeInicio } from '@/lib/esperando'
 import { finanzasAgenteMode } from '@/lib/finanzas/agente-config'
 import { getFinanzas } from '@/lib/finanzas/data'
@@ -28,7 +29,8 @@ type Search = Record<string, string | string[] | undefined>
  * /agentes (lib/auditoria.ts, solo para escritores): ninguna llamada nueva a GitHub.
  * «Esperando por ti» (ORD-POS-122, solo para la sesión del propietario) lee además los dictámenes de las PR_ABIERTO con
  * dictamenDeOrden y su caché (la de /ordenes), con el mismo cliente de tope LLAMADAS_AGENTES y lo que queda de
- * LIMITE_GLOBAL_MS en esta carga; lo que no cupo queda «sin datos».
+ * LIMITE_GLOBAL_MS en esta carga; lo que no cupo queda «sin datos». Su grupo «Fusionado sin desplegar» (ORD-POS-124)
+ * compara main con el commit desplegado (DEPLOY_COMMIT_SHA) con el mismo cliente; sin el commit queda apagado.
  */
 export default async function HomePage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams
@@ -43,7 +45,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const client = githubClient(process.env, { maxLlamadas: LLAMADAS_AGENTES })
   const propietario = isWriter(user.email)
-  const lecturas = client ? await githubDeInicio(client, filtro, data.ordenes, propietario) : null
+  const commit = commitDesplegado()
+  const lecturas = client ? await githubDeInicio(client, filtro, data.ordenes, propietario, { commit }) : null
   const gh = lecturas?.gh ?? null
   const listos = lecturas?.listos ?? null
   const finanzas = await getFinanzas()
@@ -54,7 +57,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const fuenteFinanzas: FuenteFinanzas = finanzas.estado === 'ok' ? { estado: 'ok', vista: finanzas.vista }
     : finanzas.estado === 'no-configurado' ? { estado: 'no-configurado' } : { estado: 'error', motivo }
   const pendientes = misPendientes(data, hoy, filtro, { prs: gh?.prs ?? null, recurrentes: recurrentesSinConfirmar(vista, motivo) })
-  const esperando = esperandoPorTi({ propietario, ordenes: data.ordenes, ordenesOk: data.tabs.ORDENES_CODEX.ok, filtro, pendientes, listos })
+  const esperando = esperandoPorTi({
+    propietario, ordenes: data.ordenes, ordenesOk: data.tabs.ORDENES_CODEX.ok, filtro, pendientes, listos, commit,
+    despliegue: lecturas ? { prs: gh?.prs.POS ?? null, sinDesplegar: lecturas.sinDesplegar } : null,
+  })
   const t = tablero({
     ds: data, hoy, now, filtro, proyectos, gh, finanzas: fuenteFinanzas, audit, agenteFinanzas: finanzasAgenteMode() === 'sheets',
     eventos: audit.estado === 'ok' ? { estado: 'ok', datos: eventosOrdenes(data.ordenes, audit.datos) } : audit,
