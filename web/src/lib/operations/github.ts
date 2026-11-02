@@ -65,7 +65,23 @@ export interface PrFusion {
   url: string
   number: number
   fusionMs: number | null
+  /**
+   * SHA completo del commit de fusión (`merge_commit_sha`) si el PR está fusionado (ORD-POS-124). null o ausente: no
+   * fusionado, o GitHub no lo dio con formato válido; entonces no se sabe si está desplegado (nunca se infiere).
+   */
+  mergeSha?: string | null
 }
+
+/** Resultado de comparar el commit desplegado con la rama principal (ORD-POS-124). */
+export type SinDesplegar =
+  | { estado: 'ok'; shas: Set<string> }
+  /** Más commits de los que se leen (MAX_COMMITS_SIN_DESPLEGAR): no se sabe cuáles faltan. */
+  | { estado: 'truncado'; total: number }
+
+/** Rama que se despliega (el dashboard se construye desde `main` de PROJECT-OS). */
+export const RAMA_DESPLEGADA = 'main'
+/** Máximo de commits sin desplegar que lee commitsSinDesplegar (3 páginas de 100). */
+export const MAX_COMMITS_SIN_DESPLEGAR = 300
 
 /** PRs de órdenes de un repositorio; `truncado` si la lista llegó al límite de paginación (ORD-POS-080). */
 export interface PrsDeOrdenes {
@@ -354,7 +370,8 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
       const salida = new Map<string, PrFusion>()
       for (let page = 1; page <= MAX_PAGES; page++) {
         const prs = await call<Array<{
-          number: number; title: string; html_url: string; merged_at: string | null; user?: User; head?: { repo?: { full_name?: string } | null }
+          number: number; title: string; html_url: string; merged_at: string | null; merge_commit_sha?: unknown; user?: User
+          head?: { repo?: { full_name?: string } | null }
         }>>('GET', `/repos/${repo}/pulls?state=all&sort=created&direction=desc&per_page=100&page=${page}`)
         for (const p of prs) {
           const ordenId = /^\[(ORD-[A-Z]{3}-\d{3})\]/.exec(p.title ?? '')?.[1]
@@ -364,11 +381,53 @@ export function createGitHubClient(token: string, fetchImpl: typeof fetch = fetc
           const fusionMs = p.merged_at ? Date.parse(p.merged_at) : null
           // Una fecha de fusión ilegible es una respuesta inválida, no «sin fusionar».
           if (fusionMs !== null && !Number.isFinite(fusionMs)) throw new GitHubError('respuesta-invalida')
-          salida.set(ordenId, { url: p.html_url, number: p.number, fusionMs })
+          const mergeSha = fusionMs !== null && typeof p.merge_commit_sha === 'string' && SHA_COMPLETO.test(p.merge_commit_sha) ? p.merge_commit_sha : null
+          salida.set(ordenId, { url: p.html_url, number: p.number, fusionMs, mergeSha })
         }
         if (prs.length < 100) return { prs: salida, truncado: false }
       }
       return { prs: salida, truncado: true }
+    },
+
+    /**
+     * ¿`base` es ancestro de `head` o igual a él? (ORD-POS-124) Una llamada a la API de comparación de GitHub
+     * (`compare/base...head`): `ahead` o `identical` = sí; `behind` o `diverged` = no; otra cosa es respuesta inválida.
+     * Solo lectura; los dos SHA deben ser completos.
+     */
+    async esAncestro(proyectoId: string, base: string, head: string): Promise<boolean> {
+      const repo = repoDe(proyectoId)
+      if (!SHA_COMPLETO.test(base) || !SHA_COMPLETO.test(head)) throw new GitHubError('respuesta-invalida')
+      const r = await call<{ status?: unknown }>('GET', `/repos/${repo}/compare/${base}...${head}?per_page=1`)
+      if (r.status === 'ahead' || r.status === 'identical') return true
+      if (r.status === 'behind' || r.status === 'diverged') return false
+      throw new GitHubError('respuesta-invalida')
+    },
+
+    /**
+     * SHA de los commits de RAMA_DESPLEGADA que no están en `desplegado` (ORD-POS-124): `compare/desplegado...main`, hasta
+     * MAX_COMMITS_SIN_DESPLEGAR (páginas de 100, una llamada cada una). Más que eso es `truncado`. Solo lectura.
+     */
+    async commitsSinDesplegar(proyectoId: string, desplegado: string): Promise<SinDesplegar> {
+      const repo = repoDe(proyectoId)
+      if (!SHA_COMPLETO.test(desplegado)) throw new GitHubError('respuesta-invalida')
+      const shas = new Set<string>()
+      for (let page = 1; page <= MAX_COMMITS_SIN_DESPLEGAR / 100; page++) {
+        const r = await call<{ total_commits?: unknown; commits?: Array<{ sha?: unknown }> }>(
+          'GET', `/repos/${repo}/compare/${desplegado}...${RAMA_DESPLEGADA}?per_page=100&page=${page}`)
+        const total = r.total_commits
+        if (typeof total !== 'number' || !Number.isInteger(total) || total < 0 || !Array.isArray(r.commits)) throw new GitHubError('respuesta-invalida')
+        if (total > MAX_COMMITS_SIN_DESPLEGAR) return { estado: 'truncado', total }
+        for (const c of r.commits) {
+          if (typeof c.sha !== 'string' || !SHA_COMPLETO.test(c.sha)) throw new GitHubError('respuesta-invalida')
+          shas.add(c.sha)
+        }
+        if (shas.size >= total || r.commits.length < 100) {
+          // Una lista más corta que total_commits es una respuesta incompleta, no «todo desplegado».
+          if (shas.size < total) throw new GitHubError('respuesta-invalida')
+          return { estado: 'ok', shas }
+        }
+      }
+      throw new GitHubError('respuesta-invalida')
     },
 
     /**

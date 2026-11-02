@@ -1,6 +1,6 @@
 import { parseCivilDate, parseTimestamp, type Parsed, type Timestamp } from './dates'
 import { cellText, normalizeCode, parseFraction, parseNonNegative, parseSafeUrl } from './parse'
-import { isOptionalTab, MAX_DATA_ROWS, ORDENES_SENSIBLE, TAB_HEADERS, TAREAS_INSTRUCCIONES, type TabName } from './schema'
+import { isOptionalTab, MAX_DATA_ROWS, ORDENES_BANDERA, ORDENES_SENSIBLE, TAB_HEADERS, TAREAS_INSTRUCCIONES, type TabName } from './schema'
 import type { DataIssue, DataSource, Dataset, RawTabs, TabStatus } from './types'
 
 const MAX_ISSUES = 200
@@ -134,6 +134,10 @@ function mapTab<T>(
   const idColumn = TAB_HEADERS[tab][0]
   return parsed.rows.map((row) => map(reader(tab, row, log), row.get(idColumn) as string))
 }
+
+/** La fila de encabezados de la pestaña tiene la columna `column` (nombre exacto, como parseTable). */
+const tieneColumna = (values: unknown[][] | undefined, column: string): boolean =>
+  (values?.[0] ?? []).some((cell) => cellText(cell) === column)
 
 /** Construye el conjunto de datos tipado a partir de las matrices de valores de cada pestaña. */
 export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt: number }): Dataset {
@@ -292,6 +296,8 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     riesgo: r.code('RIESGO'),
     // Columna opcional (migración de DEC-POS-019): si la hoja aún no la tiene, null = sensible.
     sensible: r.code(ORDENES_SENSIBLE),
+    // Columna opcional (ORD-POS-125): sin ella, null; ordenesConBandera dice si la hoja ya la tiene.
+    bandera: r.text(ORDENES_BANDERA),
     estado: r.code('ESTADO'),
     issueUrl: r.url('ISSUE_URL'),
     prUrl: r.url('PR_URL'),
@@ -332,6 +338,7 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     tabs: tabs as Dataset['tabs'],
     proyectos, hitos, tareas, capacidad, asignaciones, planes, planItems, tiempos,
     evidencias, dependencias, decisiones, syncRuns, ordenes, supervision,
+    ordenesConBandera: tabs.ORDENES_CODEX?.ok === true && tieneColumna(raw.ORDENES_CODEX, ORDENES_BANDERA),
     issues: log.issues,
     issuesTruncated: log.truncated,
   }

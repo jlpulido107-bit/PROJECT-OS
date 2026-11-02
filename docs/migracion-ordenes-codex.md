@@ -101,3 +101,27 @@ por omisión). En BAJO y ALTO no cambia nada.
 El dashboard la lee si existe y no la exige: antes de aplicarla, la pestaña sigue válida y toda orden cuenta como
 sensible. La API de operaciones no la escribe: una orden nueva queda vacía (= sensible) hasta que el propietario la
 cambie. **Revertir:** borrar la columna; todas las órdenes vuelven a contar como sensibles.
+
+## Columna BANDERA (DEC-POS-028, punto 3)
+
+**Tipo:** cambio de esquema aditivo (ORD-POS-125, Planificación v2 F5b). Una columna nueva al final de `ORDENES_CODEX`,
+después de `SENSIBLE` si ya existe; no cambia las otras. **Quién la aplica:** el propietario, a mano en la hoja.
+**Estado:** propuesta, pendiente de aplicar.
+
+Dice qué bandera deja inerte cada orden, para el paso **Activada** de la capa Flujo de /planificacion y el grupo
+**Banderas sin encender** de «Esperando por ti» en Inicio ([diseño §4.1 y §6.4](diseno-planificacion-v2.md)).
+
+1. En `ORDENES_CODEX`, escribir `BANDERA` en la primera celda libre de la fila 1.
+2. Opcional: validación de datos con la lista de nombres reconocidos: `PM_PUEDE_REGISTRAR_PR`,
+   `SEGUNDO_GEMINI_SUPERVISADO`, `TAREAS_CIERRE_PROPIETARIO`, `TIEMPOS_AGENTE`, `FINANZAS_AGENTE_MODE`,
+   `ECO_PIPELINE_WRITE_MODE` (los de `web/src/lib/banderas.ts`).
+3. Llenar el nombre solo en las órdenes que dejan una bandera inerte; el resto queda vacío.
+
+Lectura: el dashboard la lee si existe y no la exige. **Sin la columna**, Activada y «Banderas sin encender» quedan
+apagadas con el motivo «falta la columna BANDERA». Con la columna, Activada está hecha si la bandera está encendida
+(según su función existente del servidor), no aplica si la celda está vacía y queda sin datos si el nombre no se
+reconoce. «Banderas sin encender» lista las órdenes con PR fusionado y su bandera apagada. Las banderas se muestran por
+su nombre en palabras y solo como encendida o apagada, nunca su valor ni un correo, y solo a la sesión del propietario.
+
+La API de operaciones no la escribe ni la exige: las altas no cambian. Encender una bandera sigue siendo del propietario
+con `deploy.sh`. **Revertir:** borrar la columna; Activada y el grupo vuelven a quedar apagados.

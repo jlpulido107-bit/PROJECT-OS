@@ -1,8 +1,10 @@
 import { proyectoDeOrden, type ProyectoAgentes } from './agentes'
+import { estadoBandera, MOTIVO_SIN_COLUMNA_BANDERA, type FuenteBanderas } from './banderas'
 import { githubDeAgentes, LIMITE_GLOBAL_MS, type GitHubAgentes } from './agentes-data'
+import { leerSinDesplegar, MOTIVO_SIN_COMMIT, MOTIVO_SOLO_POS, PROYECTO_DESPLEGADO } from './despliegue'
 import type { Pendientes, TareaPendiente } from './inicio'
 import { dictamenDeOrden } from './operations/dictamenes'
-import { codigoFalloGitHub, type GitHubClient } from './operations/github'
+import { codigoFalloGitHub, MAX_COMMITS_SIN_DESPLEGAR, type GitHubClient, type PrFusion, type SinDesplegar } from './operations/github'
 import { dictamenSuficiente, type EvaluacionDictamen } from './supervision/dictamen'
 import type { Decision, Orden } from './types'
 
@@ -11,10 +13,17 @@ import type { Decision, Orden } from './types'
  * lo que solo el propietario puede destrabar. Solo lectura. 6.3 y 6.5 salen de misPendientes sin llamadas nuevas; 6.1
  * suma a las REVISADA las PR_ABIERTO cuyo dictamen del head actual basta para REVISADA (dictamenSuficiente), leído con
  * dictamenDeOrden y su caché (la de /ordenes), con el cliente de tope LLAMADAS_AGENTES y el tiempo LIMITE_GLOBAL_MS de
- * Inicio: lo que no cupo queda «sin datos» y se lee en la carga siguiente. 6.2 y 6.4 quedan apagadas hasta la fase F5.
+ * Inicio: lo que no cupo queda «sin datos» y se lee en la carga siguiente.
  * ORD-POS-127 (POS-042) suma «Esperando tu aprobación»: las órdenes BORRADOR del filtro, de la hoja que ya se lee (sin
  * llamadas nuevas); sin ORDENES_CODEX es «sin datos» y no cuenta como 0. contadorMenuOrdenes da el mismo número, sin
  * filtro, para el grupo Órdenes del menú.
+ *
+ * 6.2 «Fusionado sin desplegar» (ORD-POS-124, fase F5a): los PR [ORD- fusionados de PROJECT-OS cuyo commit de fusión es
+ * uno de los commits de `main` que no están en el commit desplegado (DEPLOY_COMMIT_SHA; lib/despliegue.ts), leídos con
+ * la API de comparación de GitHub (una a tres llamadas, con caché). Sin el commit, `apagada` con MOTIVO_SIN_COMMIT.
+ *
+ * 6.4 (ORD-POS-125, fase F5b): las órdenes con PR fusionado cuya bandera (columna BANDERA) sigue apagada, por su nombre en
+ * palabras; sin la columna queda apagada. La fusión sale de las listas de PRs que Inicio ya lee: cero llamadas nuevas.
  */
 
 export type Grupo<T> =
@@ -28,6 +37,11 @@ export const MOTIVO_NO_PROPIETARIO = 'Solo lo ve la sesión del propietario.'
 export const MOTIVO_SIN_GITHUB = 'Sin token de GitHub en este servidor: no se leen los dictámenes de las órdenes con PR abierto.'
 export const MOTIVO_SIN_ORDENES = 'La pestaña ORDENES_CODEX no está disponible.'
 export const MOTIVO_NO_LEIDO = 'No se pudo leer su dictamen en GitHub en esta carga (tope de llamadas, tiempo o fallo): se intenta en la siguiente.'
+export const MOTIVO_SIN_GITHUB_DESPLIEGUE = 'Sin token de GitHub en este servidor: no se compara con el commit desplegado.'
+export const MOTIVO_NO_LEIDO_SIN_DESPLEGAR = 'No se pudo comparar main con el commit desplegado en esta carga (tope de llamadas, tiempo o fallo): se intenta en la siguiente.'
+export const MOTIVO_SIN_LISTA_POS = 'No se pudo leer la lista de PRs de PROJECT-OS en esta carga: se intenta en la siguiente.'
+export const motivoTruncado = (total: number) =>
+  `Hay ${total} commits en main sin desplegar, más de los ${MAX_COMMITS_SIN_DESPLEGAR} que se leen: despliega para ponerlo al día.`
 
 /** Lecturas en paralelo como máximo (como /agentes). */
 const PARALELO = 6
@@ -92,12 +106,16 @@ export async function leerDictamenes(
  */
 export async function githubDeInicio(
   client: GitHubClient, filtro: ProyectoAgentes | null, ordenes: Orden[], propietario: boolean,
-): Promise<{ gh: GitHubAgentes; listos: LecturaListos | null }> {
+  { commit = null, ahora = Date.now() }: { commit?: string | null; ahora?: number } = {},
+): Promise<{ gh: GitHubAgentes; listos: LecturaListos | null; sinDesplegar: SinDesplegar | null }> {
   const inicio = Date.now()
-  const gh = await githubDeAgentes(client, filtro, null)
-  if (!propietario) return { gh, listos: null }
+  const gh = await githubDeAgentes(client, filtro, null, { ahora })
+  if (!propietario) return { gh, listos: null, sinDesplegar: null }
+  // 6.2 primero: una a tres llamadas (con caché) antes de los dictámenes, que pueden agotar el tope.
+  const sinDesplegar = commit && (filtro === null || filtro === PROYECTO_DESPLEGADO)
+    ? await leerSinDesplegar(client, commit, { ahora, limiteMs: LIMITE_GLOBAL_MS - (Date.now() - inicio) }) : null
   const delFiltro = ordenes.filter((o) => filtro === null || proyectoDeOrden(o) === filtro)
-  return { gh, listos: await leerListos(client, delFiltro, { limiteMs: LIMITE_GLOBAL_MS - (Date.now() - inicio) }) }
+  return { gh, listos: await leerListos(client, delFiltro, { ahora, limiteMs: LIMITE_GLOBAL_MS - (Date.now() - inicio) }), sinDesplegar }
 }
 
 export interface ListoParaFusionar {
@@ -114,13 +132,40 @@ export interface Listos {
   motivoSinDatos: string | null
 }
 
+export interface BanderaSinEncender {
+  orden: Orden
+  /** Nombre en palabras de la bandera (o el de la celda, si no se reconoce); nunca su valor. */
+  nombre: string
+}
+
+export interface BanderasSinEncender {
+  /** Órdenes fusionadas cuya bandera está apagada. */
+  lista: BanderaSinEncender[]
+  /** Órdenes fusionadas cuya bandera no se reconoce: no se sabe si está encendida. */
+  desconocidas: BanderaSinEncender[]
+  /** Órdenes con bandera no encendida de las que no se sabe si están fusionadas (sin la lista de PRs de su repositorio). */
+  sinDatos: Orden[]
+  motivoSinDatos: string | null
+}
+
+export const MOTIVO_FUSION_SIN_DATOS = 'No se pudo leer la lista de PRs en GitHub: no se sabe si estas órdenes están fusionadas.'
+
+export interface FusionadoSinDesplegar {
+  /** PRs [ORD- de PROJECT-OS fusionados cuyo commit de fusión no está en el commit desplegado (los más recientes primero). */
+  lista: Array<{ ordenId: string; titulo: string | null; url: string; numero: number }>
+  /** PRs fusionados de la lista sin commit de fusión válido: no se sabe si están desplegados. */
+  sinDatos: string[]
+  /** Commits sin desplegar que no son el commit de fusión de ningún PR [ORD- de la lista (otros cambios o PRs antiguos). */
+  otrosCommits: number
+}
+
 export interface Esperando {
   /** Órdenes BORRADOR del filtro: esperan la aprobación del propietario en /ordenes (ORD-POS-127). */
   aprobacion: Grupo<Orden[]>
   listos: Grupo<Listos>
-  fusionadoSinDesplegar: Grupo<never>
+  fusionadoSinDesplegar: Grupo<FusionadoSinDesplegar>
   decisiones: Grupo<Decision[]>
-  banderas: Grupo<never>
+  banderas: Grupo<BanderasSinEncender>
   vencenHoy: Grupo<TareaPendiente[]>
   /** Suma de elementos de los grupos `ok`; un grupo sin datos o apagado no cuenta como 0, no cuenta. */
   contador: number
@@ -137,6 +182,66 @@ export interface FuentesEsperando {
   pendientes: Pendientes
   /** Dictámenes de las PR_ABIERTO; null si no hay token de GitHub en el servidor. */
   listos: LecturaListos | null
+  /** Fuente del estado de las banderas (6.4); sin ella, apagada por falta de la columna BANDERA. */
+  banderas?: FuenteBanderas
+  /** Listas de PRs de órdenes de GitHub (la caché de /agentes) para saber qué está fusionado; null sin token. */
+  prs?: Record<string, Map<string, { fusionMs: number | null }> | null> | null
+  /** Proyectos cuya lista de PRs llegó al límite de paginación. */
+  truncados?: string[]
+  /** Commit desplegado (DEPLOY_COMMIT_SHA, ORD-POS-124); null si el despliegue no lo informa. */
+  commit?: string | null
+  /**
+   * Lecturas de GitHub para 6.2; null si no hay token de GitHub en el servidor. `prs`: la lista de PRs de PROJECT-OS
+   * (null si no se pudo leer); `sinDesplegar`: los commits de main que no están en el desplegado (null si no se leyó).
+   */
+  despliegue?: { prs: Map<string, PrFusion> | null; sinDesplegar: SinDesplegar | null } | null
+}
+
+/** 6.2 «Fusionado sin desplegar» (ORD-POS-124): pura sobre lo ya leído. */
+export function fusionadoSinDesplegar(f: Pick<FuentesEsperando, 'commit' | 'despliegue' | 'filtro' | 'ordenes'>): Grupo<FusionadoSinDesplegar> {
+  if (!f.commit) return { estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }
+  if (f.filtro !== null && f.filtro !== PROYECTO_DESPLEGADO) return { estado: 'apagada', motivo: MOTIVO_SOLO_POS }
+  if (!f.despliegue) return { estado: 'sin-datos', motivo: MOTIVO_SIN_GITHUB_DESPLIEGUE }
+  const { prs, sinDesplegar } = f.despliegue
+  if (!sinDesplegar) return { estado: 'sin-datos', motivo: MOTIVO_NO_LEIDO_SIN_DESPLEGAR }
+  if (sinDesplegar.estado === 'truncado') return { estado: 'sin-datos', motivo: motivoTruncado(sinDesplegar.total) }
+  if (!prs) return { estado: 'sin-datos', motivo: MOTIVO_SIN_LISTA_POS }
+  const titulos = new Map(f.ordenes.map((o) => [o.id, o.titulo]))
+  const lista: FusionadoSinDesplegar['lista'] = []
+  const sinDatos: string[] = []
+  const deOrdenes = new Set<string>()
+  for (const [ordenId, pr] of prs) {
+    if (pr.fusionMs === null) continue
+    if (!pr.mergeSha) { sinDatos.push(ordenId); continue }
+    if (!sinDesplegar.shas.has(pr.mergeSha)) continue
+    deOrdenes.add(pr.mergeSha)
+    lista.push({ ordenId, titulo: titulos.get(ordenId) ?? null, url: pr.url, numero: pr.number })
+  }
+  lista.sort((a, b) => b.numero - a.numero)
+  sinDatos.sort()
+  return { estado: 'ok', datos: { lista, sinDatos, otrosCommits: [...sinDesplegar.shas].filter((s) => !deOrdenes.has(s)).length } }
+}
+
+/** 6.4: fusionadas con su bandera apagada (o no reconocida); las encendidas no entran. Puro. */
+export function banderasSinEncender(
+  ordenes: Orden[], fuente: FuenteBanderas, prs: FuentesEsperando['prs'] = null, truncados: string[] = [],
+): Grupo<BanderasSinEncender> {
+  if (fuente.estado === 'apagada') return { estado: 'apagada', motivo: fuente.motivo }
+  const datos: BanderasSinEncender = { lista: [], desconocidas: [], sinDatos: [], motivoSinDatos: null }
+  for (const o of [...ordenes].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (o.estado === 'CANCELADA') continue
+    const b = estadoBandera(o.bandera, fuente.env)
+    if (b === null || b.tipo === 'encendida') continue
+    const proyecto = proyectoDeOrden(o)
+    const lista = prs && proyecto ? prs[proyecto] ?? null : null
+    const pr = lista?.get(o.id)
+    // Sin la lista, o sin el PR en una lista truncada, no se sabe si está fusionada: nunca se infiere.
+    if (!lista || (!pr && truncados.includes(proyecto!))) { datos.sinDatos.push(o); continue }
+    if (!pr || pr.fusionMs === null) continue
+    ;(b.tipo === 'apagada' ? datos.lista : datos.desconocidas).push({ orden: o, nombre: b.nombre })
+  }
+  datos.motivoSinDatos = datos.sinDatos.length ? MOTIVO_FUSION_SIN_DATOS : null
+  return { estado: 'ok', datos }
 }
 
 /** Grupos del bloque, puros sobre misPendientes y los dictámenes ya leídos. */
@@ -166,21 +271,22 @@ export function esperandoPorTi(f: FuentesEsperando): Grupo<Esperando> {
   const t = f.pendientes.tareas
   const vencenHoy: Grupo<TareaPendiente[]> = t.estado === 'ok' ? { estado: 'ok', datos: t.datos.filter((x) => x.dias <= 0) } : t
   const decisiones: Grupo<Decision[]> = f.pendientes.decisiones
-  const fusionadoSinDesplegar: Grupo<never> = { estado: 'apagada', motivo: MOTIVO_F5 }
-  const banderas: Grupo<never> = { estado: 'apagada', motivo: MOTIVO_F5 }
+  const sinDesplegar = fusionadoSinDesplegar(f)
+  const banderas = !f.ordenesOk ? { estado: 'sin-datos' as const, motivo: 'La pestaña ORDENES_CODEX no está disponible.' }
+    : banderasSinEncender(delFiltro, f.banderas ?? { estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA }, f.prs ?? null, f.truncados ?? [])
 
   const grupos = [
     aprobacion.estado === 'ok' ? aprobacion.datos.length : null,
     listos.estado === 'ok' ? listos.datos.lista.length : null,
-    null, // 6.2 apagada
+    sinDesplegar.estado === 'ok' ? sinDesplegar.datos.lista.length : null,
     decisiones.estado === 'ok' ? decisiones.datos.length : null,
-    null, // 6.4 apagada
+    banderas.estado === 'ok' ? banderas.datos.lista.length : null,
     vencenHoy.estado === 'ok' ? vencenHoy.datos.length : null,
   ]
   return {
     estado: 'ok',
     datos: {
-      aprobacion, listos, fusionadoSinDesplegar, decisiones, banderas, vencenHoy,
+      aprobacion, listos, fusionadoSinDesplegar: sinDesplegar, decisiones, banderas, vencenHoy,
       contador: grupos.reduce<number>((s, n) => s + (n ?? 0), 0),
       sinContar: grupos.filter((n) => n === null).length,
     },

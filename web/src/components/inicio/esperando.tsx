@@ -2,15 +2,17 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Badge, ExternalLink, Section } from '@/components/ui'
 import type { ProyectoAgentes } from '@/lib/agentes'
-import { MOTIVO_F5, type Esperando, type Grupo } from '@/lib/esperando'
+import type { Esperando, Grupo } from '@/lib/esperando'
 import { urlGithub } from '@/lib/estado'
 
 /**
  * Bloque «Esperando por ti» (ORD-POS-122; docs/diseno-planificacion-v2.md §6). Solo pinta lo que calcula
  * lib/esperando.ts. Regla de lenguaje (§2): el nombre primero y el ID después, en monoespaciada y pequeño. «Sin datos»
- * y «apagada» dicen su motivo, nunca un 0. Las banderas (6.4) están apagadas hasta F5: no se muestra ningún valor.
- * ORD-POS-127: «Esperando tu aprobación» (BORRADOR) va primero; los rubros con datos y sin pendientes, y los apagados
- * hasta F5, se resumen en una fila de chips. Un rubro «sin datos» sigue a la vista con su motivo.
+ * y «apagada» dicen su motivo, nunca un 0. Las banderas (6.4, ORD-POS-125) salen por su nombre en palabras y solo como
+ * apagadas: nunca su valor ni un correo.
+ * «Fusionado sin desplegar» (6.2, ORD-POS-124) lista los PR de PROJECT-OS cuyo commit de fusión no está desplegado.
+ * ORD-POS-127: «Esperando tu aprobación» (BORRADOR) va primero; los rubros con datos y sin pendientes se resumen en una
+ * fila de chips. Un rubro «sin datos» o apagado sigue a la vista con su motivo.
  */
 
 function Id({ children, href }: { children: string; href?: string }) {
@@ -53,11 +55,10 @@ export function BloqueEsperando({ e, filtro }: { e: Grupo<Esperando>; filtro: Pr
   )
 }
 
-/** Rubro que va como chip: con datos y sin pendientes, o apagado hasta F5. «Sin datos» nunca va como chip. */
+/** Rubro que va como chip: con datos y sin pendientes. «Sin datos» y «apagada» nunca van como chip: dicen su motivo. */
 type Chip = { titulo: string; texto: string; tono: 'ok' | 'muted'; motivo?: string }
 
 function chipDe<T>(titulo: string, grupo: Grupo<T>, vacio: (datos: T) => boolean, texto: string): Chip | null {
-  if (grupo.estado === 'apagada' && grupo.motivo === MOTIVO_F5) return { titulo, texto: 'fuente apagada (F5)', tono: 'muted', motivo: grupo.motivo }
   return grupo.estado === 'ok' && vacio(grupo.datos) ? { titulo, texto, tono: 'ok' } : null
 }
 
@@ -67,9 +68,9 @@ export function chipsEsperando(d: Esperando): Chip[] {
   return [
     chipDe('Esperando tu aprobación', d.aprobacion, nada, 'ninguna'),
     chipDe('Listos para fusionar', d.listos, (l) => l.lista.length === 0 && l.sinDatos.length === 0, 'ninguno'),
-    chipDe('Fusionado sin desplegar', d.fusionadoSinDesplegar, () => false, ''),
+    chipDe('Fusionado sin desplegar', d.fusionadoSinDesplegar, (f) => f.lista.length === 0 && f.sinDatos.length === 0 && !f.otrosCommits, 'ninguno'),
     chipDe('Decisiones por tomar', d.decisiones, nada, 'ninguna'),
-    chipDe('Banderas sin encender', d.banderas, () => false, ''),
+    chipDe('Banderas sin encender', d.banderas, (b) => b.lista.length === 0 && b.desconocidas.length === 0 && b.sinDatos.length === 0, 'ninguna'),
     chipDe('Vencen hoy', d.vencenHoy, nada, 'ninguna'),
   ].filter((c): c is Chip => c !== null)
 }
@@ -122,7 +123,26 @@ function Grupos({ d }: { d: Esperando }) {
       </GrupoEsperando>
       ) : null}
       {ver('Fusionado sin desplegar') ? (
-      <GrupoEsperando titulo="Fusionado sin desplegar" grupo={d.fusionadoSinDesplegar}>{() => null}</GrupoEsperando>
+      <GrupoEsperando titulo="Fusionado sin desplegar" grupo={d.fusionadoSinDesplegar}>
+        {(f) => (
+          <>
+            {f.lista.length === 0 ? <Vacio>Todo lo fusionado de las órdenes está desplegado.</Vacio> : (
+              <ul className="list" aria-label="Fusionado sin desplegar">
+                {f.lista.map((x) => (
+                  <li key={x.ordenId}>
+                    <Nombre value={x.titulo} vacio="(orden sin título)" /> · <Id href="/ordenes">{x.ordenId}</Id> ·{' '}
+                    <ExternalLink href={x.url}>{`PR #${x.numero}`}</ExternalLink> → desplegar (DEC-POS-017)
+                  </li>
+                ))}
+              </ul>
+            )}
+            {f.otrosCommits ? <p className="muted small">Además, {f.otrosCommits} {f.otrosCommits === 1 ? 'commit' : 'commits'} de main sin desplegar que no son la fusión de un PR de orden de la lista.</p> : null}
+            {f.sinDatos.length ? (
+              <p role="note"><Badge tone="muted">Sin datos</Badge> GitHub no dio el commit de fusión de: {f.sinDatos.map((id, i) => <span key={id}>{i ? ', ' : ''}<Id href="/ordenes">{id}</Id></span>)}</p>
+            ) : null}
+          </>
+        )}
+      </GrupoEsperando>
       ) : null}
       {ver('Decisiones por tomar') ? (
       <GrupoEsperando titulo="Decisiones por tomar" grupo={d.decisiones}>
@@ -139,7 +159,34 @@ function Grupos({ d }: { d: Esperando }) {
       </GrupoEsperando>
       ) : null}
       {ver('Banderas sin encender') ? (
-      <GrupoEsperando titulo="Banderas sin encender" grupo={d.banderas}>{() => null}</GrupoEsperando>
+      <GrupoEsperando titulo="Banderas sin encender" grupo={d.banderas}>
+        {(b) => (
+          <>
+            {b.lista.length === 0 ? <Vacio>Ninguna orden fusionada espera una bandera apagada.</Vacio> : (
+              <ul className="list" aria-label="Banderas sin encender">
+                {b.lista.map(({ orden, nombre }) => (
+                  <li key={orden.id}>
+                    {nombre} <Badge tone="warn">apagada</Badge> · <Nombre value={orden.titulo} vacio="(orden sin título)" /> ·{' '}
+                    <Id href="/ordenes">{orden.id}</Id> → encender con deploy.sh
+                  </li>
+                ))}
+              </ul>
+            )}
+            {b.desconocidas.length ? (
+              <p role="note"><Badge tone="muted">Sin datos</Badge>{' '}
+                {b.desconocidas.map(({ orden, nombre }, i) => (
+                  <span key={orden.id}>{i ? '; ' : ''}Bandera {nombre} no reconocida · <Id href="/ordenes">{orden.id}</Id></span>
+                ))}
+              </p>
+            ) : null}
+            {b.sinDatos.length ? (
+              <p role="note"><Badge tone="muted">Sin datos</Badge> {b.motivoSinDatos}{' '}
+                {b.sinDatos.map((o, i) => <span key={o.id}>{i ? ', ' : ''}<Id href="/ordenes">{o.id}</Id></span>)}
+              </p>
+            ) : null}
+          </>
+        )}
+      </GrupoEsperando>
       ) : null}
       {ver('Vencen hoy') ? (
       <GrupoEsperando titulo="Vencen hoy" grupo={d.vencenHoy}>

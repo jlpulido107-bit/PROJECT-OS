@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + tiemposAgente(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + tiemposAgente(env, problems) + commitDesplegado(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO ni TIEMPOS_AGENTE')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, TIEMPOS_AGENTE ni DEPLOY_COMMIT_SHA')
   return output.replace(marker, writeBlock)
 }
 
@@ -210,6 +210,22 @@ function tiemposAgente(env, problems) {
     `                  key: '${version}'`,
     '',
   ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-124, docs/diseno-planificacion-v2.md §9 pregunta 2, DEC-POS-028 punto 2): DEPLOY_COMMIT_SHA, el commit
+ * que se despliega, como literal (no es secreto). El servidor la lee en solo lectura para «Desplegada» (/planificacion) y
+ * «Fusionado sin desplegar» (Inicio). deploy.sh siempre la pasa (exportada o de `git rev-parse HEAD`); sin ella, el YAML
+ * no cambia y esas dos fuentes quedan apagadas. Solo un SHA completo (40 hexadecimales en minúsculas), entre comillas.
+ */
+function commitDesplegado(env, problems) {
+  const sha = (env.DEPLOY_COMMIT_SHA ?? '').trim()
+  if (!sha) return ''
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    problems.push('DEPLOY_COMMIT_SHA debe ser un SHA completo (40 hexadecimales en minúsculas)')
+    return ''
+  }
+  return ['            - name: DEPLOY_COMMIT_SHA', `              value: '${sha}'`, ''].join('\n')
 }
 
 /**
