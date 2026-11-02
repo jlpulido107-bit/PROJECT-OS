@@ -128,9 +128,14 @@ export interface GastoMensual {
 export interface Herramientas {
   meses: string[]
   conceptos: Array<{ concepto: string; porMes: Record<string, number | null>; sinRegistrar: string[] }>
-  totalPorMes: Record<string, number>
-  /** Promedio mensual de los últimos 3 meses de la ventana (incluye el mes en curso). */
-  promedioCentavos: number
+  /** null = ningún concepto registrado ese mes (vacío ≠ 0). */
+  totalPorMes: Record<string, number | null>
+  /**
+   * Promedio mensual de los meses con dato entre los últimos 3 de la ventana (incluye el mes en curso); null si
+   * ninguno tiene dato.
+   */
+  promedioCentavos: number | null
+  /** Los meses que entran al promedio: solo los que tienen dato. */
   mesesPromedio: string[]
   avisos: string[]
 }
@@ -493,7 +498,8 @@ export function costoHerramientas(movimientos: Movimiento[], meses: string[]): O
     porMes.set(m.mes, (porMes.get(m.mes) ?? 0) + m.centavos)
     porConcepto.set(concepto, porMes)
   }
-  const totalPorMes: Record<string, number> = Object.fromEntries(meses.map((mes) => [mes, 0]))
+  // Vacío ≠ 0 (ORD-POS-128): un mes sin ningún concepto queda en null; uno con fila suma aunque dé 0.
+  const totalPorMes: Record<string, number | null> = Object.fromEntries(meses.map((mes) => [mes, null]))
   const conceptos = [...porConcepto.keys()].sort((a, b) => a.localeCompare(b, 'es')).map((concepto) => {
     const porMesMapa = porConcepto.get(concepto)!
     const porMes: Record<string, number | null> = {}
@@ -501,15 +507,16 @@ export function costoHerramientas(movimientos: Movimiento[], meses: string[]): O
     meses.forEach((mes, i) => {
       const v = porMesMapa.get(mes) ?? null
       porMes[mes] = v
-      if (v !== null) totalPorMes[mes]! += v
+      if (v !== null) totalPorMes[mes] = (totalPorMes[mes] ?? 0) + v
       // Tuvo cargo el mes anterior y este no: posible captura olvidada (no se inventa el monto).
       if (v === null && i > 0 && porMesMapa.has(meses[i - 1]!)) sinRegistrar.push(mes)
     })
     return { concepto, porMes, sinRegistrar }
   })
-  const mesesPromedio = meses.slice(-MESES_PROMEDIO)
-  const suma = mesesPromedio.reduce((s, mes) => s + (totalPorMes[mes] ?? 0), 0)
-  return { meses, conceptos, totalPorMes, promedioCentavos: mesesPromedio.length ? Math.round(suma / mesesPromedio.length) : 0, mesesPromedio }
+  const mesesPromedio = meses.slice(-MESES_PROMEDIO).filter((mes) => totalPorMes[mes] !== null)
+  const suma = mesesPromedio.reduce((s, mes) => s + totalPorMes[mes]!, 0)
+  const promedioCentavos = mesesPromedio.length ? Math.round(suma / mesesPromedio.length) : null
+  return { meses, conceptos, totalPorMes, promedioCentavos, mesesPromedio }
 }
 
 /** §4.4: por PRODUCTO_ID, ingresos − (gastos + inversión); sin producto aparte, sin repartir. */

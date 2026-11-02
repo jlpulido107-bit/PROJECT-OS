@@ -350,9 +350,49 @@ describe('funciones puras de §2 y §4 (criterio 4)', () => {
     expect(keepa.porMes).toEqual({ '2026-07': null, '2026-08': null, '2026-09': 25050, '2026-10': null })
     expect(keepa.sinRegistrar).toEqual(['2026-10'])
     expect(h.conceptos[0]!.sinRegistrar).toEqual([])
-    expect(h.totalPorMes).toEqual({ '2026-07': 0, '2026-08': 40000, '2026-09': 65050, '2026-10': 40000 })
+    // ORD-POS-128: julio sin ningún concepto queda vacío (null), no en 0.
+    expect(h.totalPorMes).toEqual({ '2026-07': null, '2026-08': 40000, '2026-09': 65050, '2026-10': 40000 })
     expect(h.mesesPromedio).toEqual(['2026-08', '2026-09', '2026-10'])
     expect(h.promedioCentavos).toBe(48350)
+  })
+
+  describe('herramientas: vacío ≠ 0 (ORD-POS-128)', () => {
+    const herr = (movId: string, mes: string, concepto: string, centavos: number): Movimiento => ({
+      movId, fecha: `${mes}-05`, mes, proyecto: 'POS', tipo: 'Gasto', categoria: 'Herramientas', concepto, productoId: null, centavos, ajusteDe: null,
+    })
+    const ventana = ['2026-07', '2026-08', '2026-09', '2026-10']
+
+    it('ventana con meses vacíos: total null y el promedio solo usa los meses con dato', () => {
+      const h = costoHerramientas([herr('MAN-0001', '2026-08', 'Keepa', 30000), herr('MAN-0002', '2026-10', 'Keepa', 10000)], ventana)
+      expect(h.totalPorMes).toEqual({ '2026-07': null, '2026-08': 30000, '2026-09': null, '2026-10': 10000 })
+      expect(h.mesesPromedio).toEqual(['2026-08', '2026-10'])
+      expect(h.promedioCentavos).toBe(20000)
+      // «Sin registrar» sigue igual: tuvo cargo en agosto y en septiembre no.
+      expect(h.conceptos[0]!.sinRegistrar).toEqual(['2026-09'])
+    })
+
+    it('un solo mes con dato: el promedio es ese mes, no se divide entre tres', () => {
+      const h = costoHerramientas([herr('MAN-0001', '2026-09', 'Keepa', 25050)], ventana)
+      expect(h.totalPorMes).toEqual({ '2026-07': null, '2026-08': null, '2026-09': 25050, '2026-10': null })
+      expect(h.mesesPromedio).toEqual(['2026-09'])
+      expect(h.promedioCentavos).toBe(25050)
+      expect(h.conceptos[0]!.sinRegistrar).toEqual(['2026-10'])
+    })
+
+    it('sin datos: todos los totales null y promedio null, nunca 0', () => {
+      const h = costoHerramientas([], ventana)
+      expect(h.conceptos).toEqual([])
+      expect(h.totalPorMes).toEqual({ '2026-07': null, '2026-08': null, '2026-09': null, '2026-10': null })
+      expect(h.mesesPromedio).toEqual([])
+      expect(h.promedioCentavos).toBeNull()
+    })
+
+    it('un mes con fila que suma 0 sí tiene dato: muestra 0, no vacío', () => {
+      const h = costoHerramientas([herr('MAN-0001', '2026-10', 'Keepa', 0)], ventana)
+      expect(h.totalPorMes['2026-10']).toBe(0)
+      expect(h.mesesPromedio).toEqual(['2026-10'])
+      expect(h.promedioCentavos).toBe(0)
+    })
   })
 
   it('P&L por producto: ingresos − (gastos + inversión); sin producto al pie, sin repartir', () => {

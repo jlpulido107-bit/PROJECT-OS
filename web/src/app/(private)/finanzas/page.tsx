@@ -31,6 +31,9 @@ function Avisos({ avisos, label }: { avisos: string[]; label: string }) {
 }
 
 const Monto = ({ centavos }: { centavos: number }) => <td>{formatoMxn(centavos)}</td>
+/** Vacío ≠ 0: sin dato se pinta «—», nunca $0.00. */
+const MontoOVacio = ({ centavos }: { centavos: number | null | undefined }) =>
+  centavos === null || centavos === undefined ? <td><span className="muted">—</span></td> : <Monto centavos={centavos} />
 
 function BloqueCapital({ datos }: { datos: Capital }) {
   const pct = datos.pct === null ? null : Math.floor(datos.pct)
@@ -111,7 +114,9 @@ function BloqueHerramientas({ datos }: { datos: Herramientas }) {
     <>
       <Avisos avisos={datos.avisos} label="Avisos de la ventana" />
       <p className="small">
-        Promedio mensual de {datos.mesesPromedio.join(', ')}: <strong>{formatoMxn(datos.promedioCentavos)}</strong>.
+        {datos.promedioCentavos === null
+          ? <>Promedio mensual: <strong>Sin datos</strong> (ningún mes reciente tiene herramientas registradas).</>
+          : <>Promedio mensual de {datos.mesesPromedio.join(', ')} (solo meses con dato): <strong>{formatoMxn(datos.promedioCentavos)}</strong>.</>}
         «Sin registrar» marca un mes sin fila de una herramienta que sí tuvo cargo el mes anterior; no se inventa el monto.
       </p>
       <div className="table-wrap">
@@ -128,7 +133,7 @@ function BloqueHerramientas({ datos }: { datos: Herramientas }) {
                   if (v !== null && v !== undefined) return <Monto key={c.concepto} centavos={v} />
                   return <td key={c.concepto}>{c.sinRegistrar.includes(mes) ? <Badge tone="warn">Sin registrar</Badge> : <span className="muted">—</span>}</td>
                 })}
-                <Monto centavos={datos.totalPorMes[mes] ?? 0} />
+                <MontoOVacio centavos={datos.totalPorMes[mes]} />
               </tr>
             ))}
           </tbody>
