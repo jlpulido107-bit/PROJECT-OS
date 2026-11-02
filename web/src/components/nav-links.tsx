@@ -8,8 +8,10 @@ import { entradaGrupo, focoAtrapado, GRUPOS_BARRA, gruposMenu, rutaActiva, type 
 // Menú en 9 grupos (ORD-POS-126): barra lateral en escritorio; en celular, barra inferior de 4 + «Más».
 // Las condicionadas (RADAROS, Finanzas, Operaciones) arrancan apagadas: solo el layout las enciende con un booleano.
 // Este componente no recibe ni muestra el correo; eso vive solo en el layout.
-export function NavLinks({ showOperations = false, showEco = false, showFinanzas = false }: {
-  showOperations?: boolean; showEco?: boolean; showFinanzas?: boolean
+// ORD-POS-127: `borradores` es el número de órdenes BORRADOR que calcula el layout solo para el propietario; el grupo
+// Órdenes lo muestra solo si es mayor que 0. null (sin dato) no muestra contador, nunca un 0.
+export function NavLinks({ showOperations = false, showEco = false, showFinanzas = false, borradores = null }: {
+  showOperations?: boolean; showEco?: boolean; showFinanzas?: boolean; borradores?: number | null
 }) {
   const pathname = usePathname()
   const grupos = gruposMenu({ showEco, showFinanzas, showOperations })
@@ -52,6 +54,9 @@ export function NavLinks({ showOperations = false, showEco = false, showFinanzas
     focos[siguiente]?.focus()
   }
 
+  const contador = (g: Grupo) => (g.id === 'ordenes' && borradores !== null && borradores > 0
+    ? <> <span className="badge badge-warn nav-contador" aria-label={`${borradores} ${borradores === 1 ? 'orden espera' : 'órdenes esperan'} tu aprobación`}>{borradores}</span></>
+    : null)
   const actual = (href: string) => (href === activo.href ? 'page' as const : undefined)
   const grupoActual = (g: Grupo) => (g.id === activo.grupo ? 'page' as const : undefined)
 
@@ -61,7 +66,7 @@ export function NavLinks({ showOperations = false, showEco = false, showFinanzas
       <ul className="nav-groups">
         {grupos.map((g) => (
           <li key={g.id}>
-            <Link href={entradaGrupo(g)} aria-current={grupoActual(g)}>{g.label}</Link>
+            <Link href={entradaGrupo(g)} aria-current={grupoActual(g)}>{g.label}{contador(g)}</Link>
             {g.id === activo.grupo && g.items.length > 1 ? (
               <ul className="nav-subs" aria-label={`Secciones de ${g.label}`}>
                 {g.items.map((i) => (
@@ -85,7 +90,7 @@ export function NavLinks({ showOperations = false, showEco = false, showFinanzas
       {/* Celular: barra inferior Inicio · Órdenes · Tareas · Plan · Más. */}
       <ul className="nav-bottom">
         {barra.map((g) => (
-          <li key={g.id}><Link href={entradaGrupo(g)} aria-current={grupoActual(g)}>{g.corto}</Link></li>
+          <li key={g.id}><Link href={entradaGrupo(g)} aria-current={grupoActual(g)}>{g.corto}{contador(g)}</Link></li>
         ))}
         <li>
           <button

@@ -4,6 +4,8 @@ import { NavLinks } from '@/components/nav-links'
 import { writeAccess } from '@/components/operations/write-access'
 import { requireUser } from '@/lib/auth'
 import { finanzasSheetId, radarosSheetId } from '@/lib/config'
+import { getDataset } from '@/lib/data'
+import { contadorMenuOrdenes } from '@/lib/esperando'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +14,8 @@ export default async function PrivateLayout({ children }: { children: ReactNode 
   const access = writeAccess(user.email)
   const writes = access.allowed
   const real = writes && access.status.mode === 'sheets'
+  // ORD-POS-127: BORRADOR del grupo Órdenes, solo para el propietario y de la hoja con su caché (la misma de las vistas).
+  const borradores = access.writer ? await borradoresMenu() : null
   return (
     <>
       <a className="skip-link" href="#contenido">Saltar al contenido</a>
@@ -26,7 +30,7 @@ export default async function PrivateLayout({ children }: { children: ReactNode 
       </header>
       <div className="app-body">
         <nav aria-label="Principal" className="nav-principal">
-          <NavLinks showOperations={writes} showEco={radarosSheetId() !== null} showFinanzas={finanzasSheetId() !== null} />
+          <NavLinks showOperations={writes} showEco={radarosSheetId() !== null} showFinanzas={finanzasSheetId() !== null} borradores={borradores} />
         </nav>
         <div className="app-main">
           <main id="contenido" className="container" tabIndex={-1}>
@@ -43,4 +47,9 @@ export default async function PrivateLayout({ children }: { children: ReactNode 
       </div>
     </>
   )
+}
+
+async function borradoresMenu(): Promise<number | null> {
+  const r = await getDataset()
+  return contadorMenuOrdenes(true, r.ok ? { ordenes: r.data.ordenes, ordenesOk: r.data.tabs.ORDENES_CODEX.ok } : null)
 }

@@ -12,6 +12,9 @@ import type { Decision, Orden } from './types'
  * suma a las REVISADA las PR_ABIERTO cuyo dictamen del head actual basta para REVISADA (dictamenSuficiente), leído con
  * dictamenDeOrden y su caché (la de /ordenes), con el cliente de tope LLAMADAS_AGENTES y el tiempo LIMITE_GLOBAL_MS de
  * Inicio: lo que no cupo queda «sin datos» y se lee en la carga siguiente. 6.2 y 6.4 quedan apagadas hasta la fase F5.
+ * ORD-POS-127 (POS-042) suma «Esperando tu aprobación»: las órdenes BORRADOR del filtro, de la hoja que ya se lee (sin
+ * llamadas nuevas); sin ORDENES_CODEX es «sin datos» y no cuenta como 0. contadorMenuOrdenes da el mismo número, sin
+ * filtro, para el grupo Órdenes del menú.
  */
 
 export type Grupo<T> =
@@ -23,6 +26,7 @@ export type Grupo<T> =
 export const MOTIVO_F5 = 'Falta la fuente; la añade la fase F5.'
 export const MOTIVO_NO_PROPIETARIO = 'Solo lo ve la sesión del propietario.'
 export const MOTIVO_SIN_GITHUB = 'Sin token de GitHub en este servidor: no se leen los dictámenes de las órdenes con PR abierto.'
+export const MOTIVO_SIN_ORDENES = 'La pestaña ORDENES_CODEX no está disponible.'
 export const MOTIVO_NO_LEIDO = 'No se pudo leer su dictamen en GitHub en esta carga (tope de llamadas, tiempo o fallo): se intenta en la siguiente.'
 
 /** Lecturas en paralelo como máximo (como /agentes). */
@@ -111,6 +115,8 @@ export interface Listos {
 }
 
 export interface Esperando {
+  /** Órdenes BORRADOR del filtro: esperan la aprobación del propietario en /ordenes (ORD-POS-127). */
+  aprobacion: Grupo<Orden[]>
   listos: Grupo<Listos>
   fusionadoSinDesplegar: Grupo<never>
   decisiones: Grupo<Decision[]>
@@ -138,8 +144,12 @@ export function esperandoPorTi(f: FuentesEsperando): Grupo<Esperando> {
   if (!f.propietario) return { estado: 'apagada', motivo: MOTIVO_NO_PROPIETARIO }
   const delFiltro = f.ordenes.filter((o) => f.filtro === null || proyectoDeOrden(o) === f.filtro)
 
+  const aprobacion: Grupo<Orden[]> = f.ordenesOk
+    ? { estado: 'ok', datos: borradores(delFiltro) }
+    : { estado: 'sin-datos', motivo: MOTIVO_SIN_ORDENES }
+
   let listos: Grupo<Listos>
-  if (!f.ordenesOk) listos = { estado: 'sin-datos', motivo: 'La pestaña ORDENES_CODEX no está disponible.' }
+  if (!f.ordenesOk) listos = { estado: 'sin-datos', motivo: MOTIVO_SIN_ORDENES }
   else {
     const lista: ListoParaFusionar[] = delFiltro.filter((o) => o.estado === 'REVISADA').map((orden) => ({ orden, via: 'revisada' }))
     const sinDatos: Orden[] = []
@@ -160,6 +170,7 @@ export function esperandoPorTi(f: FuentesEsperando): Grupo<Esperando> {
   const banderas: Grupo<never> = { estado: 'apagada', motivo: MOTIVO_F5 }
 
   const grupos = [
+    aprobacion.estado === 'ok' ? aprobacion.datos.length : null,
     listos.estado === 'ok' ? listos.datos.lista.length : null,
     null, // 6.2 apagada
     decisiones.estado === 'ok' ? decisiones.datos.length : null,
@@ -169,9 +180,23 @@ export function esperandoPorTi(f: FuentesEsperando): Grupo<Esperando> {
   return {
     estado: 'ok',
     datos: {
-      listos, fusionadoSinDesplegar, decisiones, banderas, vencenHoy,
+      aprobacion, listos, fusionadoSinDesplegar, decisiones, banderas, vencenHoy,
       contador: grupos.reduce<number>((s, n) => s + (n ?? 0), 0),
       sinContar: grupos.filter((n) => n === null).length,
     },
   }
+}
+
+/** Órdenes BORRADOR, por ID: las que esperan la aprobación del propietario. */
+export const borradores = (ordenes: Orden[]): Orden[] =>
+  ordenes.filter((o) => o.estado === 'BORRADOR').sort((a, b) => a.id.localeCompare(b.id))
+
+/**
+ * Contador del grupo Órdenes del menú (ORD-POS-127, criterios 4 y 5): número de BORRADOR de todos los proyectos, solo
+ * para la sesión del propietario. null (sin contador) en otra sesión, si la hoja no se leyó o sin ORDENES_CODEX: un dato
+ * que falta nunca se muestra como 0.
+ */
+export function contadorMenuOrdenes(propietario: boolean, datos: { ordenes: Orden[]; ordenesOk: boolean } | null): number | null {
+  if (!propietario || datos === null || !datos.ordenesOk) return null
+  return borradores(datos.ordenes).length
 }
