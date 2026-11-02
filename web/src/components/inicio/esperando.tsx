@@ -11,6 +11,8 @@ import { urlGithub } from '@/lib/estado'
  * y «apagada» dicen su motivo, nunca un 0. Las banderas (6.4, ORD-POS-125) salen por su nombre en palabras y solo como
  * apagadas: nunca su valor ni un correo.
  * «Fusionado sin desplegar» (6.2, ORD-POS-124) lista los PR de PROJECT-OS cuyo commit de fusión no está desplegado.
+ * ORD-POS-127: «Esperando tu aprobación» (BORRADOR) va primero; los rubros con datos y sin pendientes se resumen en una
+ * fila de chips. Un rubro «sin datos» o apagado sigue a la vista con su motivo.
  */
 
 function Id({ children, href }: { children: string; href?: string }) {
@@ -53,9 +55,47 @@ export function BloqueEsperando({ e, filtro }: { e: Grupo<Esperando>; filtro: Pr
   )
 }
 
+/** Rubro que va como chip: con datos y sin pendientes. «Sin datos» y «apagada» nunca van como chip: dicen su motivo. */
+type Chip = { titulo: string; texto: string; tono: 'ok' | 'muted'; motivo?: string }
+
+function chipDe<T>(titulo: string, grupo: Grupo<T>, vacio: (datos: T) => boolean, texto: string): Chip | null {
+  return grupo.estado === 'ok' && vacio(grupo.datos) ? { titulo, texto, tono: 'ok' } : null
+}
+
+/** Chips de los rubros sin pendientes, en el orden del bloque (ORD-POS-127, criterio 3). */
+export function chipsEsperando(d: Esperando): Chip[] {
+  const nada = (x: unknown[]) => x.length === 0
+  return [
+    chipDe('Esperando tu aprobación', d.aprobacion, nada, 'ninguna'),
+    chipDe('Listos para fusionar', d.listos, (l) => l.lista.length === 0 && l.sinDatos.length === 0, 'ninguno'),
+    chipDe('Fusionado sin desplegar', d.fusionadoSinDesplegar, (f) => f.lista.length === 0 && f.sinDatos.length === 0 && !f.otrosCommits, 'ninguno'),
+    chipDe('Decisiones por tomar', d.decisiones, nada, 'ninguna'),
+    chipDe('Banderas sin encender', d.banderas, (b) => b.lista.length === 0 && b.desconocidas.length === 0 && b.sinDatos.length === 0, 'ninguna'),
+    chipDe('Vencen hoy', d.vencenHoy, nada, 'ninguna'),
+  ].filter((c): c is Chip => c !== null)
+}
+
 function Grupos({ d }: { d: Esperando }) {
+  const chips = chipsEsperando(d)
+  const comoChip = new Set(chips.map((c) => c.titulo))
+  const ver = (titulo: string) => !comoChip.has(titulo)
   return (
     <>
+      {ver('Esperando tu aprobación') ? (
+        <GrupoEsperando titulo="Esperando tu aprobación" grupo={d.aprobacion}>
+          {(os) => (
+            <ul className="list" aria-label="Esperando tu aprobación">
+              {os.map((o) => (
+                <li key={o.id}>
+                  <Nombre value={o.titulo} vacio="(orden sin título)" /> · <Id href="/ordenes#tu-turno">{o.id}</Id> →{' '}
+                  <Link href="/ordenes#tu-turno">revisar en Órdenes</Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </GrupoEsperando>
+      ) : null}
+      {ver('Listos para fusionar') ? (
       <GrupoEsperando titulo="Listos para fusionar" grupo={d.listos}>
         {(l) => (
           <>
@@ -81,6 +121,8 @@ function Grupos({ d }: { d: Esperando }) {
           </>
         )}
       </GrupoEsperando>
+      ) : null}
+      {ver('Fusionado sin desplegar') ? (
       <GrupoEsperando titulo="Fusionado sin desplegar" grupo={d.fusionadoSinDesplegar}>
         {(f) => (
           <>
@@ -101,8 +143,10 @@ function Grupos({ d }: { d: Esperando }) {
           </>
         )}
       </GrupoEsperando>
+      ) : null}
+      {ver('Decisiones por tomar') ? (
       <GrupoEsperando titulo="Decisiones por tomar" grupo={d.decisiones}>
-        {(ds) => ds.length === 0 ? <Vacio>Ninguna decisión pendiente.</Vacio> : (
+        {(ds) => (
           <ul className="list" aria-label="Decisiones por tomar">
             {ds.map((x) => (
               <li key={x.id}>
@@ -113,6 +157,8 @@ function Grupos({ d }: { d: Esperando }) {
           </ul>
         )}
       </GrupoEsperando>
+      ) : null}
+      {ver('Banderas sin encender') ? (
       <GrupoEsperando titulo="Banderas sin encender" grupo={d.banderas}>
         {(b) => (
           <>
@@ -141,8 +187,10 @@ function Grupos({ d }: { d: Esperando }) {
           </>
         )}
       </GrupoEsperando>
+      ) : null}
+      {ver('Vencen hoy') ? (
       <GrupoEsperando titulo="Vencen hoy" grupo={d.vencenHoy}>
-        {(ts) => ts.length === 0 ? <Vacio>Ninguna tarea tuya vence hoy ni está vencida.</Vacio> : (
+        {(ts) => (
           <ul className="list" aria-label="Vencen hoy">
             {ts.map(({ tarea, dias, marca }) => (
               <li key={tarea.id}>
@@ -153,6 +201,12 @@ function Grupos({ d }: { d: Esperando }) {
           </ul>
         )}
       </GrupoEsperando>
+      ) : null}
+      {chips.length ? (
+        <ul className="badges chips" aria-label="Rubros sin pendientes">
+          {chips.map((c) => <li key={c.titulo}><Badge tone={c.tono} title={c.motivo}>{c.titulo}: {c.texto}</Badge></li>)}
+        </ul>
+      ) : null}
     </>
   )
 }

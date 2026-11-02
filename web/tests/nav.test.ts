@@ -174,3 +174,22 @@ describe('implementación (criterio 5)', () => {
     expect(h).not.toContain('@')
   })
 })
+
+describe('contador de BORRADOR en el grupo Órdenes (ORD-POS-127, criterio 4)', () => {
+  const contadores = (h: string) => h.match(/nav-contador/g)?.length ?? 0
+
+  it('se muestra solo con dato mayor que 0, en la barra lateral y en la inferior', () => {
+    ruta = '/'
+    const con = renderToStaticMarkup(createElement(NavLinks, { borradores: 3 }))
+    expect(contadores(con)).toBe(2)
+    expect(con).toMatch(/href="\/ordenes"[^>]*>Órdenes <span class="badge badge-warn nav-contador" aria-label="3 órdenes esperan tu aprobación">3<\/span>/)
+    expect(renderToStaticMarkup(createElement(NavLinks, { borradores: 1 }))).toContain('1 orden espera tu aprobación')
+    for (const sin of [0, null, undefined]) expect(contadores(renderToStaticMarkup(createElement(NavLinks, { borradores: sin })))).toBe(0)
+  })
+
+  it('solo la sesión del propietario lo calcula en el layout (criterio 5)', () => {
+    const layout = src('app', '(private)', 'layout.tsx')
+    expect(layout).toContain('const borradores = access.writer ? await borradoresMenu() : null')
+    expect(layout).toContain('borradores={borradores}')
+  })
+})

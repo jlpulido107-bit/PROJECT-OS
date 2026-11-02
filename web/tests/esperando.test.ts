@@ -1,13 +1,13 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { BloqueEsperando } from '@/components/inicio/esperando'
+import { BloqueEsperando, chipsEsperando } from '@/components/inicio/esperando'
 import { VistaInicio, type DatosInicio } from '@/components/inicio/inicio'
 import { limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { limpiarCacheDespliegue, MOTIVO_SIN_COMMIT, MOTIVO_SOLO_POS } from '@/lib/despliegue'
 import {
-  esperandoPorTi, githubDeInicio, leerListos, MOTIVO_F5, MOTIVO_NO_LEIDO, MOTIVO_NO_LEIDO_SIN_DESPLEGAR, MOTIVO_NO_PROPIETARIO,
-  MOTIVO_SIN_GITHUB, MOTIVO_SIN_GITHUB_DESPLIEGUE, motivoTruncado, type FuentesEsperando,
+  contadorMenuOrdenes, esperandoPorTi, githubDeInicio, leerListos, MOTIVO_F5, MOTIVO_NO_LEIDO, MOTIVO_NO_LEIDO_SIN_DESPLEGAR,
+  MOTIVO_NO_PROPIETARIO, MOTIVO_SIN_GITHUB, MOTIVO_SIN_GITHUB_DESPLIEGUE, MOTIVO_SIN_ORDENES, motivoTruncado, type FuentesEsperando,
 } from '@/lib/esperando'
 import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
 import { misPendientes } from '@/lib/inicio'
@@ -230,7 +230,8 @@ describe('criterio 4: propietario, contador, filtro y «Mis pendientes»', () =>
     // 1 lista + 2 decisiones + 3 vencen hoy; 6.2 y 6.4 apagadas no cuentan.
     expect(e.estado === 'ok' && [e.datos.contador, e.datos.sinContar]).toEqual([6, 2])
     const sinOrdenes = esperandoPorTi(fuentes(ordenes, { ordenesOk: false }))
-    expect(sinOrdenes.estado === 'ok' && [sinOrdenes.datos.contador, sinOrdenes.datos.sinContar]).toEqual([5, 3])
+    // Sin ORDENES_CODEX, «Esperando tu aprobación» y «Listos para fusionar» quedan sin datos (ORD-POS-127).
+    expect(sinOrdenes.estado === 'ok' && [sinOrdenes.datos.contador, sinOrdenes.datos.sinContar]).toEqual([5, 4])
   })
 
   it('respeta ?proyecto=', () => {
@@ -275,6 +276,121 @@ describe('criterio 4: propietario, contador, filtro y «Mis pendientes»', () =>
     expect(despues).toContain('Tareas que vencen en los próximos 7 días')
     expect(despues).toContain('POS-903')
     expect(despues).not.toContain('POS-902')
+  })
+})
+
+describe('ORD-POS-127: «Esperando tu aprobación» (BORRADOR), chips y contador del menú', () => {
+  const html = (e: ReturnType<typeof esperandoPorTi>) => renderToStaticMarkup(createElement(BloqueEsperando, { e, filtro: null }))
+
+  it('criterio 1 y 2: con BORRADOR presentes, el grupo las lista por ID con nombre antes que ID y enlace a /ordenes, y cuentan', () => {
+    const ordenes = [orden('ORD-POS-012', 'BORRADOR'), orden('ORD-POS-011', 'BORRADOR'), orden('ORD-POS-013', 'ENVIADA'),
+      orden('ORD-POS-004', 'REVISADA', 4)]
+    const e = esperandoPorTi(fuentes(ordenes))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect(e.datos.aprobacion.estado === 'ok' && e.datos.aprobacion.datos.map((o) => o.id)).toEqual(['ORD-POS-011', 'ORD-POS-012'])
+    // 2 BORRADOR + 1 lista + 2 decisiones + 3 vencen hoy; 6.2 (sin commit) y 6.4 (sin columna) apagadas no cuentan.
+    expect([e.datos.contador, e.datos.sinContar]).toEqual([8, 2])
+    const h = html(e)
+    expect(h).toContain('Esperando por ti (8)')
+    expect(h).toContain('<h3>Esperando tu aprobación</h3>')
+    expect(h.indexOf('Orden ORD-POS-011')).toBeLessThan(h.indexOf('>ORD-POS-011<'))
+    expect(h).toContain('href="/ordenes#tu-turno">ORD-POS-011</a>')
+    expect(h).not.toContain('ORD-POS-013')
+  })
+
+  it('criterio 1: respeta ?proyecto=', () => {
+    const ordenes = [orden('ORD-POS-011', 'BORRADOR'), orden('ORD-SIG-011', 'BORRADOR')]
+    const e = esperandoPorTi(fuentes(ordenes, { filtro: 'SIG' }))
+    expect(e.estado === 'ok' && e.datos.aprobacion.estado === 'ok' && e.datos.aprobacion.datos.map((o) => o.id)).toEqual(['ORD-SIG-011'])
+  })
+
+  it('criterios 2 y 3: sin BORRADOR, cuenta 0 en su grupo y va como chip «ninguna», sin encabezado propio', () => {
+    const e = esperandoPorTi(fuentes([orden('ORD-POS-013', 'ENVIADA')]))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect(e.datos.aprobacion).toEqual({ estado: 'ok', datos: [] })
+    expect([e.datos.contador, e.datos.sinContar]).toEqual([5, 2])
+    const h = html(e)
+    expect(h).not.toContain('<h3>Esperando tu aprobación</h3>')
+    expect(h).toContain('Esperando tu aprobación: ninguna')
+  })
+
+  it('criterio 2: sin ORDENES_CODEX muestra «Sin datos» con su motivo y no cuenta como 0', () => {
+    const e = esperandoPorTi(fuentes([orden('ORD-POS-011', 'BORRADOR')], { ordenesOk: false }))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect(e.datos.aprobacion).toEqual({ estado: 'sin-datos', motivo: MOTIVO_SIN_ORDENES })
+    const h = html(e)
+    expect(h).toContain('<h3>Esperando tu aprobación</h3>')
+    expect(h).toContain(`Sin datos</span> ${MOTIVO_SIN_ORDENES}`)
+    expect(h).not.toContain('Esperando tu aprobación: ninguna')
+    expect(h).not.toContain('ORD-POS-011')
+    expect(chipsEsperando(e.datos).map((c) => c.titulo)).not.toContain('Esperando tu aprobación')
+  })
+
+  it('criterio 3: los rubros sin pendientes van en una fila de chips; 6.2 y 6.4 apagadas (sin commit ni columna) siguen a la vista con su motivo', () => {
+    const vacio = { ...DS, ordenes: [] as Orden[] }
+    const pend = misPendientes({ ...vacio, tareas: [], decisiones: [] }, HOY, null, { prs: null, recurrentes: [] })
+    const e = esperandoPorTi(fuentes([], { pendientes: pend }))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect(chipsEsperando(e.datos).map((c) => `${c.titulo}: ${c.texto}`)).toEqual([
+      'Esperando tu aprobación: ninguna', 'Listos para fusionar: ninguno', 'Decisiones por tomar: ninguna', 'Vencen hoy: ninguna',
+    ])
+    const h = html(e)
+    expect(h).toContain('aria-label="Rubros sin pendientes"')
+    expect(h.match(/<h3>[^<]*<\/h3>/g)).toEqual(['<h3>Fusionado sin desplegar</h3>', '<h3>Banderas sin encender</h3>'])
+    expect(h).toContain(MOTIVO_SIN_COMMIT)
+    expect(h).toContain(MOTIVO_SIN_COLUMNA_BANDERA)
+    expect(h).not.toContain(MOTIVO_F5)
+    expect(h).not.toContain('fuente apagada (F5)')
+    expect(h).toContain('Esperando por ti (0)')
+  })
+
+  it('criterio 3: 6.2 y 6.4 con datos y sin pendientes van como chip; con pendientes o sin datos, como grupo', () => {
+    const vacio = { ...DS, ordenes: [] as Orden[] }
+    const pend = misPendientes({ ...vacio, tareas: [], decisiones: [] }, HOY, null, { prs: null, recurrentes: [] })
+    const DESPLEGADO = 'd'.repeat(40)
+    const conDatos = { pendientes: pend, commit: DESPLEGADO, banderas: { estado: 'ok' as const, env: {} as NodeJS.ProcessEnv }, prs: {},
+      despliegue: { prs: new Map<string, PrFusion>(), sinDesplegar: { estado: 'ok' as const, shas: new Set<string>() } } }
+    const e = esperandoPorTi(fuentes([], conDatos))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect([e.datos.fusionadoSinDesplegar.estado, e.datos.banderas.estado]).toEqual(['ok', 'ok'])
+    expect(chipsEsperando(e.datos).map((c) => `${c.titulo}: ${c.texto}`)).toEqual([
+      'Esperando tu aprobación: ninguna', 'Listos para fusionar: ninguno', 'Fusionado sin desplegar: ninguno',
+      'Decisiones por tomar: ninguna', 'Banderas sin encender: ninguna', 'Vencen hoy: ninguna',
+    ])
+    expect(html(e)).not.toMatch(/<h3>/)
+    expect([e.datos.contador, e.datos.sinContar]).toEqual([0, 0])
+    // Un commit sin desplegar que no es fusión de un PR de orden es un pendiente: 6.2 sigue como grupo.
+    const otro = esperandoPorTi(fuentes([], { ...conDatos, despliegue: { prs: new Map<string, PrFusion>(), sinDesplegar: { estado: 'ok', shas: new Set(['e'.repeat(40)]) } } }))
+    if (otro.estado !== 'ok') throw new Error('debía estar ok')
+    expect(chipsEsperando(otro.datos).map((c) => c.titulo)).not.toContain('Fusionado sin desplegar')
+    expect(html(otro)).toContain('<h3>Fusionado sin desplegar</h3>')
+    // Sin datos (sin token de GitHub para el despliegue): nunca chip.
+    const sin = esperandoPorTi(fuentes([], { ...conDatos, despliegue: null }))
+    if (sin.estado !== 'ok') throw new Error('debía estar ok')
+    expect(chipsEsperando(sin.datos).map((c) => c.titulo)).not.toContain('Fusionado sin desplegar')
+    expect(html(sin)).toContain(MOTIVO_SIN_GITHUB_DESPLIEGUE)
+  })
+
+  it('criterio 3: «Listos para fusionar» con órdenes sin datos no es chip: sigue a la vista con su motivo', () => {
+    const e = esperandoPorTi(fuentes([orden('ORD-POS-001', 'PR_ABIERTO', 1)], { listos: null }))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect(chipsEsperando(e.datos).map((c) => c.titulo)).not.toContain('Listos para fusionar')
+    expect(html(e)).toContain(MOTIVO_SIN_GITHUB)
+  })
+
+  it('criterio 5: otra sesión no ve el grupo ni sus BORRADOR', () => {
+    const e = esperandoPorTi(fuentes([orden('ORD-POS-011', 'BORRADOR')], { propietario: false }))
+    expect(e).toEqual({ estado: 'apagada', motivo: MOTIVO_NO_PROPIETARIO })
+    expect(html(e)).not.toContain('ORD-POS-011')
+  })
+
+  it('criterios 4 y 5: contador del menú, todos los proyectos, solo propietario y null sin dato', () => {
+    const ordenes = [orden('ORD-POS-011', 'BORRADOR'), orden('ORD-SIG-011', 'BORRADOR'), orden('ORD-POS-013', 'ENVIADA')]
+    expect(contadorMenuOrdenes(true, { ordenes, ordenesOk: true })).toBe(2)
+    expect(contadorMenuOrdenes(true, { ordenes: [], ordenesOk: true })).toBe(0)
+    expect(contadorMenuOrdenes(true, { ordenes, ordenesOk: false })).toBeNull()
+    expect(contadorMenuOrdenes(true, null)).toBeNull()
+    expect(contadorMenuOrdenes(false, { ordenes, ordenesOk: true })).toBeNull()
   })
 })
 

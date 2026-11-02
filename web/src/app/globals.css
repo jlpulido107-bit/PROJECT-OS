@@ -240,6 +240,8 @@ tbody th { font-weight: 500; }
 .evidence-desc { overflow-wrap: anywhere; }
 
 .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0.25rem 0; }
+/* Fila de chips de «Esperando por ti» (ORD-POS-127): rubros sin pendientes. */
+.chips { list-style: none; padding: 0.75rem 0 0; margin-top: 0.75rem; border-top: 1px solid var(--border); }
 .badge {
   display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
   line-height: 1.5; white-space: nowrap;
