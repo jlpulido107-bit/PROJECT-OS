@@ -1,3 +1,4 @@
+import { formatTimestamp, parseTimestamp } from '../dates'
 import { parseNumber } from '../parse'
 
 /**
@@ -69,15 +70,71 @@ export const COLUMNAS_ECO: Readonly<Record<string, Columna>> = {
   AMZ_TARIFAS_FECHA: { titulo: 'Fecha de la estimación de tarifas', formato: 'fecha_serie', ayuda: 'Cuándo se pidió la estimación a SP-API.' },
 }
 
-export const SIN_DATO = 'sin dato'
-
-/** Título en español; sin traducción, el encabezado tal cual. */
-export function tituloColumna(col: string): string {
-  return COLUMNAS_ECO[col]?.titulo ?? col
+/**
+ * Tabla «Últimas corridas» (AMZ_CORRIDAS, ORD-POS-135). Mapa aparte para no cambiar el título de `ESTADO` en otras
+ * tablas de /eco (Tendencias). Significados de RADAROS docs/diseno-v1-2.md §5. `CORRIDA_ID` no va como columna.
+ */
+export const COLUMNAS_CORRIDAS_ECO: Readonly<Record<string, Columna>> = {
+  SEMANA: { titulo: 'Semana', formato: 'texto', ayuda: 'Semana ISO (AAAA-Www) que procesó la corrida.' },
+  INICIO: { titulo: 'Inicio', formato: 'texto', ayuda: 'Fecha y hora de Mérida en que empezó la corrida.' },
+  FIN: { titulo: 'Fin', formato: 'texto', ayuda: 'Fecha y hora de Mérida en que terminó la corrida.' },
+  ESTADO: { titulo: 'Estado', formato: 'texto', ayuda: 'Cómo terminó la corrida; pasa el puntero sobre el estado para ver qué significa.' },
+  IDEAS: { titulo: 'Ideas', formato: 'entero', ayuda: 'Ideas activas que revisó la corrida.' },
+  ASINS_OK: { titulo: 'ASIN con datos', formato: 'entero', ayuda: 'Productos de Amazon (ASIN) con datos completos.' },
+  ASINS_FALTAN: { titulo: 'ASIN sin datos', formato: 'entero', ayuda: 'ASIN que quedaron sin datos; la siguiente corrida de la semana los completa.' },
+  KEEPA_TOKENS_CONSUMIDOS: { titulo: 'Tokens de Keepa', formato: 'entero', ayuda: 'Tokens de Keepa que consumió la corrida.' },
+  SPAPI_LLAMADAS: { titulo: 'Llamadas a SP-API', formato: 'entero', ayuda: 'Llamadas a la API de vendedores de Amazon (SP-API).' },
+  MENSAJE: { titulo: 'Mensaje', formato: 'texto', ayuda: 'Nota del motor sobre la corrida (recortada a 200 caracteres).' },
 }
 
-export function ayudaColumna(col: string): string | null {
-  return COLUMNAS_ECO[col]?.ayuda ?? null
+export interface EstadoCorrida {
+  texto: string
+  tono: 'ok' | 'warn' | 'danger' | 'muted' | 'neutral'
+  ayuda: string
+}
+
+/** Estados de AMZ_CORRIDAS en palabras (ORD-POS-135); RADAROS docs/diseno-v1-2.md §5 y docs/modo-descubrir.md. */
+export const ESTADOS_CORRIDA: Readonly<Record<string, EstadoCorrida>> = {
+  OK: { texto: 'completa', tono: 'ok', ayuda: 'Todo lo planeado quedó escrito.' },
+  OMITIDA: {
+    texto: 'omitida: ya hubo una completa esa semana', tono: 'muted',
+    ayuda: 'Ya había una corrida completa de esa semana y marketplace; esta no llamó a ninguna API.',
+  },
+  PARCIAL: {
+    texto: 'parcial', tono: 'warn',
+    ayuda: 'El tope de tokens o de tiempo la cortó, o SP-API falló; la siguiente corrida de la semana completa lo que faltó.',
+  },
+  ERROR: { texto: 'error', tono: 'danger', ayuda: 'La corrida falló (Keepa respondió con error, faltó configuración o el bloqueo estaba ocupado) y no dejó datos.' },
+  ERROR_DATOS: {
+    texto: 'error de datos', tono: 'danger',
+    ayuda: 'Más de la mitad de las filas nuevas salieron sin tarifas: se escribieron, pero los datos no alcanzan para decidir.',
+  },
+  NEEDS_REAUTH: { texto: 'falta reautorizar SP-API', tono: 'danger', ayuda: 'El propietario debe reautorizar SP-API.' },
+  INERTE: { texto: 'motor apagado', tono: 'muted', ayuda: 'El motor está apagado (AMZ_ACTIVO sin activar).' },
+}
+
+/** Estado de una corrida en palabras; uno no reconocido se muestra tal cual, sin explicación. */
+export function estadoCorrida(raw: string | null): EstadoCorrida | null {
+  if (!raw) return null
+  return ESTADOS_CORRIDA[raw.trim().toUpperCase()] ?? { texto: raw, tono: 'neutral', ayuda: `Estado no reconocido: ${raw}.` }
+}
+
+/** Fecha y hora de Mérida de INICIO o FIN; si la celda no se entiende como fecha, el texto tal cual; vacía, null. */
+export function formatearInstante(raw: string | null): string | null {
+  if (!raw?.trim()) return null
+  const ts = parseTimestamp(raw).value
+  return ts ? formatTimestamp(ts) : raw
+}
+
+export const SIN_DATO = 'sin dato'
+
+/** Título en español; sin traducción, el encabezado tal cual. `mapa` cambia la tabla de traducciones (corridas). */
+export function tituloColumna(col: string, mapa: Readonly<Record<string, Columna>> = COLUMNAS_ECO): string {
+  return mapa[col]?.titulo ?? col
+}
+
+export function ayudaColumna(col: string, mapa: Readonly<Record<string, Columna>> = COLUMNAS_ECO): string | null {
+  return mapa[col]?.ayuda ?? null
 }
 
 /** «ID · nombre»; sin nombre, solo el ID. */

@@ -9,6 +9,7 @@ import { privateEco } from '@/lib/page-data'
 import {
   ETAPAS, ETIQUETAS_ETAPA, enEtapa, filtrarTarjetas, paraLector, type PipelineVista, type Tarjeta,
 } from '@/lib/radaros/pipeline'
+import { etiquetaIdea } from '@/lib/radaros/eco-columnas'
 import { ecoPipelineCanWrite } from '@/lib/radaros/pipeline-escritura-config'
 import { CAMPOS, type EcoCampoOperacion } from '@/lib/radaros/pipeline-escritura-validacion'
 import { versionDeFila } from '@/lib/radaros/pipeline-formularios'
@@ -182,7 +183,7 @@ function Columna({ e, lista, editable }: { e: (typeof ETAPAS)[number]; lista: Ta
   )
 }
 
-function FichaProducto({ v, t, editable }: { v: PipelineVista; t: Tarjeta; editable: boolean }) {
+function FichaProducto({ v, t, editable, nombres }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string> }) {
   const f = t.fila
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas.filter((c) => c.PRODUCTO_ID === t.id) : []
   const embs = v.embarques.estado === 'ok' ? v.embarques.datos.filas.filter((e) => e.PRODUCTO_ID === t.id) : []
@@ -194,7 +195,7 @@ function FichaProducto({ v, t, editable }: { v: PipelineVista; t: Tarjeta; edita
       <dl className="meta meta-wide">
         <Dato label="PRODUCTO_ID" value={t.id} /><Dato label="Nombre" value={t.nombre} />
         <div><dt>ASIN</dt><dd><Text value={t.asin} empty="—" />{t.asinValido === false ? <> <Badge tone="warn">ASIN no válido</Badge></> : null}</dd></div>
-        <Dato label="IDEA_ID" value={f.IDEA_ID} /><Dato label="Origen" value={f.ORIGEN} /><Dato label="Referencia de origen" value={f.ORIGEN_REF} />
+        <Dato label="Idea" value={f.IDEA_ID ? etiquetaIdea(f.IDEA_ID, nombres.get(f.IDEA_ID)) : null} /><Dato label="Origen" value={f.ORIGEN} /><Dato label="Referencia de origen" value={f.ORIGEN_REF} />
         <div><dt>Etapa</dt><dd>{t.etapa ? ETIQUETAS_ETAPA[t.etapa] : <Text value={t.etapaTexto} empty="—" />}</dd></div>
         <Dato label="En la etapa desde" value={f.ETAPA_DESDE} />
         {f.MOTIVO_DESCARTE ? <Dato label="Motivo de descarte" value={f.MOTIVO_DESCARTE} /> : null}
@@ -373,7 +374,7 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         <Tablero v={v} filtro={params} editable={editable} />
       </Section>
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
-      {producto ? <FichaProducto v={v} t={producto} editable={editable} /> : null}
+      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} /> : null}
       <Section title="Proveedores" id="proveedores">
         {editable ? <FormularioEco titulo="Nuevo proveedor" url="/api/eco/pipeline/proveedores" campos={CAMPOS['eco.proveedor.crear']} /> : null}
         <Proveedores v={v} filtro={params} verContacto={verContacto} />

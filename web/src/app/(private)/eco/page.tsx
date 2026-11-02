@@ -7,7 +7,10 @@ import {
   COLUMNA_ID_IDEA, COLUMNAS_PUNTUACION, filtrarTendencias, GRUPOS_SCORING, type Bloque, type Corridas, type Fila,
   type Ranking, type Tendencias, type UnitEconomics,
 } from '@/lib/radaros/eco'
-import { ayudaColumna, etiquetaIdea, formatearValor, SIN_DATO, tituloColumna } from '@/lib/radaros/eco-columnas'
+import {
+  ayudaColumna, COLUMNAS_CORRIDAS_ECO, estadoCorrida, etiquetaIdea, formatearInstante, formatearValor, SIN_DATO, tituloColumna,
+  type Columna,
+} from '@/lib/radaros/eco-columnas'
 import { FiltroAuto } from '@/components/filtro-auto'
 
 export const metadata: Metadata = { title: 'RADAROS (solo lectura)' }
@@ -48,15 +51,61 @@ function Celda({ fila, col }: { fila: Fila; col: string }) {
   return <td>{valor === null ? <SinDato /> : valor}</td>
 }
 
+function Ayuda({ texto }: { texto: string }) {
+  return <span title={texto} role="img" aria-label={`Ayuda: ${texto}`}>ⓘ</span>
+}
+
 /** Título en español con ayuda (ⓘ) de una línea; sin traducción, el encabezado tal cual. */
-function Encabezado({ col }: { col: string }) {
-  const titulo = tituloColumna(col)
-  const ayuda = ayudaColumna(col)
+function Encabezado({ col, mapa }: { col: string; mapa?: Readonly<Record<string, Columna>> }) {
+  const titulo = tituloColumna(col, mapa)
+  const ayuda = ayudaColumna(col, mapa)
   return (
     <th scope="col">
       {titulo === col ? <code>{col}</code> : titulo}
-      {ayuda ? <>{' '}<span title={ayuda} role="img" aria-label={`Ayuda: ${ayuda}`}>ⓘ</span></> : null}
+      {ayuda ? <>{' '}<Ayuda texto={ayuda} /></> : null}
     </th>
+  )
+}
+
+/** Estado de una corrida en palabras, con su color y su explicación en la ayuda (ORD-POS-135). */
+function EstadoDeCorrida({ raw }: { raw: string | null }) {
+  const e = estadoCorrida(raw)
+  if (!e) return <SinDato />
+  return <Badge tone={e.tono} title={e.ayuda}>{e.texto}</Badge>
+}
+
+/** Columnas de «Últimas corridas»; `CORRIDA_ID` va en la ayuda de la fila, no como columna. */
+const COLUMNAS_TABLA_CORRIDAS = [
+  'SEMANA', 'INICIO', 'FIN', 'ESTADO', 'IDEAS', 'ASINS_OK', 'ASINS_FALTAN', 'KEEPA_TOKENS_CONSUMIDOS', 'SPAPI_LLAMADAS', 'MENSAJE',
+] as const
+
+function CeldaCorrida({ fila, col }: { fila: Fila; col: (typeof COLUMNAS_TABLA_CORRIDAS)[number] }) {
+  const raw = fila[col] ?? null
+  if (col === 'SEMANA') {
+    const id = fila.CORRIDA_ID
+    return <th scope="row">{raw ?? <SinDato />}{id ? <>{' '}<Ayuda texto={`Corrida ${id}`} /></> : null}</th>
+  }
+  if (col === 'ESTADO') return <td><EstadoDeCorrida raw={raw} /></td>
+  // Un mensaje vacío es normal (corrida sin notas): «—» sin la leyenda «sin dato».
+  if (col === 'MENSAJE') return <td>{raw ?? <span className="muted">—</span>}</td>
+  const valor = col === 'INICIO' || col === 'FIN' ? formatearInstante(raw) : formatearValor(col, raw)
+  return <td>{valor === null ? <SinDato /> : valor}</td>
+}
+
+function TablaCorridas({ filas }: { filas: Fila[] }) {
+  return (
+    <div className="table-wrap">
+      <table aria-label="Últimas corridas">
+        <thead><tr>{COLUMNAS_TABLA_CORRIDAS.map((c) => <Encabezado key={c} col={c} mapa={COLUMNAS_CORRIDAS_ECO} />)}</tr></thead>
+        <tbody>
+          {filas.map((f, i) => (
+            <tr key={`${f.CORRIDA_ID ?? ''}-${i}`}>
+              {COLUMNAS_TABLA_CORRIDAS.map((c) => <CeldaCorrida key={c} fila={f} col={c} />)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -94,14 +143,15 @@ function BloqueCorridas({ datos }: { datos: Corridas }) {
       ) : null}
       {u ? (
         <dl className="meta meta-wide">
-          <div><dt>Última corrida</dt><dd><Text value={u.CORRIDA_ID ?? null} /> <StateBadge code={u.ESTADO ?? null} /></dd></div>
+          <div><dt>Última corrida</dt><dd><Text value={u.CORRIDA_ID ?? null} /> <EstadoDeCorrida raw={u.ESTADO ?? null} /></dd></div>
           <div><dt>Semana</dt><dd><Text value={u.SEMANA ?? null} /></dd></div>
-          <div><dt>Inicio</dt><dd><Text value={u.INICIO ?? null} /></dd></div>
+          <div><dt>Inicio (hora Mérida)</dt><dd><Text value={formatearInstante(u.INICIO ?? null)} /></dd></div>
           <div><dt>Tokens de Keepa</dt><dd><Text value={u.KEEPA_TOKENS_CONSUMIDOS ?? null} empty="—" /> consumidos · <Text value={u.KEEPA_TOKENS_RESTANTES ?? null} empty="—" /> restantes</dd></div>
         </dl>
       ) : null}
-      <TablaColumnas filas={datos.recientes} label="Últimas corridas" clave="CORRIDA_ID"
-        columnas={['CORRIDA_ID', 'SEMANA', 'INICIO', 'FIN', 'ESTADO', 'IDEAS', 'ASINS_OK', 'ASINS_FALTAN', 'KEEPA_TOKENS_CONSUMIDOS', 'SPAPI_LLAMADAS', 'MENSAJE']} />
+      <h3>Últimas corridas</h3>
+      <p className="small muted">Inicio y Fin en hora de Mérida. «—» en Mensaje = la corrida no dejó nota.</p>
+      <TablaCorridas filas={datos.recientes} />
     </>
   )
 }

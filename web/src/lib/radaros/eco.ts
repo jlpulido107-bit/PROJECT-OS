@@ -50,12 +50,12 @@ export const GRUPOS_SCORING = {
   Tendencia: ['AMZ_TENDENCIA_BSR_30_VS_90', 'AMZ_TENDENCIA_VENTAS_DELTA90', 'AMZ_TENDENCIA_PRECIO_30_VS_90', 'AMZ_TENDENCIA_GTRENDS'],
 } as const
 /**
- * ❓ Por confirmar en la activación (ORD-POS-113): encabezados de PRODUCTS. RADAROS solo documenta una columna de ID con
- * `EC-004` a `EC-009` (docs/diseno-v1-2.md §1; sus pruebas usan `ID`) y no fija la del nombre («Producto» o similar).
- * Se usa la primera que exista, sin distinguir mayúsculas ni acentos; sin columna de nombre, /eco muestra solo el ID.
+ * Encabezados de PRODUCTS. ✅ En el libro real (leídos por el PM el 2026-11-02, ORD-POS-135): `PRODUCT_ID` y
+ * «Producto / Idea». Los demás se conservan de ORD-POS-113 (RADAROS docs/diseno-v1-2.md §1; sus pruebas usan `ID`).
+ * Se usa la primera que exista, comparada con `normalizarEncabezado`; sin columna de nombre, /eco muestra solo el ID.
  */
-export const COLUMNAS_ID_PRODUCTS = [COLUMNA_ID_IDEA, 'ID'] as const
-export const COLUMNAS_NOMBRE_PRODUCTS = ['NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO', 'IDEA', 'DESCRIPCION'] as const
+export const COLUMNAS_ID_PRODUCTS = [COLUMNA_ID_IDEA, 'ID', 'PRODUCT_ID'] as const
+export const COLUMNAS_NOMBRE_PRODUCTS = ['PRODUCTO_IDEA', 'NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO', 'IDEA', 'DESCRIPCION'] as const
 const COLUMNAS_SCORING_AMZ = ['AMZ_SEMANA', ...Object.values(GRUPOS_SCORING).flat(), 'AMZ_ESTADO']
 
 export const COLUMNAS_RESUMEN = ['SEMANA', 'MARKETPLACE', 'IDEA_ID', 'ASINS_USADOS', 'ESTADO'] as const
@@ -120,8 +120,12 @@ function corridas(rows: unknown[][] | undefined, now: number): Bloque<Corridas> 
   })
 }
 
-/** Encabezado comparable: mayúsculas, sin acentos y con `_` en lugar de espacios. */
-const normalizarEncabezado = (h: string) => h.normalize('NFD').replace(/\p{M}/gu, '').trim().toUpperCase().replace(/\s+/g, '_')
+/**
+ * Encabezado comparable (ORD-POS-135): mayúsculas, sin acentos y cada tramo de signos (espacios, `/`, guiones…) como un
+ * solo `_`, sin `_` en los extremos: «Producto / Idea» ≡ `PRODUCTO_IDEA`.
+ */
+export const normalizarEncabezado = (h: string) => h.normalize('NFD').replace(/\p{M}/gu, '').toUpperCase()
+  .replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 
 /** Nombre de cada idea leído de PRODUCTS por encabezado; sin pestaña o sin columnas reconocidas, un mapa vacío. */
 export function nombresIdeas(rows: unknown[][] | undefined): Map<string, string> {
@@ -247,6 +251,8 @@ export interface EcoVista {
   candidatos: { estado: 'pendiente'; mensaje: string }
   tendencias: Bloque<Tendencias>
   pipeline: PipelineVista
+  /** Nombre de PRODUCTS por ID de idea, para «ID · nombre» en /eco y /eco/pipeline (ORD-POS-135). */
+  nombres: Map<string, string>
 }
 
 /** Cada bloque resuelve su propio estado (diseño §4): un bloque con problema no impide pintar los demás. */
@@ -259,5 +265,6 @@ export function construirEco(raw: EcoRaw, now: number): EcoVista {
     candidatos: { estado: 'pendiente', mensaje: 'AMZ_CANDIDATOS: pendiente de V1.3 (sus columnas las fija el diseño de V1.3).' },
     tendencias: tendencias(raw.ML_TRENDS_ANALISIS_AUTO),
     pipeline: construirPipeline(raw, now),
+    nombres,
   }
 }
