@@ -1,6 +1,6 @@
 ---
 name: pm-escribir-api
-description: Da de alta una tarea, una decisión PENDIENTE o una orden BORRADOR de PROJECT-OS, edita los campos permitidos de una tarea y aprueba, envía o marca REVISADA una orden por la API de operaciones del dashboard (agente-pm, DEC-POS-005 y DEC-POS-011), tras el «sí» explícito del propietario. Solo la sesión PM, solo cuando el propietario lo pide.
+description: Da de alta una tarea, una decisión PENDIENTE o una orden BORRADOR de PROJECT-OS, edita los campos permitidos de una tarea y aprueba, envía o marca REVISADA una orden por la API de operaciones del dashboard (agente-pm, DEC-POS-005 y DEC-POS-011), tras el «sí» explícito del propietario, y da de alta ideas en PRODUCTS y SCORING de RADAROS (idea.alta, DEC-ECO-007) solo con un «sí PAQ» verificado. Solo la sesión PM, solo cuando el propietario lo pide.
 disable-model-invocation: true
 ---
 
@@ -36,6 +36,9 @@ nunca pongas una cabecera `Authorization` en el `curl`. Si responde 401, detente
   audita su URL y head; si no hay uno solo, `pr-no-detectado`. Pide el «sí» del propietario como para cualquier escritura.
 - **Filas de TIEMPOS** (`tiempo.crear`, ORD-POS-112): solo con «sí PAQ» (DEC-POS-025 `APROBADA` en `DECISIONES`, 2026-10-29) y
   con la bandera del propietario encendida; procedimiento en [Altas con sí PAQ](#altas-con-sí-paq-dec-pos-013). Nunca se editan ni se borran.
+- **Ideas en RADAROS** (`idea.alta`, ORD-POS-131, DEC-ECO-007): una fila nueva al final de `PRODUCTS` (A a P) y de
+  `SCORING` (A a L) del libro de RADAROS, solo con «sí PAQ» y con la bandera `ECO_IDEAS_ALTA` del propietario encendida;
+  procedimiento en [Ideas en RADAROS](#ideas-en-radaros-dec-eco-007). Nunca edita filas existentes ni otras pestañas.
 - Nunca intentes cancelar, cerrar ni ejecutar órdenes (la API responde `transicion-reservada-pm`), ni
   borrar filas, ni crear una tarea con bloqueo, ni editar de una tarea `estado`, `bloqueo`, `tipo`, `responsable` u otro
   campo fuera de la lista de arriba (403).
@@ -170,3 +173,41 @@ ni borres una fila de `TIEMPOS`, ni cambies con ella `ESTADO`, `BLOQUEO` o `FECH
 4. **Avisar.** Tras las altas, envía **un solo mensaje** a POS · Ideas con el ID de cada alta, su estado, el PR si
    existe y el ID del paquete. Cada edición va con `TAREA_ID`, campo, valor nuevo y `requestId`: ese mensaje es el
    rastro del ID del paquete que usa el paso 2.
+
+### Ideas en RADAROS (DEC-ECO-007)
+
+DEC-ECO-007 amplía DEC-POS-005 y DEC-POS-011 al libro de RADAROS, solo para dar de alta ideas. Un «sí PAQ» verificado
+autoriza también el alta de las ideas del paquete (`idea.alta`): úsala cuando el paquete de POS · Ideas traiga una idea
+nueva de producto para RADAROS. Es solo alta; contrato completo en [escritura §9](../../../docs/escritura-v1-8.md).
+- **Límites.** Solo filas nuevas al final de `PRODUCTS` (A a P) y de `SCORING` (A a L). Nunca edites filas existentes,
+  ni escribas en las columnas de fórmulas de `SCORING` (M en adelante) ni en otras pestañas. Descubrir y Evaluar siguen
+  sin escribir en `PRODUCTS` ni `SCORING` (DEC-ECO-003). Nunca escribas en ese libro con el conector.
+- **PRODUCTS (A a P).** A `PRODUCT_ID` lo pone la API (siguiente `EC-NNN`; no lo envíes). B a P, en orden: `producto`
+  (Producto / Idea, obligatorio), `categoria`, `bucket`, `clienteObjetivo`, `problema` (Problema que resuelve),
+  `canalInicial`, `nivel`, `estado`, `confidence`, `precioObservadoMxn` y `capitalPruebaMxn` (números en MXN),
+  `redFlag`, `porValidar`, `siguienteDecision` y `owner`. Cualquier otro campo da 422.
+- **SCORING (A a L).** A y B los copia la API (el ID y el nombre de `producto`). C a L van en `puntajes`: `demanda`,
+  `competencia`, `unitEconomics`, `diferenciacion`, `capital`, `logistica`, `riesgo`, `tendencia`, `complejidad` y
+  `marca`, enteros del 1 al 5 o vacíos. Son **hipótesis** del PM: van en el paquete para que el propietario las revise
+  antes del «sí PAQ».
+- **Antes de cada una**, relee `PRODUCTS` del libro de RADAROS con el conector, **solo lectura**: si ya hay una idea con
+  el mismo nombre, no la envíes y dilo.
+- **Cuerpo.** `requestId` (UUID v4), `autorizacion` = `PAQ-AAAA-MM-DD-NN «<sí PAQ literal>» AAAA-MM-DD` (la cita
+  contiene «sí» y el mismo ID de paquete), los campos de B a P y `puntajes`. `scripts/pm-alta.sh` no tiene este tipo:
+  guarda el cuerpo en `<archivo>.enviado.json` **antes** de enviar (si ya existe, no generes otro `requestId`), anota
+  `requestId` y ruta, y envía una sola vez, sin cabecera `Authorization`:
+
+  ```bash
+  jq --arg r "$(python3 -c 'import uuid; print(uuid.uuid4())')" '. + {requestId: $r}' <archivo.json> > <archivo>.enviado.json
+  curl -sS --max-time 60 -w '\nHTTP %{http_code}\n' -X POST \
+    "https://project-os-dashboard-235975889400.northamerica-south1.run.app/api/operaciones/ideas" \
+    -H 'Content-Type: application/json' --data-binary @<archivo>.enviado.json
+  ```
+
+- **Respuestas.** `201`: relee las dos filas y `AUDITORIA` (`ENTIDAD=PRODUCTS`, `REGISTRO_ID=EC-NNN`, `ORIGEN` con
+  `op=idea.alta` y `;agente=pm`) y sigue Pasos 4 a 7. 403 `operacion-no-permitida`: la bandera `ECO_IDEAS_ALTA` está
+  apagada; 403 `escritura-deshabilitada`: falta la escritura del pipeline o la de PROJECT-OS. 409
+  `idea-encabezados-distintos`, `idea-fila-ocupada` o `scoring-sin-formulas`: no escribió nada (preparar la fila de
+  `SCORING` con fórmulas en M a P es del propietario, a mano). 409 `idea-sin-calculo`: las filas quedaron escritas pero
+  M de `SCORING` está vacía; repórtalo y no reintentes. En todos esos casos detente y dilo; nunca pidas encender la
+  bandera ni despliegues: solo el propietario la enciende ([escritura §9](../../../docs/escritura-v1-8.md)).
