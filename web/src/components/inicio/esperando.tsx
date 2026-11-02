@@ -9,6 +9,7 @@ import { urlGithub } from '@/lib/estado'
  * Bloque «Esperando por ti» (ORD-POS-122; docs/diseno-planificacion-v2.md §6). Solo pinta lo que calcula
  * lib/esperando.ts. Regla de lenguaje (§2): el nombre primero y el ID después, en monoespaciada y pequeño. «Sin datos»
  * y «apagada» dicen su motivo, nunca un 0. Las banderas (6.4) están apagadas hasta F5: no se muestra ningún valor.
+ * «Fusionado sin desplegar» (6.2, ORD-POS-124) lista los PR de PROJECT-OS cuyo commit de fusión no está desplegado.
  */
 
 function Id({ children, href }: { children: string; href?: string }) {
@@ -79,7 +80,26 @@ function Grupos({ d }: { d: Esperando }) {
           </>
         )}
       </GrupoEsperando>
-      <GrupoEsperando titulo="Fusionado sin desplegar" grupo={d.fusionadoSinDesplegar}>{() => null}</GrupoEsperando>
+      <GrupoEsperando titulo="Fusionado sin desplegar" grupo={d.fusionadoSinDesplegar}>
+        {(f) => (
+          <>
+            {f.lista.length === 0 ? <Vacio>Todo lo fusionado de las órdenes está desplegado.</Vacio> : (
+              <ul className="list" aria-label="Fusionado sin desplegar">
+                {f.lista.map((x) => (
+                  <li key={x.ordenId}>
+                    <Nombre value={x.titulo} vacio="(orden sin título)" /> · <Id href="/ordenes">{x.ordenId}</Id> ·{' '}
+                    <ExternalLink href={x.url}>{`PR #${x.numero}`}</ExternalLink> → desplegar (DEC-POS-017)
+                  </li>
+                ))}
+              </ul>
+            )}
+            {f.otrosCommits ? <p className="muted small">Además, {f.otrosCommits} {f.otrosCommits === 1 ? 'commit' : 'commits'} de main sin desplegar que no son la fusión de un PR de orden de la lista.</p> : null}
+            {f.sinDatos.length ? (
+              <p role="note"><Badge tone="muted">Sin datos</Badge> GitHub no dio el commit de fusión de: {f.sinDatos.map((id, i) => <span key={id}>{i ? ', ' : ''}<Id href="/ordenes">{id}</Id></span>)}</p>
+            ) : null}
+          </>
+        )}
+      </GrupoEsperando>
       <GrupoEsperando titulo="Decisiones por tomar" grupo={d.decisiones}>
         {(ds) => ds.length === 0 ? <Vacio>Ninguna decisión pendiente.</Vacio> : (
           <ul className="list" aria-label="Decisiones por tomar">

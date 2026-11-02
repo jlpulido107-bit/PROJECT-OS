@@ -227,10 +227,12 @@ describe('solo lectura y GitHub con la caché de /agentes (criterio 6)', () => {
     const src = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'page.tsx'), 'utf8')
     // ORD-POS-122: las listas de PRs (sin órdenes) y los dictámenes del propietario van en githubDeInicio, con el mismo cliente.
     const esperando = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'esperando.ts'), 'utf8')
-    expect(src).toMatch(/githubDeInicio\(client, filtro, data\.ordenes, propietario\)/)
-    expect(esperando).toMatch(/githubDeAgentes\(client, filtro, null\)/)
+    // ORD-POS-124: con el commit desplegado como opción; despliegue.ts solo lee (GET de comparación).
+    const despliegue = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'despliegue.ts'), 'utf8')
+    expect(src).toMatch(/githubDeInicio\(client, filtro, data\.ordenes, propietario, \{ commit \}\)/)
+    expect(esperando).toMatch(/githubDeAgentes\(client, filtro, null, \{ ahora \}\)/)
     expect(src).toMatch(/githubClient\(process\.env, \{ maxLlamadas: LLAMADAS_AGENTES \}\)/)
-    for (const s of [src, esperando]) expect(s).not.toMatch(/operationsService|escritura|auditTable|'use server'|method: 'POST'/)
+    for (const s of [src, esperando, despliegue]) expect(s).not.toMatch(/operationsService|escritura|auditTable|'use server'|method: 'POST'/)
   })
 })
 

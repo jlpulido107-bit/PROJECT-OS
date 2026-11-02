@@ -1,5 +1,6 @@
 import { Etiqueta } from '@/components/planning/hoy'
 import { Badge, ExternalLink } from '@/components/ui'
+import { MOTIVO_SIN_COMMIT } from '@/lib/despliegue'
 import { MOTIVO_F5 } from '@/lib/esperando'
 import type { CapaFlujo, EstadoPaso, LineaFlujo, Quien } from '@/lib/planificacion-flujo'
 
@@ -66,7 +67,8 @@ export function FlujoView({ capa }: { capa: CapaFlujo }) {
       ) : (
         <>
           <p className="muted small">
-            ● hecho · ◉ paso actual · ○ pendiente · · no aplica · ? sin datos · – fuente apagada. Desplegada y Activada: {MOTIVO_F5}
+            ● hecho · ◉ paso actual · ○ pendiente · · no aplica · ? sin datos · – fuente apagada.
+            {capa.commit ? ' Desplegada: solo PROJECT-OS (el dashboard).' : ` Desplegada: ${MOTIVO_SIN_COMMIT}`} Activada: {MOTIVO_F5}
             {capa.github === 'sin-token' ? ' Sin token de GitHub en este servidor: lo que sale de GitHub queda sin datos.' : null}
             {capa.github === 'parcial' ? ' Parte de GitHub no se leyó en esta carga: se intenta en la siguiente; esas órdenes no cuentan en el encabezado.' : null}
           </p>
