@@ -368,3 +368,146 @@ web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_IDEAS_ALTA
 ```
 
 Quitar `ECO_PIPELINE_WRITE_MODE` sin quitar también `ECO_IDEAS_ALTA` hace fallar el render: no se aplica nada.
+
+## 10. Planificación editable por el propietario (ORD-POS-138, DEC-POS-029)
+
+DEC-POS-029 (APROBADA el 2026-11-02 según la orden ORD-POS-138, fila 41 de `DECISIONES`; amplía DEC-POS-023 y
+DEC-POS-024): el propietario edita la planificación desde `/planificacion` y puede suscribirse a un calendario ICS de
+solo lectura. Esta sección fija el contrato **antes del código**: operaciones, migraciones, banderas, idempotencia y
+datos del calendario. El código lo traen ORD-POS-139 a ORD-POS-142; el reparto entre ellas lo fija cada orden. **Estado:
+diseño; nada implementado, migrado ni encendido.** Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
+solo el propietario aplica las migraciones, crea el secreto y enciende las banderas.
+
+Reglas que no cambian: la hoja es la fuente; toda edición pasa por el servidor, con versión esperada y `AUDITORIA`
+antes de escribir (§7 del [contrato](v1-4-write-contract.md#7-auditoría-y-consistencia-sin-prometer-atomicidad)), nunca del
+navegador a Sheets; `ESTADO`, `BLOQUEO`, cancelar y reabrir tareas siguen fuera del dashboard (§7 de este documento);
+Tiempos solo propone por paquete (DEC-POS-024) y el PM solo escribe con el «sí PAQ» verificado (DEC-POS-013); vacío ≠ 0;
+sin dependencias nuevas (el arrastre es HTML nativo).
+
+### 10.1 Quién puede y operaciones (criterio 1)
+
+**Actor único: el propietario**, con su sesión de Google y la misma comprobación de correo de §7: un único correo en
+`PLANIFICACION_EDICION_PROPIETARIO_EMAIL`, que además esté en `AUTH_ALLOWED_EMAILS`; una lista, un valor que no sea
+correo o un correo fuera de la lista de acceso dejan la edición apagada. `ACTOR` en `AUDITORIA` es ese correo.
+
+| Operación | Ruta (`POST`) | Pestañas que escribe | Campos que acepta |
+| --- | --- | --- | --- |
+| `tarea.editar` (existente) | `/api/operaciones/tareas/<id>` (`PATCH`) | `TAREAS` | Desde `/planificacion` solo `fechaPlan`, `horasEstimadas` e `hitoId`, con `expectedVersion`; sus reglas no cambian |
+| `capacidad.registrar` | `/api/operaciones/capacidad` | `CAPACIDAD_SEMANAL` | `semanaId`, `fechaInicio`, `horasDisponibles`, `reservaPct`, `estado` y, al editar, `expectedVersion` |
+| `plan.dia.guardar` | `/api/operaciones/plan-dia` | `PLAN_DIARIO` y `PLAN_ITEMS` | `fecha`, `estado`, `horasObjetivo`, `items` (`tareaId`, `orden`, `minutosPlan`) y, si el plan existe, `expectedVersion` |
+| `escenario.guardar` | `/api/operaciones/escenarios` | `ESCENARIOS` | `nombre`, `semanaId`, `parametros` (los del `Scenario` de `web/src/lib/planning/types.ts`) |
+
+- **Rechazos.** Toda petición con `Authorization` (token del PM, de Tiempos o de finanzas) a las tres rutas nuevas recibe
+  403 `operacion-no-permitida` sin leer el cuerpo; antes, el proxy (`web/src/lib/authz.ts`) no las deja pasar sin sesión
+  (401). El token de Tiempos sigue limitado a `GET /api/planificacion` (§8). Otra sesión de escritura que no sea la del
+  propietario recibe 403 `operacion-no-permitida`. Las tres operaciones **no** entran en `AGENT_OPERATIONS`.
+- **`capacidad.registrar`.** Alta si `SEMANA_ID` no existe (sin `expectedVersion`; con él, 422) y edición si existe
+  (`expectedVersion` obligatorio, `conflicto-version` si no coincide). `NOTAS` no se toca; `ACTUALIZADO_EN` y `VERSION`
+  los pone el servidor. `horasDisponibles` y `reservaPct` vacíos se guardan vacíos, nunca como 0.
+- **`plan.dia.guardar`.** Un solo plan activo por `FECHA` (el motor ya avisa `plan-diario-duplicado`): si no existe, alta
+  de `PLAN_DIARIO` con `VERSION` 1; si existe, edición con `expectedVersion`. Toda guardada sube `VERSION` del plan
+  aunque solo cambien los elementos: esa versión protege también sus `PLAN_ITEMS`, que no llevan `VERSION`. Nunca se
+  borran filas: una tarea quitada del día conserva su fila con `MINUTOS_PLAN` = `0` explícito (no vacío, que el motor
+  marca como `plan-item-sin-minutos`), y las vistas no la listan. Solo tareas abiertas existentes.
+  **Hipótesis:** el criterio 1 de la orden pide esta operación y DEC-POS-029 no nombra `PLAN_DIARIO`; se lee como parte de
+  «planificación editable». Si el propietario no la da por cubierta, queda fuera hasta una decisión.
+- **`escenario.guardar`.** Solo alta, como `TIEMPOS`: ninguna operación edita ni borra escenarios. `parametros` se valida
+  campo a campo con los rangos del motor (por ejemplo `sobrecargaPct` 0–300) y se guarda como JSON de hasta 2000
+  caracteres; un escenario guardado no cambia los datos base.
+- **Auditoría.** Una fila por campo, `ENTIDAD` = la pestaña escrita (`CAPACIDAD_SEMANAL`, `PLAN_DIARIO`, `PLAN_ITEMS` o
+  `ESCENARIOS`), `ORIGEN` con `op=<operación>;req=<requestId>;h=<hash>`. Amplía la lista de pestañas del inicio de este
+  documento solo con esas cuatro.
+
+### 10.2 Migraciones explícitas (criterio 2)
+
+Las aplica **solo el propietario, a mano en la hoja**, después de fusionar y desplegar el código que las lee y antes de
+encender `PLANIFICACION_EDICION_PROPIETARIO`. Ningún agente las aplica. Como con `INSTRUCCIONES`
+([migración](migracion-instrucciones.md)), la lectura no las exige: sin ellas, el dashboard lee igual y las operaciones
+responden 422 `migracion-pendiente` (con la pestaña) sin escribir nada, ni en `AUDITORIA`.
+
+| Pestaña | Cambio | Columna |
+| --- | --- | --- |
+| `CAPACIDAD_SEMANAL` | `VERSION` al final, después de `ACTUALIZADO_EN` | H |
+| `PLAN_DIARIO` | `VERSION` al final, después de `ACTUALIZADO_EN` | H |
+| `ESCENARIOS` (nueva) | Pestaña nueva, al final del libro, con fila 1 exacta: `ESCENARIO_ID`, `NOMBRE`, `SEMANA_ID`, `PARAMETROS`, `CREADO_EN` | A a E |
+
+- **Filas existentes.** En `CAPACIDAD_SEMANAL` y `PLAN_DIARIO`, el propietario escribe `1` en `VERSION` de cada fila con
+  datos. Una fila con `VERSION` vacía o no entera no se edita (409 `version-faltante`); el servidor nunca la supone. Las
+  otras columnas no cambian. `ESCENARIOS` empieza vacía.
+- **Encabezados.** Exactos, en mayúsculas, sin espacios y sin repetirse. `ESCENARIOS` se lee como pestaña opcional
+  (`OPTIONAL_TABS`): si falta, el resto se lee igual.
+- **Comprobar.** `/planificacion` sin avisos de esquema; una edición de prueba deja `VERSION` + 1 y sus filas en
+  `AUDITORIA`.
+- **Revertir.** Apagar la bandera (§10.3) y después borrar las columnas `VERSION` completas y la pestaña `ESCENARIOS`.
+  Lo guardado queda en `AUDITORIA` como historial.
+
+### 10.3 Banderas, secreto del calendario y rotación (criterio 3)
+
+| Bandera | Enciende | Requisitos | Apagada |
+| --- | --- | --- | --- |
+| `PLANIFICACION_EDICION_PROPIETARIO` = `true` | Arrastre y formularios de `/planificacion`, y las tres operaciones | `PLANIFICACION_EDICION_PROPIETARIO_EMAIL` válido (§10.1) y `WRITE_MODE=sheets` | 403 `operacion-no-permitida` sin leer el cuerpo; la página no muestra controles de edición |
+| `PLANIFICACION_ICS` = `true` | `GET /api/calendario/<token>.ics` | `SECRET_VERSION_CALENDARIO_ICS` (no depende de `WRITE_MODE`) | 404, igual que un token inválido |
+
+Solo el valor exacto `true` las enciende; otro valor, o una sin sus requisitos, hace fallar el render sin aplicar nada.
+Las pone **únicamente el propietario** con `deploy.sh`; ningún agente crea el token, toca Secret Manager o IAM, exporta
+estas variables ni despliega. `--desde-activa` las conserva en los despliegues siguientes.
+
+- **Token del calendario.** Va en la ruta del enlace; a Secret Manager va solo su SHA-256
+  (`project-os-calendario-ics-token-sha256`), que el servidor compara en tiempo constante (`CALENDARIO_ICS_TOKEN_SHA256`).
+  Si es igual al hash del PM, de Tiempos o de finanzas, no vale. Solo alcanza esa ruta y ese método; no abre otra ruta ni
+  escribe. Límite conocido: la ruta, con el token, queda en los registros de solicitudes de Cloud Run; por eso el token
+  solo da lectura del calendario y se rota.
+
+```bash
+# Activar (solo el propietario, en Cloud Shell, con la imagen que trae el calendario desplegada)
+TOKEN="$(openssl rand -hex 32)"
+printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1 | tr -d '\n' | gcloud secrets create project-os-calendario-ics-token-sha256 \
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=-
+gcloud secrets add-iam-policy-binding project-os-calendario-ics-token-sha256 --project="$PROJECT_ID" --condition=None \
+  --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor --format=none
+# El enlace <url del dashboard>/api/calendario/$TOKEN.ics va solo a la app de calendario del propietario; bórralo de aquí:
+unset TOKEN
+export PLANIFICACION_ICS=true SECRET_VERSION_CALENDARIO_ICS=1
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ PLANIFICACION_ICS» y «+ CALENDARIO_ICS_TOKEN_SHA256»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+
+# Edición (con las migraciones de §10.2 aplicadas)
+export PLANIFICACION_EDICION_PROPIETARIO=true PLANIFICACION_EDICION_PROPIETARIO_EMAIL='<correo del propietario>'
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar las dos variables con «+»
+web/deploy/cloudrun/deploy.sh --desde-activa
+```
+
+- **Rotar.** Token nuevo como arriba, `gcloud secrets versions add project-os-calendario-ics-token-sha256 --data-file=-`,
+  despliegue con la nueva `SECRET_VERSION_CALENDARIO_ICS` y, después, `gcloud secrets versions disable <anterior>`. El
+  enlace viejo responde 404; el propietario cambia la suscripción en su calendario.
+- **Revertir.** `deploy.sh --desde-activa --quitar PLANIFICACION_ICS` (quita también el hash) y
+  `deploy.sh --desde-activa --quitar PLANIFICACION_EDICION_PROPIETARIO` (quita también el correo). Lo ya escrito no se
+  deshace solo: el propietario lo corrige en la hoja con `AUDITORIA` como guía.
+
+### 10.4 Idempotencia (criterio 4)
+
+| Operación | Clave | Reintento | Choque |
+| --- | --- | --- | --- |
+| `capacidad.registrar` | `requestId` (UUID v4) + `SEMANA_ID` | Mismo `requestId` y hash: `repetida`, o completa lo auditado (roll-forward, contrato §8) | Alta de un `SEMANA_ID` que ya existe: 409 `conflicto-concurrente` |
+| `plan.dia.guardar` | `requestId` + `FECHA` | Igual; los `PLAN_ITEMS` se completan con lo auditado | Dos planes activos para la fecha o `VERSION` distinta: 409 |
+| `escenario.guardar` | `requestId` | Igual; no crea otra fila | Mismo `requestId` con otro cuerpo: 409 `conflicto-idempotencia` |
+
+- **IDs estables.** `PLAN_ID` = `PLAN-AAAA-MM-DD` de su fecha; `PLAN_ITEM_ID` = `<PLAN_ID>-<TAREA_ID>`, de modo que volver
+  a poner una tarea en el día reutiliza su fila; `ESCENARIO_ID` = `ESC-NNN`, el siguiente de la columna A. Las filas
+  existentes conservan su ID.
+- **Calendario.** `UID` = `<TAREA_ID>@project-os`: la misma tarea es siempre el mismo evento aunque cambie de fecha;
+  `SEQUENCE` = `VERSION` de la tarea y `DTSTAMP` = su `ACTUALIZADO_EN`. Pedir el calendario dos veces da el mismo archivo
+  si la hoja no cambió.
+
+### 10.5 Qué sale en el calendario y qué nunca (criterio 5)
+
+Un `VEVENT` de día completo (`DTSTART;VALUE=DATE`) por tarea abierta con `FECHA_PLAN`; las `COMPLETADO` y `CANCELADO` no
+salen.
+
+- **Sale:** `SUMMARY` = `<TAREA_ID> · <TITULO>`, la fecha (`FECHA_PLAN`) y `DESCRIPTION` = «Horas estimadas: N» o «Sin
+  estimación» si `HORAS_ESTIMADAS` está vacía (vacío ≠ 0). Nada más.
+- **Nunca sale:** `DESCRIPCION`, `INSTRUCCIONES`, `NOTAS`, `CRITERIO_TERMINADO`, `BLOQUEO`, `RESPONSABLE`, correos
+  (sin `ORGANIZER` ni `ATTENDEE`), enlaces internos, `AUDITORIA`, `TIEMPOS`, `ESCENARIOS` ni datos de otros libros.
+- **Respuesta:** `Content-Type: text/calendar`, `Cache-Control: no-store` y `X-Robots-Tag: noindex`; texto escapado según
+  RFC 5545. Es solo lectura: no usa Google Tasks y no hay sincronización de vuelta; un cambio en el calendario no toca la
+  hoja.
