@@ -119,17 +119,22 @@ v3 §8.2), el script recibe 401 o 403: dilo en el reporte, no reintentes y deja 
    | `tokensEntrada` / `tokensSalida` | solo si todas las sesiones los traen; si no, omítelos (sin dato, nunca 0) |
 
    Más de 3,000 USD: no lo envíes (tope de DEC-POS-018); repórtalo al propietario.
-2. **Pide el total de factura al propietario.** Pregunta, con el corte escrito: «¿Cuál es el total que Anthropic te
-   facturó con fecha dentro del corte `AAAA-MM-Qn`, en USD? ¿La suscripción cayó en este corte? Si cayó en el otro,
-   dame el total sin ella; si cayó en este, el total con ella.» El servidor resta la suscripción confirmada
-   (`REC-CLAUDE-AAAA-MM`) del corte en que cae (diseño v3 §5): un total que la excluye cuando cayó en este corte deja un
-   cargo extra falso o `factura-no-cuadra`. Si el propietario no dice en qué corte cayó, pregúntalo antes de enviar;
-   nunca sumes ni restes la suscripción tú.
+2. **Pide el total de factura y su moneda al propietario.** Pregunta, con el corte escrito: «¿Cuál es el total que
+   Anthropic te facturó con fecha dentro del corte `AAAA-MM-Qn`, y en qué moneda (USD o MXN)? ¿La suscripción cayó en
+   este corte? Si cayó en el otro, dame el total sin ella; si cayó en este, el total con ella.» El servidor resta la
+   suscripción confirmada (`REC-CLAUDE-AAAA-MM`) del corte en que cae (diseño v3 §5), **en la moneda de ese REC**: el
+   total va en esa misma moneda (`moneda` = `USD` o `MXN`, `facturaTotal` en ella). Un total que la excluye cuando cayó
+   en este corte deja un cargo extra falso o `factura-no-cuadra`. Si el propietario no dice en qué corte cayó o en qué
+   moneda, pregúntalo antes de enviar; nunca sumes ni restes la suscripción tú ni conviertas el total con un tipo de
+   cambio.
 3. **Cita literal fechada.** `fuente` = `<corte> «<cita literal del propietario>» AAAA-MM-DD`: sus palabras tal cual,
    con el total y en qué corte cayó la suscripción (p. ej. `2027-02-Q2 «total del corte: 20.00 USD, la suscripción
-   cayó en el otro corte» 2027-03-01`), y la fecha de hoy en Mérida, la del dato. Hasta 200 caracteres, sin correos,
+   cayó en el otro corte» 2027-03-01`, o en pesos `2027-02-Q2 «total del corte: 360.00 MXN, la suscripción cayó en el
+   otro corte» 2027-03-01`), y la fecha de hoy en Mérida, la del dato. Hasta 200 caracteres, sin correos,
    cuentas, tarjetas, RFC, URL ni números de factura o folio: si la cita los trae, pide al propietario que la repita sin
-   ellos; no la edites. `proyecto` (`POS` o `ECO`) también lo dice el propietario; sin él no se envía.
+   ellos; no la edites. `proyecto` (`POS` o `ECO`) también lo dice el propietario; sin él no se envía. Cuerpo de
+   `cargo-extra`: `corte`, `reporte`, `moneda`, `facturaTotal`, `fuente`, `proyecto` y, solo en USD, `tipoCambio`
+   opcional (en MXN el tope de 3,000 USD lo revisa el servidor con `TIPO_CAMBIO_DEFECTO`).
 4. **Nunca estimes.** Sin total del propietario no hay `cargo-extra`: el corte queda **pendiente de factura** y se
    lista en cada reporte (§3, punto 7). Nunca uses `cost_usd`, el monto de RECURRENTES ni otro corte como total. Una
    rutina sin el propietario delante envía solo `rendimiento`.
@@ -150,7 +155,10 @@ v3 §8.2), el script recibe 401 o 403: dilo en el reporte, no reintentes y deja 
    - 409 `suscripcion-sin-confirmar`: pide al propietario confirmar `REC-CLAUDE-AAAA-MM` en `/finanzas` y repite con
      `--repetir`; mientras tanto, el corte sigue **pendiente de factura**.
    - 409 `factura-no-cuadra`: el total no incluye la suscripción que cayó en el corte, o no cuadra con la confirmada;
-     pide al propietario el total correcto y envía un JSON corregido (`requestId` nuevo).
+     pide al propietario el total correcto y envía un JSON corregido (`requestId` nuevo). Con motivo `moneda-distinta`,
+     el total no está en la moneda de `REC-CLAUDE-AAAA-MM`: pide el total en esa moneda; nunca lo conviertas.
+   - 409 `tipo-cambio-sin-dato` (MXN): falta `TIPO_CAMBIO_DEFECTO` en PARAMETROS; el propietario lo registra y repites
+     con `--repetir`.
    - 409 `corte-ya-registrado`: ya está; no repitas.
    - Fallo de transporte, 5xx, 429 u otro 409: resultado incierto; repite **solo** con `--repetir` (mismo `requestId`),
      nunca con un cuerpo nuevo.

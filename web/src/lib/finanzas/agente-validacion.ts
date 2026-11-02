@@ -36,11 +36,17 @@ export interface RendimientoCommand {
   tokensSalida: number | null
 }
 
+/** Monedas del total de factura (ORD-POS-133): la de `REC-CLAUDE-AAAA-MM`; nunca se convierte para restar. */
+export const MONEDAS_CARGO = ['USD', 'MXN'] as const
+export type MonedaCargo = (typeof MONEDAS_CARGO)[number]
+
 export interface CargoExtraCommand {
   requestId: string
   corte: string
   reporte: string
-  /** `T` de §5: total facturado por Anthropic en el corte, según el propietario. */
+  /** Moneda de `T` (y de la fila del extra); por defecto USD. */
+  moneda: MonedaCargo
+  /** `T` de §5: total facturado por Anthropic en el corte, según el propietario, en centavos de `moneda`. */
   facturaTotalCentavos: number
   /** `<corte> «<cita>» AAAA-MM-DD`, ya limpia. */
   fuente: string
@@ -56,7 +62,7 @@ const REPORTE = /^session_[A-Za-z0-9]{10,40}$/
 const ENTERO = /^\d{1,13}$/
 const FUENTE = /^(\d{4}-(?:0[1-9]|1[0-2])-Q[12]) «([^«»]+)» (\d{4}-\d{2}-\d{2})$/
 export const FUENTE_MAX = 200
-/** Total de factura hasta 99,999,999.99 USD (el tope de la fila se aplica al cargo extra, §4.4). */
+/** Total de factura hasta 99,999,999.99 en su moneda (el tope de la fila se aplica al cargo extra, §4.4). */
 const MAX_CENTAVOS = 9_999_999_999
 const MAX_DIEZMIL = 9_999_999
 
@@ -156,18 +162,30 @@ export function parseRendimiento(input: unknown): RendimientoCommand {
   return { ...base, costoEquivCentavos: costo!, sesiones: sesiones!, sesionesSinDato: sinDato!, tokensEntrada, tokensSalida }
 }
 
-/** Cuerpo de `POST /api/finanzas/agente/cargo-extra` (§4.3). Nunca estima: sin total de factura, 400. */
+/**
+ * Cuerpo de `POST /api/finanzas/agente/cargo-extra` (§4.3). Nunca estima: sin total de factura, 4xx. `moneda` (USD |
+ * MXN, por defecto USD) con `facturaTotal` en esa moneda; `facturaTotalUsd` sigue válido como `facturaTotal` en USD.
+ */
 export function parseCargoExtra(input: unknown): CargoExtraCommand {
   const body = asObject(input)
+  // Ausente (o null) = USD; cualquier otro valor que no sea exactamente USD o MXN, 400.
+  const moneda = body.moneda === undefined || body.moneda === null ? 'USD' : MONEDAS_CARGO.find((m) => m === str(body, 'moneda'))
+  if (moneda === undefined) throw new OperationError('moneda-no-permitida', { fields: { moneda: 'USD o MXN, la del total que dio el propietario.' } })
   const fields: Fields = {}
   const base = comunes(body, fields)
-  const total = decimalEscalado(str(body, 'facturaTotalUsd'), 2)
-  if (total === null || total > MAX_CENTAVOS) fields.facturaTotalUsd = 'Número ≥ 0, hasta 2 decimales: el total que dio el propietario.'
+  const totalRaw = str(body, 'facturaTotal')
+  const totalUsdRaw = str(body, 'facturaTotalUsd')
+  const campoTotal = totalUsdRaw !== null && totalRaw === null ? 'facturaTotalUsd' : 'facturaTotal'
+  const total = decimalEscalado(totalRaw ?? totalUsdRaw, 2)
+  if (totalRaw !== null && totalUsdRaw !== null) fields.facturaTotal = 'Solo uno: facturaTotal (con moneda) o facturaTotalUsd.'
+  else if (totalUsdRaw !== null && moneda !== 'USD') fields.facturaTotalUsd = 'facturaTotalUsd es en USD: con moneda MXN usa facturaTotal.'
+  else if (total === null || total > MAX_CENTAVOS) fields[campoTotal] = 'Número ≥ 0, hasta 2 decimales: el total que dio el propietario.'
   const proyecto = PROYECTOS.find((p) => p === str(body, 'proyecto')?.toUpperCase()) ?? null
   if (proyecto === null) fields.proyecto = 'POS o ECO, el que dio el propietario con el dato.'
   const tcRaw = str(body, 'tipoCambio')
   const tipoCambio = decimalEscalado(tcRaw, 4)
-  if (tcRaw !== null && (tipoCambio === null || tipoCambio <= 0 || tipoCambio > MAX_DIEZMIL)) fields.tipoCambio = 'Número mayor que 0 y menor que 1000, hasta 4 decimales.'
+  if (tcRaw !== null && moneda === 'MXN') fields.tipoCambio = 'Solo con USD: en MXN el tope usa TIPO_CAMBIO_DEFECTO de PARAMETROS.'
+  else if (tcRaw !== null && (tipoCambio === null || tipoCambio <= 0 || tipoCambio > MAX_DIEZMIL)) fields.tipoCambio = 'Número mayor que 0 y menor que 1000, hasta 4 decimales.'
 
   const fuente = cleanText(typeof body.fuente === 'string' ? body.fuente : '', false)
   const m = FUENTE.exec(fuente)
@@ -182,7 +200,7 @@ export function parseCargoExtra(input: unknown): CargoExtraCommand {
   }
   if (Object.keys(fields).length) throw new OperationError('validacion', { fields })
   return {
-    ...base, facturaTotalCentavos: total!, fuente, fuenteFecha: fecha, proyecto: proyecto!,
+    ...base, moneda, facturaTotalCentavos: total!, fuente, fuenteFecha: fecha, proyecto: proyecto!,
     tipoCambioDiezmil: tcRaw === null ? null : tipoCambio,
   }
 }

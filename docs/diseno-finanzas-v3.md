@@ -178,10 +178,11 @@ Campos además de los comunes:
 
 | Campo | Regla |
 | --- | --- |
-| `facturaTotalUsd` | Número ≥ 0, 2 decimales: **total facturado por Anthropic con fecha dentro del corte**, como lo da el propietario |
+| `moneda` | `USD` \| `MXN` (ORD-POS-133), opcional, por defecto `USD`: la del total, que debe ser la de `REC-CLAUDE-AAAA-MM` (§5). Otra, 400 `moneda-no-permitida` |
+| `facturaTotal` | Número ≥ 0, 2 decimales, en `moneda`: **total facturado por Anthropic con fecha dentro del corte**, como lo da el propietario. `facturaTotalUsd` sigue válido como `facturaTotal` con `moneda` `USD` (compatibilidad); los dos juntos, o `facturaTotalUsd` con `MXN`, son 422 |
 | `fuente` | `<corte> «<cita literal del propietario>» AAAA-MM-DD`: la cita trae el total y la fecha es la del dato (hoy en Mérida, con 1 día de margen). Hasta 200 caracteres, saneada como `CONCEPTO` (rechaza correo, CLABE, tarjeta, RFC, URL y números de factura) |
 | `proyecto` | `POS` \| `ECO`, el que diga el propietario con el dato; sin él, no se registra |
-| `tipoCambio` | Opcional; vacío = `TIPO_CAMBIO_DEFECTO` de PARAMETROS |
+| `tipoCambio` | Opcional y solo en USD; vacío = `TIPO_CAMBIO_DEFECTO` de PARAMETROS. Con `MXN`, 422 |
 
 - **El dato lo da solo el propietario**, en el chat del agente de finanzas, con un total por corte. Una rutina sin
   propietario delante **no llama a esta ruta**: registra el rendimiento y deja el corte «pendiente de factura».
@@ -192,7 +193,8 @@ Campos además de los comunes:
   - **extra > 0** → fila en MOVIMIENTOS: `MOV_ID` = `CLAUDE-EXTRA-…`, `FECHA` = `CORTE_FIN`, `PROYECTO`, `TIPO` =
     `Gasto`, `CATEGORIA` = `Herramientas`, `CONCEPTO` = «Claude: cargo adicional `<corte>`», `MONEDA_ORIG` = `USD`,
     `MONTO_ORIG` = extra, `TIPO_CAMBIO`, `MONTO_MXN` = `round(extra × tipo de cambio, 2)`, `FUENTE` =
-    `agente-finanzas`, `COMPROBANTE` = `sí` (hay factura);
+    `agente-finanzas`, `COMPROBANTE` = `sí` (hay factura); **en MXN** (ORD-POS-133), `MONEDA_ORIG` = `MXN`,
+    `MONTO_ORIG` = `MONTO_MXN` = extra y `TIPO_CAMBIO` vacío;
   - **extra = 0** → ninguna fila en MOVIMIENTOS; la AUDITORIA cierra el corte «sin cargo» (§6);
   - **extra < 0**, o suscripción del corte sin confirmar → 409 `factura-no-cuadra` o `suscripcion-sin-confirmar`, sin
     escribir (§5).
@@ -201,7 +203,9 @@ Campos además de los comunes:
 
 `MONTO_ORIG` del cargo extra y `COSTO_EQUIV_USD` del rendimiento ≤ 3,000.00 USD; más → 400 `monto-excede-tope`, sin
 escribir. El tope es una constante del código, no una variable: subirlo exige otra decisión y otra orden. Un corte real
-que lo supere lo captura el propietario a mano con «Nuevo movimiento».
+que lo supere lo captura el propietario a mano con «Nuevo movimiento». En MXN (ORD-POS-133) el tope sigue en USD: se
+compara extra ÷ `TIPO_CAMBIO_DEFECTO` de PARAMETROS (en enteros: extra × 10⁴ > 300,000 × tipo de cambio en
+diezmilésimas); sin un tipo de cambio válido, 409 `tipo-cambio-sin-dato`, sin escribir. Con extra = 0 no hace falta.
 
 ## 5. Contra el doble conteo (criterio 3)
 
@@ -210,7 +214,11 @@ fila del total de factura del corte en que cae, y nunca da de alta la suscripci�
 
 - La suscripción **cae** en el corte que contiene la `FECHA` de `REC-CLAUDE-AAAA-MM` (por defecto, `DIA_COBRO` de
   RECURRENTES, 📄 v2 §4.3).
-- `S` = `MONTO_ORIG` en USD de `REC-CLAUDE-AAAA-MM` si cae en el corte; si no cae, `S` = 0. `T` = `facturaTotalUsd`.
+- `S` = `MONTO_ORIG` en USD de `REC-CLAUDE-AAAA-MM` si cae en el corte; si no cae, `S` = 0. `T` = `facturaTotal`.
+- **Moneda** (ORD-POS-133): la regla se aplica en la moneda de `REC-CLAUDE-AAAA-MM`. En MXN, `S` es su `MONTO_MXN` (la
+  confirmación de un recurrente en MXN deja `MONTO_ORIG` vacío). `T` y `S` van en la misma moneda: si el REC del mes
+  existe y su moneda no es la de `T` (caiga o no en el corte), 409 `factura-no-cuadra` con motivo `moneda-distinta`,
+  sin escribir. **Nunca** se convierte `T` ni `S` con un tipo de cambio para restarlos.
 - **Cargo extra del corte = `T − S`.**
 - Si el `DIA_COBRO` de `CLAUDE` cae en el corte y `REC-CLAUDE-AAAA-MM` todavía no existe → 409
   `suscripcion-sin-confirmar`: el agente no resta un monto esperado; le pide al propietario confirmar el recurrente.
@@ -243,6 +251,11 @@ Gasto de Claude del mes = 50.00 + 20.00 = **70.00 USD**; rendimiento en RESUMEN 
 diera en Q1 un total de 70.00 (suscripción más extra en la misma factura), el extra sería `CLAUDE-EXTRA-2027-02-Q1`:
 20.00 y el resultado del mes, el mismo.
 
+**Los mismos meses en MXN** (ORD-POS-133, cifras sintéticas): `REC-CLAUDE-AAAA-MM` de 900.00 MXN el día 10. 2027-01:
+Q1 `T` = 900.00 → 0, «sin cargo»; Q2 `T` = 0.00 → 0, «sin cargo»; gasto del mes 900.00 MXN. 2027-02: Q1 `T` = 900.00
+→ «sin cargo»; Q2 `T` = 360.00 → `CLAUDE-EXTRA-2027-02-Q2` con `MONEDA_ORIG` `MXN`, `MONTO_ORIG` = `MONTO_MXN` = 360.00
+y `TIPO_CAMBIO` vacío; gasto del mes 1,260.00 MXN.
+
 **Error que la regla atrapa:** si en Q1 el propietario da 50.00 sin haber confirmado `REC-CLAUDE-2027-02`, el agente
 recibe `suscripcion-sin-confirmar`; si escribiera 50.00 como extra, la suscripción contaría dos veces al confirmarse.
 
@@ -251,7 +264,8 @@ recibe `suscripcion-sin-confirmar`; si escribiera 50.00 como extra, la suscripci
 En la **AUDITORIA de FINANZAS** (📄 v2 §5, mismas columnas), antes de la fila y una fila por campo:
 
 - `ACTOR` = `agente-finanzas`; `ENTIDAD` = `MOVIMIENTOS` o `RENDIMIENTO_CLAUDE`; `REGISTRO_ID` = el ID de §3.2.
-- `ORIGEN` = `agente-finanzas;modo=sheets;req=<requestId>;hash=<hash>;reporte=<reporte>;fuente=<fuente>`, con
+- `ORIGEN` = `agente-finanzas;modo=sheets;req=<requestId>;hash=<hash>;reporte=<reporte>;moneda=<USD|MXN>;fuente=<fuente>`
+  (`moneda=` solo en el cargo extra, ORD-POS-133; el hash de idempotencia también la incluye), con
   `fuente` = la cita fechada de §4.3 en el cargo extra, o `reporte-consumo` en el rendimiento. Así cada fila cita el
   reporte y la fuente del dato.
 - El cierre «sin cargo» es una fila de auditoría sin entidad: `ENTIDAD` = `MOVIMIENTOS`, `REGISTRO_ID` =
@@ -404,7 +418,10 @@ Precisiones de la construcción sobre §3 a §6:
   USD es `S`; `DIA_COBRO` solo cuenta mientras ese REC no exista, y entonces da `suscripcion-sin-confirmar` en el corte
   que lo contiene. Un REC fechado en el otro corte mueve la resta a ese corte: la suscripción nunca se registra como extra.
   Comprobación mensual: suma de `T` del mes − `REC-CLAUDE` del mes = suma de `CLAUDE-EXTRA-…` del mes. Un `CLAUDE` de
-  RECURRENTES con problema, un REC duplicado o en MXN no se adivinan: 409, sin escribir.
+  RECURRENTES con problema o un REC duplicado no se adivinan: 409, sin escribir. Desde ORD-POS-133 un REC en MXN ya no
+  es 409 por sí mismo: la regla se aplica en su moneda (§5) y solo da 409 `factura-no-cuadra` (`moneda-distinta`) si el
+  total viene en otra; un REC sin fecha, sin monto o en otra moneda que USD o MXN sigue siendo 409
+  (`suscripcion-invalida`).
 - **Cierre «sin cargo».** Una sola fila de AUDITORIA (`CAMPO` = `ESTADO`, `VALOR_DESPUES` = `sin-cargo`); se verifica
   releyendo la AUDITORIA, nunca MOVIMIENTOS, y su repetición devuelve `repetida` sin roll-forward ni escritura.
 - **ORIGEN.** Analizador propio (`leerOrigenAgente`), distinto del de la escritura del propietario; `fuente` va con `%`,
