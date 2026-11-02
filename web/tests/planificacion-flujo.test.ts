@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { FlujoView } from '@/components/planning/flujo'
 import { limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
+import { limpiarCacheDespliegue, MOTIVO_NO_LEIDO_DESPLIEGUE, MOTIVO_SIN_COMMIT, MOTIVO_SOLO_POS } from '@/lib/despliegue'
 import { MOTIVO_F5 } from '@/lib/esperando'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
 import { createGitHubClient, type PrFusion } from '@/lib/operations/github'
 import {
-  capaFlujo, githubDeFlujo, lineaFlujo, MOTIVO_SIN_GITHUB_FLUJO, PASOS, type GitHubFlujo, type LineaFlujo,
+  capaFlujo, githubDeFlujo, lineaFlujo, MOTIVO_SIN_GITHUB_FLUJO, MOTIVO_SIN_SHA_FUSION, PASOS, type GitHubFlujo, type LineaFlujo,
 } from '@/lib/planificacion-flujo'
 import { extraerCriterios } from '@/lib/supervision/criterios'
 import { LISTO_PARA_DECISION, MARCA_DICTAMEN, type EvaluacionDictamen } from '@/lib/supervision/dictamen'
@@ -19,6 +20,9 @@ import type { Orden } from '@/lib/types'
 const ME = 'jlpulido107-bit'
 const REPO = 'jlpulido107-bit/PROJECT-OS'
 const HEAD = 'a'.repeat(40)
+/** Commit desplegado sintético y commit de fusión del PR n (sintético, distinto por PR). */
+const DESPLEGADO = 'd'.repeat(40)
+const fusionSha = (n: number) => n.toString(16).padStart(40, 'f')
 const CRITERIOS = '1. Uno\n2. Dos'
 const NOW = Date.UTC(2026, 10, 1, 18, 0, 0)
 const crit = extraerCriterios(CRITERIOS)
@@ -42,12 +46,18 @@ const vigente = (veredicto: 'CONFORME' | 'CAMBIOS', siguiente: string): Evaluaci
 const ninguno: EvaluacionDictamen = { estado: { tipo: 'ninguno' }, siguiente: 'Lanzar revisión', plan: null }
 
 /** GitHub ya leído: PRs de POS (número = n de la orden; `fusionados` con merged_at) y evaluaciones por orden. */
-function gh(nums: number[], evaluaciones: Record<number, EvaluacionDictamen | null> = {}, fusionados: number[] = []): GitHubFlujo {
-  const lista = new Map<string, PrFusion>(nums.map((n) => [id(n), { url: prUrl(n), number: n, fusionMs: fusionados.includes(n) ? NOW : null }]))
+function gh(
+  nums: number[], evaluaciones: Record<number, EvaluacionDictamen | null> = {}, fusionados: number[] = [],
+  desplegadas?: Record<number, boolean | null>,
+): GitHubFlujo {
+  const lista = new Map<string, PrFusion>(nums.map((n) => [id(n), {
+    url: prUrl(n), number: n, fusionMs: fusionados.includes(n) ? NOW : null, mergeSha: fusionados.includes(n) ? fusionSha(n) : null,
+  }]))
   return {
     prs: { POS: lista, SIG: new Map(), ECO: new Map() },
     truncados: [],
     dictamenes: { evaluaciones: new Map(Object.entries(evaluaciones).map(([n, ev]) => [id(Number(n)), ev])), vencido: false },
+    ...(desplegadas ? { desplegadas: new Map(Object.entries(desplegadas).map(([n, v]) => [id(Number(n)), v])) } : {}),
   }
 }
 
@@ -68,7 +78,9 @@ const reporte = (n: number, extra: Record<string, unknown> = {}) => ({
 const comentario = (r: unknown) => ({ id: 1, body: `${MARCA_DICTAMEN}\n\n\`\`\`json\n${JSON.stringify(r)}\n\`\`\``, user: { login: ME } })
 
 /** `listas` PRs [ORD-POS-n] (n = 1..listas), `fusionados` con merged_at; comentarios del PR n, de `comentarios`. */
-function github({ listas = 0, fusionados = [] as number[], comentarios = {} as Record<number, unknown[]> } = {}) {
+function github({
+  listas = 0, fusionados = [] as number[], comentarios = {} as Record<number, unknown[]>, ancestros = [] as number[],
+}: { listas?: number; fusionados?: number[]; comentarios?: Record<number, unknown[]>; ancestros?: number[] } = {}) {
   const llamadas: string[] = []
   const fetchImpl = (async (url: string) => {
     const u = new URL(url)
@@ -79,7 +91,14 @@ function github({ listas = 0, fusionados = [] as number[], comentarios = {} as R
       return json(Number(u.searchParams.get('page')) > 1 ? [] : Array.from({ length: listas }, (_, i) => ({
         number: i + 1, title: `[${id(i + 1)}][POS-041] t`, html_url: prUrl(i + 1),
         merged_at: fusionados.includes(i + 1) ? '2026-11-01T10:00:00Z' : null, user: { login: ME }, head: { repo: { full_name: REPO } },
+        merge_commit_sha: fusionados.includes(i + 1) ? fusionSha(i + 1) : null,
       })))
+    }
+    // Comparación base...head: `ancestros` son los PR cuyo commit de fusión está en el desplegado.
+    const cmp = new RegExp(`^/repos/${REPO}/compare/([0-9a-f]{40})\\.\\.\\.([0-9a-f]{40})$`).exec(u.pathname)
+    if (cmp) {
+      const pr = fusionados.find((x) => fusionSha(x) === cmp[1])
+      return json({ status: pr !== undefined && ancestros.includes(pr) ? 'ahead' : 'diverged' })
     }
     if (/^\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(u.pathname)) return json({ head: { sha: HEAD } })
     const com = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(u.pathname)
@@ -90,7 +109,7 @@ function github({ listas = 0, fusionados = [] as number[], comentarios = {} as R
   return { cliente: () => createGitHubClient('token-falso', fetchImpl, { maxLlamadas: LLAMADAS_AGENTES }), llamadas }
 }
 
-beforeEach(() => { limpiarCacheDictamenes(); limpiarCacheAgentes() })
+beforeEach(() => { limpiarCacheDictamenes(); limpiarCacheAgentes(); limpiarCacheDespliegue() })
 
 describe('criterio 1: una línea de pasos por orden abierta, solo lectura', () => {
   it('los nueve pasos en orden; CERRADA, CANCELADA y estados inválidos salen del Flujo', () => {
@@ -137,6 +156,7 @@ describe('criterio 1: una línea de pasos por orden abierta, solo lectura', () =
     expect(r.espera).toEqual({ quien: 'propietario', texto: 'Fusionar o cerrar el PR' })
     const f = lineaFlujo(orden(1, 'REVISADA'), gh([1], { 1: vigente('CONFORME', LISTO_PARA_DECISION) }, [1]))
     expect(estados(f)).toMatchObject({ Fusionada: 'hecho', Desplegada: 'apagada', Activada: 'apagada' })
+    expect(f.pasos.find((p) => p.paso === 'Desplegada')!.motivo).toBe(MOTIVO_SIN_COMMIT)
     expect(f.actual).toBeNull()
     expect(f.espera.quien).toBeNull()
   })
@@ -168,13 +188,14 @@ describe('criterio 2: «no aplica» según DEC-POS-008 y DEC-POS-019', () => {
 })
 
 describe('criterio 3: Desplegada y Activada apagadas; sin GitHub, sin datos', () => {
-  it('Desplegada «apagada» con el motivo de F5; Activada, sin la columna BANDERA (ORD-POS-125)', () => {
+  it('sin el commit desplegado, Desplegada «apagada» con «el despliegue no informa su commit»; Activada, sin la columna BANDERA (ORD-POS-125)', () => {
     for (const o of [orden(1, 'BORRADOR'), orden(2, 'PR_ABIERTO'), orden(3, 'REVISADA')]) {
       const l = lineaFlujo(o, gh([2, 3]))
       expect(l.pasos.slice(-2)).toEqual([
-        { paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_F5 }, { paso: 'Activada', estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
+        { paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }, { paso: 'Activada', estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
       ])
     }
+    expect(MOTIVO_SIN_COMMIT.toLowerCase()).toBe('el despliegue no informa su commit.')
     expect(MOTIVO_F5.toLowerCase()).toBe('falta la fuente; la añade la fase f5.')
   })
 
@@ -210,7 +231,7 @@ describe('criterio 4: encabezado, etiqueta y tope de llamadas', () => {
     expect(html).toContain('Esperan por ti: 2 · por Claude: 1 · por revisor: 1')
     expect(html).toContain(`Orden 1 · <a class="mono small" href="/ordenes#orden-${id(1)}">${id(1)}</a>`)
     expect(html).toContain(`(orden sin título) · <a class="mono small" href="/ordenes#orden-${id(4)}">`)
-    expect(html).toContain(MOTIVO_F5)
+    expect(html).not.toContain(MOTIVO_F5)
   })
 
   it('lee el dictamen con dictamenDeOrden: un CONFORME del head actual en BAJO deja la orden en tu decisión', async () => {
@@ -255,5 +276,85 @@ describe('criterio 4: encabezado, etiqueta y tope de llamadas', () => {
     expect([...caliente.dictamenes.evaluaciones.values()].filter(Boolean)).toHaveLength(5)
     const c = capaFlujo(ordenes, true, caliente)
     expect(c.estado === 'ok' && estados(c.lineas.find((l) => l.ordenId === id(5))!).Fusionada).toBe('hecho')
+  })
+})
+
+describe('ORD-POS-124: Desplegada con el commit desplegado (DEPLOY_COMMIT_SHA)', () => {
+  const revisada = (n: number, extra: Partial<Orden> = {}) => orden(n, 'REVISADA', extra)
+  const ok = { 1: vigente('CONFORME', LISTO_PARA_DECISION) }
+
+  it('fusionada y ancestro del desplegado: hecha; no ancestro: paso actual y espera tu despliegue (DEC-POS-017)', () => {
+    const hecha = lineaFlujo(revisada(1), gh([1], ok, [1], { 1: true }), { commit: DESPLEGADO })
+    expect(estados(hecha)).toMatchObject({ Fusionada: 'hecho', Desplegada: 'hecho', Activada: 'apagada' })
+    const falta = lineaFlujo(revisada(1), gh([1], ok, [1], { 1: false }), { commit: DESPLEGADO })
+    expect(estados(falta)).toMatchObject({ Fusionada: 'hecho', Desplegada: 'actual' })
+    expect(falta.espera).toEqual({ quien: 'propietario', texto: 'Desplegar (DEC-POS-017)' })
+  })
+
+  it('sin fusionar: Desplegada pendiente; sin comparación leída: «sin datos», nunca hecha ni pendiente', () => {
+    expect(estados(lineaFlujo(revisada(1), gh([1], ok, [], {}), { commit: DESPLEGADO })).Desplegada).toBe('pendiente')
+    for (const d of [{}, { 1: null }] as Array<Record<number, boolean | null>>) {
+      const l = lineaFlujo(revisada(1), gh([1], ok, [1], d), { commit: DESPLEGADO })
+      expect(l.pasos.find((p) => p.paso === 'Desplegada')).toEqual({ paso: 'Desplegada', estado: 'sin-datos', motivo: MOTIVO_NO_LEIDO_DESPLIEGUE })
+      expect(l.actual).toBeNull()
+    }
+    const sinSha = gh([1], ok, [1], {})
+    sinSha.prs.POS!.set(id(1), { url: prUrl(1), number: 1, fusionMs: NOW, mergeSha: null })
+    expect(lineaFlujo(revisada(1), sinSha, { commit: DESPLEGADO }).pasos.find((p) => p.paso === 'Desplegada')!.motivo).toBe(MOTIVO_SIN_SHA_FUSION)
+    expect(estados(lineaFlujo(revisada(1), null, { commit: DESPLEGADO })).Desplegada).toBe('sin-datos')
+  })
+
+  it('SIGSAH y RADAROS: Desplegada apagada (solo se conoce el commit del dashboard)', () => {
+    const l = lineaFlujo(orden(1, 'REVISADA', { id: 'ORD-SIG-001', proyectoId: 'SIG' }), gh([]), { commit: DESPLEGADO })
+    expect(l.pasos.find((p) => p.paso === 'Desplegada')).toEqual({ paso: 'Desplegada', estado: 'apagada', motivo: MOTIVO_SOLO_POS })
+  })
+
+  it('la capa dice si hay commit; la vista lo explica sin imprimirlo', () => {
+    const con = capaFlujo([revisada(1)], true, gh([1], ok, [1], { 1: true }), { commit: DESPLEGADO })
+    expect(con.estado === 'ok' && con.commit).toBe(true)
+    const sin = capaFlujo([revisada(1)], true, gh([1], ok, [1]))
+    expect(sin.estado === 'ok' && sin.commit).toBe(false)
+    expect(renderToStaticMarkup(createElement(FlujoView, { capa: sin }))).toContain(MOTIVO_SIN_COMMIT)
+    expect(renderToStaticMarkup(createElement(FlujoView, { capa: con }))).not.toContain(DESPLEGADO)
+  })
+
+  it('compara con la API de GitHub solo las órdenes abiertas fusionadas de PROJECT-OS: ancestro y no ancestro', async () => {
+    const g = github({ listas: 3, fusionados: [1, 2], ancestros: [1], comentarios: { 1: [comentario(reporte(1))], 2: [comentario(reporte(2))] } })
+    const ordenes = [revisada(1), revisada(2), orden(3, 'PR_ABIERTO')]
+    const lectura = await githubDeFlujo(g.cliente(), ordenes, { ahora: NOW, commit: DESPLEGADO })
+    expect(g.llamadas.filter((p) => p.includes('/compare/')).sort()).toEqual([
+      `/repos/${REPO}/compare/${fusionSha(1)}...${DESPLEGADO}`, `/repos/${REPO}/compare/${fusionSha(2)}...${DESPLEGADO}`,
+    ])
+    const c = capaFlujo(ordenes, true, lectura, { commit: DESPLEGADO })
+    const de = (n: number) => c.estado === 'ok' ? estados(c.lineas.find((l) => l.ordenId === id(n))!).Desplegada : null
+    expect([de(1), de(2), de(3)]).toEqual(['hecho', 'actual', 'pendiente'])
+    // Sin commit no se compara nada.
+    limpiarCacheDespliegue()
+    const antes = g.llamadas.length
+    await githubDeFlujo(g.cliente(), ordenes, { ahora: NOW })
+    expect(g.llamadas.slice(antes).filter((p) => p.includes('/compare/'))).toHaveLength(0)
+  })
+
+  it('tope de llamadas: con caché fría no pasa de LLAMADAS_AGENTES; lo que no cupo queda «sin datos»; con caché caliente, cero', async () => {
+    const n = 60
+    const todos = Array.from({ length: n }, (_, i) => i + 1)
+    const g = github({ listas: n, fusionados: todos, ancestros: todos.filter((x) => x % 2 === 0) })
+    const ordenes = todos.map((x) => revisada(x))
+    const carga = () => githubDeFlujo(g.cliente(), ordenes, { ahora: NOW, commit: DESPLEGADO })
+    const r1 = await carga()
+    expect(g.llamadas.length).toBeLessThanOrEqual(LLAMADAS_AGENTES)
+    const c1 = capaFlujo(ordenes, true, r1, { commit: DESPLEGADO })
+    expect(c1.estado === 'ok' && c1.github).toBe('parcial')
+    let r = r1
+    for (let i = 0; i < 20 && (r.desplegadas?.size ?? 0) < n; i++) {
+      const antes = g.llamadas.length
+      r = await carga()
+      expect(g.llamadas.length - antes).toBeLessThanOrEqual(LLAMADAS_AGENTES)
+    }
+    expect(r.desplegadas?.size).toBe(n)
+    expect([...r.desplegadas!.entries()].filter(([, v]) => v).map(([k]) => k).sort()).toEqual(todos.filter((x) => x % 2 === 0).map(id))
+    const antes = g.llamadas.length
+    await carga()
+    expect(g.llamadas.slice(antes).filter((p) => p.includes('/compare/'))).toHaveLength(0)
   })
 })

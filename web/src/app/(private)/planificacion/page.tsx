@@ -6,6 +6,7 @@ import { PlanningView } from '@/components/planning/planning-view'
 import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { MERIDA_TZ } from '@/lib/dates'
 import { fuenteBanderas } from '@/lib/banderas'
+import { commitDesplegado } from '@/lib/despliegue'
 import { canWrite, isWriter, puedeCerrarTareas } from '@/lib/operations/config'
 import { githubClient } from '@/lib/operations/dispatch'
 import { capaFlujo, githubDeFlujo } from '@/lib/planificacion-flujo'
@@ -30,12 +31,14 @@ export default async function PlanningPage() {
   // El botón de cierre solo para el propietario con la bandera encendida y la escritura habilitada; el guard lo repite.
   const puedeCerrar = puedeCerrarTareas(user.email) && canWrite(user.email)
   // Capa Flujo (ORD-POS-123): solo lectura de GitHub con el cliente de tope LLAMADAS_AGENTES, la caché de listas de
-  // /agentes y la de dictámenes de /ordenes, dentro de LIMITE_GLOBAL_MS; lo que no cupo queda «sin datos».
+  // /agentes y la de dictámenes de /ordenes, dentro de LIMITE_GLOBAL_MS; lo que no cupo queda «sin datos». Desplegada
+  // (ORD-POS-124) compara con el commit desplegado (DEPLOY_COMMIT_SHA) con el mismo cliente; sin él queda apagada.
   const client = githubClient(process.env, { maxLlamadas: LLAMADAS_AGENTES })
   const ordenesOk = data.tabs.ORDENES_CODEX.ok && !data.tabs.ORDENES_CODEX.truncated
+  const commit = commitDesplegado()
   // Activada (ORD-POS-125): la columna BANDERA y el estado de la bandera, solo para la sesión del propietario.
-  const flujo = capaFlujo(data.ordenes, ordenesOk, client && ordenesOk ? await githubDeFlujo(client, data.ordenes) : null,
-    fuenteBanderas(data.ordenesConBandera, isWriter(user.email)))
+  const flujo = capaFlujo(data.ordenes, ordenesOk, client && ordenesOk ? await githubDeFlujo(client, data.ordenes, { commit }) : null,
+    { commit, banderas: fuenteBanderas(data.ordenesConBandera, isWriter(user.email)) })
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para
   // simular escenarios al instante, sin enviar nada de vuelta.
   return (

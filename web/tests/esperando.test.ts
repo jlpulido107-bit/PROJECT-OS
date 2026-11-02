@@ -4,13 +4,15 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { BloqueEsperando } from '@/components/inicio/esperando'
 import { VistaInicio, type DatosInicio } from '@/components/inicio/inicio'
 import { limpiarCacheAgentes, LLAMADAS_AGENTES } from '@/lib/agentes-data'
+import { limpiarCacheDespliegue, MOTIVO_SIN_COMMIT, MOTIVO_SOLO_POS } from '@/lib/despliegue'
 import {
-  esperandoPorTi, githubDeInicio, leerListos, MOTIVO_F5, MOTIVO_NO_LEIDO, MOTIVO_NO_PROPIETARIO, MOTIVO_SIN_GITHUB, type FuentesEsperando,
+  esperandoPorTi, githubDeInicio, leerListos, MOTIVO_F5, MOTIVO_NO_LEIDO, MOTIVO_NO_LEIDO_SIN_DESPLEGAR, MOTIVO_NO_PROPIETARIO,
+  MOTIVO_SIN_GITHUB, MOTIVO_SIN_GITHUB_DESPLIEGUE, motivoTruncado, type FuentesEsperando,
 } from '@/lib/esperando'
 import { MOTIVO_SIN_COLUMNA_BANDERA } from '@/lib/banderas'
 import { misPendientes } from '@/lib/inicio'
 import { limpiarCacheDictamenes } from '@/lib/operations/dictamenes'
-import { createGitHubClient } from '@/lib/operations/github'
+import { createGitHubClient, type PrFusion } from '@/lib/operations/github'
 import { TAB_HEADERS, type TabName } from '@/lib/schema'
 import { extraerCriterios } from '@/lib/supervision/criterios'
 import { MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
@@ -108,7 +110,7 @@ const fuentes = (ordenes: Orden[], extra: Partial<FuentesEsperando> = {}): Fuent
   }
 }
 
-beforeEach(() => { limpiarCacheDictamenes(); limpiarCacheAgentes() })
+beforeEach(() => { limpiarCacheDictamenes(); limpiarCacheAgentes(); limpiarCacheDespliegue() })
 
 describe('criterio 1: «Listos para fusionar» con REVISADA y PR_ABIERTO con CONFORME en el head actual', () => {
   it('lee el dictamen con dictamenDeOrden: entra el CONFORME del head actual, no el de otro head ni el CAMBIOS', async () => {
@@ -203,11 +205,12 @@ describe('criterios 2 y 3: decisiones, vencen hoy y grupos apagados', () => {
     ])
   })
 
-  it('6.2 está apagada con el motivo de F5; 6.4, sin la columna BANDERA (ORD-POS-125)', () => {
+  it('sin el commit desplegado, 6.2 está apagada con «el despliegue no informa su commit»; 6.4, sin la columna BANDERA (ORD-POS-125)', () => {
     const e = esperandoPorTi(fuentes([]))
     expect(e.estado === 'ok' && [e.datos.fusionadoSinDesplegar, e.datos.banderas]).toEqual([
-      { estado: 'apagada', motivo: MOTIVO_F5 }, { estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
+      { estado: 'apagada', motivo: MOTIVO_SIN_COMMIT }, { estado: 'apagada', motivo: MOTIVO_SIN_COLUMNA_BANDERA },
     ])
+    expect(MOTIVO_SIN_COMMIT).toBe('El despliegue no informa su commit.')
     expect(MOTIVO_F5).toBe('Falta la fuente; la añade la fase F5.')
   })
 })
@@ -248,8 +251,9 @@ describe('criterio 4: propietario, contador, filtro y «Mis pendientes»', () =>
     expect(h).toContain(`https://github.com/${REPO}/pull/4`)
     expect(h).toContain('Fuente de Desplegada')
     expect(h).toContain('Renovar el token')
-    expect(h.match(/Falta la fuente; la añade la fase F5\./g)).toHaveLength(1)
+    expect(h).not.toContain(MOTIVO_F5)
     expect(h).toContain(MOTIVO_SIN_COLUMNA_BANDERA)
+    expect(h).toContain(MOTIVO_SIN_COMMIT)
     expect(h).not.toMatch(/TAREAS_CIERRE_PROPIETARIO|TIEMPOS_AGENTE|SEGUNDO_GEMINI|PM_PUEDE|FINANZAS_AGENTE|ECO_PIPELINE|@/)
   })
 
@@ -271,5 +275,104 @@ describe('criterio 4: propietario, contador, filtro y «Mis pendientes»', () =>
     expect(despues).toContain('Tareas que vencen en los próximos 7 días')
     expect(despues).toContain('POS-903')
     expect(despues).not.toContain('POS-902')
+  })
+})
+
+describe('ORD-POS-124: 6.2 «Fusionado sin desplegar» con el commit desplegado (DEPLOY_COMMIT_SHA)', () => {
+  const DESPLEGADO = 'd'.repeat(40)
+  const sha = (n: number) => n.toString(16).padStart(40, 'f')
+  const pr = (n: number, fusionado = true, mergeSha: string | null = sha(n)): [string, PrFusion] => [
+    `ORD-POS-${String(n).padStart(3, '0')}`,
+    { url: `https://github.com/${REPO}/pull/${n}`, number: n, fusionMs: fusionado ? NOW : null, mergeSha: fusionado ? mergeSha : null },
+  ]
+  const prs = new Map<string, PrFusion>([pr(1), pr(2), pr(3, false), pr(4, true, null)])
+  const ordenes = [orden('ORD-POS-002', 'CERRADA', 2)]
+
+  it('lista los PR [ORD- fusionados cuyo commit de fusión no está en el desplegado; los desplegados y abiertos no', () => {
+    const e = esperandoPorTi(fuentes(ordenes, {
+      commit: DESPLEGADO, despliegue: { prs, sinDesplegar: { estado: 'ok', shas: new Set([sha(2), 'e'.repeat(40)]) } },
+    }))
+    if (e.estado !== 'ok') throw new Error('debía estar ok')
+    expect(e.datos.fusionadoSinDesplegar).toEqual({ estado: 'ok', datos: {
+      lista: [{ ordenId: 'ORD-POS-002', titulo: 'Orden ORD-POS-002', url: `https://github.com/${REPO}/pull/2`, numero: 2 }],
+      sinDatos: ['ORD-POS-004'], otrosCommits: 1,
+    } })
+    // Cuenta en el contador: 1 (6.2) + 2 decisiones + 3 vencen hoy; solo 6.4 no cuenta.
+    expect([e.datos.contador, e.datos.sinContar]).toEqual([6, 1])
+    const h = renderToStaticMarkup(createElement(BloqueEsperando, { e, filtro: null }))
+    expect(h).toContain('Orden ORD-POS-002')
+    expect(h).toContain('PR #2')
+    expect(h).toContain('desplegar (DEC-POS-017)')
+    expect(h).not.toContain(DESPLEGADO)
+  })
+
+  it('sin token, sin comparación leída, con demasiados commits o con otro proyecto: nunca una lista vacía inventada', () => {
+    const g = (extra: Partial<FuentesEsperando>) => {
+      const e = esperandoPorTi(fuentes([], { commit: DESPLEGADO, ...extra }))
+      return e.estado === 'ok' ? e.datos.fusionadoSinDesplegar : null
+    }
+    expect(g({ despliegue: null })).toEqual({ estado: 'sin-datos', motivo: MOTIVO_SIN_GITHUB_DESPLIEGUE })
+    expect(g({ despliegue: { prs, sinDesplegar: null } })).toEqual({ estado: 'sin-datos', motivo: MOTIVO_NO_LEIDO_SIN_DESPLEGAR })
+    expect(g({ despliegue: { prs, sinDesplegar: { estado: 'truncado', total: 412 } } })).toEqual({ estado: 'sin-datos', motivo: motivoTruncado(412) })
+    expect(g({ despliegue: { prs: null, sinDesplegar: { estado: 'ok', shas: new Set() } } })?.estado).toBe('sin-datos')
+    expect(g({ filtro: 'SIG', despliegue: { prs, sinDesplegar: { estado: 'ok', shas: new Set() } } })).toEqual({ estado: 'apagada', motivo: MOTIVO_SOLO_POS })
+  })
+
+  /** GitHub simulado de Inicio con merge_commit_sha y la comparación desplegado...main. */
+  function githubInicio({ listas, fusionados, sinDesplegar, total }: { listas: number; fusionados: number[]; sinDesplegar: number[]; total?: number }) {
+    const llamadas: string[] = []
+    const fetchImpl = (async (url: string) => {
+      const u = new URL(url)
+      llamadas.push(`${u.pathname}${u.search}`)
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
+      if (u.pathname === '/user') return json({ login: ME })
+      if (u.pathname === `/repos/${REPO}/pulls`) {
+        return json(Number(u.searchParams.get('page')) > 1 ? [] : Array.from({ length: listas }, (_, i) => ({
+          number: i + 1, title: `[ORD-POS-${String(i + 1).padStart(3, '0')}][POS-041] t`, html_url: `https://github.com/${REPO}/pull/${i + 1}`,
+          merged_at: fusionados.includes(i + 1) ? '2026-11-01T10:00:00Z' : null, merge_commit_sha: fusionados.includes(i + 1) ? sha(i + 1) : null,
+          user: { login: ME }, head: { repo: { full_name: REPO } },
+        })))
+      }
+      if (u.pathname === `/repos/${REPO}/compare/${DESPLEGADO}...main`) {
+        const page = Number(u.searchParams.get('page'))
+        const todos = sinDesplegar.map((n) => ({ sha: sha(n) }))
+        return json({ status: 'ahead', total_commits: total ?? todos.length, commits: todos.slice((page - 1) * 100, page * 100) })
+      }
+      if (/^\/repos\/jlpulido107-bit\/(SIGSAH|RADAROS)\/pulls$/.test(u.pathname)) return json([])
+      return new Response('{}', { status: 404 })
+    }) as unknown as typeof fetch
+    return { cliente: () => createGitHubClient('token-falso', fetchImpl, { maxLlamadas: LLAMADAS_AGENTES }), llamadas }
+  }
+
+  it('lee la comparación de GitHub una vez (con caché), dentro del tope; sin commit no compara', async () => {
+    const g = githubInicio({ listas: 5, fusionados: [1, 2, 3], sinDesplegar: [3] })
+    const r = await githubDeInicio(g.cliente(), null, [], true, { commit: DESPLEGADO, ahora: NOW })
+    expect(g.llamadas.filter((p) => p.includes('/compare/'))).toEqual([`/repos/${REPO}/compare/${DESPLEGADO}...main?per_page=100&page=1`])
+    expect(g.llamadas.length).toBeLessThanOrEqual(LLAMADAS_AGENTES)
+    const e = esperandoPorTi(fuentes([], { commit: DESPLEGADO, despliegue: { prs: r.gh.prs.POS ?? null, sinDesplegar: r.sinDesplegar } }))
+    expect(e.estado === 'ok' && e.datos.fusionadoSinDesplegar.estado === 'ok' && e.datos.fusionadoSinDesplegar.datos.lista.map((x) => x.ordenId))
+      .toEqual(['ORD-POS-003'])
+    const antes = g.llamadas.length
+    await githubDeInicio(g.cliente(), null, [], true, { commit: DESPLEGADO, ahora: NOW })
+    expect(g.llamadas.length - antes).toBe(0)
+    const sin = await githubDeInicio(g.cliente(), null, [], true, { ahora: NOW })
+    expect(sin.sinDesplegar).toBeNull()
+    expect(g.llamadas.length - antes).toBe(0)
+  })
+
+  it('más de 300 commits sin desplegar: «sin datos» con el total, sin leer más páginas', async () => {
+    const g = githubInicio({ listas: 1, fusionados: [1], sinDesplegar: [1], total: 412 })
+    const r = await githubDeInicio(g.cliente(), null, [], true, { commit: DESPLEGADO, ahora: NOW })
+    expect(r.sinDesplegar).toEqual({ estado: 'truncado', total: 412 })
+    expect(g.llamadas.filter((p) => p.includes('/compare/'))).toHaveLength(1)
+  })
+
+  it('tope de llamadas agotado: 6.2 «sin datos», sin guardar el fallo; la carga siguiente la lee', async () => {
+    const g = githubInicio({ listas: 1, fusionados: [1], sinDesplegar: [1] })
+    const agotado = createGitHubClient('token-falso', (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch, { maxLlamadas: 0 })
+    const r = await githubDeInicio(agotado, null, [], true, { commit: DESPLEGADO, ahora: NOW })
+    expect(r.sinDesplegar).toBeNull()
+    const r2 = await githubDeInicio(g.cliente(), null, [], true, { commit: DESPLEGADO, ahora: NOW })
+    expect(r2.sinDesplegar).toEqual({ estado: 'ok', shas: new Set([sha(1)]) })
   })
 })

@@ -139,6 +139,17 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     expect(out).toMatch(/name: project-os-google-client-secret\s+key: '2'/)
   })
 
+  it('DEPLOY_COMMIT_SHA (ORD-POS-124): literal entre comillas, opcional y solo un SHA completo', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567'
+    expect(render(template, { ...VARS, DEPLOY_COMMIT_SHA: sha })).toContain(`- name: DEPLOY_COMMIT_SHA\n              value: '${sha}'\n`)
+    // Un SHA solo de dígitos no debe leerse como número.
+    expect(render(template, { ...VARS, DEPLOY_COMMIT_SHA: '1'.repeat(40) })).toContain(`value: '${'1'.repeat(40)}'`)
+    expect(render(template, VARS)).not.toContain('DEPLOY_COMMIT_SHA')
+    for (const malo of ['abc1234', sha.toUpperCase(), `${sha}0`, 'main']) {
+      expect(() => render(template, { ...VARS, DEPLOY_COMMIT_SHA: malo })).toThrow('DEPLOY_COMMIT_SHA debe ser un SHA completo')
+    }
+  })
+
   it('sin WRITE_MODE la salida es de solo lectura (igual que V1.6)', () => {
     const out = render(template, VARS)
     expect(out).not.toMatch(/PROJECT_OS_WRITE_MODE|AUTH_WRITER_EMAILS|__ESCRITURA__/)

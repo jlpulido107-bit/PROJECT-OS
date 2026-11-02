@@ -87,6 +87,30 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 [despliegue privado](despliegue-privado-v1-3.md)). Claude da el script; nunca lo ejecuta
 ([delegación](delegacion-codex.md#ciclo)).
 
+### Commit desplegado (ORD-POS-124, DEC-POS-028 punto 2)
+
+Desde ORD-POS-124, `deploy.sh` pasa al contenedor la variable literal (no secreta) `DEPLOY_COMMIT_SHA` con el commit que
+se despliega. Lo que cambia para el propietario:
+
+- **De dónde sale.** Si está exportada, se usa esa; si no, `git rev-parse HEAD` del clon desde el que se ejecuta
+  `deploy.sh`. Nunca se toma de la revisión activa (traería el commit anterior). Si la imagen (`IMAGE`) se construyó desde
+  otro commit, exporta antes `DEPLOY_COMMIT_SHA=<SHA completo de ese commit>`. Sin git y sin la variable, `deploy.sh` se
+  detiene sin aplicar nada.
+- **Qué se ve.** `--dry-run` imprime `Commit desplegado (DEPLOY_COMMIT_SHA): <sha>`. La primera vez, con
+  `--desde-activa`, sale en «Variables nuevas» como `+ DEPLOY_COMMIT_SHA`: es lo esperado y no detiene el despliegue.
+  `render.mjs` solo acepta un SHA completo (40 hexadecimales en minúsculas).
+- **Para qué sirve.** El servidor la lee en solo lectura ([`web/src/lib/despliegue.ts`](../web/src/lib/despliegue.ts)):
+  - en /planificacion (Flujo), «Desplegada» queda hecha cuando el commit de fusión del PR es ancestro del desplegado o
+    igual, según la API de comparación de GitHub (con caché y dentro del tope `LLAMADAS_AGENTES`);
+  - en Inicio, «Fusionado sin desplegar» lista los PR `[ORD-` de PROJECT-OS fusionados en `main` que no están en el
+    commit desplegado.
+  Sin la variable, los dos quedan «fuente apagada» con el motivo «el despliegue no informa su commit». Solo se conoce
+  el commit del dashboard: en órdenes de SIGSAH y RADAROS, «Desplegada» queda apagada.
+- **Al revertir** con `update-traffic` a una revisión anterior, el servidor muestra el commit de esa revisión (o la fuente
+  apagada si es anterior a ORD-POS-124): no hay nada más que ajustar.
+
+«Activada» y «Banderas sin encender» siguen apagadas hasta la fase siguiente (columna `BANDERA`, fuera de ORD-POS-124).
+
 ### Cuándo se despliega (DEC-POS-017, APROBADA)
 
 **DEC-POS-017 está APROBADA y vigente** (aprobada por el propietario el 2026-10-23; fuente: orden ORD-POS-073, issue #178). Texto de la decisión (paquete

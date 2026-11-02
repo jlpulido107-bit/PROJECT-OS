@@ -4,6 +4,7 @@
 #   web/deploy/cloudrun/deploy.sh [--dry-run] [--desde-activa] [--quitar NOMBRE]...
 # Sin --desde-activa, exporta antes las variables de render.mjs. Con ella, la revisión activa las aporta y lo ya exportado
 # (p. ej. IMAGE=<digest nuevo>) prevalece. --quitar permite que esa variable falte en el YAML (repetible).
+# DEPLOY_COMMIT_SHA (ORD-POS-124): el commit de la imagen; si no se exporta, sale de git rev-parse HEAD de este clon.
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-project-os-511102}"
@@ -144,6 +145,16 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
   done < "$WORK/mapeo.bin"
 fi
 
+# ORD-POS-124: commit que se despliega, literal DEPLOY_COMMIT_SHA («Desplegada» y «Fusionado sin desplegar»). Lo exportado
+# prevalece; si no, el HEAD del clon. Nunca se toma de la revisión activa: la activa trae el commit anterior.
+if [ -z "${DEPLOY_COMMIT_SHA:-}" ]; then
+  if ! DEPLOY_COMMIT_SHA="$(git -C "$HERE" rev-parse HEAD 2>/dev/null)"; then
+    echo "DETENTE: no se pudo leer el commit con git rev-parse HEAD; exporta DEPLOY_COMMIT_SHA. No se aplicó nada." >&2
+    exit 1
+  fi
+fi
+export DEPLOY_COMMIT_SHA
+
 if ! node "$HERE/render.mjs" > "$YAML"; then
   echo "DETENTE: el render falló; no se aplicó nada." >&2
   exit 1
@@ -216,6 +227,7 @@ AGREGADAS="$(comm -13 "$WORK/activas.txt" "$WORK/nuevas.txt")"
 echo "Servicio: $SERVICE_NAME ($PROJECT_ID, $REGION)"
 echo "Imagen activa: ${IMAGEN_ACTIVA:-desconocida}"
 echo "Imagen nueva:  $IMAGEN_NUEVA"
+echo "Commit desplegado (DEPLOY_COMMIT_SHA): $DEPLOY_COMMIT_SHA"
 echo "Variables nuevas:"
 if [ -n "$AGREGADAS" ]; then echo "$AGREGADAS" | sed 's/^/  + /'; else echo "  (ninguna)"; fi
 echo "Variables quitadas:"

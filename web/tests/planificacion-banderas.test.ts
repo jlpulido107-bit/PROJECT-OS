@@ -135,7 +135,7 @@ describe('criterio 3: paso Activada del Flujo', () => {
   })
 
   it('otra sesión: apagada, sin el estado de la bandera', () => {
-    const c = capaFlujo([orden(1, 'PR_ABIERTO', { bandera: 'TIEMPOS_AGENTE' })], true, gh([1], [1]), fuenteBanderas(true, false, ENV))
+    const c = capaFlujo([orden(1, 'PR_ABIERTO', { bandera: 'TIEMPOS_AGENTE' })], true, gh([1], [1]), { banderas: fuenteBanderas(true, false, ENV) })
     if (c.estado !== 'ok') throw new Error('debía estar ok')
     expect(activada(c.lineas[0]!)).toEqual({ paso: 'Activada', estado: 'apagada', motivo: MOTIVO_BANDERAS_NO_PROPIETARIO })
     const html = renderToStaticMarkup(createElement(FlujoView, { capa: c }))
@@ -145,7 +145,7 @@ describe('criterio 3: paso Activada del Flujo', () => {
   it('criterio 4: el Flujo muestra el nombre en palabras y encendida/apagada, nunca la variable, su valor ni un correo', () => {
     const c = capaFlujo([
       orden(1, 'PR_ABIERTO', { bandera: 'TIEMPOS_AGENTE' }), orden(2, 'PR_ABIERTO', { bandera: 'PM_PUEDE_REGISTRAR_PR' }),
-    ], true, gh([1, 2], [1, 2]), OK)
+    ], true, gh([1, 2], [1, 2]), { banderas: OK })
     const html = renderToStaticMarkup(createElement(FlujoView, { capa: c }))
     expect(html).toContain(`Bandera: ${BANDERAS.TIEMPOS_AGENTE!.nombre} (encendida)`)
     expect(html).toContain(`Bandera: ${BANDERAS.PM_PUEDE_REGISTRAR_PR!.nombre} (apagada)`)
