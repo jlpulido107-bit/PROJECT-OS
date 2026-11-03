@@ -583,3 +583,66 @@ export function parseRegistrarCapacidad(body: unknown): RegistrarCapacidadComman
   c.done()
   return cmd
 }
+
+/**
+ * Plan registrado de un día (ORD-POS-140, DEC-POS-029; docs/escritura-v1-8.md §11.1 y §11.4): crea o actualiza la fila de
+ * PLAN_DIARIO de `fecha` y las filas de PLAN_ITEMS de las tareas de `items`. Sin `expectedVersion` es un alta (el día no
+ * tiene plan); con él, una edición. Las filas de PLAN_ITEMS que no vienen en `items` no se tocan; quitar una tarea del día
+ * es mandarla con `minutosPlan` 0 explícito (nunca se borran filas). `estado` y `horasObjetivo` ausentes = no se tocan
+ * (en un alta, vacíos); null = celda vacía, nunca 0.
+ */
+export interface PlanDiaItem {
+  tareaId: string
+  orden: number
+  minutosPlan: number
+}
+
+export interface GuardarPlanDiaCommand {
+  requestId: string
+  fecha: string
+  estado?: string | null
+  /** Texto canónico (punto decimal) o null = celda vacía. */
+  horasObjetivo?: string | null
+  items: PlanDiaItem[]
+  /** Solo si el día ya tiene plan; ausente = alta. */
+  expectedVersion?: number
+}
+
+const PLAN_DIA_KEYS = ['requestId', 'fecha', 'estado', 'horasObjetivo', 'items', 'expectedVersion'] as const
+const PLAN_ITEM_KEYS = ['tareaId', 'orden', 'minutosPlan'] as const
+
+export function parseGuardarPlanDia(body: unknown): GuardarPlanDiaCommand {
+  const input = asObject(body)
+  const c = new Checker(input, PLAN_DIA_KEYS)
+  const cmd: GuardarPlanDiaCommand = { requestId: c.requestId(), fecha: c.date('fecha', true) ?? '', items: [] }
+  if (c.has('estado')) cmd.estado = c.pattern('estado', CODE, false, 'Código en MAYÚSCULAS (p. ej. APROBADO)', (s) => s.trim().toUpperCase())
+  if (c.has('horasObjetivo')) cmd.horasObjetivo = rango(c, input, 'horasObjetivo', LIMITS.horasDiaMax)
+  const items = input.items
+  if (!Array.isArray(items) || items.length === 0) c.setError('items', 'Lista de tareas requerida')
+  else if (items.length > LIMITS.planItemsMax) c.setError('items', `Máximo ${LIMITS.planItemsMax} tareas por día`)
+  else {
+    const vistos = new Set<string>()
+    items.forEach((raw, i) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        c.setError(`items.${i}`, 'Elemento no válido')
+        return
+      }
+      const item = raw as Record<string, unknown>
+      const ic = new Checker(item, PLAN_ITEM_KEYS, `items.${i}.`)
+      const tareaId = ic.pattern('tareaId', ENTITY_ID, true, 'ID de tarea no válido', (s) => s.trim().toUpperCase())
+      const orden = ic.integer('orden', { min: 1, max: LIMITS.ordenPlanMax })
+      const minutos = ic.integer('minutosPlan', { min: 0, max: LIMITS.minutosPlanMax })
+      Object.assign(c.errors, ic.errors)
+      if (tareaId && vistos.has(tareaId)) c.setError(`items.${i}.tareaId`, 'Tarea repetida en el mismo día')
+      if (tareaId) vistos.add(tareaId)
+      if (tareaId && orden !== null && minutos !== null) cmd.items.push({ tareaId, orden: Number(orden), minutosPlan: Number(minutos) })
+    })
+  }
+  if (c.has('expectedVersion')) {
+    const version = input.expectedVersion
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) c.setError('expectedVersion', 'Versión esperada no válida')
+    else cmd.expectedVersion = version
+  }
+  c.done()
+  return cmd
+}

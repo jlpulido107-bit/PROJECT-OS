@@ -25,6 +25,21 @@ type OpState = { status: 'idle' } | { status: 'sending' } | { status: 'done'; re
 
 const RETRY_SAME_REQUEST = new Set(['escritura-fallida', 'red'])
 
+/**
+ * Un envío a la API de operaciones con un requestId dado, sin estado de React: devuelve el JSON de la respuesta (null si
+ * no es JSON) y lanza solo si no hay red. Lo usa «Aplicar movimientos al plan» (ORD-POS-140), que manda una llamada por
+ * día y lleva su propio requestId por día; la autorización real sigue en el servidor.
+ */
+export async function enviarOperacion(endpoint: string, method: 'POST' | 'PATCH', payload: Record<string, unknown>, requestId: string): Promise<unknown> {
+  const response = await fetch(endpoint, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Project-OS-CSRF': '1' },
+    body: JSON.stringify({ ...payload, requestId }),
+    credentials: 'same-origin',
+  })
+  return response.json().catch(() => null)
+}
+
 /** Envío idempotente de una operación; también lo usa la edición en línea de /planificacion (ORD-POS-136). */
 export function useOperation(endpoint: string, method: 'POST' | 'PATCH') {
   const router = useRouter()

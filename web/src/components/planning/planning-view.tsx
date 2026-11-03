@@ -10,6 +10,8 @@ import { diasSemana, type Bloque } from '@/lib/planificacion-semana'
 import type { HitoSemana } from '@/lib/planificacion-semana-hitos'
 import { tarjetasSemana, type EdicionSemana } from '@/lib/planificacion-edicion'
 import { capacidadSemana } from '@/lib/planificacion-capacidad'
+import { fijadasRestantes } from '@/lib/planificacion-plan-dia'
+import { AplicarPlan } from './aplicar-plan'
 import { CapaSemana } from './capa-semana'
 import styles from './planning.module.css'
 
@@ -286,6 +288,10 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
         <p className={styles.quick}>
           <button type="button" className="button" onClick={() => applyMoves({})} disabled={moved === 0}>Descartar movimientos</button>
         </p>
+        {/* ORD-POS-140: guardar los movimientos en el plan registrado, solo para el propietario con la edición encendida. */}
+        {edicion.encendida && edicion.planDia && moved > 0
+          ? <AplicarPlan plan={plan} input={input} edicion={edicion.planDia} onGuardados={(r) => applyMoves(fijadasRestantes(fijadas, r))} />
+          : null}
       </Section>
 
       <Section title="Reparto por proyecto" id="proyectos">

@@ -1,4 +1,5 @@
 import type { EdicionCapacidad } from './planificacion-capacidad'
+import type { EdicionPlanDia } from './planificacion-plan-dia'
 import type { PlanningInput, PlanResult } from './planning/types'
 
 /**
@@ -31,6 +32,8 @@ export type EdicionSemana =
     encendida: true; versiones: Record<string, number>; hitosPorProyecto: Record<string, OpcionHito[]>
     /** Panel «Capacidad de la semana» (ORD-POS-139); sin él, el panel no muestra el formulario. */
     capacidad?: EdicionCapacidad
+    /** «Aplicar al plan» de la simulación (ORD-POS-140); sin él, los movimientos no se pueden guardar. */
+    planDia?: EdicionPlanDia
   }
 
 export interface TarjetaSemana {

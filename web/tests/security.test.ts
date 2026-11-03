@@ -143,7 +143,7 @@ describe('garantías de seguridad del código', () => {
 
   it('todas las rutas de escritura pasan por la guarda del servidor', () => {
     const routes = sources.filter((s) => s.file.startsWith(path.join('app', 'api', 'operaciones')) && s.file.endsWith('route.ts'))
-    expect(routes.length).toBe(11) // ORD-POS-139: + /api/operaciones/capacidad
+    expect(routes.length).toBe(12) // ORD-POS-139: + /api/operaciones/capacidad; ORD-POS-140: + /api/operaciones/plan-dia
     for (const { file, text } of routes) {
       expect(text, file).toMatch(/handleWrite\(request,/)
       expect(text, file).not.toMatch(/export async function (GET|PUT|DELETE)/)
