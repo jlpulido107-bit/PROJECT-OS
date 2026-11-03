@@ -89,9 +89,9 @@ describe('criterio 3: estado de las banderas con los *Habilitado existentes', ()
     expect(estadoBandera(null, ENV)).toBeNull()
   })
 
-  it('las ocho banderas existentes (ECO_IDEAS_ALTA desde ORD-POS-131, PLANIFICACION_EDICION_PROPIETARIO desde ORD-POS-136), todas apagadas con el entorno vacío', () => {
+  it('las nueve banderas existentes (ECO_IDEAS_ALTA desde ORD-POS-131, PLANIFICACION_EDICION_PROPIETARIO desde ORD-POS-136, PLANIFICACION_ICS desde ORD-POS-142), todas apagadas con el entorno vacío', () => {
     expect(Object.keys(BANDERAS).sort()).toEqual([
-      'ECO_IDEAS_ALTA', 'ECO_PIPELINE_WRITE_MODE', 'FINANZAS_AGENTE_MODE', 'PLANIFICACION_EDICION_PROPIETARIO', 'PM_PUEDE_REGISTRAR_PR', 'SEGUNDO_GEMINI_SUPERVISADO', 'TAREAS_CIERRE_PROPIETARIO', 'TIEMPOS_AGENTE',
+      'ECO_IDEAS_ALTA', 'ECO_PIPELINE_WRITE_MODE', 'FINANZAS_AGENTE_MODE', 'PLANIFICACION_EDICION_PROPIETARIO', 'PLANIFICACION_ICS', 'PM_PUEDE_REGISTRAR_PR', 'SEGUNDO_GEMINI_SUPERVISADO', 'TAREAS_CIERRE_PROPIETARIO', 'TIEMPOS_AGENTE',
     ])
     for (const clave of Object.keys(BANDERAS)) expect(estadoBandera(clave, {} as NodeJS.ProcessEnv)?.tipo).toBe('apagada')
   })

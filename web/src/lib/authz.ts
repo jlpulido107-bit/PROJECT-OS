@@ -1,6 +1,7 @@
 import { getToken } from 'next-auth/jwt'
 import { NextResponse, type NextRequest } from 'next/server'
 import { allowedEmails, isEmailAllowed, isPublicPath } from './access'
+import { CALENDARIO_ICS_RUTA } from './calendario-ics-acceso'
 import { esTokenDeTiempos, TIEMPOS_AGENTE_RUTA } from './tiempos-agente'
 
 export type AuthDecision =
@@ -29,6 +30,9 @@ export async function decide(
   } = {},
 ): Promise<AuthDecision> {
   if (isPublicPath(req.nextUrl.pathname)) return { action: 'public' }
+  // ORD-POS-142 (escritura §11.3): única exención sin sesión, GET y la ruta exacta del calendario ICS. El proxy no valida
+  // el secreto ni lee la hoja: la ruta responde 404 sin PLANIFICACION_ICS, sin token o con uno que no coincide.
+  if (req.method === 'GET' && req.nextUrl.pathname === CALENDARIO_ICS_RUTA) return { action: 'public' }
   const pmHash = opts.agentTokenSha256 ?? process.env.PM_AGENT_TOKEN_SHA256
   if (await isAgentRequest(req, pmHash, AGENT_ROUTES)) return { action: 'agent' }
   const finanzasHash = opts.finanzasAgenteTokenSha256 ?? process.env.FINANZAS_AGENTE_TOKEN_SHA256

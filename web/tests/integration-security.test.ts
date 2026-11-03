@@ -39,7 +39,7 @@ describe('árbol integrado V1.3–V1.6', () => {
       'eco/pipeline/cotizaciones/[id]/route.ts', 'eco/pipeline/cotizaciones/route.ts', 'eco/pipeline/embarques/[id]/route.ts', 'eco/pipeline/embarques/route.ts',
       'eco/pipeline/productos/[id]/etapa/route.ts', 'eco/pipeline/productos/[id]/route.ts', 'eco/pipeline/productos/route.ts', 'eco/pipeline/proveedores/[id]/route.ts', 'eco/pipeline/proveedores/route.ts',
       'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'operaciones/capacidad/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/ideas/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts',
-      'operaciones/tareas/[id]/completar/route.ts', 'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/route.ts', 'resumen/route.ts',
+      'operaciones/tareas/[id]/completar/route.ts', 'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/calendario.ics/route.ts', 'planificacion/route.ts', 'resumen/route.ts',
     ])
     for (const route of routes) {
       if (route.startsWith('auth/') || route === 'health/route.ts') continue
@@ -59,6 +59,13 @@ describe('árbol integrado V1.3–V1.6', () => {
       else if (route.startsWith('finanzas/')) {
         expect(text, route).toMatch(/handleFinanzasWrite\(request,/)
         expect(text, route).not.toMatch(/export (async )?function (GET|PUT|PATCH|DELETE)/)
+      }
+      // ORD-POS-142: calendario ICS sin sesión; solo GET y el secreto del enlace antes de leer la hoja (escritura §11.3).
+      else if (route === 'planificacion/calendario.ics/route.ts') {
+        expect(text, route).toMatch(/export async function GET\(/)
+        expect(text, route).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE|HEAD|OPTIONS)/)
+        expect(text.indexOf('esSecretoDelCalendario('), route).toBeGreaterThan(-1)
+        expect(text.indexOf('esSecretoDelCalendario('), route).toBeLessThan(text.indexOf('getDataset()'))
       }
       else {
         expect(text, route).toMatch(/export async function GET\(/)

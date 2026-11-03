@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
+import { CalendarioIcsPanel } from '@/components/planning/calendario-ics'
 import { FlujoView } from '@/components/planning/flujo'
 import { HoyView } from '@/components/planning/hoy'
 import { PlanningView } from '@/components/planning/planning-view'
 import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { MERIDA_TZ } from '@/lib/dates'
 import { fuenteBanderas } from '@/lib/banderas'
+import { calendarioIcsTokenHash } from '@/lib/calendario-ics-acceso'
 import { commitDesplegado } from '@/lib/despliegue'
 import { canWrite, isWriter, puedeCerrarTareas, puedeEditarPlanificacion } from '@/lib/operations/config'
 import { githubClient } from '@/lib/operations/dispatch'
@@ -68,6 +70,8 @@ export default async function PlanningPage() {
       <FlujoView capa={flujo} />
       {/* Semana visible y «Detalle del plan» plegado: los pinta PlanningView, porque la capa Semana sigue el escenario del cliente. */}
       <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} edicion={edicion} />
+      {/* Calendario ICS (ORD-POS-142): solo para la sesión del propietario; el secreto nunca sale del servidor (solo su hash). */}
+      {isWriter(user.email) ? <CalendarioIcsPanel origen={process.env.NEXTAUTH_URL ?? ''} encendido={calendarioIcsTokenHash() !== null} /> : null}
     </>
   )
 }

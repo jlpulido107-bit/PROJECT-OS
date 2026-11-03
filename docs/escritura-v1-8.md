@@ -415,8 +415,9 @@ Lo que ya está hecho vive en §10 (ORD-POS-136) y esta sección no lo cambia: l
 `HORAS_ESTIMADAS` e `HITO_ID` desde la tarjeta con `tarea.editar`, y la bandera `PLANIFICACION_EDICION_PROPIETARIO` con
 su correo; si algo de aquí parece contradecirla, manda §10. **Estado:** `capacidad.registrar` implementada por
 ORD-POS-139 (panel «Capacidad de la semana» de la capa Semana, `POST /api/operaciones/capacidad`), inerte sin la bandera
-y sin la migración `VERSION` de `CAPACIDAD_SEMANAL`; plan del día, escenarios y calendario siguen en diseño. Nada migrado
-ni encendido. Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
+y sin la migración `VERSION` de `CAPACIDAD_SEMANAL`; calendario ICS implementado por ORD-POS-142
+(`GET /api/planificacion/calendario.ics`, panel «Calendario (solo lectura)» de `/planificacion`), inerte sin
+`PLANIFICACION_ICS` y su secreto (§11.3); plan del día y escenarios siguen en diseño. Nada migrado ni encendido. Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
 solo el propietario aplica las migraciones, crea el secreto y enciende las banderas.
 
 Reglas que no cambian: la hoja es la fuente; toda edición pasa por el servidor, con versión esperada y `AUDITORIA`
@@ -533,6 +534,11 @@ La edición se enciende y se revierte como dice §10 («Activar» y «Revertir»
 esta sección no añade otro paso. Con el código de ORD-POS-139 a 142 desplegado, esa bandera enciende además las tres
 operaciones nuevas, que esperan las migraciones de §11.2.
 
+- **Enlace en la vista (ORD-POS-142).** El servidor solo tiene el SHA-256, así que no puede mostrar el secreto: el panel
+  «Calendario (solo lectura)» de `/planificacion`, solo para la sesión del propietario, muestra el enlace con el secreto
+  oculto (`?token=••••••••`) y «Copiar enlace» lo arma en el navegador con el secreto que el propietario pega en un campo
+  de contraseña; el secreto no se envía al servidor ni se guarda. Avisa que Google Calendar relee el enlace cada varias
+  horas. Apagado, el panel dice «Calendario apagado».
 - **Rotar.** Token nuevo como arriba, `gcloud secrets versions add project-os-calendario-ics-token-sha256 --data-file=-`,
   despliegue con la nueva `SECRET_VERSION_CALENDARIO_ICS` y, después, `gcloud secrets versions disable <anterior>`. El
   enlace viejo responde 404; el propietario cambia la suscripción en su calendario.

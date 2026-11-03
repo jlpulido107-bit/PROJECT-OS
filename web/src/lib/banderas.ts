@@ -5,6 +5,7 @@ import { finanzasAgenteMode } from './finanzas/agente-config'
 import { ecoIdeasAltaHabilitada } from './radaros/ideas-alta'
 import { ecoPipelineWriteMode } from './radaros/pipeline-escritura-config'
 import { tiemposAgenteHabilitado } from './tiempos-agente'
+import { calendarioIcsTokenHash } from './calendario-ics-acceso'
 
 /**
  * Banderas del propietario que una orden puede dejar inerte (ORD-POS-125, POS-041; docs/diseno-planificacion-v2.md §4.1,
@@ -30,6 +31,7 @@ export const BANDERAS: Readonly<Record<string, Bandera>> = {
   PLANIFICACION_EDICION_PROPIETARIO: {
     nombre: 'Edición de la planificación por el propietario', encendida: (env) => planificacionEdicionPropietario(env) !== null,
   },
+  PLANIFICACION_ICS: { nombre: 'Calendario ICS de la planificación', encendida: (env) => calendarioIcsTokenHash(env) !== null },
 }
 
 /** Clave de la celda BANDERA: sin espacios y en mayúsculas; null si está vacía. */

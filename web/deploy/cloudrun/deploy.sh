@@ -63,6 +63,13 @@ case "$QUITAR" in
       [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
     done ;;
 esac
+# ORD-POS-142: lo mismo con el calendario ICS (bandera y hash del secreto del enlace).
+case "$QUITAR" in
+  *" PLANIFICACION_ICS "*|*" CALENDARIO_ICS_TOKEN_SHA256 "*)
+    for NOMBRE in PLANIFICACION_ICS CALENDARIO_ICS_TOKEN_SHA256; do
+      [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
+    done ;;
+esac
 # ORD-POS-112: lo mismo con el rol Tiempos (bandera y hash del token).
 case "$QUITAR" in
   *" TIEMPOS_AGENTE "*|*" TIEMPOS_AGENTE_TOKEN_SHA256 "*)
@@ -113,6 +120,7 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
       SECRET_VERSION_TIEMPOS_AGENTE: clave("TIEMPOS_AGENTE_TOKEN_SHA256"), ECO_IDEAS_ALTA: literal("ECO_IDEAS_ALTA"),
       PLANIFICACION_EDICION_PROPIETARIO: literal("PLANIFICACION_EDICION_PROPIETARIO"),
       PLANIFICACION_EDICION_PROPIETARIO_EMAIL: literal("PLANIFICACION_EDICION_PROPIETARIO_EMAIL"),
+      PLANIFICACION_ICS: literal("PLANIFICACION_ICS"), SECRET_VERSION_CALENDARIO_ICS: clave("CALENDARIO_ICS_TOKEN_SHA256"),
     }
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
       m[`CLAUDE_ROUTINE_${n}_ID`] = literal(`CLAUDE_ROUTINE_${n}_ID`)
@@ -137,6 +145,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     for (const k of edicion.split(" ")) de[k] = edicion
     const tiempos = "TIEMPOS_AGENTE TIEMPOS_AGENTE_TOKEN_SHA256"
     for (const k of ["TIEMPOS_AGENTE", "SECRET_VERSION_TIEMPOS_AGENTE"]) de[k] = tiempos
+    const calendario = "PLANIFICACION_ICS CALENDARIO_ICS_TOKEN_SHA256"
+    for (const k of ["PLANIFICACION_ICS", "SECRET_VERSION_CALENDARIO_ICS"]) de[k] = calendario
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
       de[`CLAUDE_ROUTINE_${n}_ID`] = de[`SECRET_VERSION_CLAUDE_ROUTINE_${n}`] = `CLAUDE_ROUTINE_${n}_ID CLAUDE_ROUTINE_${n}_TOKEN`
     }
