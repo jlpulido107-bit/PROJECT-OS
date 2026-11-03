@@ -1,5 +1,6 @@
 import type { EdicionCapacidad } from './planificacion-capacidad'
 import type { EdicionEscenarios } from './planificacion-escenarios'
+import type { EdicionPlanDia } from './planificacion-plan-dia'
 import type { PlanningInput, PlanResult } from './planning/types'
 
 /**
@@ -34,6 +35,8 @@ export type EdicionSemana =
     capacidad?: EdicionCapacidad
     /** Escenarios guardados (ORD-POS-141); sin él, no se muestran Guardar ni Archivar. */
     escenarios?: EdicionEscenarios
+    /** «Aplicar al plan» de la simulación (ORD-POS-140); sin él, los movimientos no se pueden guardar. */
+    planDia?: EdicionPlanDia
   }
 
 export interface TarjetaSemana {

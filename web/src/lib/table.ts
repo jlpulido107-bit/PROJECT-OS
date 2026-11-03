@@ -219,6 +219,8 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     horasObjetivo: r.amount('HORAS_OBJETIVO'),
     notas: r.text('NOTAS'),
     actualizadoEn: r.timestamp('ACTUALIZADO_EN'),
+    // Columna de la migración de ORD-POS-140 (opcional): sin ella, null; planesConVersion dice si la hoja ya la tiene.
+    version: r.text('VERSION'),
   }))
 
   const planItems = mapTab('PLAN_ITEMS', raw, tabs, log, (r, id) => ({
@@ -355,6 +357,7 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     ordenesConBandera: tabs.ORDENES_CODEX?.ok === true && tieneColumna(raw.ORDENES_CODEX, ORDENES_BANDERA),
     capacidadConVersion: tabs.CAPACIDAD_SEMANAL?.ok === true && tieneColumna(raw.CAPACIDAD_SEMANAL, 'VERSION'),
     escenarios,
+    planesConVersion: tabs.PLAN_DIARIO?.ok === true && tieneColumna(raw.PLAN_DIARIO, 'VERSION'),
     issues: log.issues,
     issuesTruncated: log.truncated,
   }

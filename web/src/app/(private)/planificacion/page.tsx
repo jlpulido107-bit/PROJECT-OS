@@ -58,6 +58,11 @@ export default async function PlanningPage() {
         },
         // Escenarios guardados (ORD-POS-141): Guardar y Archivar solo con la pestaña ESCENARIOS de la migración (§11.2).
         escenarios: { migrada: data.tabs.ESCENARIOS?.ok === true },
+        // «Aplicar al plan» (ORD-POS-140): la VERSION de cada plan del día; vacía o no entera = null (ese día no se guarda).
+        planDia: {
+          migrada: data.planesConVersion,
+          versiones: Object.fromEntries(data.planes.map((p) => [p.id, /^\d+$/.test(p.version ?? '') ? Number(p.version) : null])),
+        },
       }
     : { encendida: false }
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para

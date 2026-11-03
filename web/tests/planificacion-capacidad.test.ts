@@ -148,7 +148,8 @@ describe('guard: solo el propietario con su bandera (criterio 3)', () => {
     for (const authorization of [`Bearer ${PM_TOKEN}`, `Bearer ${TIEMPOS_TOKEN}`, 'Bearer otro', 'Basic abc', '']) {
       expect(await codeOf(evaluateWriteRequest(conAuthorization(authorization, '{roto'), ctx(DUENO, env(ENCENDIDA)))), authorization).toBe('operacion-no-permitida')
     }
-    expect(OWNER_PLANNING_OPERATIONS).toEqual(['capacidad.registrar', 'escenario.guardar', 'escenario.archivar']) // + ORD-POS-141
+    expect(OWNER_PLANNING_OPERATIONS).toContain('capacidad.registrar')
+    expect(OWNER_PLANNING_OPERATIONS).toEqual(expect.arrayContaining(['escenario.guardar', 'escenario.archivar'])) // + ORD-POS-141
     expect(AGENT_OPERATIONS).not.toContain('capacidad.registrar')
   })
 

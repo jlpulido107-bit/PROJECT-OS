@@ -89,6 +89,8 @@ export interface PlanDiario {
   horasObjetivo: number | null
   notas: string | null
   actualizadoEn: Timestamp | null
+  /** Columna VERSION de la migración (docs/escritura-v1-8.md §11.2, ORD-POS-140); null si falta o está vacía. */
+  version: string | null
 }
 
 export interface PlanItem {
@@ -256,6 +258,8 @@ export interface Dataset {
   capacidadConVersion: boolean
   /** Filas de ESCENARIOS (ORD-POS-141, pestaña opcional de la migración §11.2); vacía si falta. */
   escenarios: EscenarioGuardado[]
+  /** PLAN_DIARIO ya tiene la columna VERSION (migración de §11.2); sin ella, el plan del día no se guarda. */
+  planesConVersion: boolean
   supervision: Supervision[]
   issues: DataIssue[]
   /** Hay más incidencias de las que se conservaron. */
