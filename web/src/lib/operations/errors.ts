@@ -74,6 +74,11 @@ export type OperationErrorCode =
   | 'version-faltante'
   | 'semana-inexistente'
   | 'capacidad-semana-ocupada'
+  | 'escenario-inexistente'
+  | 'escenario-archivado'
+  | 'dia-pasado'
+  | 'plan-diario-duplicado'
+  | 'plan-item-duplicado'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -150,6 +155,11 @@ const STATUS: Record<OperationErrorCode, number> = {
   'version-faltante': 409,
   'semana-inexistente': 422,
   'capacidad-semana-ocupada': 409,
+  'escenario-inexistente': 404,
+  'escenario-archivado': 409,
+  'dia-pasado': 422,
+  'plan-diario-duplicado': 409,
+  'plan-item-duplicado': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -226,8 +236,19 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'migracion-pendiente': 'La hoja aún no tiene la migración que pide esta operación (la aplica el propietario, docs/escritura-v1-8.md §11.2). No se escribió nada.',
   'version-faltante': 'La fila no tiene VERSION (o no es un entero): escribe 1 en la hoja, según la migración, antes de editarla. No se escribió nada.',
   'semana-inexistente': 'Esa semana no tiene fila en CAPACIDAD_SEMANAL: no hay nada que editar. Recarga la vista.',
+  'escenario-inexistente': 'Ese escenario no existe en ESCENARIOS. Recarga la vista.',
+  'escenario-archivado': 'El escenario ya estaba archivado; no se escribió nada.',
   'capacidad-semana-ocupada': 'Ya hay otra fila de CAPACIDAD_SEMANAL con FECHA_INICIO en esa semana: deja una sola. No se escribió nada.',
+  'dia-pasado': 'Ese día ya pasó: su plan registrado no se reescribe. No se escribió nada.',
+  'plan-diario-duplicado': 'Hay más de un plan activo en PLAN_DIARIO para ese día: deja uno solo en la hoja. No se escribió nada.',
+  'plan-item-duplicado': 'El plan de ese día tiene más de una fila de PLAN_ITEMS para la misma tarea: deja una sola en la hoja. No se escribió nada.',
 }
+
+/**
+ * Detalle seguro de un rechazo (sin correos ni payloads). ORD-POS-140 añade null y objetos JSON: el plan actual del día
+ * en un conflicto de `plan.dia.guardar`, para mostrarlo sin recargar.
+ */
+export type OperationDetail = string | number | null | { readonly [key: string]: OperationDetail } | readonly OperationDetail[]
 
 const BRAND = Symbol.for('project-os.operation-error')
 
@@ -244,9 +265,9 @@ export class OperationError extends Error {
   readonly code: OperationErrorCode
   readonly status: number
   readonly fields?: Record<string, string>
-  readonly detail?: Record<string, string | number>
+  readonly detail?: Record<string, OperationDetail>
 
-  constructor(code: OperationErrorCode, opts: { fields?: Record<string, string>; detail?: Record<string, string | number> } = {}) {
+  constructor(code: OperationErrorCode, opts: { fields?: Record<string, string>; detail?: Record<string, OperationDetail> } = {}) {
     super(MESSAGES[code])
     this.name = 'OperationError'
     this.code = code

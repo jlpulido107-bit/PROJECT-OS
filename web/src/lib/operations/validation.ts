@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
 import { addDays, parseCivilDate } from '../dates'
 import { parseSafeUrl } from '../parse'
+import { canonicalJson } from '../planning/fingerprint'
+import { normalizeScenario, ScenarioError, sinFijadasVacias } from '../planning/scenario'
+import type { Scenario } from '../planning/types'
 import { extraerCriterios } from '../supervision/criterios'
 import {
   CLOSING_TASK_STATES, LIMITS, ORDER_RISKS, TASK_PRIORITIES, WRITABLE_TASK_STATES,
@@ -574,6 +577,145 @@ export function parseRegistrarCapacidad(body: unknown): RegistrarCapacidadComman
     horasDisponibles: rango(c, input, 'horasDisponibles', LIMITS.horasSemanaMax),
     reservaPct: rango(c, input, 'reservaPct', LIMITS.reservaPctMax),
     estado: c.pattern('estado', CODE, false, 'Código en MAYÚSCULAS (p. ej. APROBADA)', (s) => s.trim().toUpperCase()),
+  }
+  if (c.has('expectedVersion')) {
+    const version = input.expectedVersion
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) c.setError('expectedVersion', 'Versión esperada no válida')
+    else cmd.expectedVersion = version
+  }
+  c.done()
+  return cmd
+}
+
+/**
+ * Guardar un escenario de simulación (ORD-POS-141, DEC-POS-029 d; docs/escritura-v1-8.md §11.1): solo alta. `parametros`
+ * se valida con `normalizeScenario` (planning/scenario.ts, los mismos rangos del motor) y se guarda como JSON canónico de
+ * hasta LIMITS.escenarioParametros caracteres. `huella` es la huella de los datos de entrada con que se simuló
+ * (planificacion-escenarios.ts, `huellaDatos`): solo se guarda para avisar al cargar si los datos cambiaron.
+ */
+export interface GuardarEscenarioCommand {
+  requestId: string
+  nombre: string
+  semanaId: string
+  /** JSON canónico del escenario normalizado (sin `fijadas` vacías). */
+  parametros: string
+  huella: string
+}
+
+const ESCENARIO_KEYS = ['requestId', 'nombre', 'semanaId', 'parametros', 'huella'] as const
+/** Claves del escenario que se aceptan; otra clave se rechaza (sin asignación masiva). */
+const SCENARIO_KEYS = [
+  'semana', 'ajusteHoras', 'reservaPct', 'horasSiFaltan', 'diasLaborables', 'prioridadProyecto', 'horasSiSinEstimacion',
+  'sobrecargaPct', 'descontarRegistrado', 'fijadas',
+] as const
+const HUELLA = /^[0-9a-f]{16}$/
+
+/** JSON canónico del escenario validado, o el error del campo (`parametros.<campo>`). */
+export function parametrosEscenario(raw: unknown): { ok: true; json: string } | { ok: false; campo: string; mensaje: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, campo: 'parametros', mensaje: 'Escenario como objeto' }
+  const extra = Object.keys(raw).find((k) => !(SCENARIO_KEYS as readonly string[]).includes(k))
+  if (extra !== undefined) return { ok: false, campo: `parametros.${extra}`, mensaje: 'Campo no permitido' }
+  try {
+    const json = canonicalJson(sinFijadasVacias(normalizeScenario(raw as Partial<Record<keyof Scenario, unknown>>)))
+    if (json.length > LIMITS.escenarioParametros) return { ok: false, campo: 'parametros', mensaje: `El escenario ocupa más de ${LIMITS.escenarioParametros} caracteres (menos movimientos)` }
+    return { ok: true, json }
+  } catch (error) {
+    if (error instanceof ScenarioError) return { ok: false, campo: `parametros.${error.field}`, mensaje: error.message }
+    throw error
+  }
+}
+
+export function parseGuardarEscenario(body: unknown): GuardarEscenarioCommand {
+  const input = asObject(body)
+  const c = new Checker(input, ESCENARIO_KEYS)
+  const requestId = c.requestId()
+  const nombre = c.text('nombre', { required: true, max: LIMITS.escenarioNombre }) ?? ''
+  const semanaId = c.pattern('semanaId', SEMANA_ID, true, 'ID de semana no válido (letras, números y guiones)', (s) => s.trim().toUpperCase()) ?? ''
+  const huella = c.pattern('huella', HUELLA, true, 'Huella de 16 caracteres hexadecimales') ?? ''
+  let parametros = ''
+  if (!c.has('parametros')) c.setError('parametros', 'Requerido')
+  else {
+    const p = parametrosEscenario(input.parametros)
+    if (p.ok) parametros = p.json
+    else c.setError(p.campo, p.mensaje)
+  }
+  c.done()
+  return { requestId, nombre, semanaId, parametros, huella }
+}
+
+/** Archivar un escenario (ORD-POS-141): ESTADO ACTIVO → ARCHIVADO con la versión esperada. Nunca borra la fila. */
+export interface ArchivarEscenarioCommand {
+  requestId: string
+  escenarioId: string
+  expectedVersion: number
+}
+
+export function parseArchivarEscenario(body: unknown): ArchivarEscenarioCommand {
+  const input = asObject(body)
+  const c = new Checker(input, ['requestId', 'escenarioId', 'expectedVersion'])
+  const requestId = c.requestId()
+  const escenarioId = c.pattern('escenarioId', /^ESC-\d{3,6}$/, true, 'ID de escenario no válido (ESC-NNN)') ?? ''
+  const version = input.expectedVersion
+  let expectedVersion = 0
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) c.setError('expectedVersion', 'Versión esperada no válida')
+  else expectedVersion = version
+  c.done()
+  return { requestId, escenarioId, expectedVersion }
+}
+
+/**
+ * Plan registrado de un día (ORD-POS-140, DEC-POS-029; docs/escritura-v1-8.md §11.1 y §11.4): crea o actualiza la fila de
+ * PLAN_DIARIO de `fecha` y las filas de PLAN_ITEMS de las tareas de `items`. Sin `expectedVersion` es un alta (el día no
+ * tiene plan); con él, una edición. Las filas de PLAN_ITEMS que no vienen en `items` no se tocan; quitar una tarea del día
+ * es mandarla con `minutosPlan` 0 explícito (nunca se borran filas). `estado` y `horasObjetivo` ausentes = no se tocan
+ * (en un alta, vacíos); null = celda vacía, nunca 0.
+ */
+export interface PlanDiaItem {
+  tareaId: string
+  orden: number
+  minutosPlan: number
+}
+
+export interface GuardarPlanDiaCommand {
+  requestId: string
+  fecha: string
+  estado?: string | null
+  /** Texto canónico (punto decimal) o null = celda vacía. */
+  horasObjetivo?: string | null
+  items: PlanDiaItem[]
+  /** Solo si el día ya tiene plan; ausente = alta. */
+  expectedVersion?: number
+}
+
+const PLAN_DIA_KEYS = ['requestId', 'fecha', 'estado', 'horasObjetivo', 'items', 'expectedVersion'] as const
+const PLAN_ITEM_KEYS = ['tareaId', 'orden', 'minutosPlan'] as const
+
+export function parseGuardarPlanDia(body: unknown): GuardarPlanDiaCommand {
+  const input = asObject(body)
+  const c = new Checker(input, PLAN_DIA_KEYS)
+  const cmd: GuardarPlanDiaCommand = { requestId: c.requestId(), fecha: c.date('fecha', true) ?? '', items: [] }
+  if (c.has('estado')) cmd.estado = c.pattern('estado', CODE, false, 'Código en MAYÚSCULAS (p. ej. APROBADO)', (s) => s.trim().toUpperCase())
+  if (c.has('horasObjetivo')) cmd.horasObjetivo = rango(c, input, 'horasObjetivo', LIMITS.horasDiaMax)
+  const items = input.items
+  if (!Array.isArray(items) || items.length === 0) c.setError('items', 'Lista de tareas requerida')
+  else if (items.length > LIMITS.planItemsMax) c.setError('items', `Máximo ${LIMITS.planItemsMax} tareas por día`)
+  else {
+    const vistos = new Set<string>()
+    items.forEach((raw, i) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        c.setError(`items.${i}`, 'Elemento no válido')
+        return
+      }
+      const item = raw as Record<string, unknown>
+      const ic = new Checker(item, PLAN_ITEM_KEYS, `items.${i}.`)
+      const tareaId = ic.pattern('tareaId', ENTITY_ID, true, 'ID de tarea no válido', (s) => s.trim().toUpperCase())
+      const orden = ic.integer('orden', { min: 1, max: LIMITS.ordenPlanMax })
+      const minutos = ic.integer('minutosPlan', { min: 0, max: LIMITS.minutosPlanMax })
+      Object.assign(c.errors, ic.errors)
+      if (tareaId && vistos.has(tareaId)) c.setError(`items.${i}.tareaId`, 'Tarea repetida en el mismo día')
+      if (tareaId) vistos.add(tareaId)
+      if (tareaId && orden !== null && minutos !== null) cmd.items.push({ tareaId, orden: Number(orden), minutosPlan: Number(minutos) })
+    })
   }
   if (c.has('expectedVersion')) {
     const version = input.expectedVersion

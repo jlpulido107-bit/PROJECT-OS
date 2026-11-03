@@ -13,6 +13,11 @@ export const WRITE_HEADERS = {
   ORDENES_CODEX: TAB_HEADERS.ORDENES_CODEX,
   /** ORD-POS-139 (DEC-POS-029 c): solo `capacidad.registrar` del propietario; VERSION es la migración de §11.2. */
   CAPACIDAD_SEMANAL: TAB_HEADERS.CAPACIDAD_SEMANAL,
+  /** ORD-POS-141 (DEC-POS-029 d): solo `escenario.guardar` y `escenario.archivar` del propietario; pestaña de §11.2. */
+  ESCENARIOS: TAB_HEADERS.ESCENARIOS,
+  /** ORD-POS-140 (DEC-POS-029): solo `plan.dia.guardar` del propietario; VERSION de PLAN_DIARIO es la migración de §11.2. */
+  PLAN_DIARIO: TAB_HEADERS.PLAN_DIARIO,
+  PLAN_ITEMS: TAB_HEADERS.PLAN_ITEMS,
   AUDITORIA: [
     'AUDIT_ID', 'FECHA_HORA', 'ACTOR', 'ENTIDAD', 'REGISTRO_ID', 'CAMPO', 'VALOR_ANTES', 'VALOR_DESPUES', 'ORIGEN',
   ],
@@ -31,8 +36,19 @@ export const OPTIONAL_WRITE_COLUMNS: Partial<Record<WriteTab, readonly string[]>
    * ella la pestaña se lee igual y `capacidad.registrar` responde 422 `migracion-pendiente` sin escribir nada.
    */
   CAPACIDAD_SEMANAL: ['VERSION'],
+  /**
+   * ORD-POS-140: VERSION de PLAN_DIARIO (misma migración, §11.2). Protege el plan y sus PLAN_ITEMS, que no llevan VERSION.
+   * Sin ella `plan.dia.guardar` responde 422 `migracion-pendiente` sin escribir nada.
+   */
+  PLAN_DIARIO: ['VERSION'],
 }
-export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX' | 'CAPACIDAD_SEMANAL'
+export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX' | 'CAPACIDAD_SEMANAL' | 'PLAN_DIARIO' | 'PLAN_ITEMS' | 'ESCENARIOS'
+
+/**
+ * Pestañas que crea una migración del propietario (ORD-POS-141, docs/escritura-v1-8.md §11.2). Si faltan en la hoja, los
+ * adaptadores responden 422 `migracion-pendiente` (con la pestaña) en vez de un error de lectura, sin escribir nada.
+ */
+export const MIGRATION_TABS: readonly WriteTab[] = ['ESCENARIOS']
 
 /**
  * Estados de tarea que la edición puede asignar. COMPLETADO/CANCELADO no se asignan editando: COMPLETADO solo con la
@@ -73,6 +89,14 @@ export const LIMITS = {
   /** ORD-POS-139: HORAS_DISPONIBLES de una semana (0–168) y RESERVA_PCT (0–100). */
   horasSemanaMax: 168,
   reservaPctMax: 100,
+  /** ORD-POS-141: NOMBRE de un escenario y PARAMETROS como JSON canónico (§11.1). */
+  escenarioNombre: 80,
+  escenarioParametros: 2000,
+  /** ORD-POS-140: elementos por plan del día, minutos por elemento (0 = quitada, explícito) y HORAS_OBJETIVO. */
+  planItemsMax: 50,
+  minutosPlanMax: 1440,
+  ordenPlanMax: 999,
+  horasDiaMax: 24,
 } as const
 
 export const ORIGIN_PREFIX = 'dashboard-v1.4'
@@ -90,6 +114,17 @@ export type OperationName =
    * con PLANIFICACION_EDICION_PROPIETARIO y su correo; nunca un token (PM, Tiempos, finanzas). No está en AGENT_OPERATIONS.
    */
   | 'capacidad.registrar'
+  /**
+   * Escenarios de simulación del propietario (ORD-POS-141, DEC-POS-029 d): alta de una fila en ESCENARIOS y archivarla
+   * (ESTADO ACTIVO → ARCHIVADO con versión esperada). Nunca se borra una fila ni se cambia el plan. No están en
+   * AGENT_OPERATIONS.
+   */
+  | 'escenario.guardar' | 'escenario.archivar'
+  /**
+   * Plan registrado de un día en PLAN_DIARIO y sus PLAN_ITEMS por el propietario (ORD-POS-140, DEC-POS-029). Misma
+   * bandera y mismo correo que `capacidad.registrar`; nunca un token. No está en AGENT_OPERATIONS.
+   */
+  | 'plan.dia.guardar'
   | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
   /** Cierre asistido de una orden cuyo PR ya se fusionó (ORD-POS-046). */
   | 'orden.cerrar_fusionado'
@@ -114,7 +149,7 @@ export const AGENT_TIEMPOS_OPERATION: OperationName = 'tiempo.crear'
 /** ORD-POS-131 (DEC-ECO-007): operación SOLO del PM, fuera de AGENT_OPERATIONS; el guard la permite con ECO_IDEAS_ALTA=true. */
 export const AGENT_IDEAS_OPERATION: OperationName = 'idea.alta'
 /** Operaciones solo del propietario con su sesión (DEC-POS-029 a): con cualquier Authorization, 403 sin leer el cuerpo. */
-export const OWNER_PLANNING_OPERATIONS: readonly OperationName[] = ['capacidad.registrar']
+export const OWNER_PLANNING_OPERATIONS: readonly OperationName[] = ['capacidad.registrar', 'plan.dia.guardar', 'escenario.guardar', 'escenario.archivar']
 export const AGENT_ORDER_ACTIONS: readonly string[] = ['APROBAR', 'ENVIAR', 'REVISAR']
 export const AGENT_EDITABLE_TASK_FIELDS = [
   'titulo', 'descripcion', 'prioridad', 'hitoId', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'criterioTerminado',

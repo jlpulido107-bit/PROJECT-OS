@@ -90,7 +90,7 @@ describe('SUPERVISION (pestaña opcional, V1.9)', () => {
   const fila = (valores: Record<string, string>) => header.map((h) => valores[h] ?? '')
 
   it('está declarada como opcional y con las 24 columnas del contrato', () => {
-    expect(OPTIONAL_TABS).toEqual(['SUPERVISION'])
+    expect(OPTIONAL_TABS).toEqual(['SUPERVISION', 'ESCENARIOS']) // ESCENARIOS: ORD-POS-141
     expect(header).toHaveLength(24)
     expect(header[0]).toBe('SUPERVISION_ID')
     expect(header.at(-1)).toBe('ACTUALIZADO_EN')

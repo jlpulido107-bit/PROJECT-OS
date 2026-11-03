@@ -3,6 +3,7 @@ import { todayInMerida } from '../dates'
 import { parseNumber, parseFraction } from '../parse'
 import { isoMonday } from '../planning/calendar'
 import { parseCivilDate } from '../dates'
+import { PLAN_CANCELLED_STATES } from '../planning/rules'
 import { CLOSED_TASK_STATES, ORDENES_SENSIBLE, TAREAS_INSTRUCCIONES } from '../schema'
 import {
   AUDIT_NOTA_CIERRE, COMPLETED_TASK_STATE, INITIAL_DECISION_STATE, INITIAL_ORDER_STATE, INITIAL_TASK_STATE, ORDER_RISKS, ORDER_TERMINAL_STATES, ORIGIN_PREFIX,
@@ -15,7 +16,7 @@ import {
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
-  derivedRequestId, payloadHash, type CompleteTaskCommand, type RegistrarCapacidadCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
+  derivedRequestId, payloadHash, type ArchivarEscenarioCommand, type CompleteTaskCommand, type GuardarPlanDiaCommand, type GuardarEscenarioCommand, type RegistrarCapacidadCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
   type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
 import {
@@ -86,8 +87,13 @@ const TASK_FIELD_COLUMNS: Record<keyof TaskChanges, string> = {
 }
 
 const ID_COLUMN: Record<EntityTab, string> = {
-  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID', CAPACIDAD_SEMANAL: 'SEMANA_ID',
+  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID', CAPACIDAD_SEMANAL: 'SEMANA_ID', ESCENARIOS: 'ESCENARIO_ID',
+  PLAN_DIARIO: 'PLAN_ID', PLAN_ITEMS: 'PLAN_ITEM_ID',
 }
+
+/** ESTADO de una fila de ESCENARIOS (ORD-POS-141): se da de alta ACTIVO y solo se puede archivar. */
+export const ESCENARIO_ACTIVO = 'ACTIVO'
+export const ESCENARIO_ARCHIVADO = 'ARCHIVADO'
 
 /** Columnas de CAPACIDAD_SEMANAL que `capacidad.registrar` escribe (NOTAS nunca; VERSION y ACTUALIZADO_EN, el servidor). */
 const CAPACIDAD_CAMPOS = ['FECHA_INICIO', 'HORAS_DISPONIBLES', 'RESERVA_PCT', 'ESTADO'] as const
@@ -345,6 +351,191 @@ export class OperationsService {
       await this.writeGuarded(cap, row.sheetRow, row.cells, { column: 'SEMANA_ID', value: cmd.semanaId }, { column: 'VERSION', value: current.VERSION! }, next)
       await this.verifyCreated('CAPACIDAD_SEMANAL', cmd.semanaId, pick(next, contractColumns(cap)))
       return { operacion: op, entidad: 'CAPACIDAD_SEMANAL', id: cmd.semanaId, version: currentVersion + 1, repetida: false }
+    })
+  }
+
+  /**
+   * Guardar un escenario de simulación (ORD-POS-141, DEC-POS-029 d; docs/escritura-v1-8.md §11.1, §11.2 y §11.4): solo
+   * alta de una fila en ESCENARIOS con ID ESC-NNN, ESTADO ACTIVO y VERSION 1. No lee ni escribe ninguna otra pestaña de
+   * datos: guardar un escenario nunca cambia el plan. Sin la pestaña (migración del propietario), 422
+   * `migracion-pendiente` sin escribir nada, ni AUDITORIA. Quién puede llamarla lo decide el guard.
+   */
+  guardarEscenario(cmd: GuardarEscenarioCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'escenario.guardar'
+      const hash = payloadHash(op, cmd)
+      const [escenarios, audit] = await this.views('ESCENARIOS', 'AUDITORIA')
+      const replay = await this.replayCreate(op, hash, cmd.requestId, audit, escenarios)
+      if (replay) return replay
+
+      const id = this.nextSequentialId(escenarios, 'ESCENARIO_ID', 'ESC-')
+      if (findById(escenarios, 'ESCENARIO_ID', id).length > 0) throw new OperationError('conflicto-concurrente')
+      const now = this.clock()
+      const record: Record<string, string> = {
+        ESCENARIO_ID: id,
+        NOMBRE: cmd.nombre,
+        SEMANA_ID: cmd.semanaId,
+        PARAMETROS: cmd.parametros,
+        CREADO_EN: meridaIsoTimestamp(now),
+        HUELLA: cmd.huella,
+        ESTADO: ESCENARIO_ACTIVO,
+        VERSION: '1',
+      }
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ESCENARIOS', id, creationDiff(record), now, audit)
+      await this.appendEntity('ESCENARIOS', escenarios, record)
+      await this.verifyCreated('ESCENARIOS', id, record)
+      return { operacion: op, entidad: 'ESCENARIOS', id, version: 1, repetida: false }
+    })
+  }
+
+  /**
+   * Archivar un escenario (ORD-POS-141): ESTADO ACTIVO → ARCHIVADO y VERSION + 1, con la versión esperada y AUDITORIA
+   * antes de escribir. Nunca borra la fila ni toca NOMBRE, PARAMETROS ni HUELLA. Ya archivado: 409 `escenario-archivado`.
+   */
+  archivarEscenario(cmd: ArchivarEscenarioCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'escenario.archivar'
+      const hash = payloadHash(op, cmd)
+      const [escenarios, audit] = await this.views('ESCENARIOS', 'AUDITORIA')
+      const matches = findById(escenarios, 'ESCENARIO_ID', cmd.escenarioId)
+      if (matches.length > 1) throw new OperationError('conflicto-concurrente')
+      const row = matches[0]
+      if (!row) throw new OperationError('escenario-inexistente')
+      const current = toRecord(escenarios, row.cells)
+      const replay = await this.replayUpdate(op, hash, cmd.requestId, audit, escenarios, row.sheetRow, current, 'ESCENARIOS')
+      if (replay) return replay
+
+      if (!/^\d+$/.test(current.VERSION ?? '')) throw new OperationError('version-faltante')
+      const currentVersion = Number(current.VERSION)
+      if (currentVersion !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { versionActual: currentVersion } })
+      if ((current.ESTADO ?? '').toUpperCase() === ESCENARIO_ARCHIVADO) throw new OperationError('escenario-archivado')
+
+      const now = this.clock()
+      const next: Record<string, string> = { ...current, ESTADO: ESCENARIO_ARCHIVADO, VERSION: String(currentVersion + 1) }
+      const diff = new Map<string, { antes: string; despues: string }>([
+        ['ESTADO', { antes: current.ESTADO ?? '', despues: ESCENARIO_ARCHIVADO }],
+        ['VERSION', { antes: current.VERSION!, despues: next.VERSION! }],
+      ])
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ESCENARIOS', cmd.escenarioId, diff, now, audit)
+      await this.writeGuarded(escenarios, row.sheetRow, row.cells, { column: 'ESCENARIO_ID', value: cmd.escenarioId }, { column: 'VERSION', value: current.VERSION! }, next)
+      await this.verifyCreated('ESCENARIOS', cmd.escenarioId, pick(next, contractColumns(escenarios)))
+      return { operacion: op, entidad: 'ESCENARIOS', id: cmd.escenarioId, version: currentVersion + 1, repetida: false }
+    })
+  }
+
+  /**
+   * Plan registrado de un día (ORD-POS-140, DEC-POS-029; docs/escritura-v1-8.md §11.1, §11.2 y §11.4): crea o edita la
+   * fila de PLAN_DIARIO de `fecha` (un solo plan activo por día) y escribe las filas de PLAN_ITEMS de `items`. Las demás
+   * filas de PLAN_ITEMS no se tocan y nunca se borra nada; TAREAS solo se lee. Toda guardada sube VERSION del plan, que
+   * protege también sus elementos. AUDITORIA va en un solo lote antes de escribir: el plan con el requestId y cada
+   * elemento con uno derivado (ENTIDAD = la pestaña). Se escriben primero los elementos y al final el plan, cuya VERSION
+   * hace de marca: un reintento con el mismo requestId completa lo auditado (roll-forward). Días pasados, nunca.
+   */
+  guardarPlanDia(cmd: GuardarPlanDiaCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'plan.dia.guardar'
+      const hash = payloadHash(op, cmd)
+      const [planes, items, tareas, audit] = await this.views('PLAN_DIARIO', 'PLAN_ITEMS', 'TAREAS', 'AUDITORIA')
+      if (!planes.index.has('VERSION')) throw new OperationError('migracion-pendiente', { detail: { pestana: 'PLAN_DIARIO', columna: 'VERSION' } })
+      // Plan activo del día: con PLAN_ID (el motor no ve filas sin ID), esa FECHA y no cancelado (mismas reglas que el motor).
+      const activos = planes.rows.filter((r) => cell(planes, r.cells, 'PLAN_ID') !== '' && parseCivilDate(cell(planes, r.cells, 'FECHA')).value === cmd.fecha && !PLAN_CANCELLED_STATES.has(cell(planes, r.cells, 'ESTADO').toUpperCase()))
+      if (activos.length > 1) throw new OperationError('plan-diario-duplicado')
+      const row = activos[0]
+      const planId = row ? cell(planes, row.cells, 'PLAN_ID') : `PLAN-${cmd.fecha}`
+      const itemRequest = (tareaId: string) => derivedRequestId(cmd.requestId, `plan-item:${tareaId}`)
+
+      const found = this.findAudited(audit, cmd.requestId)
+      if (found) {
+        if (found.op.operacion !== op || found.op.hash !== hash || found.op.id !== planId) throw new OperationError('conflicto-idempotencia')
+        return this.replayPlanDia(cmd, found, audit, planes, items, row, planId, itemRequest)
+      }
+
+      // Días pasados: su plan registrado ya no se reescribe (criterio 5).
+      if (cmd.fecha < todayInMerida(this.clock())) throw new OperationError('dia-pasado')
+      const current = row ? toRecord(planes, row.cells) : null
+      const conflicto = (versionActual: number | null) => new OperationError('conflicto-version', {
+        detail: { versionActual, planActual: current ? planActual(current, items, planId) : null },
+      })
+      let currentVersion = 0
+      if (!row) {
+        // Sin plan activo: es un alta. Con expectedVersion, el plan que se vio ya no está (cancelado o movido).
+        if (cmd.expectedVersion !== undefined) throw conflicto(null)
+        if (findById(planes, 'PLAN_ID', planId).length > 0) throw new OperationError('conflicto-concurrente')
+      } else {
+        if (!/^\d+$/.test(current!.VERSION ?? '')) throw new OperationError('version-faltante')
+        currentVersion = Number(current!.VERSION)
+        // Sin expectedVersion, otra sesión creó el plan del día; con otra versión, lo cambió.
+        if (cmd.expectedVersion !== currentVersion) throw conflicto(currentVersion)
+      }
+
+      // Solo tareas abiertas existentes; TAREAS no se escribe (criterio 4).
+      for (const item of cmd.items) {
+        const rows = findById(tareas, 'TAREA_ID', item.tareaId)
+        if (rows.length !== 1) throw new OperationError('tarea-inexistente', { detail: { tareaId: item.tareaId } })
+        if (CLOSED_TASK_STATES.has(cell(tareas, rows[0]!.cells, 'ESTADO').toUpperCase())) throw new OperationError('tarea-cerrada', { detail: { tareaId: item.tareaId } })
+      }
+
+      const now = this.clock()
+      const stamp = meridaIsoTimestamp(now)
+      const escrituras: EscrituraItem[] = []
+      for (const item of cmd.items) {
+        const propias = items.rows.filter((r) => cell(items, r.cells, 'PLAN_ID') === planId && cell(items, r.cells, 'TAREA_ID') === item.tareaId)
+        if (propias.length > 1) throw new OperationError('plan-item-duplicado', { detail: { tareaId: item.tareaId } })
+        const orden = String(item.orden)
+        const minutos = String(item.minutosPlan)
+        const propia = propias[0]
+        if (propia) {
+          const actual = toRecord(items, propia.cells)
+          if (!actual.PLAN_ITEM_ID) throw new OperationError('plan-item-duplicado', { detail: { tareaId: item.tareaId } })
+          if (mismoNumero(actual.ORDEN ?? '', orden) && mismoNumero(actual.MINUTOS_PLAN ?? '', minutos)) continue
+          const diff = new Map<string, { antes: string; despues: string }>()
+          if (!mismoNumero(actual.ORDEN ?? '', orden)) diff.set('ORDEN', { antes: actual.ORDEN ?? '', despues: orden })
+          // MINUTOS_PLAN siempre se audita: es el campo obligatorio del elemento y su guarda al reintentar.
+          diff.set('MINUTOS_PLAN', { antes: actual.MINUTOS_PLAN ?? '', despues: minutos })
+          diff.set('ACTUALIZADO_EN', { antes: actual.ACTUALIZADO_EN ?? '', despues: stamp })
+          const next = { ...actual, ORDEN: orden, MINUTOS_PLAN: minutos, ACTUALIZADO_EN: stamp }
+          escrituras.push({ id: actual.PLAN_ITEM_ID, tareaId: item.tareaId, fila: { sheetRow: propia.sheetRow, cells: propia.cells, guarda: actual.MINUTOS_PLAN ?? '' }, diff, next })
+        } else {
+          const id = `${planId}-${item.tareaId}`
+          if (findById(items, 'PLAN_ITEM_ID', id).length > 0) throw new OperationError('conflicto-concurrente')
+          const record = { PLAN_ITEM_ID: id, PLAN_ID: planId, TAREA_ID: item.tareaId, ORDEN: orden, MINUTOS_PLAN: minutos, ACTUALIZADO_EN: stamp }
+          escrituras.push({ id, tareaId: item.tareaId, fila: null, diff: creationDiff(record), next: record })
+        }
+      }
+
+      let planNext: Record<string, string>
+      let planDiff: Map<string, { antes: string; despues: string }>
+      if (!current) {
+        planNext = {
+          PLAN_ID: planId, FECHA: cmd.fecha, SEMANA_ID: '', ESTADO: cmd.estado ?? '', HORAS_OBJETIVO: cmd.horasObjetivo ?? '', NOTAS: '',
+          ACTUALIZADO_EN: stamp, VERSION: '1',
+        }
+        planDiff = creationDiff(planNext)
+      } else {
+        planNext = { ...current }
+        planDiff = new Map()
+        if (cmd.estado !== undefined && (current.ESTADO ?? '') !== (cmd.estado ?? '')) planDiff.set('ESTADO', { antes: current.ESTADO ?? '', despues: cmd.estado ?? '' })
+        if (cmd.horasObjetivo !== undefined && !mismoValorVacio(current.HORAS_OBJETIVO ?? '', cmd.horasObjetivo ?? '')) {
+          planDiff.set('HORAS_OBJETIVO', { antes: current.HORAS_OBJETIVO ?? '', despues: cmd.horasObjetivo ?? '' })
+        }
+        if (planDiff.size === 0 && escrituras.length === 0) throw new OperationError('sin-cambios')
+        for (const [column, { despues }] of planDiff) planNext[column] = despues
+        planNext.VERSION = String(currentVersion + 1)
+        planNext.ACTUALIZADO_EN = stamp
+        planDiff.set('VERSION', { antes: current.VERSION!, despues: planNext.VERSION })
+        planDiff.set('ACTUALIZADO_EN', { antes: current.ACTUALIZADO_EN ?? '', despues: stamp })
+      }
+
+      // AUDITORIA del día en un solo lote, antes de escribir nada (fail-closed).
+      await this.appendAudit([
+        ...this.auditRows(op, hash, cmd.requestId, ctx, 'PLAN_DIARIO', planId, planDiff, now, audit),
+        ...escrituras.flatMap((e) => this.auditRows(op, hash, itemRequest(e.tareaId), ctx, 'PLAN_ITEMS', e.id, e.diff, now, audit)),
+      ])
+      await this.escribirItems(items, escrituras)
+      if (!row) await this.appendEntity('PLAN_DIARIO', planes, planNext)
+      else await this.writeGuarded(planes, row.sheetRow, row.cells, { column: 'PLAN_ID', value: planId }, { column: 'VERSION', value: current!.VERSION! }, planNext)
+      await this.verificarPlanDia(planId, pick(planNext, contractColumns(planes)), escrituras)
+      return { operacion: op, entidad: 'PLAN_DIARIO', id: planId, version: Number(planNext.VERSION), repetida: false }
     })
   }
 
@@ -748,6 +939,100 @@ export class OperationsService {
     return Promise.all(tabs.map((tab) => readView(this.store, tab))) as Promise<{ [K in keyof T]: TableView }>
   }
 
+  /** Escribe los elementos del plan: las ediciones con su guarda (MINUTOS_PLAN de antes) y las altas en un solo bloque. */
+  private async escribirItems(view: TableView, escrituras: EscrituraItem[]) {
+    for (const e of escrituras) {
+      if (!e.fila) continue
+      await this.writeGuarded(view, e.fila.sheetRow, e.fila.cells, { column: 'PLAN_ITEM_ID', value: e.id }, { column: 'MINUTOS_PLAN', value: e.fila.guarda }, e.next)
+    }
+    const altas = escrituras.filter((e) => !e.fila)
+    if (altas.length === 0) return
+    try {
+      await this.store.appendRows('PLAN_ITEMS', altas.map((e) => toRow(view, e.next)))
+    } catch {
+      throw new OperationError('escritura-fallida')
+    }
+  }
+
+  /** Relee PLAN_DIARIO y PLAN_ITEMS y comprueba que el plan y cada elemento escrito quedaron como se auditó. */
+  private async verificarPlanDia(planId: string, plan: Record<string, string>, escrituras: EscrituraItem[]) {
+    await this.verifyCreated('PLAN_DIARIO', planId, plan)
+    if (escrituras.length === 0) return
+    const view = await readView(this.store, 'PLAN_ITEMS')
+    for (const e of escrituras) {
+      const rows = findById(view, 'PLAN_ITEM_ID', e.id)
+      if (rows.length !== 1) throw new OperationError('verificacion-fallida')
+      const stored = toRecord(view, rows[0]!.cells)
+      for (const [column, value] of Object.entries(pick(e.next, contractColumns(view)))) {
+        if ((stored[column] ?? '') !== value) throw new OperationError('verificacion-fallida')
+      }
+    }
+  }
+
+  /**
+   * Reintento de `plan.dia.guardar` con un requestId ya auditado (§11.4): lo que ya está como se auditó se da por hecho;
+   * lo que sigue en el valor de antes se completa (primero los elementos, al final el plan); lo demás es divergente,
+   * salvo que operaciones auditadas posteriores lo expliquen.
+   */
+  private async replayPlanDia(
+    cmd: GuardarPlanDiaCommand, found: { op: AuditedOperation; later: AuditedOperation[] }, audit: TableView, planes: TableView,
+    items: TableView, row: { sheetRow: number; cells: string[] } | undefined, planId: string, itemRequest: (tareaId: string) => string,
+  ): Promise<OperationResult> {
+    const op: OperationName = 'plan.dia.guardar'
+    const pendientes: EscrituraItem[] = []
+    const hechos: EscrituraItem[] = []
+    for (const item of cmd.items) {
+      const auditado = this.findAudited(audit, itemRequest(item.tareaId))
+      if (!auditado) continue // Sin cambios en ese elemento: no se auditó ni se escribió.
+      const a = auditado.op
+      if (a.operacion !== op || a.hash !== found.op.hash || a.entidad !== 'PLAN_ITEMS') throw new OperationError('conflicto-idempotencia')
+      const deseado = Object.fromEntries([...a.fields].map(([column, { despues }]) => [column, despues]))
+      const rows = findById(items, 'PLAN_ITEM_ID', a.id)
+      if (rows.length > 1) throw new OperationError('plan-item-duplicado', { detail: { tareaId: item.tareaId } })
+      const fila = rows[0]
+      if (!fila) {
+        if (a.fields.get('PLAN_ITEM_ID')?.antes !== '') throw new OperationError('estado-divergente')
+        const e = { id: a.id, tareaId: item.tareaId, fila: null, diff: a.fields, next: deseado }
+        pendientes.push(e)
+        hechos.push(e)
+        continue
+      }
+      const actual = toRecord(items, fila.cells)
+      const next = { ...actual, ...deseado }
+      const e = { id: a.id, tareaId: item.tareaId, fila: { sheetRow: fila.sheetRow, cells: fila.cells, guarda: a.fields.get('MINUTOS_PLAN')?.antes ?? '' }, diff: a.fields, next }
+      if (Object.entries(deseado).every(([column, value]) => (actual[column] ?? '') === value)) {
+        hechos.push(e)
+        continue
+      }
+      if (auditado.later.length > 0) continue
+      const antes = [...a.fields].every(([column, { antes: v }]) => column === 'ACTUALIZADO_EN' || (actual[column] ?? '') === v)
+      if (!antes) throw new OperationError('estado-divergente')
+      pendientes.push(e)
+      hechos.push(e)
+    }
+
+    const version = found.op.fields.get('VERSION')
+    if (!version) throw new OperationError('conflicto-idempotencia')
+    const deseado = Object.fromEntries([...found.op.fields].map(([column, { despues }]) => [column, despues]))
+    let escribirPlan: (() => Promise<void>) | null = null
+    let planNext: Record<string, string> = deseado
+    if (!row) {
+      if (version.antes !== '') throw new OperationError('estado-divergente')
+      escribirPlan = () => this.appendEntity('PLAN_DIARIO', planes, deseado)
+    } else {
+      const actual = toRecord(planes, row.cells)
+      planNext = { ...actual, ...deseado }
+      if (actual.VERSION !== version.despues && found.later.length === 0) {
+        if (actual.VERSION !== version.antes) throw new OperationError('conflicto-version', { detail: { versionActual: Number(actual.VERSION) || null, planActual: planActual(actual, items, planId) } })
+        escribirPlan = () => this.writeGuarded(planes, row.sheetRow, row.cells, { column: 'PLAN_ID', value: planId }, { column: 'VERSION', value: version.antes }, planNext)
+      }
+    }
+    if (pendientes.length > 0) await this.escribirItems(items, pendientes)
+    if (escribirPlan) await escribirPlan()
+    if (pendientes.length > 0 || escribirPlan) await this.verificarPlanDia(planId, pick(planNext, contractColumns(planes)), hechos)
+    return { operacion: op, entidad: 'PLAN_DIARIO', id: planId, version: Number(version.despues), repetida: true }
+  }
+
   private checkHito(hitos: TableView, hitoId: string | null, proyectoId: string) {
     if (!hitoId) return
     const rows = findById(hitos, 'HITO_ID', hitoId)
@@ -787,6 +1072,22 @@ export class OperationsService {
     op: OperationName, hash: string, requestId: string, ctx: OperationContext, entidad: AuditEntity, id: string,
     diff: Map<string, { antes: string; despues: string }>, now: Date, auditView: TableView,
   ) {
+    await this.appendAudit(this.auditRows(op, hash, requestId, ctx, entidad, id, diff, now, auditView))
+  }
+
+  private async appendAudit(rows: string[][]) {
+    try {
+      await this.store.appendRows('AUDITORIA', rows)
+    } catch {
+      throw new OperationError('auditoria-fallida')
+    }
+  }
+
+  /** Filas de AUDITORIA de una solicitud sobre un registro: una por campo, con su lote y su total (`…-NN-TT`). */
+  private auditRows(
+    op: OperationName, hash: string, requestId: string, ctx: OperationContext, entidad: AuditEntity, id: string,
+    diff: Map<string, { antes: string; despues: string }>, now: Date, auditView: TableView,
+  ): string[][] {
     const stamp = meridaIsoTimestamp(now)
     const compact = stamp.slice(0, 19).replace(/[-:T]/g, '')
     const batch = this.randomHex(4).toUpperCase()
@@ -804,11 +1105,7 @@ export class OperationsService {
         ORIGEN: origin,
       }),
     )
-    try {
-      await this.store.appendRows('AUDITORIA', rows)
-    } catch {
-      throw new OperationError('auditoria-fallida')
-    }
+    return rows
   }
 
   private async appendEntity(tab: EntityTab, view: TableView, record: Record<string, string>) {
@@ -890,14 +1187,14 @@ export class OperationsService {
       const matches = Object.entries(record).every(([column, value]) => (stored[column] ?? '') === value)
       if (!matches && found.later.length === 0) throw new OperationError('estado-divergente')
     }
-    const version = tab === 'TAREAS' || tab === 'CAPACIDAD_SEMANAL' ? Number(record.VERSION ?? '1') : undefined
+    const version = tab === 'TAREAS' || tab === 'CAPACIDAD_SEMANAL' || tab === 'ESCENARIOS' ? Number(record.VERSION ?? '1') : undefined
     return { operacion: op, entidad: tab, id: audited.id, version, repetida: true }
   }
 
   /** Idempotencia de ediciones: repetir si ya se aplicó, completar si la versión sigue siendo la anterior. */
   private async replayUpdate(
     op: OperationName, hash: string, requestId: string, audit: TableView, tareas: TableView, sheetRow: number,
-    current: Record<string, string>, tab: 'TAREAS' | 'CAPACIDAD_SEMANAL' = 'TAREAS',
+    current: Record<string, string>, tab: 'TAREAS' | 'CAPACIDAD_SEMANAL' | 'ESCENARIOS' = 'TAREAS',
   ): Promise<OperationResult | null> {
     const found = this.findAudited(audit, requestId)
     if (!found) return null
@@ -945,6 +1242,38 @@ function mismoValorCapacidad(column: string, antes: string, despues: string): bo
   return a !== null && b !== null && Math.abs(a - b) < 1e-9
 }
 
+/** Un elemento de PLAN_ITEMS que `plan.dia.guardar` escribe: edición (con su fila y su guarda) o alta (`fila` null). */
+interface EscrituraItem {
+  id: string
+  tareaId: string
+  fila: { sheetRow: number; cells: string[]; guarda: string } | null
+  diff: Map<string, { antes: string; despues: string }>
+  next: Record<string, string>
+}
+
+/** Mismo número con otra grafía (`30` y `30.0`); vacío solo es igual a vacío. */
+function mismoNumero(antes: string, despues: string): boolean {
+  if (antes === despues) return true
+  const a = parseNumber(antes).value
+  const b = parseNumber(despues).value
+  return antes !== '' && despues !== '' && a !== null && b !== null && Math.abs(a - b) < 1e-9
+}
+
+const mismoValorVacio = (antes: string, despues: string) => (antes === '' || despues === '' ? antes === despues : mismoNumero(antes, despues))
+
+/** El plan actual del día, para mostrarlo en un conflicto: su versión y sus elementos tal como están en la hoja. */
+function planActual(plan: Record<string, string>, items: TableView, planId: string) {
+  return {
+    planId,
+    version: /^\d+$/.test(plan.VERSION ?? '') ? Number(plan.VERSION) : null,
+    estado: plan.ESTADO ?? '',
+    horasObjetivo: plan.HORAS_OBJETIVO ?? '',
+    items: items.rows
+      .filter((r) => cell(items, r.cells, 'PLAN_ID') === planId)
+      .map((r) => ({ tareaId: cell(items, r.cells, 'TAREA_ID'), orden: cell(items, r.cells, 'ORDEN'), minutosPlan: cell(items, r.cells, 'MINUTOS_PLAN') })),
+  }
+}
+
 function pick(record: Record<string, string>, columns: string[]): Record<string, string> {
   return Object.fromEntries(columns.map((c) => [c, record[c] ?? '']))
 }
@@ -960,6 +1289,11 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'tarea.editar': ['VERSION'],
   'tarea.completar': ['ESTADO', 'VERSION'],
   'capacidad.registrar': ['VERSION'],
+  'escenario.guardar': ['ESCENARIO_ID', 'VERSION'],
+  'escenario.archivar': ['ESTADO', 'VERSION'],
+  /** ORD-POS-140: el plan del día lleva VERSION; cada elemento, MINUTOS_PLAN (ver `parseAudit`). */
+  'plan.dia.guardar': ['VERSION'],
+  'plan.dia.guardar:PLAN_ITEMS': ['MINUTOS_PLAN'],
   'tiempo.registrar': ['SESION_ID'],
   'tiempo.crear': ['SESION_ID'],
   'decision.crear': ['DECISION_ID'],
@@ -974,7 +1308,7 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'orden.cerrar_fusionado': ['ESTADO'],
 }
 /** Operaciones que modifican un registro existente (no reescriben su ID). */
-const TRANSITION_OPS = new Set(['tarea.editar', 'tarea.completar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar', 'orden.cerrar_fusionado'])
+const TRANSITION_OPS = new Set(['tarea.editar', 'tarea.completar', 'escenario.archivar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar', 'orden.cerrar_fusionado'])
 const AUDIT_ID_PATTERN = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})(?:-(\d{2}))?$/
 
 /**
@@ -1017,7 +1351,7 @@ export function parseAudit(audit: TableView): AuditedOperation[] {
     void batch
     if (op.integridad === 'completa') {
       const missingIndex = total !== null && (indices.length !== total || indices.some((i) => i < 1 || i > total))
-      const required = REQUIRED_AUDIT_FIELDS[op.operacion] ?? []
+      const required = REQUIRED_AUDIT_FIELDS[`${op.operacion}:${op.entidad}`] ?? REQUIRED_AUDIT_FIELDS[op.operacion] ?? []
       const missingField = required.some((f) => !op.fields.has(f))
       const idField = Object.entries(ID_COLUMN).find(([tab]) => tab === op.entidad)?.[1]
       const idMismatch = idField !== undefined && !TRANSITION_OPS.has(op.operacion) && op.fields.get(idField)?.despues !== op.id

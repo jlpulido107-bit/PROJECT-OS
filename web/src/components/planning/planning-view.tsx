@@ -10,12 +10,17 @@ import { diasSemana, type Bloque } from '@/lib/planificacion-semana'
 import type { HitoSemana } from '@/lib/planificacion-semana-hitos'
 import { tarjetasSemana, type EdicionSemana } from '@/lib/planificacion-edicion'
 import { capacidadSemana } from '@/lib/planificacion-capacidad'
+import { formularioDeEscenario, huellaDatos, type EscenarioCargable } from '@/lib/planificacion-escenarios'
+import { fijadasRestantes } from '@/lib/planificacion-plan-dia'
+import { AplicarPlan } from './aplicar-plan'
 import { CapaSemana } from './capa-semana'
+import { EscenariosGuardados } from './escenarios-guardados'
 import styles from './planning.module.css'
 
 /* ---------------------------------------------------------------------------------------------
  * Vista de planificación V1.5. Todo ocurre en memoria del navegador:
- * - el escenario y la revisión (aceptar / rechazar / ajustar) NO se guardan en ningún sitio;
+ * - el escenario y la revisión (aceptar / rechazar / ajustar) NO se guardan solos; el propietario puede guardar el
+ *   escenario con nombre en ESCENARIOS (ORD-POS-141) y cargarlo después, lo que solo re-simula aquí;
  * - recargar la página o "Restablecer escenario" vuelve a los datos registrados;
  * - la exportación descarga un JSON local; nada se aplica a Google Sheets.
  * ------------------------------------------------------------------------------------------- */
@@ -75,13 +80,15 @@ const CATEGORY_TONE: Record<TaskCategory, 'ok' | 'info' | 'warn' | 'muted'> = {
 }
 const DECISION_LABEL: Record<ReviewDecision, string> = { pendiente: 'Pendiente', aceptado: 'Aceptado', rechazado: 'Rechazado', ajustado: 'Ajustado' }
 
-export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edicion = { encendida: false } }: {
+export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edicion = { encendida: false }, guardados = [] }: {
   input: PlanningInput
   referenceDate: string
   timeZone: string
   hitosSemana: Bloque<HitoSemana[]>
   /** ORD-POS-136: edición en línea de la capa Semana; apagada si no se pasa. */
   edicion?: EdicionSemana
+  /** ORD-POS-141: escenarios ACTIVO de ESCENARIOS, ya validados; vacío si no hay o falta la pestaña. */
+  guardados?: EscenarioCargable[]
 }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [scenario, setScenario] = useState<Scenario>(() => normalizeScenario({}))
@@ -95,6 +102,7 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
   const simulated = !isDefaultScenario(scenario)
   const reviewed = Object.values(review).filter((r) => r.decision !== 'pendiente').length
   const moved = movimientos(scenario)
+  const huellaActual = useMemo(() => huellaDatos(input), [input])
 
   function update(next: FormState) {
     setForm(next)
@@ -120,6 +128,15 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
     const dias = plan.dias.filter((d) => d.items.some((i) => i.tareaId === tareaId)).map((d) => d.fecha)
     if (fijadas[tareaId] === undefined && dias.length === 1 && dias[0] === fecha) return // ya está solo en ese día
     applyMoves({ ...fijadas, [tareaId]: fecha })
+  }
+
+  /** Carga un escenario guardado (ORD-POS-141): formulario, movimientos y propuesta se re-simulan aquí; nada se escribe. */
+  function cargar(s: Scenario) {
+    setForm(formularioDeEscenario(s))
+    setFijadas(s.fijadas ? { ...s.fijadas } : {})
+    setScenario(s)
+    setFieldError(null)
+    setReview({}) // La revisión se refiere a una propuesta concreta: cargar otro escenario la invalida.
   }
 
   function reset() {
@@ -259,6 +276,10 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
         </form>
       </details>
 
+      <EscenariosGuardados
+        guardados={guardados} edicion={edicion} escenario={scenario} semanaId={plan.referencia.semanaIso} huellaActual={huellaActual} onCargar={cargar}
+      />
+
       {plan.supuestos.length ? (
         <div className="alert alert-info" role="note">
           <strong>Supuestos de esta propuesta</strong>
@@ -286,6 +307,10 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
         <p className={styles.quick}>
           <button type="button" className="button" onClick={() => applyMoves({})} disabled={moved === 0}>Descartar movimientos</button>
         </p>
+        {/* ORD-POS-140: guardar los movimientos en el plan registrado, solo para el propietario con la edición encendida. */}
+        {edicion.encendida && edicion.planDia && moved > 0
+          ? <AplicarPlan plan={plan} input={input} edicion={edicion.planDia} onGuardados={(r) => applyMoves(fijadasRestantes(fijadas, r))} />
+          : null}
       </Section>
 
       <Section title="Reparto por proyecto" id="proyectos">

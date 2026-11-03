@@ -63,6 +63,12 @@ export const TAB_HEADERS = {
     'HASH_CRITERIOS', 'VERSION_CONTRATO', 'VERSION_POLITICA', 'CLAVE', 'REVISION_ID', 'EJECUCION_ID', 'INTENTO',
     'RONDA', 'ESTADO', 'VEREDICTO', 'ORIGEN', 'REPORTE_REF', 'MOTIVO', 'VERSION', 'ACTUALIZADO_EN',
   ],
+  /**
+   * ORD-POS-141 (opcional, DEC-POS-029 d): escenarios de simulación guardados por el propietario. Pestaña nueva al final
+   * del libro, la crea solo el propietario (docs/escritura-v1-8.md §11.2). A–E son de ORD-POS-138; HUELLA, ESTADO y
+   * VERSION (F–H) los añade ORD-POS-141 para la huella de entrada, archivar y la versión de la fila.
+   */
+  ESCENARIOS: ['ESCENARIO_ID', 'NOMBRE', 'SEMANA_ID', 'PARAMETROS', 'CREADO_EN', 'HUELLA', 'ESTADO', 'VERSION'],
 } as const
 
 /**
@@ -93,7 +99,7 @@ export type TabColumn<T extends TabName> = (typeof TAB_HEADERS)[T][number]
  * Pestañas que pueden no existir en la hoja real. Si faltan, el dashboard lee el resto igual, sin error ni aviso.
  * Si existen, se validan como las demás (encabezados incorrectos se reportan).
  */
-export const OPTIONAL_TABS = ['SUPERVISION'] as const satisfies readonly TabName[]
+export const OPTIONAL_TABS = ['SUPERVISION', 'ESCENARIOS'] as const satisfies readonly TabName[]
 export type OptionalTabName = (typeof OPTIONAL_TABS)[number]
 export function isOptionalTab(tab: TabName): tab is OptionalTabName {
   return (OPTIONAL_TABS as readonly string[]).includes(tab)
