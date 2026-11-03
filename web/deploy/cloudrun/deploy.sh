@@ -56,6 +56,13 @@ case "$QUITAR" in
       [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
     done ;;
 esac
+# ORD-POS-136: lo mismo con la edición de la planificación por el propietario (bandera y correo).
+case "$QUITAR" in
+  *" PLANIFICACION_EDICION_PROPIETARIO "*|*" PLANIFICACION_EDICION_PROPIETARIO_EMAIL "*)
+    for NOMBRE in PLANIFICACION_EDICION_PROPIETARIO PLANIFICACION_EDICION_PROPIETARIO_EMAIL; do
+      [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
+    done ;;
+esac
 # ORD-POS-112: lo mismo con el rol Tiempos (bandera y hash del token).
 case "$QUITAR" in
   *" TIEMPOS_AGENTE "*|*" TIEMPOS_AGENTE_TOKEN_SHA256 "*)
@@ -104,6 +111,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
       ECO_PIPELINE_WRITER_EMAIL: literal("ECO_PIPELINE_WRITER_EMAIL"), TAREAS_CIERRE_PROPIETARIO: literal("TAREAS_CIERRE_PROPIETARIO"),
       TAREAS_CIERRE_PROPIETARIO_EMAIL: literal("TAREAS_CIERRE_PROPIETARIO_EMAIL"), TIEMPOS_AGENTE: literal("TIEMPOS_AGENTE"),
       SECRET_VERSION_TIEMPOS_AGENTE: clave("TIEMPOS_AGENTE_TOKEN_SHA256"), ECO_IDEAS_ALTA: literal("ECO_IDEAS_ALTA"),
+      PLANIFICACION_EDICION_PROPIETARIO: literal("PLANIFICACION_EDICION_PROPIETARIO"),
+      PLANIFICACION_EDICION_PROPIETARIO_EMAIL: literal("PLANIFICACION_EDICION_PROPIETARIO_EMAIL"),
     }
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
       m[`CLAUDE_ROUTINE_${n}_ID`] = literal(`CLAUDE_ROUTINE_${n}_ID`)
@@ -124,6 +133,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     for (const k of eco.split(" ")) de[k] = eco
     const cierre = "TAREAS_CIERRE_PROPIETARIO TAREAS_CIERRE_PROPIETARIO_EMAIL"
     for (const k of cierre.split(" ")) de[k] = cierre
+    const edicion = "PLANIFICACION_EDICION_PROPIETARIO PLANIFICACION_EDICION_PROPIETARIO_EMAIL"
+    for (const k of edicion.split(" ")) de[k] = edicion
     const tiempos = "TIEMPOS_AGENTE TIEMPOS_AGENTE_TOKEN_SHA256"
     for (const k of ["TIEMPOS_AGENTE", "SECRET_VERSION_TIEMPOS_AGENTE"]) de[k] = tiempos
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {

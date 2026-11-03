@@ -272,6 +272,30 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('PLANIFICACION_EDICION_PROPIETARIO (ORD-POS-136): se conserva de la activa sin imprimir el correo y --quitar retira las dos', () => {
+      const correo = 'dueno-sintetico@example.com'
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'PLANIFICACION_EDICION_PROPIETARIO', value: 'true' },
+        { name: 'PLANIFICACION_EDICION_PROPIETARIO_EMAIL', value: correo })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('PLANIFICACION_EDICION_PROPIETARIO')
+      expect(sigue.out).not.toContain(correo)
+      for (const nombre of ['PLANIFICACION_EDICION_PROPIETARIO', 'PLANIFICACION_EDICION_PROPIETARIO_EMAIL']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        expect(apagada.out).toMatch(/Variables quitadas:\n  - PLANIFICACION_EDICION_PROPIETARIO\n  - PLANIFICACION_EDICION_PROPIETARIO_EMAIL\n/)
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, PLANIFICACION_EDICION_PROPIETARIO: 'true', PLANIFICACION_EDICION_PROPIETARIO_EMAIL: correo } })
+      expect(nueva.code).toBe(0)
+      for (const nombre of ['PLANIFICACION_EDICION_PROPIETARIO', 'PLANIFICACION_EDICION_PROPIETARIO_EMAIL']) expect(nueva.out).toContain(`  + ${nombre}\n`)
+      expect(nueva.out).not.toContain(correo)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, PLANIFICACION_EDICION_PROPIETARIO: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('TIEMPOS_AGENTE (ORD-POS-112): se conserva de la activa con su secreto y --quitar retira las dos', () => {
       const activa = JSON.parse(full)
       activa.spec.template.spec.containers[0].env.push({ name: 'TIEMPOS_AGENTE', value: 'true' },

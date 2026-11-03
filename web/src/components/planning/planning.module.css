@@ -66,3 +66,14 @@
 @media (max-width: 640px) {
   .semanaDia, .semanaHitos li { grid-template-columns: 1fr; }
 }
+
+/* ORD-POS-136: tarjetas de la capa Semana con edición en línea; una columna a 390 px. */
+.tarjetasSemana { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.tarjetaSemana { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.tarjetaSemana p { margin: 0; }
+.tarjetaTitulo { font-weight: 600; }
+.tarjetaEditor { display: grid; gap: 8px; }
+.tarjetaEditor input, .tarjetaEditor select { width: 100%; min-width: 0; }
+@media (max-width: 520px) {
+  .tarjetasSemana { grid-template-columns: minmax(0, 1fr); }
+}
