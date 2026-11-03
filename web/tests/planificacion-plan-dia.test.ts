@@ -135,7 +135,7 @@ describe('guard: solo el propietario con su bandera', () => {
     for (const authorization of [`Bearer ${PM_TOKEN}`, `Bearer ${TIEMPOS_TOKEN}`, 'Bearer otro', '']) {
       expect(await codeOf(evaluateWriteRequest(conAuthorization(authorization, '{roto'), ctx(DUENO, env(ENCENDIDA)))), authorization).toBe('operacion-no-permitida')
     }
-    expect(OWNER_PLANNING_OPERATIONS).toEqual(['capacidad.registrar', 'plan.dia.guardar'])
+    expect(OWNER_PLANNING_OPERATIONS).toEqual(['capacidad.registrar', 'plan.dia.guardar', 'escenario.guardar', 'escenario.archivar']) // + ORD-POS-141
     expect(AGENT_OPERATIONS).not.toContain('plan.dia.guardar')
     for (const token of [PM_TOKEN, TIEMPOS_TOKEN]) {
       const req = new NextRequest(new URL('/api/operaciones/plan-dia', ORIGIN), { method: 'POST', headers: { authorization: `Bearer ${token}` } })

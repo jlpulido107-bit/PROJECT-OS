@@ -336,6 +336,18 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     actualizadoEn: r.timestamp('ACTUALIZADO_EN'),
   }))
 
+  // ORD-POS-141: escenarios guardados (pestaña opcional); PARAMETROS se valida al cargarlo en el navegador.
+  const escenarios = mapTab('ESCENARIOS', raw, tabs, log, (r, id) => ({
+    id,
+    nombre: r.text('NOMBRE'),
+    semanaId: r.text('SEMANA_ID'),
+    parametros: r.text('PARAMETROS'),
+    creadoEn: r.timestamp('CREADO_EN'),
+    huella: r.text('HUELLA'),
+    estado: r.code('ESTADO'),
+    version: r.text('VERSION'),
+  }))
+
   return {
     source: meta.source,
     fetchedAt: meta.fetchedAt,
@@ -344,6 +356,7 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     evidencias, dependencias, decisiones, syncRuns, ordenes, supervision,
     ordenesConBandera: tabs.ORDENES_CODEX?.ok === true && tieneColumna(raw.ORDENES_CODEX, ORDENES_BANDERA),
     capacidadConVersion: tabs.CAPACIDAD_SEMANAL?.ok === true && tieneColumna(raw.CAPACIDAD_SEMANAL, 'VERSION'),
+    escenarios,
     planesConVersion: tabs.PLAN_DIARIO?.ok === true && tieneColumna(raw.PLAN_DIARIO, 'VERSION'),
     issues: log.issues,
     issuesTruncated: log.truncated,

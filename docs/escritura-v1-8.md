@@ -417,7 +417,9 @@ su correo; si algo de aquí parece contradecirla, manda §10. **Estado:** `capac
 ORD-POS-139 (panel «Capacidad de la semana» de la capa Semana, `POST /api/operaciones/capacidad`), inerte sin la bandera
 y sin la migración `VERSION` de `CAPACIDAD_SEMANAL`; `plan.dia.guardar` implementada por ORD-POS-140 («Aplicar
 movimientos al plan» de la propuesta por día, `POST /api/operaciones/plan-dia`), inerte sin la bandera y sin la migración
-`VERSION` de `PLAN_DIARIO`; escenarios y calendario siguen en diseño. Nada migrado
+`VERSION` de `PLAN_DIARIO`; `escenario.guardar` y `escenario.archivar` implementadas por ORD-POS-141 (panel «Escenarios
+guardados», `POST /api/operaciones/escenarios` y `/escenarios/archivar`), inertes sin la bandera y sin la pestaña
+`ESCENARIOS`; calendario sigue en diseño. Nada migrado
 ni encendido. Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
 solo el propietario aplica las migraciones, crea el secreto y enciende las banderas.
 
@@ -438,7 +440,8 @@ correo o un correo fuera de la lista de acceso dejan la edición apagada. `ACTOR
 | `tarea.editar` (existente) | `/api/operaciones/tareas/<id>` (`PATCH`) | `TAREAS` | Desde `/planificacion` solo `fechaPlan`, `horasEstimadas` e `hitoId`, con `expectedVersion`; ya implementada, ver §10 |
 | `capacidad.registrar` | `/api/operaciones/capacidad` | `CAPACIDAD_SEMANAL` | `semanaId`, `fechaInicio`, `horasDisponibles`, `reservaPct`, `estado` y, al editar, `expectedVersion` |
 | `plan.dia.guardar` | `/api/operaciones/plan-dia` | `PLAN_DIARIO` y `PLAN_ITEMS` | `fecha`, `estado`, `horasObjetivo`, `items` (`tareaId`, `orden`, `minutosPlan`) y, si el plan existe, `expectedVersion` |
-| `escenario.guardar` | `/api/operaciones/escenarios` | `ESCENARIOS` | `nombre`, `semanaId`, `parametros` (los del `Scenario` de `web/src/lib/planning/types.ts`) |
+| `escenario.guardar` | `/api/operaciones/escenarios` | `ESCENARIOS` | `nombre`, `semanaId`, `parametros` (los del `Scenario` de `web/src/lib/planning/types.ts`) y `huella` |
+| `escenario.archivar` (ORD-POS-141) | `/api/operaciones/escenarios/archivar` | `ESCENARIOS` | `escenarioId` y `expectedVersion` |
 
 - **Rechazos.** Toda petición con `Authorization` (token del PM, de Tiempos o de finanzas) a las tres rutas nuevas recibe
   403 `operacion-no-permitida` sin leer el cuerpo; antes, el proxy (`web/src/lib/authz.ts`) no las deja pasar sin sesión
@@ -475,9 +478,18 @@ correo o un correo fuera de la lista de acceso dejan la edición apagada. `ACTOR
   solo los bloques movidos de la simulación, sumados a los minutos que la tarea ya tenga en el plan de ese día; muestra
   antes la lista por día y no escribe sin «Confirmar y guardar»; informa cada día (guardado, conflicto con el plan
   actual o error) y quita de la simulación los movimientos de los días guardados.
-- **`escenario.guardar`.** Solo alta, como `TIEMPOS`: ninguna operación edita ni borra escenarios. `parametros` se valida
-  campo a campo con los rangos del motor (por ejemplo `sobrecargaPct` 0–300) y se guarda como JSON de hasta 2000
-  caracteres; un escenario guardado no cambia los datos base.
+- **`escenario.guardar`.** Solo alta (ORD-POS-141: «solo altas y archivar»): ninguna operación borra escenarios ni
+  edita su nombre, parámetros o huella. `parametros` se valida con `normalizeScenario` (`web/src/lib/planning/scenario.ts`,
+  los rangos del motor, por ejemplo `sobrecargaPct` 0–300; otra clave se rechaza) y se guarda como JSON canónico de hasta
+  2000 caracteres. `huella` es la huella de los datos de entrada del motor (`huellaDatos` en
+  `web/src/lib/planificacion-escenarios.ts`: el `PlanningInput`, sin escenario ni fecha). La fila nace `ESTADO` `ACTIVO` y
+  `VERSION` `1`. Guardar no lee ni escribe ninguna otra pestaña de datos: no cambia el plan (aplicar es ORD-POS-140).
+- **`escenario.archivar`** (ORD-POS-141). `ESTADO` `ACTIVO` → `ARCHIVADO` y `VERSION` + 1, con `expectedVersion`
+  (`conflicto-version` si no coincide; ya archivado, 409 `escenario-archivado`). La fila no se borra; la vista deja de
+  listarla.
+- **Cargar** (ORD-POS-141) no es una operación: el navegador valida `PARAMETROS` con `normalizeScenario` y re-simula con
+  los datos de ahora; si la huella guardada no es la de ahora, avisa «Los datos cambiaron desde que lo guardaste». Un
+  `PARAMETROS` que no valida no se carga.
 - **Auditoría.** Una fila por campo, `ENTIDAD` = la pestaña escrita (`CAPACIDAD_SEMANAL`, `PLAN_DIARIO`, `PLAN_ITEMS` o
   `ESCENARIOS`), `ORIGEN` con `op=<operación>;req=<requestId>;h=<hash>`. Amplía la lista de pestañas del inicio de este
   documento solo con esas cuatro.
@@ -494,11 +506,15 @@ responden 422 `migracion-pendiente` (con la pestaña) sin escribir nada, ni en `
 | --- | --- | --- |
 | `CAPACIDAD_SEMANAL` | `VERSION` al final, después de `ACTUALIZADO_EN` | H |
 | `PLAN_DIARIO` | `VERSION` al final, después de `ACTUALIZADO_EN` | H |
-| `ESCENARIOS` (nueva) | Pestaña nueva, al final del libro, con fila 1 exacta: `ESCENARIO_ID`, `NOMBRE`, `SEMANA_ID`, `PARAMETROS`, `CREADO_EN` | A a E |
+| `ESCENARIOS` (nueva) | Pestaña nueva, al final del libro, con fila 1 exacta: `ESCENARIO_ID`, `NOMBRE`, `SEMANA_ID`, `PARAMETROS`, `CREADO_EN`, `HUELLA`, `ESTADO`, `VERSION` | A a H |
 
 - **Filas existentes.** En `CAPACIDAD_SEMANAL` y `PLAN_DIARIO`, el propietario escribe `1` en `VERSION` de cada fila con
   datos. Una fila con `VERSION` vacía o no entera no se edita (409 `version-faltante`); el servidor nunca la supone. Las
   otras columnas no cambian. `ESCENARIOS` empieza vacía.
+- **ESCENARIOS, columnas F a H** (ORD-POS-141). La orden pide guardar la huella de entrada y la versión, y archivar:
+  `HUELLA`, `ESTADO` y `VERSION` amplían, al final, la fila 1 que fijó ORD-POS-138 (A a E). Como la pestaña aún no
+  existe, el propietario la crea de una vez con las 8 columnas. Sin la pestaña, o sin alguna de las 8, las dos operaciones
+  no escriben nada (422 `migracion-pendiente` o 503 `esquema-invalido`) y la vista dice «Falta la migración».
 - **Encabezados.** Exactos, en mayúsculas, sin espacios y sin repetirse. `ESCENARIOS` se lee como pestaña opcional
   (`OPTIONAL_TABS`): si falta, el resto se lee igual.
 - **Comprobar.** `/planificacion` sin avisos de esquema; una edición de prueba deja `VERSION` + 1 y sus filas en
@@ -564,6 +580,7 @@ operaciones nuevas, que esperan las migraciones de §11.2.
 | `capacidad.registrar` | `requestId` (UUID v4) + `SEMANA_ID` | Mismo `requestId` y hash: `repetida`, o completa lo auditado (roll-forward, contrato §8) | Alta de un `SEMANA_ID` que ya existe: 409 `conflicto-concurrente` |
 | `plan.dia.guardar` | `requestId` + `FECHA` | Igual; los `PLAN_ITEMS` se completan con lo auditado | Dos planes activos para la fecha o `VERSION` distinta: 409 |
 | `escenario.guardar` | `requestId` | Igual; no crea otra fila | Mismo `requestId` con otro cuerpo: 409 `conflicto-idempotencia` |
+| `escenario.archivar` | `requestId` + `ESCENARIO_ID` | Igual; completa lo auditado si la fila sigue en la versión anterior | `VERSION` distinta: 409 `conflicto-version` |
 
 - **IDs estables.** `PLAN_ID` = `PLAN-AAAA-MM-DD` de su fecha; `PLAN_ITEM_ID` = `<PLAN_ID>-<TAREA_ID>`, de modo que volver
   a poner una tarea en el día reutiliza su fila; `ESCENARIO_ID` = `ESC-NNN`, el siguiente de la columna A. Las filas

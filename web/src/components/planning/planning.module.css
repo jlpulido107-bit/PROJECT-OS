@@ -88,6 +88,8 @@
 .capacidadForm { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); align-items: end; }
 .capacidadForm :global(.form-actions) { grid-column: 1 / -1; }
 .capacidadForm input, .capacidadForm select { width: 100%; min-width: 0; }
+.escenarioLista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.escenarioLista li { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 
 /* «Aplicar movimientos al plan» (ORD-POS-140): confirmación y resultado por día. */
 .aplicarPlan { display: grid; gap: 8px; margin: 0.75rem 0; min-width: 0; overflow-wrap: anywhere; }
