@@ -1,6 +1,7 @@
 import { addCivilDays, civilDaysBetween, isCivilDate, isoMonday, isoWeekday, isoWeekId, weekDays } from './calendar'
 import { analyzeDependencies } from './graph'
 import { fingerprint } from './fingerprint'
+import { sinFijadasVacias } from './scenario'
 import {
   BLOCKED_TASK_STATE, CLOSED_TASK_STATES, compareIds, FAIRNESS_FLOOR_MIN, hoursToMinutes, INACTIVE_PROJECT_STATES,
   MAX_BLOCK_MIN, MIN_BLOCK_MIN, normalizeProjectPriority, normalizeTaskPriority, PLAN_CANCELLED_STATES, PROJECT_WEIGHT,
@@ -533,9 +534,54 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
   const scheduledByTask = new Map<string, number>()
   const daysByTask = new Map<string, string[]>()
   let globalLeft = insufficient ? 0 : weeklyFree
-  const schedulingDays = days.filter((d) => (freeByDay.get(d) ?? 0) > 0)
+
+  // Movimientos simulados (ORD-POS-137): cada tarea fijada recibe TODO su objetivo semanal en su día, antes que el resto.
+  // Su tiempo sale del hueco de ese día (que puede quedar por encima de su capacidad, con conflicto) y del saldo
+  // semanal; el resto se recalcula con lo que queda. Sin fijadas, este bloque no hace nada.
+  const pinnedMinByDay = new Map<string, number>()
+  const pinnedTasks = new Set<string>()
+  const pins = Object.entries(scenario.fijadas ?? {}).sort(([a], [b]) => compareIds(a, b))
+  if (pins.length && !insufficient) {
+    supuestos.push(`Escenario: ${pins.length === 1 ? '1 tarea movida' : `${pins.length} tareas movidas`} a otro día (simulación, sin guardar).`)
+    const eligibleIds = new Set(eligible.map((p) => p.id))
+    const pinOf = new Map(pins)
+    for (const p of eligible) {
+      const fecha = pinOf.get(p.id)
+      if (fecha === undefined) continue
+      const target = remainingTarget.get(p.id) ?? 0
+      if (fecha < desde || fecha > domingo) {
+        conflictos.push({ codigo: 'fijada-fuera-de-semana', mensaje: `${p.id} se movió al ${fecha}, fuera de los días que quedan de la semana (${desde} a ${domingo}): no se mueve.`, refs: [p.id] })
+        continue
+      }
+      if (target <= 0) continue
+      const task = tasks.get(p.id)!
+      dayItems.get(fecha)!.push({ tareaId: p.id, proyectoId: p.proyectoId, minutos: target, orden: dayItems.get(fecha)!.length + 1, motivo: 'Movida (simulación)', fijada: true })
+      daysByTask.set(p.id, [fecha])
+      scheduledByTask.set(p.id, target)
+      remainingTarget.set(p.id, 0)
+      globalLeft -= target
+      pinnedMinByDay.set(fecha, (pinnedMinByDay.get(fecha) ?? 0) + target)
+      pinnedTasks.add(p.id)
+      p.explicacion.push(`Movida al ${fecha} en la simulación (sin guardar).`)
+      if (task.fechaPlan && fecha < task.fechaPlan) {
+        p.explicacion.push(`Movida antes de su FECHA_PLAN (${task.fechaPlan}).`)
+        conflictos.push({ codigo: 'fijada-antes-de-fecha-plan', mensaje: `${p.id} se movió al ${fecha}, antes de su FECHA_PLAN (${task.fechaPlan}).`, refs: [p.id] })
+      }
+    }
+    for (const [id, fecha] of pins) {
+      if (pinnedTasks.has(id) || (eligibleIds.has(id) && (fecha < desde || fecha > domingo))) continue
+      conflictos.push({ codigo: 'fijada-sin-tiempo', mensaje: `${id} no tiene tiempo propuesto esta semana: el movimiento no cambia nada.`, refs: [id] })
+    }
+    for (const [fecha, min] of [...pinnedMinByDay].sort(([a], [b]) => a.localeCompare(b))) {
+      const free = freeByDay.get(fecha) ?? 0
+      if (min > free) {
+        conflictos.push({ codigo: 'dia-excedido-por-movimiento', mensaje: `Con los movimientos, el ${fecha} queda ${fmtMin(min - free)} por encima de su hueco libre (${fmtMin(free)}).`, refs: dayItems.get(fecha)!.map((i) => i.tareaId) })
+      }
+    }
+  }
+  const schedulingDays = days.filter((d) => (freeByDay.get(d) ?? 0) - (pinnedMinByDay.get(d) ?? 0) > 0)
   for (const d of schedulingDays) {
-    let c = Math.min(freeByDay.get(d)!, globalLeft)
+    let c = Math.min(freeByDay.get(d)! - (pinnedMinByDay.get(d) ?? 0), Math.max(0, globalLeft))
     const items = dayItems.get(d)!
     const startable = (p: TaskPlan) => {
       const task = tasks.get(p.id)!
@@ -686,7 +732,7 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
     preguntas,
     supuestos,
   }
-  return { ...result, huella: fingerprint({ input, scenario, ref, zone }) }
+  return { ...result, huella: fingerprint({ input, scenario: sinFijadasVacias(scenario), ref, zone }) }
 }
 
 function shortMotive(p: TaskPlan): string {

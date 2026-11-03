@@ -1,12 +1,15 @@
 import { Empty, Section } from '@/components/ui'
+import type { EdicionSemana, TarjetaSemana as Tarjeta } from '@/lib/planificacion-edicion'
 import type { HitoSemana } from '@/lib/planificacion-semana-hitos'
 import { fechaCorta, minutosTexto, textoDia, textoDias, type Bloque, type DiasSemana } from '@/lib/planificacion-semana'
 import styles from './planning.module.css'
+import { TarjetaSemana } from './tarjeta-semana'
 
 /**
  * Capa Semana (ORD-POS-121, docs/diseno-planificacion-v2.md §5): horas planeadas contra disponibles y reales por día, e
  * hitos con días restantes y avance. Solo lectura. Barras en CSS sin color de «bien» o «mal»; cada gráfica lleva su tabla
- * accesible y el exceso de capacidad se dice con texto.
+ * accesible y el exceso de capacidad se dice con texto. Las tarjetas de tareas (ORD-POS-136) editan FECHA_PLAN,
+ * HORAS_ESTIMADAS e HITO_ID solo para el propietario con PLANIFICACION_EDICION_PROPIETARIO; si no, «Edición apagada».
  */
 
 const pct = (parte: number, total: number) => (total <= 0 ? 0 : Math.min(100, Math.round((parte / total) * 100)))
@@ -96,10 +99,22 @@ function Hitos({ hitos }: { hitos: HitoSemana[] }) {
   )
 }
 
-export function CapaSemana({ dias, hitos }: { dias: Bloque<DiasSemana>; hitos: Bloque<HitoSemana[]> }) {
+function Tarjetas({ tarjetas, edicion }: { tarjetas: Tarjeta[]; edicion: EdicionSemana }) {
+  if (tarjetas.length === 0) return <Empty>No hay tareas planeadas esta semana.</Empty>
+  return <ul className={styles.tarjetasSemana}>{tarjetas.map((t) => <TarjetaSemana key={t.id} tarea={t} edicion={edicion} />)}</ul>
+}
+
+export function CapaSemana({ dias, hitos, tarjetas = [], edicion = { encendida: false } }: {
+  dias: Bloque<DiasSemana>
+  hitos: Bloque<HitoSemana[]>
+  tarjetas?: Tarjeta[]
+  edicion?: EdicionSemana
+}) {
   return (
     <Section title="Semana" id="semana">
       {dias.estado === 'ok' ? <Dias semana={dias.datos} /> : <SinDatos motivo={dias.motivo} />}
+      <h3>Tareas de la semana</h3>
+      <Tarjetas tarjetas={tarjetas} edicion={edicion} />
       <h3>Hitos</h3>
       {hitos.estado === 'ok' ? <Hitos hitos={hitos.datos} /> : <SinDatos motivo={hitos.motivo} />}
     </Section>

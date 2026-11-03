@@ -369,13 +369,52 @@ web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_IDEAS_ALTA
 
 Quitar `ECO_PIPELINE_WRITE_MODE` sin quitar también `ECO_IDEAS_ALTA` hace fallar el render: no se aplica nada.
 
-## 10. Planificación editable por el propietario (ORD-POS-138, DEC-POS-029)
+## 10. Edición de la planificación por el propietario (ORD-POS-136, DEC-POS-029)
+
+DEC-POS-029 (b, f y g): el propietario edita `FECHA_PLAN`, `HORAS_ESTIMADAS` e `HITO_ID` desde la tarjeta de cada tarea
+de la capa Semana de `/planificacion`, con su sesión de Google. `ESTADO`, `BLOQUEO`, cancelar y reabrir siguen fuera;
+Tiempos sigue proponiendo por paquete (DEC-POS-024). Capacidad, escenarios y calendario ICS son órdenes aparte.
+
+- **Bandera.** `PLANIFICACION_EDICION_PROPIETARIO`: solo `true`. Exige `PLANIFICACION_EDICION_PROPIETARIO_EMAIL` con un
+  único correo que esté en `AUTH_ALLOWED_EMAILS` (la misma comprobación que §7; `planificacionEdicionPropietario` en
+  `web/src/lib/operations/config.ts`), y la escritura habilitada.
+- **Apagada (por defecto), o con otra sesión.** Cada tarjeta dice «Edición apagada» y no hay formulario; el navegador no
+  recibe versiones.
+- **Encendida.** **Editar** abre los 3 campos; **Guardar** manda `PATCH /api/operaciones/tareas/<id>` con
+  `expectedVersion` y solo esos campos (vacío = celda vacía, nunca 0). Es la ruta y la operación `tarea.editar` de
+  siempre: el servidor no cambia, y valida, audita (`ACTOR` = el correo de la sesión) y verifica como en cualquier
+  edición. Tras guardar, la vista se recalcula con `router.refresh()`. En conflicto de versión se recarga la vista y
+  se muestran el valor actual y el tuyo, con «Usar el actual» o «Guardar el mío sobre el actual».
+- **Límite conocido.** La bandera solo decide qué muestra la tarjeta: cualquier escritor de `AUTH_WRITER_EMAILS` ya podía
+  editar esos campos por `/tareas/<id>/editar` y la API, y lo sigue pudiendo.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+```bash
+export PLANIFICACION_EDICION_PROPIETARIO=true
+export PLANIFICACION_EDICION_PROPIETARIO_EMAIL='<correo del propietario>'
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar las dos con «+»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+Otro valor que `true`, una sola de las dos, un correo mal formado o la falta de `WRITE_MODE=sheets` hacen fallar el
+render sin aplicar nada.
+
+### Revertir
+
+`web/deploy/cloudrun/deploy.sh --desde-activa --quitar PLANIFICACION_EDICION_PROPIETARIO` (quita también el correo).
+Las tarjetas vuelven a «Edición apagada»; lo ya guardado queda en la hoja y en `AUDITORIA`.
+
+## 11. Planificación editable por el propietario (ORD-POS-138, DEC-POS-029)
 
 DEC-POS-029 (APROBADA el 2026-11-02 según la orden ORD-POS-138, fila 41 de `DECISIONES`; amplía DEC-POS-023 y
 DEC-POS-024): el propietario edita la planificación desde `/planificacion` y puede suscribirse a un calendario ICS de
 solo lectura. Esta sección fija el contrato **antes del código**: operaciones, migraciones, banderas, idempotencia y
-datos del calendario. El código lo traen ORD-POS-139 a ORD-POS-142; el reparto entre ellas lo fija cada orden. **Estado:
-diseño; nada implementado, migrado ni encendido.** Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
+datos del calendario. El código lo traen ORD-POS-139 a ORD-POS-142; el reparto entre ellas lo fija cada orden.
+Lo que ya está hecho vive en §10 (ORD-POS-136) y esta sección no lo cambia: la edición de `FECHA_PLAN`,
+`HORAS_ESTIMADAS` e `HITO_ID` desde la tarjeta con `tarea.editar`, y la bandera `PLANIFICACION_EDICION_PROPIETARIO` con
+su correo; si algo de aquí parece contradecirla, manda §10. **Estado de lo demás (capacidad, plan del día, escenarios y
+calendario): diseño; nada implementado, migrado ni encendido.** Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
 solo el propietario aplica las migraciones, crea el secreto y enciende las banderas.
 
 Reglas que no cambian: la hoja es la fuente; toda edición pasa por el servidor, con versión esperada y `AUDITORIA`
@@ -384,15 +423,15 @@ navegador a Sheets; `ESTADO`, `BLOQUEO`, cancelar y reabrir tareas siguen fuera 
 Tiempos solo propone por paquete (DEC-POS-024) y el PM solo escribe con el «sí PAQ» verificado (DEC-POS-013); vacío ≠ 0;
 sin dependencias nuevas (el arrastre es HTML nativo).
 
-### 10.1 Quién puede y operaciones (criterio 1)
+### 11.1 Quién puede y operaciones (criterio 1)
 
-**Actor único: el propietario**, con su sesión de Google y la misma comprobación de correo de §7: un único correo en
+**Actor único: el propietario**, con su sesión de Google y la misma comprobación de correo de §7 y §10: un único correo en
 `PLANIFICACION_EDICION_PROPIETARIO_EMAIL`, que además esté en `AUTH_ALLOWED_EMAILS`; una lista, un valor que no sea
 correo o un correo fuera de la lista de acceso dejan la edición apagada. `ACTOR` en `AUDITORIA` es ese correo.
 
 | Operación | Ruta (`POST`) | Pestañas que escribe | Campos que acepta |
 | --- | --- | --- | --- |
-| `tarea.editar` (existente) | `/api/operaciones/tareas/<id>` (`PATCH`) | `TAREAS` | Desde `/planificacion` solo `fechaPlan`, `horasEstimadas` e `hitoId`, con `expectedVersion`; sus reglas no cambian |
+| `tarea.editar` (existente) | `/api/operaciones/tareas/<id>` (`PATCH`) | `TAREAS` | Desde `/planificacion` solo `fechaPlan`, `horasEstimadas` e `hitoId`, con `expectedVersion`; ya implementada, ver §10 |
 | `capacidad.registrar` | `/api/operaciones/capacidad` | `CAPACIDAD_SEMANAL` | `semanaId`, `fechaInicio`, `horasDisponibles`, `reservaPct`, `estado` y, al editar, `expectedVersion` |
 | `plan.dia.guardar` | `/api/operaciones/plan-dia` | `PLAN_DIARIO` y `PLAN_ITEMS` | `fecha`, `estado`, `horasObjetivo`, `items` (`tareaId`, `orden`, `minutosPlan`) y, si el plan existe, `expectedVersion` |
 | `escenario.guardar` | `/api/operaciones/escenarios` | `ESCENARIOS` | `nombre`, `semanaId`, `parametros` (los del `Scenario` de `web/src/lib/planning/types.ts`) |
@@ -418,10 +457,11 @@ correo o un correo fuera de la lista de acceso dejan la edición apagada. `ACTOR
   `ESCENARIOS`), `ORIGEN` con `op=<operación>;req=<requestId>;h=<hash>`. Amplía la lista de pestañas del inicio de este
   documento solo con esas cuatro.
 
-### 10.2 Migraciones explícitas (criterio 2)
+### 11.2 Migraciones explícitas (criterio 2)
 
 Las aplica **solo el propietario, a mano en la hoja**, después de fusionar y desplegar el código que las lee y antes de
-encender `PLANIFICACION_EDICION_PROPIETARIO`. Ningún agente las aplica. Como con `INSTRUCCIONES`
+usar las tres operaciones nuevas. Si `PLANIFICACION_EDICION_PROPIETARIO` ya está encendida por §10, esas operaciones
+responden 422 `migracion-pendiente` hasta entonces; la edición de §10 no las necesita. Ningún agente las aplica. Como con `INSTRUCCIONES`
 ([migración](migracion-instrucciones.md)), la lectura no las exige: sin ellas, el dashboard lee igual y las operaciones
 responden 422 `migracion-pendiente` (con la pestaña) sin escribir nada, ni en `AUDITORIA`.
 
@@ -438,14 +478,14 @@ responden 422 `migracion-pendiente` (con la pestaña) sin escribir nada, ni en `
   (`OPTIONAL_TABS`): si falta, el resto se lee igual.
 - **Comprobar.** `/planificacion` sin avisos de esquema; una edición de prueba deja `VERSION` + 1 y sus filas en
   `AUDITORIA`.
-- **Revertir.** Apagar la bandera (§10.3) y después borrar las columnas `VERSION` completas y la pestaña `ESCENARIOS`.
+- **Revertir.** Apagar la bandera (§11.3) y después borrar las columnas `VERSION` completas y la pestaña `ESCENARIOS`.
   Lo guardado queda en `AUDITORIA` como historial.
 
-### 10.3 Banderas, secreto del calendario y rotación (criterio 3)
+### 11.3 Banderas, secreto del calendario y rotación (criterio 3)
 
 | Bandera | Enciende | Requisitos | Apagada |
 | --- | --- | --- | --- |
-| `PLANIFICACION_EDICION_PROPIETARIO` = `true` | Arrastre y formularios de `/planificacion`, y las tres operaciones | `PLANIFICACION_EDICION_PROPIETARIO_EMAIL` válido (§10.1) y `WRITE_MODE=sheets` | 403 `operacion-no-permitida` sin leer el cuerpo; la página no muestra controles de edición |
+| `PLANIFICACION_EDICION_PROPIETARIO` = `true` | Arrastre y formularios de `/planificacion`, y las tres operaciones | `PLANIFICACION_EDICION_PROPIETARIO_EMAIL` válido (§11.1) y `WRITE_MODE=sheets` | Las tres operaciones nuevas: 403 `operacion-no-permitida` sin leer el cuerpo; la página no muestra controles de edición. `tarea.editar` sigue como dice §10 (su límite conocido incluido) |
 | `PLANIFICACION_ICS` = `true` | `GET /api/planificacion/calendario.ics?token=<secreto>` | `SECRET_VERSION_CALENDARIO_ICS` (no depende de `WRITE_MODE`) | 404, igual que sin secreto o con un token inválido |
 
 Solo el valor exacto `true` las enciende; otro valor, o una sin sus requisitos, hace fallar el render sin aplicar nada.
@@ -479,21 +519,20 @@ unset TOKEN
 export PLANIFICACION_ICS=true SECRET_VERSION_CALENDARIO_ICS=1
 web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ PLANIFICACION_ICS» y «+ CALENDARIO_ICS_TOKEN_SHA256»
 web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
-
-# Edición (con las migraciones de §10.2 aplicadas)
-export PLANIFICACION_EDICION_PROPIETARIO=true PLANIFICACION_EDICION_PROPIETARIO_EMAIL='<correo del propietario>'
-web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar las dos variables con «+»
-web/deploy/cloudrun/deploy.sh --desde-activa
 ```
+
+La edición se enciende y se revierte como dice §10 («Activar» y «Revertir»), con la misma bandera y el mismo correo;
+esta sección no añade otro paso. Con el código de ORD-POS-139 a 142 desplegado, esa bandera enciende además las tres
+operaciones nuevas, que esperan las migraciones de §11.2.
 
 - **Rotar.** Token nuevo como arriba, `gcloud secrets versions add project-os-calendario-ics-token-sha256 --data-file=-`,
   despliegue con la nueva `SECRET_VERSION_CALENDARIO_ICS` y, después, `gcloud secrets versions disable <anterior>`. El
   enlace viejo responde 404; el propietario cambia la suscripción en su calendario.
-- **Revertir.** `deploy.sh --desde-activa --quitar PLANIFICACION_ICS` (quita también el hash) y
-  `deploy.sh --desde-activa --quitar PLANIFICACION_EDICION_PROPIETARIO` (quita también el correo). Lo ya escrito no se
+- **Revertir.** `deploy.sh --desde-activa --quitar PLANIFICACION_ICS` (quita también el hash); la edición, como en §10
+  («Revertir»). Lo ya escrito no se
   deshace solo: el propietario lo corrige en la hoja con `AUDITORIA` como guía.
 
-### 10.4 Idempotencia (criterio 4)
+### 11.4 Idempotencia (criterio 4)
 
 | Operación | Clave | Reintento | Choque |
 | --- | --- | --- | --- |
@@ -510,17 +549,17 @@ web/deploy/cloudrun/deploy.sh --desde-activa
   `DTSTAMP` sale de la hoja (el `ACTUALIZADO_EN` del plan o de la tarea), nunca del reloj. Pedir el calendario dos veces
   el mismo día da el mismo archivo si la hoja no cambió.
 
-### 10.5 Qué sale en el calendario y qué nunca (criterio 5)
+### 11.5 Qué sale en el calendario y qué nunca (criterio 5)
 
 Eventos de día completo (`DTSTART;VALUE=DATE`) de los próximos 14 días: hoy y los 13 siguientes, en fecha civil de
 Mérida (`America/Merida`, la zona del motor). Dos clases de evento, nada más:
 
 - **Plan:** por cada ítem de `PLAN_ITEMS` registrado en un plan de `PLAN_DIARIO` de esa fecha, un evento con `SUMMARY` =
   `<TITULO> · <TAREA_ID> · <MINUTOS_PLAN> min` (por ejemplo «Revisar contrato · POS-045 · 45 min»), con sus minutos tal
-  como están en la hoja. Un ítem con `MINUTOS_PLAN` = `0` (tarea quitada del día, §10.1) o vacío no sale: vacío ≠ 0 y
-  nunca se inventan minutos. `UID` `<TAREA_ID>-<AAAA-MM-DD>-plan@project-os` (§10.4).
+  como están en la hoja. Un ítem con `MINUTOS_PLAN` = `0` (tarea quitada del día, §11.1) o vacío no sale: vacío ≠ 0 y
+  nunca se inventan minutos. `UID` `<TAREA_ID>-<AAAA-MM-DD>-plan@project-os` (§11.4).
 - **Vencimiento:** por cada tarea abierta con `FECHA_LIMITE` dentro de la ventana, un evento con `SUMMARY` =
-  `Vence: <TITULO> · <TAREA_ID>` en esa fecha. `UID` `<TAREA_ID>-<AAAA-MM-DD>-vence@project-os` (§10.4).
+  `Vence: <TITULO> · <TAREA_ID>` en esa fecha. `UID` `<TAREA_ID>-<AAAA-MM-DD>-vence@project-os` (§11.4).
 - **Sin plan registrado** para un día, ese día solo tiene vencimientos; `FECHA_PLAN` o `HORAS_ESTIMADAS` no generan
   eventos por sí solas. Las tareas `COMPLETADO` y `CANCELADO` no salen.
 - **Sale:** solo `SUMMARY`, la fecha, `UID` y `DTSTAMP`; sin `DESCRIPTION`.

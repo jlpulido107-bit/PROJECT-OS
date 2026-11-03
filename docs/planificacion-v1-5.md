@@ -75,6 +75,17 @@ anunciados (`aria-invalid` y `role="alert"`).
   - **Contiene:** IDs de tarea y proyecto, fechas, minutos, decisiones, escenario, supuestos y la huella de entrada.
   - **No contiene:** títulos, nombres, correos ni notas.
   - **No se aplica** en ningún lugar.
+- **Mover tareas entre días (ORD-POS-137):** cada bloque de «Propuesta por día» se arrastra a otro día (arrastre HTML
+  nativo) o se mueve con su selector «Mover a…» (teclado y celular). El movimiento vive en el escenario como
+  `fijadas` (tarea → fecha `AAAA-MM-DD`, máximo 200): el motor coloca primero cada fijada, con todo su objetivo semanal,
+  en su día y recalcula el resto; la capacidad de cada día cambia al instante. Un día que queda por encima de su hueco,
+  un movimiento antes de `FECHA_PLAN` («antes de su FECHA_PLAN») o fuera de los días que quedan se informan como
+  conflicto; nunca se recortan en silencio. La tarjeta movida lleva borde punteado y la marca «Simulado»; el aviso dice
+  «N movimientos sin guardar» solo cuando los hay, y «Descartar movimientos» los quita. **No se guardan** en la hoja.
+  Con `fijadas` vacío o ausente el resultado y la huella son idénticos a los de antes.
+- **Esquema v2 de la exportación:** sin movimientos se exporta `project-os.planificacion.propuesta/v1`, sin cambios.
+  Con movimientos se exporta `project-os.planificacion.propuesta/v2` = v1 más `escenario.fijadas` (tarea → fecha) y
+  `fijada: true` en cada elemento de una tarea movida. Tampoco lleva títulos, nombres, correos ni notas.
 
 ## 5. API de solo lectura
 

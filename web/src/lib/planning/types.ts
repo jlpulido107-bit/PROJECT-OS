@@ -56,6 +56,12 @@ export interface Scenario {
   sobrecargaPct: number
   /** Supuesto: descontar el tiempo registrado de la estimación. No implica avance. */
   descontarRegistrado: boolean
+  /**
+   * Movimientos simulados (ORD-POS-137): tarea → fecha civil donde el propietario la fijó. El motor coloca primero las
+   * fijadas en su día y recalcula el resto. Ausente o vacío = sin movimientos (el resultado es idéntico al de antes).
+   * Nunca se guarda en la hoja.
+   */
+  fijadas?: Record<string, string>
 }
 
 export type Reason =
@@ -126,7 +132,8 @@ export interface DayPlan {
   propuestoMin: number
   /** El día tiene PLAN_DIARIO registrado (se respeta, no se altera). */
   planRegistrado: string | null
-  items: Array<{ tareaId: string; proyectoId: string | null; minutos: number; orden: number; motivo: string }>
+  /** `fijada` solo aparece (true) en los bloques de una tarea movida en la simulación. */
+  items: Array<{ tareaId: string; proyectoId: string | null; minutos: number; orden: number; motivo: string; fijada?: true }>
 }
 
 export interface ProjectPlan {

@@ -7,8 +7,9 @@ import { LLAMADAS_AGENTES } from '@/lib/agentes-data'
 import { MERIDA_TZ } from '@/lib/dates'
 import { fuenteBanderas } from '@/lib/banderas'
 import { commitDesplegado } from '@/lib/despliegue'
-import { canWrite, isWriter, puedeCerrarTareas } from '@/lib/operations/config'
+import { canWrite, isWriter, puedeCerrarTareas, puedeEditarPlanificacion } from '@/lib/operations/config'
 import { githubClient } from '@/lib/operations/dispatch'
+import type { EdicionSemana } from '@/lib/planificacion-edicion'
 import { capaFlujo, githubDeFlujo } from '@/lib/planificacion-flujo'
 import { hitosSemana } from '@/lib/planificacion-semana-hitos'
 import { capaHoy } from '@/lib/planificacion-v2'
@@ -39,6 +40,18 @@ export default async function PlanningPage() {
   // Activada (ORD-POS-125): la columna BANDERA y el estado de la bandera, solo para la sesión del propietario.
   const flujo = capaFlujo(data.ordenes, ordenesOk, client && ordenesOk ? await githubDeFlujo(client, data.ordenes, { commit }) : null,
     { commit, banderas: fuenteBanderas(data.ordenesConBandera, isWriter(user.email)) })
+  // Edición en línea de la capa Semana (ORD-POS-136, DEC-POS-029): solo el propietario con PLANIFICACION_EDICION_PROPIETARIO
+  // y la escritura habilitada. Apagada, no se mandan versiones al navegador y la tarjeta dice «Edición apagada».
+  const edicion: EdicionSemana = puedeEditarPlanificacion(user.email) && canWrite(user.email)
+    ? {
+        encendida: true,
+        versiones: Object.fromEntries(data.tareas.map((t) => [t.id, Number(t.version ?? '0') || 0])),
+        hitosPorProyecto: data.hitos.reduce<Record<string, Array<{ value: string; label: string }>>>((acc, h) => {
+          if (h.proyectoId) (acc[h.proyectoId] ??= []).push({ value: h.id, label: `${h.id}${h.nombre ? ` · ${h.nombre}` : ''}` })
+          return acc
+        }, {}),
+      }
+    : { encendida: false }
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para
   // simular escenarios al instante, sin enviar nada de vuelta.
   return (
@@ -49,7 +62,7 @@ export default async function PlanningPage() {
       <HoyView capa={hoy} puedeCerrar={puedeCerrar} />
       <FlujoView capa={flujo} />
       {/* Semana visible y «Detalle del plan» plegado: los pinta PlanningView, porque la capa Semana sigue el escenario del cliente. */}
-      <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} />
+      <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} edicion={edicion} />
     </>
   )
 }

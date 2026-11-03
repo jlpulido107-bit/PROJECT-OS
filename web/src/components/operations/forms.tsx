@@ -25,7 +25,8 @@ type OpState = { status: 'idle' } | { status: 'sending' } | { status: 'done'; re
 
 const RETRY_SAME_REQUEST = new Set(['escritura-fallida', 'red'])
 
-function useOperation(endpoint: string, method: 'POST' | 'PATCH') {
+/** Envío idempotente de una operación; también lo usa la edición en línea de /planificacion (ORD-POS-136). */
+export function useOperation(endpoint: string, method: 'POST' | 'PATCH') {
   const router = useRouter()
   const [state, setState] = useState<OpState>({ status: 'idle' })
   const last = useRef<{ requestId: string; payload: string; code?: string } | null>(null)
