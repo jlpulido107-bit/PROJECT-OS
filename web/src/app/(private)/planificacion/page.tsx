@@ -50,6 +50,11 @@ export default async function PlanningPage() {
           if (h.proyectoId) (acc[h.proyectoId] ??= []).push({ value: h.id, label: `${h.id}${h.nombre ? ` · ${h.nombre}` : ''}` })
           return acc
         }, {}),
+        // Panel «Capacidad de la semana» (ORD-POS-139): la VERSION de cada fila; vacía o no entera = null (no se edita).
+        capacidad: {
+          migrada: data.capacidadConVersion,
+          versiones: Object.fromEntries(data.capacidad.map((c) => [c.id, /^\d+$/.test(c.version ?? '') ? Number(c.version) : null])),
+        },
       }
     : { encendida: false }
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para

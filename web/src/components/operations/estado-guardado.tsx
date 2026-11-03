@@ -6,8 +6,10 @@ import type { EstadoGuardado as Estado } from '@/lib/planificacion-edicion'
  * el tuyo, y error que conserva lo escrito. Todo vive dentro de una región aria-live que existe desde el primer render,
  * para que el lector de pantalla anuncie cada cambio; el conflicto y el error, además, como alerta.
  */
-export function EstadoGuardado({ estado, actual, tuyo, children }: {
+export function EstadoGuardado({ estado, actual, tuyo, children, registro = 'la tarea' }: {
   estado: Estado
+  /** Qué cambió otra sesión, para el texto del conflicto («la tarea», «la capacidad de la semana»). */
+  registro?: string
   /** Valor actual de la hoja (tras recargar la vista), para el conflicto. */
   actual?: ReactNode
   /** Lo que escribiste, para el conflicto. */
@@ -27,7 +29,7 @@ export function EstadoGuardado({ estado, actual, tuyo, children }: {
       {estado.tipo === 'conflicto' ? (
         <div className="alert alert-danger small" role="alert">
           <p>
-            <strong>Conflicto de versión: no se guardó.</strong> Otra sesión cambió la tarea
+            <strong>Conflicto de versión: no se guardó.</strong> Otra sesión cambió {registro}
             {estado.versionActual !== null ? <> (ahora va en la versión {estado.versionActual})</> : null}.
           </p>
           {actual !== undefined ? <p>Valor actual: {actual}</p> : null}

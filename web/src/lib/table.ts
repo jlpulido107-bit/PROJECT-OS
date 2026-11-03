@@ -198,6 +198,8 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     estado: r.code('ESTADO'),
     notas: r.text('NOTAS'),
     actualizadoEn: r.timestamp('ACTUALIZADO_EN'),
+    // Columna de la migración de ORD-POS-139 (opcional): sin ella, null; capacidadConVersion dice si la hoja ya la tiene.
+    version: r.text('VERSION'),
   }))
 
   const asignaciones = mapTab('ASIGNACIONES', raw, tabs, log, (r, id) => ({
@@ -339,6 +341,7 @@ export function buildDataset(raw: RawTabs, meta: { source: DataSource; fetchedAt
     proyectos, hitos, tareas, capacidad, asignaciones, planes, planItems, tiempos,
     evidencias, dependencias, decisiones, syncRuns, ordenes, supervision,
     ordenesConBandera: tabs.ORDENES_CODEX?.ok === true && tieneColumna(raw.ORDENES_CODEX, ORDENES_BANDERA),
+    capacidadConVersion: tabs.CAPACIDAD_SEMANAL?.ok === true && tieneColumna(raw.CAPACIDAD_SEMANAL, 'VERSION'),
     issues: log.issues,
     issuesTruncated: log.truncated,
   }

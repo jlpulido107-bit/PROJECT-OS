@@ -413,8 +413,10 @@ solo lectura. Esta sección fija el contrato **antes del código**: operaciones,
 datos del calendario. El código lo traen ORD-POS-139 a ORD-POS-142; el reparto entre ellas lo fija cada orden.
 Lo que ya está hecho vive en §10 (ORD-POS-136) y esta sección no lo cambia: la edición de `FECHA_PLAN`,
 `HORAS_ESTIMADAS` e `HITO_ID` desde la tarjeta con `tarea.editar`, y la bandera `PLANIFICACION_EDICION_PROPIETARIO` con
-su correo; si algo de aquí parece contradecirla, manda §10. **Estado de lo demás (capacidad, plan del día, escenarios y
-calendario): diseño; nada implementado, migrado ni encendido.** Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
+su correo; si algo de aquí parece contradecirla, manda §10. **Estado:** `capacidad.registrar` implementada por
+ORD-POS-139 (panel «Capacidad de la semana» de la capa Semana, `POST /api/operaciones/capacidad`), inerte sin la bandera
+y sin la migración `VERSION` de `CAPACIDAD_SEMANAL`; plan del día, escenarios y calendario siguen en diseño. Nada migrado
+ni encendido. Es un trabajo ALTO partido según DEC-POS-014: el código llega inerte y
 solo el propietario aplica las migraciones, crea el secreto y enciende las banderas.
 
 Reglas que no cambian: la hoja es la fuente; toda edición pasa por el servidor, con versión esperada y `AUDITORIA`
@@ -443,6 +445,12 @@ correo o un correo fuera de la lista de acceso dejan la edición apagada. `ACTOR
 - **`capacidad.registrar`.** Alta si `SEMANA_ID` no existe (sin `expectedVersion`; con él, 422) y edición si existe
   (`expectedVersion` obligatorio, `conflicto-version` si no coincide). `NOTAS` no se toca; `ACTUALIZADO_EN` y `VERSION`
   los pone el servidor. `horasDisponibles` y `reservaPct` vacíos se guardan vacíos, nunca como 0.
+  Implementación (ORD-POS-139): horas 0–168 y reserva 0–100 con hasta 2 decimales; la reserva se escribe como `N%`, que
+  el lector ya acepta, y `0.15` en la hoja y `15` en el formulario cuentan como el mismo valor (sin cambio falso). Con
+  expectedVersion y sin fila, 422 `semana-inexistente`; otra fila con `FECHA_INICIO` en la misma semana ISO, 409
+  `capacidad-semana-ocupada` (la capacidad quedaría ambigua). El panel muestra «Edición apagada» sin la bandera, el
+  motivo si falta la migración o la fila no tiene `VERSION`, y «Sin capacidad registrada» o «Sin reserva registrada»
+  para los vacíos, nunca 0. `/capacidad` sigue de solo lectura.
 - **`plan.dia.guardar`.** Un solo plan activo por `FECHA` (el motor ya avisa `plan-diario-duplicado`): si no existe, alta
   de `PLAN_DIARIO` con `VERSION` 1; si existe, edición con `expectedVersion`. Toda guardada sube `VERSION` del plan
   aunque solo cambien los elementos: esa versión protege también sus `PLAN_ITEMS`, que no llevan `VERSION`. Nunca se

@@ -11,6 +11,8 @@ export const WRITE_HEADERS = {
   PROYECTOS: TAB_HEADERS.PROYECTOS,
   HITOS: TAB_HEADERS.HITOS,
   ORDENES_CODEX: TAB_HEADERS.ORDENES_CODEX,
+  /** ORD-POS-139 (DEC-POS-029 c): solo `capacidad.registrar` del propietario; VERSION es la migración de §11.2. */
+  CAPACIDAD_SEMANAL: TAB_HEADERS.CAPACIDAD_SEMANAL,
   AUDITORIA: [
     'AUDIT_ID', 'FECHA_HORA', 'ACTOR', 'ENTIDAD', 'REGISTRO_ID', 'CAMPO', 'VALOR_ANTES', 'VALOR_DESPUES', 'ORIGEN',
   ],
@@ -24,8 +26,13 @@ export type WriteTab = keyof typeof WRITE_HEADERS
  */
 export const OPTIONAL_WRITE_COLUMNS: Partial<Record<WriteTab, readonly string[]>> = {
   TAREAS: [TAREAS_INSTRUCCIONES],
+  /**
+   * ORD-POS-139: VERSION de CAPACIDAD_SEMANAL (migración de docs/escritura-v1-8.md §11.2, la aplica el propietario). Sin
+   * ella la pestaña se lee igual y `capacidad.registrar` responde 422 `migracion-pendiente` sin escribir nada.
+   */
+  CAPACIDAD_SEMANAL: ['VERSION'],
 }
-export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX'
+export type EntityTab = 'TAREAS' | 'TIEMPOS' | 'DECISIONES' | 'ORDENES_CODEX' | 'CAPACIDAD_SEMANAL'
 
 /**
  * Estados de tarea que la edición puede asignar. COMPLETADO/CANCELADO no se asignan editando: COMPLETADO solo con la
@@ -63,6 +70,9 @@ export const LIMITS = {
   ordenTexto: 2000,
   motivo: 500,
   notaCierre: 500,
+  /** ORD-POS-139: HORAS_DISPONIBLES de una semana (0–168) y RESERVA_PCT (0–100). */
+  horasSemanaMax: 168,
+  reservaPctMax: 100,
 } as const
 
 export const ORIGIN_PREFIX = 'dashboard-v1.4'
@@ -75,6 +85,11 @@ export type OperationName =
   | 'idea.alta'
   /** Cierre de una tarea a COMPLETADO por el propietario (ORD-POS-106, DEC-POS-023). Nunca del agente PM. */
   | 'tarea.completar'
+  /**
+   * Alta o edición de la fila de una semana en CAPACIDAD_SEMANAL por el propietario (ORD-POS-139, DEC-POS-029 c). Solo
+   * con PLANIFICACION_EDICION_PROPIETARIO y su correo; nunca un token (PM, Tiempos, finanzas). No está en AGENT_OPERATIONS.
+   */
+  | 'capacidad.registrar'
   | 'orden.crear' | 'orden.aprobar' | 'orden.cancelar' | 'orden.enviar' | 'orden.registrar_pr' | 'orden.revisar' | 'orden.cerrar'
   /** Cierre asistido de una orden cuyo PR ya se fusionó (ORD-POS-046). */
   | 'orden.cerrar_fusionado'
@@ -98,6 +113,8 @@ export const AGENT_OPERATIONS: readonly OperationName[] = ['tarea.crear', 'tarea
 export const AGENT_TIEMPOS_OPERATION: OperationName = 'tiempo.crear'
 /** ORD-POS-131 (DEC-ECO-007): operación SOLO del PM, fuera de AGENT_OPERATIONS; el guard la permite con ECO_IDEAS_ALTA=true. */
 export const AGENT_IDEAS_OPERATION: OperationName = 'idea.alta'
+/** Operaciones solo del propietario con su sesión (DEC-POS-029 a): con cualquier Authorization, 403 sin leer el cuerpo. */
+export const OWNER_PLANNING_OPERATIONS: readonly OperationName[] = ['capacidad.registrar']
 export const AGENT_ORDER_ACTIONS: readonly string[] = ['APROBAR', 'ENVIAR', 'REVISAR']
 export const AGENT_EDITABLE_TASK_FIELDS = [
   'titulo', 'descripcion', 'prioridad', 'hitoId', 'fechaPlan', 'fechaLimite', 'horasEstimadas', 'criterioTerminado',

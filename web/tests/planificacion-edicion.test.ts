@@ -120,8 +120,11 @@ describe('bandera PLANIFICACION_EDICION_PROPIETARIO (criterio 2, prueba «bander
     expect(page).not.toMatch(/PM_AGENT|authorization/i)
     const tarjeta = readFileSync(path.join(raiz, 'components', 'planning', 'tarjeta-semana.tsx'), 'utf8')
     expect(tarjeta).toContain("useOperation(`/api/operaciones/tareas/${encodeURIComponent(tarea.id)}`, 'PATCH')")
+    // ORD-POS-139 usa la bandera en el guard solo para sus operaciones del propietario (capacidad.registrar); tarea.editar
+    // sigue sin depender de ella (límite conocido de §10).
     const guard = readFileSync(path.join(raiz, 'lib', 'operations', 'guard.ts'), 'utf8')
-    expect(guard).not.toContain('PLANIFICACION_EDICION')
+    expect(guard.match(/puedeEditarPlanificacion\(/g)).toHaveLength(1)
+    expect(guard).toContain("if (ownerOp && !puedeEditarPlanificacion(ctx.email, ctx.env)) throw new OperationError('operacion-no-permitida')")
   })
 })
 

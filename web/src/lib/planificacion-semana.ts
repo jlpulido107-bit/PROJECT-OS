@@ -1,3 +1,4 @@
+import { SUPUESTO_RESERVA_VACIA } from './planning/engine'
 import type { PlanResult } from './planning/types'
 
 /**
@@ -37,6 +38,8 @@ export interface DiasSemana {
   horasDisponibles: number | null
   /** Reserva en porcentaje (0–100). */
   reservaPct: number | null
+  /** false si RESERVA_PCT está vacía y el motor no descuenta reserva (la vista lo dice con palabras, nunca «0 %»). */
+  reservaRegistrada: boolean
   netaMin: number | null
   planeadoMin: number
   dias: DiaSemana[]
@@ -50,7 +53,7 @@ export function diasSemana(plan: PlanResult, pestanasNoDisponibles: readonly str
     if (pestanasNoDisponibles.includes(tab)) return sinDatos(`La pestaña ${tab} no se pudo leer completa: sin horas de la semana.`)
   }
   const cap = plan.capacidad
-  if (cap.origen === 'faltante') return sinDatos('No hay horas disponibles registradas para esta semana en CAPACIDAD_SEMANAL.')
+  if (cap.origen === 'faltante') return sinDatos('sin capacidad registrada para esta semana en CAPACIDAD_SEMANAL.')
   if (cap.origen === 'ambigua') return sinDatos('Hay más de una fila de CAPACIDAD_SEMANAL para esta semana: deja una sola.')
   const hoy = plan.referencia.fecha
   const dias = plan.dias.map((d): DiaSemana => {
@@ -78,6 +81,7 @@ export function diasSemana(plan: PlanResult, pestanasNoDisponibles: readonly str
       semanaId: cap.semanaId,
       horasDisponibles: cap.horasDisponibles,
       reservaPct: cap.reservaPct,
+      reservaRegistrada: !plan.supuestos.includes(SUPUESTO_RESERVA_VACIA),
       netaMin: cap.netaMin,
       planeadoMin: dias.reduce((acc, d) => acc + d.planeadoMin, 0),
       dias,

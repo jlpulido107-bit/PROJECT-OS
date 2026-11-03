@@ -56,6 +56,8 @@ export interface Capacidad {
   estado: string | null
   notas: string | null
   actualizadoEn: Timestamp | null
+  /** Columna VERSION de la migración de ORD-POS-139 (docs/escritura-v1-8.md §11.2); null si falta o está vacía. */
+  version: string | null
 }
 
 export interface Asignacion {
@@ -238,6 +240,8 @@ export interface Dataset {
   ordenes: Orden[]
   /** ORDENES_CODEX tiene la columna opcional BANDERA (ORD-POS-125); sin ella, Activada y 6.4 quedan apagadas. */
   ordenesConBandera: boolean
+  /** CAPACIDAD_SEMANAL ya tiene la columna VERSION (migración de ORD-POS-139); sin ella, la capacidad no se edita. */
+  capacidadConVersion: boolean
   supervision: Supervision[]
   issues: DataIssue[]
   /** Hay más incidencias de las que se conservaron. */

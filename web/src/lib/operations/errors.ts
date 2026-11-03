@@ -70,6 +70,10 @@ export type OperationErrorCode =
   | 'idea-fila-ocupada'
   | 'scoring-sin-formulas'
   | 'idea-sin-calculo'
+  | 'migracion-pendiente'
+  | 'version-faltante'
+  | 'semana-inexistente'
+  | 'capacidad-semana-ocupada'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -142,6 +146,10 @@ const STATUS: Record<OperationErrorCode, number> = {
   'idea-fila-ocupada': 409,
   'scoring-sin-formulas': 409,
   'idea-sin-calculo': 409,
+  'migracion-pendiente': 422,
+  'version-faltante': 409,
+  'semana-inexistente': 422,
+  'capacidad-semana-ocupada': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -167,7 +175,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'tarea-cerrada': 'La tarea está cerrada y no se puede modificar desde el dashboard.',
   'cierre-no-permitido': 'Cerrar una tarea (COMPLETADO/CANCELADO) requiere aprobación humana y no está disponible.',
   'sin-cambios': 'No hay cambios que guardar.',
-  'conflicto-version': 'La tarea cambió desde que la abriste. Recarga y vuelve a intentarlo.',
+  'conflicto-version': 'El registro cambió desde que lo abriste. Recarga y vuelve a intentarlo.',
   'conflicto-concurrente': 'Otra modificación se cruzó con la tuya. Recarga y vuelve a intentarlo.',
   'conflicto-idempotencia': 'Esta solicitud ya se usó con otros datos. Recarga el formulario.',
   'esquema-invalido': 'La estructura de la hoja no coincide con el contrato; no se escribió nada.',
@@ -215,6 +223,10 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'idea-fila-ocupada': 'La primera fila con PRODUCT_ID vacío en PRODUCTS tiene otros datos; no se editan filas existentes. No se escribió nada.',
   'scoring-sin-formulas': 'La fila nueva de SCORING no tiene las fórmulas M a P copiadas (las prepara el propietario a mano); no se escribió nada, tampoco en PRODUCTS.',
   'idea-sin-calculo': 'La idea se escribió, pero la columna M de su fila de SCORING quedó sin valor; revisa las fórmulas de SCORING.',
+  'migracion-pendiente': 'La hoja aún no tiene la migración que pide esta operación (la aplica el propietario, docs/escritura-v1-8.md §11.2). No se escribió nada.',
+  'version-faltante': 'La fila no tiene VERSION (o no es un entero): escribe 1 en la hoja, según la migración, antes de editarla. No se escribió nada.',
+  'semana-inexistente': 'Esa semana no tiene fila en CAPACIDAD_SEMANAL: no hay nada que editar. Recarga la vista.',
+  'capacidad-semana-ocupada': 'Ya hay otra fila de CAPACIDAD_SEMANAL con FECHA_INICIO en esa semana: deja una sola. No se escribió nada.',
 }
 
 const BRAND = Symbol.for('project-os.operation-error')
