@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Badge, Empty, humanize, Section, StateBadge } from '@/components/ui'
 import { planWeek } from '@/lib/planning/engine'
 import { buildExport, reviewKey, type ReviewDecision, type ReviewState } from '@/lib/planning/export'
-import { DEFAULT_SCENARIO, isDefaultScenario, normalizeScenario, ScenarioError, SCENARIO_LIMITS } from '@/lib/planning/scenario'
+import { DEFAULT_SCENARIO, isDefaultScenario, movimientos, normalizeScenario, ScenarioError, SCENARIO_LIMITS } from '@/lib/planning/scenario'
 import type { PlanningInput, PlanResult, ProjectPriority, Scenario, TaskCategory, TaskPlan } from '@/lib/planning/types'
 import { diasSemana, type Bloque } from '@/lib/planificacion-semana'
 import type { HitoSemana } from '@/lib/planificacion-semana-hitos'
@@ -46,7 +46,7 @@ function fmtMin(min: number | null): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
 
-function toScenario(form: FormState): Scenario {
+function toScenario(form: FormState, fijadas: Record<string, string>): Scenario {
   const priorities = Object.fromEntries(Object.entries(form.prioridadProyecto).filter(([, v]) => v !== '')) as Record<string, ProjectPriority>
   return normalizeScenario({
     semana: form.semana,
@@ -58,6 +58,7 @@ function toScenario(form: FormState): Scenario {
     descontarRegistrado: form.descontarRegistrado,
     diasLaborables: form.diasLaborables,
     prioridadProyecto: priorities,
+    fijadas,
   })
 }
 
@@ -78,15 +79,18 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
   const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null)
   const [review, setReview] = useState<ReviewState>({})
   const [filter, setFilter] = useState<TaskCategory | 'todas'>('todas')
+  /** Movimientos simulados (ORD-POS-137): tarea → día. Solo viven en esta pestaña; nunca se guardan. */
+  const [fijadas, setFijadas] = useState<Record<string, string>>({})
 
   const plan = useMemo(() => planWeek(input, scenario, { referenceDate, timeZone }), [input, scenario, referenceDate, timeZone])
   const simulated = !isDefaultScenario(scenario)
   const reviewed = Object.values(review).filter((r) => r.decision !== 'pendiente').length
+  const moved = movimientos(scenario)
 
   function update(next: FormState) {
     setForm(next)
     try {
-      setScenario(toScenario(next))
+      setScenario(toScenario(next, fijadas))
       setFieldError(null)
       setReview({}) // La revisión se refiere a una propuesta concreta: cambiar el escenario la invalida.
     } catch (error) {
@@ -95,8 +99,23 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
     }
   }
 
+  /** Fija los movimientos sobre el último escenario válido y recalcula al instante. */
+  function applyMoves(next: Record<string, string>) {
+    setFijadas(next)
+    setScenario(normalizeScenario({ ...scenario, fijadas: next }))
+    setReview({}) // La revisión se refiere a una propuesta concreta: mover tareas la invalida.
+  }
+
+  function move(tareaId: string, fecha: string) {
+    if (fijadas[tareaId] === fecha) return
+    const dias = plan.dias.filter((d) => d.items.some((i) => i.tareaId === tareaId)).map((d) => d.fecha)
+    if (fijadas[tareaId] === undefined && dias.length === 1 && dias[0] === fecha) return // ya está solo en ese día
+    applyMoves({ ...fijadas, [tareaId]: fecha })
+  }
+
   function reset() {
     setForm(EMPTY_FORM)
+    setFijadas({})
     setScenario(normalizeScenario({}))
     setFieldError(null)
     setReview({})
@@ -125,6 +144,7 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
         <p>
           <strong>Simulación — sin cambios guardados.</strong>{' '}
           {simulated ? 'Hay un escenario activo: los resultados no son datos registrados.' : 'Propuesta calculada con los datos registrados, sin supuestos de escenario.'}
+          {moved > 0 ? <> <strong>{moved === 1 ? '1 movimiento sin guardar.' : `${moved} movimientos sin guardar.`}</strong></> : null}
           {' '}Nada se escribe en Google Sheets ni se aplica automáticamente.
         </p>
         <button type="button" className="button" onClick={reset} disabled={!simulated && reviewed === 0 && filter === 'todas'}>
@@ -247,7 +267,13 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
           Recomendación, no compromiso. Acepta, rechaza o ajusta cada bloque: la revisión solo vive en esta pestaña
           {reviewed ? ` (${reviewed} revisado${reviewed === 1 ? '' : 's'})` : ''} y se incluye en la exportación.
         </p>
-        <DayList plan={plan} input={input} review={review} setReview={setReview} />
+        <p className="muted small">
+          Arrastra un bloque a otro día o usa «Mover a…» (teclado y celular): la capacidad de cada día se recalcula al instante.
+        </p>
+        <DayList plan={plan} input={input} review={review} setReview={setReview} fijadas={fijadas} onMove={move} />
+        <p className={styles.quick}>
+          <button type="button" className="button" onClick={() => applyMoves({})} disabled={moved === 0}>Descartar movimientos</button>
+        </p>
       </Section>
 
       <Section title="Reparto por proyecto" id="proyectos">
@@ -316,9 +342,23 @@ function CapacityStats({ plan }: { plan: PlanResult }) {
   )
 }
 
-function DayList({ plan, input, review, setReview }: { plan: PlanResult; input: PlanningInput; review: ReviewState; setReview: (r: ReviewState) => void }) {
+export function DayList({ plan, input, review, setReview, fijadas, onMove }: {
+  plan: PlanResult
+  input: PlanningInput
+  review: ReviewState
+  setReview: (r: ReviewState) => void
+  fijadas: Record<string, string>
+  onMove: (tareaId: string, fecha: string) => void
+}) {
+  const [over, setOver] = useState<string | null>(null)
   const titles = new Map(input.tareas.map((t) => [t.id, t.titulo]))
+  const fechaPlan = new Map(input.tareas.map((t) => [t.id, t.fechaPlan]))
   const days = plan.dias.filter((d) => !d.esPasado)
+  const targets = days.filter((d) => d.laborable || d.capacidadMin !== null)
+  const beforePlan = (tareaId: string, fecha: string) => {
+    const fp = fechaPlan.get(tareaId)
+    return fp ? fecha < fp : false
+  }
   if (plan.estado === 'datos-insuficientes') return <Empty>Sin propuesta hasta resolver los datos faltantes.</Empty>
   if (days.every((d) => d.items.length === 0)) {
     return <Empty>No hay nada que proponer: {plan.capacidad.libreMin === 0 ? 'no queda capacidad libre esta semana.' : 'no hay tareas elegibles con estimación.'}</Empty>
@@ -326,7 +366,27 @@ function DayList({ plan, input, review, setReview }: { plan: PlanResult; input: 
   return (
     <ol className={styles.dayList}>
       {days.map((d) => (
-        <li key={d.fecha} className={`card${d.fecha === plan.referencia.fecha ? ' card-today' : ''}`} aria-labelledby={`dia-${d.fecha}`}>
+        <li
+          key={d.fecha}
+          className={`card${d.fecha === plan.referencia.fecha ? ' card-today' : ''}`}
+          aria-labelledby={`dia-${d.fecha}`}
+          data-sobre={over === d.fecha || undefined}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes('text/plain')) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (over !== d.fecha) setOver(d.fecha)
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(null)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            setOver(null)
+            const tareaId = e.dataTransfer.getData('text/plain')
+            if (tareaId) onMove(tareaId, d.fecha)
+          }}
+        >
           <header className="card-head">
             <h3 id={`dia-${d.fecha}`} className={styles.dayTitle}>{dayLabel(d.fecha)}</h3>
             <div className="badges">
@@ -346,13 +406,45 @@ function DayList({ plan, input, review, setReview }: { plan: PlanResult; input: 
                 const key = reviewKey(d.fecha, item.tareaId)
                 const r = review[key] ?? { decision: 'pendiente' as ReviewDecision }
                 const set = (decision: ReviewDecision, minutos?: number) => setReview({ ...review, [key]: { decision, ...(minutos !== undefined ? { minutos } : {}) } })
+                const pinned = item.fijada === true
+                const current = fijadas[item.tareaId] ?? d.fecha
                 return (
-                  <li key={key} className={styles.item} data-decision={r.decision}>
+                  <li
+                    key={key}
+                    className={styles.item}
+                    data-decision={r.decision}
+                    data-simulada={pinned || undefined}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', item.tareaId)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                  >
                     <div className={styles.itemHead}>
                       <span><span className="mono">{item.tareaId}</span> · {titles.get(item.tareaId) ?? 'Sin título'}</span>
                       <strong>{fmtMin(r.decision === 'ajustado' && r.minutos !== undefined ? r.minutos : item.minutos)}</strong>
                     </div>
+                    {pinned ? (
+                      <p className="badges">
+                        <Badge tone="info">Simulado</Badge>
+                        {beforePlan(item.tareaId, d.fecha) ? <Badge tone="warn">antes de su FECHA_PLAN</Badge> : null}
+                      </p>
+                    ) : null}
                     <p className="small muted">{item.proyectoId} · {item.motivo} · revisión: {DECISION_LABEL[r.decision]}</p>
+                    <label className={styles.adjust}>
+                      Mover a…
+                      <select
+                        value={current}
+                        aria-label={`Mover ${item.tareaId} a otro día`}
+                        onChange={(e) => onMove(item.tareaId, e.target.value)}
+                      >
+                        {targets.map((t) => (
+                          <option key={t.fecha} value={t.fecha}>
+                            {dayLabel(t.fecha)}{beforePlan(item.tareaId, t.fecha) ? ' (antes de su FECHA_PLAN)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <div className={styles.review} role="group" aria-label={`Revisar ${item.tareaId} el ${d.fecha}`}>
                       <button type="button" className="button" aria-pressed={r.decision === 'aceptado'} onClick={() => set('aceptado')}>Aceptar</button>
                       <button type="button" className="button" aria-pressed={r.decision === 'rechazado'} onClick={() => set('rechazado')}>Rechazar</button>
