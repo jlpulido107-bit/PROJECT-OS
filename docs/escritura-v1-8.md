@@ -446,17 +446,26 @@ responden 422 `migracion-pendiente` (con la pestaña) sin escribir nada, ni en `
 | Bandera | Enciende | Requisitos | Apagada |
 | --- | --- | --- | --- |
 | `PLANIFICACION_EDICION_PROPIETARIO` = `true` | Arrastre y formularios de `/planificacion`, y las tres operaciones | `PLANIFICACION_EDICION_PROPIETARIO_EMAIL` válido (§10.1) y `WRITE_MODE=sheets` | 403 `operacion-no-permitida` sin leer el cuerpo; la página no muestra controles de edición |
-| `PLANIFICACION_ICS` = `true` | `GET /api/calendario/<token>.ics` | `SECRET_VERSION_CALENDARIO_ICS` (no depende de `WRITE_MODE`) | 404, igual que un token inválido |
+| `PLANIFICACION_ICS` = `true` | `GET /api/planificacion/calendario.ics?token=<secreto>` | `SECRET_VERSION_CALENDARIO_ICS` (no depende de `WRITE_MODE`) | 404, igual que sin secreto o con un token inválido |
 
 Solo el valor exacto `true` las enciende; otro valor, o una sin sus requisitos, hace fallar el render sin aplicar nada.
 Las pone **únicamente el propietario** con `deploy.sh`; ningún agente crea el token, toca Secret Manager o IAM, exporta
 estas variables ni despliega. `--desde-activa` las conserva en los despliegues siguientes.
 
-- **Token del calendario.** Va en la ruta del enlace; a Secret Manager va solo su SHA-256
-  (`project-os-calendario-ics-token-sha256`), que el servidor compara en tiempo constante (`CALENDARIO_ICS_TOKEN_SHA256`).
-  Si es igual al hash del PM, de Tiempos o de finanzas, no vale. Solo alcanza esa ruta y ese método; no abre otra ruta ni
-  escribe. Límite conocido: la ruta, con el token, queda en los registros de solicitudes de Cloud Run; por eso el token
-  solo da lectura del calendario y se rota.
+- **Token del calendario.** El secreto va en la URL del enlace (`?token=<secreto>`); a Secret Manager va solo su SHA-256
+  (`project-os-calendario-ics-token-sha256`), y el servidor compara el SHA-256 del secreto recibido con
+  `CALENDARIO_ICS_TOKEN_SHA256` en tiempo constante. Si ese hash es igual al del PM, de Tiempos o de finanzas, no vale.
+  Sin `PLANIFICACION_ICS=true`, sin hash válido, sin `token` o con uno que no coincide, la ruta responde 404 sin leer la
+  hoja. Solo alcanza esa ruta y ese método; no abre otra ruta ni escribe. Límite conocido: la URL, con el secreto, queda
+  en los registros de solicitudes de Cloud Run; por eso el secreto solo da lectura del calendario y se rota.
+- **Exención en el proxy.** El proxy (`web/src/lib/authz.ts`, función `decide`) deja pasar sin sesión **una sola**
+  combinación: método `GET` y ruta exactamente `/api/planificacion/calendario.ics` (comparación exacta, sin prefijos,
+  sin barra final ni otras extensiones; la cadena de consulta no cuenta para la ruta). La exención no va en
+  `isPublicPath` de `web/src/lib/access.ts`, que vale para cualquier método. El proxy no valida el secreto ni lee la hoja:
+  lo hace la ruta, que responde 404 en los casos de arriba. Cualquier otro método en esa ruta (`POST`, `HEAD`, etc.) y
+  cualquier otra ruta, incluida `/api/planificacion`, siguen el camino normal y piden sesión (401 en API, redirección a
+  `/login` en páginas). La exención tampoco amplía el token de Tiempos: `TIEMPOS_AGENTE_RUTA` sigue siendo exactamente
+  `/api/planificacion` y solo `GET`.
 
 ```bash
 # Activar (solo el propietario, en Cloud Shell, con la imagen que trae el calendario desplegada)
@@ -465,7 +474,7 @@ printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1 | tr -d '\n' | gcloud secrets c
   --project="$PROJECT_ID" --replication-policy=automatic --data-file=-
 gcloud secrets add-iam-policy-binding project-os-calendario-ics-token-sha256 --project="$PROJECT_ID" --condition=None \
   --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor --format=none
-# El enlace <url del dashboard>/api/calendario/$TOKEN.ics va solo a la app de calendario del propietario; bórralo de aquí:
+# El enlace <url del dashboard>/api/planificacion/calendario.ics?token=$TOKEN va solo a la app de calendario del propietario; bórralo de aquí:
 unset TOKEN
 export PLANIFICACION_ICS=true SECRET_VERSION_CALENDARIO_ICS=1
 web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ PLANIFICACION_ICS» y «+ CALENDARIO_ICS_TOKEN_SHA256»
@@ -495,19 +504,28 @@ web/deploy/cloudrun/deploy.sh --desde-activa
 - **IDs estables.** `PLAN_ID` = `PLAN-AAAA-MM-DD` de su fecha; `PLAN_ITEM_ID` = `<PLAN_ID>-<TAREA_ID>`, de modo que volver
   a poner una tarea en el día reutiliza su fila; `ESCENARIO_ID` = `ESC-NNN`, el siguiente de la columna A. Las filas
   existentes conservan su ID.
-- **Calendario.** `UID` = `<TAREA_ID>@project-os`: la misma tarea es siempre el mismo evento aunque cambie de fecha;
-  `SEQUENCE` = `VERSION` de la tarea y `DTSTAMP` = su `ACTUALIZADO_EN`. Pedir el calendario dos veces da el mismo archivo
-  si la hoja no cambió.
+- **Calendario.** `UID` estable por tarea y fecha: `<TAREA_ID>-<AAAA-MM-DD>-plan@project-os` para el evento del plan y
+  `<TAREA_ID>-<AAAA-MM-DD>-vence@project-os` para el vencimiento. La misma tarea en la misma fecha es siempre el mismo
+  evento; si cambia de fecha, el evento de la fecha anterior deja de salir y aparece otro con el `UID` de la nueva.
+  `DTSTAMP` sale de la hoja (el `ACTUALIZADO_EN` del plan o de la tarea), nunca del reloj. Pedir el calendario dos veces
+  el mismo día da el mismo archivo si la hoja no cambió.
 
 ### 10.5 Qué sale en el calendario y qué nunca (criterio 5)
 
-Un `VEVENT` de día completo (`DTSTART;VALUE=DATE`) por tarea abierta con `FECHA_PLAN`; las `COMPLETADO` y `CANCELADO` no
-salen.
+Eventos de día completo (`DTSTART;VALUE=DATE`) de los próximos 14 días: hoy y los 13 siguientes, en fecha civil de
+Mérida (`America/Merida`, la zona del motor). Dos clases de evento, nada más:
 
-- **Sale:** `SUMMARY` = `<TAREA_ID> · <TITULO>`, la fecha (`FECHA_PLAN`) y `DESCRIPTION` = «Horas estimadas: N» o «Sin
-  estimación» si `HORAS_ESTIMADAS` está vacía (vacío ≠ 0). Nada más.
+- **Plan:** por cada ítem de `PLAN_ITEMS` registrado en un plan de `PLAN_DIARIO` de esa fecha, un evento con `SUMMARY` =
+  `<TITULO> · <TAREA_ID> · <MINUTOS_PLAN> min` (por ejemplo «Revisar contrato · POS-045 · 45 min»), con sus minutos tal
+  como están en la hoja. Un ítem con `MINUTOS_PLAN` = `0` (tarea quitada del día, §10.1) o vacío no sale: vacío ≠ 0 y
+  nunca se inventan minutos. `UID` `<TAREA_ID>-<AAAA-MM-DD>-plan@project-os` (§10.4).
+- **Vencimiento:** por cada tarea abierta con `FECHA_LIMITE` dentro de la ventana, un evento con `SUMMARY` =
+  `Vence: <TITULO> · <TAREA_ID>` en esa fecha. `UID` `<TAREA_ID>-<AAAA-MM-DD>-vence@project-os` (§10.4).
+- **Sin plan registrado** para un día, ese día solo tiene vencimientos; `FECHA_PLAN` o `HORAS_ESTIMADAS` no generan
+  eventos por sí solas. Las tareas `COMPLETADO` y `CANCELADO` no salen.
+- **Sale:** solo `SUMMARY`, la fecha, `UID` y `DTSTAMP`; sin `DESCRIPTION`.
 - **Nunca sale:** `DESCRIPCION`, `INSTRUCCIONES`, `NOTAS`, `CRITERIO_TERMINADO`, `BLOQUEO`, `RESPONSABLE`, correos
-  (sin `ORGANIZER` ni `ATTENDEE`), enlaces internos, `AUDITORIA`, `TIEMPOS`, `ESCENARIOS` ni datos de otros libros.
+  (sin `ORGANIZER` ni `ATTENDEE`), enlaces internos, `AUDITORIA`, `TIEMPOS`, `ESCENARIOS`
+  ni datos de otras pestañas u otros libros: solo lee `TAREAS`, `PLAN_DIARIO` y `PLAN_ITEMS`.
 - **Respuesta:** `Content-Type: text/calendar`, `Cache-Control: no-store` y `X-Robots-Tag: noindex`; texto escapado según
-  RFC 5545. Es solo lectura: no usa Google Tasks y no hay sincronización de vuelta; un cambio en el calendario no toca la
-  hoja.
+  RFC 5545. Es solo lectura: no usa Google Tasks y no hay ida y vuelta; un cambio en el calendario no toca la hoja.
