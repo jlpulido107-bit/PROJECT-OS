@@ -2,13 +2,14 @@
 
 import { useMemo, useState, type ReactNode } from 'react'
 import { Badge, Empty, humanize, Section, StateBadge } from '@/components/ui'
-import { planWeek } from '@/lib/planning/engine'
+import { planWeek, SUPUESTO_RESERVA_VACIA } from '@/lib/planning/engine'
 import { buildExport, reviewKey, type ReviewDecision, type ReviewState } from '@/lib/planning/export'
 import { DEFAULT_SCENARIO, isDefaultScenario, movimientos, normalizeScenario, ScenarioError, SCENARIO_LIMITS } from '@/lib/planning/scenario'
 import type { PlanningInput, PlanResult, ProjectPriority, Scenario, TaskCategory, TaskPlan } from '@/lib/planning/types'
 import { diasSemana, type Bloque } from '@/lib/planificacion-semana'
 import type { HitoSemana } from '@/lib/planificacion-semana-hitos'
 import { tarjetasSemana, type EdicionSemana } from '@/lib/planificacion-edicion'
+import { capacidadSemana } from '@/lib/planificacion-capacidad'
 import { CapaSemana } from './capa-semana'
 import styles from './planning.module.css'
 
@@ -165,7 +166,10 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
         {plan.referencia.desde !== plan.referencia.fecha ? ` · se planifica desde ${plan.referencia.desde}` : ''}
       </p>
 
-      <CapaSemana dias={diasSemana(plan, input.pestanasNoDisponibles)} hitos={hitosSemana} tarjetas={tarjetasSemana(plan, input)} edicion={edicion} />
+      <CapaSemana
+        dias={diasSemana(plan, input.pestanasNoDisponibles)} hitos={hitosSemana} tarjetas={tarjetasSemana(plan, input)} edicion={edicion}
+        capacidad={capacidadSemana(input, plan.referencia.lunes, plan.referencia.domingo)}
+      />
 
       <details className="diagnostics">
         <summary>Detalle del plan</summary>
@@ -339,8 +343,8 @@ function CapacityStats({ plan }: { plan: PlanResult }) {
   const origin = { dato: 'Dato registrado', supuesto: 'Supuesto de escenario', faltante: 'No registrada', ambigua: 'Ambigua' }[c.origen]
   return (
     <div className="stats" aria-label="Capacidad de la semana">
-      <div className="stat"><span className="stat-label">Horas disponibles</span><span className="stat-value">{c.horasDisponibles === null ? 'Sin datos' : `${c.horasDisponibles} h`}</span><span className="stat-hint">{origin}{c.semanaId ? ` · ${c.semanaId}` : ''}{c.estadoSemana ? ` · ${humanize(c.estadoSemana)}` : ''}</span></div>
-      <div className="stat"><span className="stat-label">Reserva</span><span className="stat-value">{c.reservaPct === null ? 'Sin datos' : `${c.reservaPct} %`}</span></div>
+      <div className="stat"><span className="stat-label">Horas disponibles</span><span className="stat-value">{c.horasDisponibles === null ? 'Sin capacidad registrada' : `${c.horasDisponibles} h`}</span><span className="stat-hint">{origin}{c.semanaId ? ` · ${c.semanaId}` : ''}{c.estadoSemana ? ` · ${humanize(c.estadoSemana)}` : ''}</span></div>
+      <div className="stat"><span className="stat-label">Reserva</span><span className="stat-value">{c.reservaPct === null ? 'Sin datos' : plan.supuestos.includes(SUPUESTO_RESERVA_VACIA) ? 'Sin reserva registrada' : `${c.reservaPct} %`}</span></div>
       <div className="stat"><span className="stat-label">Capacidad neta</span><span className="stat-value">{c.netaMin === null ? 'No calculable' : fmtMin(c.netaMin)}</span><span className="stat-hint">horas × (1 − reserva)</span></div>
       <div className="stat"><span className="stat-label">Ya usado o planificado</span><span className="stat-value">{fmtMin(c.usadoMin)}</span><span className="stat-hint">tiempo real y planes registrados</span></div>
       <div className="stat"><span className="stat-label">Saldo semanal</span><span className="stat-value">{fmtMin(c.libreMin)}</span><span className="stat-hint">teórico: incluye cuotas de días pasados</span></div>

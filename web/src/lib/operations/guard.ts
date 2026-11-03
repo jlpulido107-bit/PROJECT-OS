@@ -2,8 +2,8 @@ import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { ecoIdeasAltaFlag } from '../radaros/ideas-alta'
 import { tiemposAgenteHabilitado } from '../tiempos-agente'
-import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_IDEAS_OPERATION, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, type OperationName } from './constants'
-import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, writeModeStatus } from './config'
+import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_IDEAS_OPERATION, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, OWNER_PLANNING_OPERATIONS, type OperationName } from './constants'
+import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, puedeEditarPlanificacion, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
 
@@ -103,6 +103,10 @@ export async function evaluateWriteRequest(
   const authorization = request.headers.get('authorization')
   // DEC-POS-023 y DEC-POS-005: con cualquier Authorization (token del PM o no), cerrar una tarea nunca, con o sin bandera.
   if (authorization !== null && ctx.operation === 'tarea.completar') throw new OperationError('cierre-no-permitido')
+  // ORD-POS-139 (DEC-POS-029 a): las ediciones de la planificación son solo de la sesión del propietario; con cualquier
+  // Authorization (token del PM, de Tiempos, de finanzas u otro), 403 sin validar el token ni leer el cuerpo.
+  const ownerOp = ctx.operation !== undefined && OWNER_PLANNING_OPERATIONS.includes(ctx.operation)
+  if (authorization !== null && ownerOp) throw new OperationError('operacion-no-permitida')
   if (authorization !== null) return evaluateAgentRequest(request, ctx, authorization)
   if (!ctx.email) throw new OperationError('no-autenticado')
   if (!isEmailAllowed(ctx.email, parseAllowedEmails(ctx.env.AUTH_ALLOWED_EMAILS))) {
@@ -125,6 +129,9 @@ export async function evaluateWriteRequest(
   if (!isWriter(ctx.email, ctx.env)) throw new OperationError('sin-permiso-escritura')
   // ORD-POS-106: solo el propietario con TAREAS_CIERRE_PROPIETARIO encendida; apagada, o con otro escritor, no se cierra.
   if (ctx.operation === 'tarea.completar' && !puedeCerrarTareas(ctx.email, ctx.env)) throw new OperationError('cierre-no-permitido')
+  // ORD-POS-139: solo el propietario con PLANIFICACION_EDICION_PROPIETARIO encendida; apagada, o con otro escritor, 403
+  // sin leer el cuerpo.
+  if (ownerOp && !puedeEditarPlanificacion(ctx.email, ctx.env)) throw new OperationError('operacion-no-permitida')
 
   const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
   if (type !== 'application/json') throw new OperationError('tipo-contenido')

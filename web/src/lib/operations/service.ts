@@ -1,5 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { todayInMerida } from '../dates'
+import { parseNumber, parseFraction } from '../parse'
+import { isoMonday } from '../planning/calendar'
+import { parseCivilDate } from '../dates'
 import { CLOSED_TASK_STATES, ORDENES_SENSIBLE, TAREAS_INSTRUCCIONES } from '../schema'
 import {
   AUDIT_NOTA_CIERRE, COMPLETED_TASK_STATE, INITIAL_DECISION_STATE, INITIAL_ORDER_STATE, INITIAL_TASK_STATE, ORDER_RISKS, ORDER_TERMINAL_STATES, ORIGIN_PREFIX,
@@ -12,7 +15,7 @@ import {
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
-  derivedRequestId, payloadHash, type CompleteTaskCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
+  derivedRequestId, payloadHash, type CompleteTaskCommand, type RegistrarCapacidadCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
   type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
 import {
@@ -83,8 +86,11 @@ const TASK_FIELD_COLUMNS: Record<keyof TaskChanges, string> = {
 }
 
 const ID_COLUMN: Record<EntityTab, string> = {
-  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID',
+  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID', CAPACIDAD_SEMANAL: 'SEMANA_ID',
 }
+
+/** Columnas de CAPACIDAD_SEMANAL que `capacidad.registrar` escribe (NOTAS nunca; VERSION y ACTUALIZADO_EN, el servidor). */
+const CAPACIDAD_CAMPOS = ['FECHA_INICIO', 'HORAS_DISPONIBLES', 'RESERVA_PCT', 'ESTADO'] as const
 
 /** Transiciones de orden permitidas desde el dashboard (docs/migracion-ordenes-codex.md). */
 const ORDER_TRANSITIONS: Record<OrderTransitionCommand['accion'], { from: readonly string[]; to: string; op: OperationName }> = {
@@ -263,6 +269,82 @@ export class OperationsService {
       await this.writeGuarded(tareas, row.sheetRow, row.cells, { column: 'TAREA_ID', value: cmd.tareaId }, { column: 'VERSION', value: current.VERSION ?? '' }, next)
       await this.verifyUpdated(cmd.tareaId, next)
       return { operacion: op, entidad: 'TAREAS', id: cmd.tareaId, version: currentVersion + 1, repetida: false }
+    })
+  }
+
+  /**
+   * Capacidad de una semana (ORD-POS-139, DEC-POS-029 c; docs/escritura-v1-8.md §11.1, §11.2 y §11.4): alta de la fila
+   * si SEMANA_ID no existe (sin expectedVersion) o edición con expectedVersion. Sin la columna VERSION (migración del
+   * propietario) responde `migracion-pendiente` sin escribir nada, ni AUDITORIA. NOTAS no se toca; vacío queda vacío.
+   * Quién puede llamarla lo decide el guard (solo la sesión del propietario con su bandera).
+   */
+  registrarCapacidad(cmd: RegistrarCapacidadCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'capacidad.registrar'
+      const hash = payloadHash(op, cmd)
+      const [cap, audit] = await this.views('CAPACIDAD_SEMANAL', 'AUDITORIA')
+      if (!cap.index.has('VERSION')) throw new OperationError('migracion-pendiente', { detail: { pestana: 'CAPACIDAD_SEMANAL', columna: 'VERSION' } })
+      const matches = findById(cap, 'SEMANA_ID', cmd.semanaId)
+      if (matches.length > 1) throw new OperationError('conflicto-concurrente')
+      const row = matches[0]
+
+      const found = this.findAudited(audit, cmd.requestId)
+      if (found) {
+        if (found.op.operacion !== op || found.op.hash !== hash || found.op.id !== cmd.semanaId) throw new OperationError('conflicto-idempotencia')
+        // Un alta audita VERSION de '' a '1'; una edición, de la versión anterior a la siguiente.
+        if (found.op.fields.get('VERSION')?.antes === '') {
+          const replay = await this.replayCreate(op, hash, cmd.requestId, audit, cap)
+          if (replay) return replay
+        }
+        if (!row) throw new OperationError('estado-divergente')
+        const replay = await this.replayUpdate(op, hash, cmd.requestId, audit, cap, row.sheetRow, toRecord(cap, row.cells), 'CAPACIDAD_SEMANAL')
+        if (replay) return replay
+      }
+
+      const valores: Record<(typeof CAPACIDAD_CAMPOS)[number], string> = {
+        FECHA_INICIO: cmd.fechaInicio,
+        HORAS_DISPONIBLES: cmd.horasDisponibles ?? '',
+        RESERVA_PCT: cmd.reservaPct === null ? '' : `${cmd.reservaPct}%`,
+        ESTADO: cmd.estado ?? '',
+      }
+      this.checkSemanaLibre(cap, cmd.fechaInicio, row?.sheetRow ?? null)
+      const now = this.clock()
+
+      if (!row) {
+        if (cmd.expectedVersion !== undefined) throw new OperationError('semana-inexistente')
+        const record: Record<string, string> = { SEMANA_ID: cmd.semanaId, ...valores, VERSION: '1', ACTUALIZADO_EN: meridaIsoTimestamp(now) }
+        await this.auditFirst(op, hash, cmd.requestId, ctx, 'CAPACIDAD_SEMANAL', cmd.semanaId, creationDiff(record), now, audit)
+        await this.appendEntity('CAPACIDAD_SEMANAL', cap, record)
+        await this.verifyCreated('CAPACIDAD_SEMANAL', cmd.semanaId, record)
+        return { operacion: op, entidad: 'CAPACIDAD_SEMANAL', id: cmd.semanaId, version: 1, repetida: false }
+      }
+
+      // La fila ya existe: un alta de un SEMANA_ID existente es un choque (§11.4); editar exige la versión vista.
+      if (cmd.expectedVersion === undefined) throw new OperationError('conflicto-concurrente')
+      const current = toRecord(cap, row.cells)
+      if (!/^\d+$/.test(current.VERSION ?? '')) throw new OperationError('version-faltante')
+      const currentVersion = Number(current.VERSION)
+      if (currentVersion !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { versionActual: currentVersion } })
+
+      const next: Record<string, string> = { ...current }
+      const diff = new Map<string, { antes: string; despues: string }>()
+      for (const column of CAPACIDAD_CAMPOS) {
+        const antes = current[column] ?? ''
+        // Mismo valor con otra grafía (0.15 y 15 %, 20 y 20.0): se conserva lo de la hoja, sin un cambio falso.
+        if (mismoValorCapacidad(column, antes, valores[column])) continue
+        next[column] = valores[column]
+        diff.set(column, { antes, despues: valores[column] })
+      }
+      if (diff.size === 0) throw new OperationError('sin-cambios')
+      next.VERSION = String(currentVersion + 1)
+      next.ACTUALIZADO_EN = meridaIsoTimestamp(now)
+      diff.set('VERSION', { antes: current.VERSION!, despues: next.VERSION })
+      diff.set('ACTUALIZADO_EN', { antes: current.ACTUALIZADO_EN ?? '', despues: next.ACTUALIZADO_EN })
+
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'CAPACIDAD_SEMANAL', cmd.semanaId, diff, now, audit)
+      await this.writeGuarded(cap, row.sheetRow, row.cells, { column: 'SEMANA_ID', value: cmd.semanaId }, { column: 'VERSION', value: current.VERSION! }, next)
+      await this.verifyCreated('CAPACIDAD_SEMANAL', cmd.semanaId, pick(next, contractColumns(cap)))
+      return { operacion: op, entidad: 'CAPACIDAD_SEMANAL', id: cmd.semanaId, version: currentVersion + 1, repetida: false }
     })
   }
 
@@ -674,6 +756,16 @@ export class OperationsService {
     }
   }
 
+  /** Otra fila (distinta de `propia`) con FECHA_INICIO en la misma semana ISO dejaría la capacidad ambigua: no se escribe. */
+  private checkSemanaLibre(cap: TableView, fechaInicio: string, propia: number | null) {
+    const lunes = isoMonday(fechaInicio)
+    for (const row of cap.rows) {
+      if (row.sheetRow === propia || !cell(cap, row.cells, 'SEMANA_ID')) continue
+      const fecha = parseCivilDate(cell(cap, row.cells, 'FECHA_INICIO')).value
+      if (fecha && isoMonday(fecha) === lunes) throw new OperationError('capacidad-semana-ocupada')
+    }
+  }
+
   /** `PREFIJO-NNN` siguiente al máximo existente (convención real `POS-001`, `DEC-POS-001`). */
   private nextSequentialId(view: TableView, idColumn: string, prefix: string): string {
     let max = 0
@@ -798,19 +890,20 @@ export class OperationsService {
       const matches = Object.entries(record).every(([column, value]) => (stored[column] ?? '') === value)
       if (!matches && found.later.length === 0) throw new OperationError('estado-divergente')
     }
-    const version = tab === 'TAREAS' ? Number(record.VERSION ?? '1') : undefined
+    const version = tab === 'TAREAS' || tab === 'CAPACIDAD_SEMANAL' ? Number(record.VERSION ?? '1') : undefined
     return { operacion: op, entidad: tab, id: audited.id, version, repetida: true }
   }
 
   /** Idempotencia de ediciones: repetir si ya se aplicó, completar si la versión sigue siendo la anterior. */
   private async replayUpdate(
     op: OperationName, hash: string, requestId: string, audit: TableView, tareas: TableView, sheetRow: number,
-    current: Record<string, string>,
+    current: Record<string, string>, tab: 'TAREAS' | 'CAPACIDAD_SEMANAL' = 'TAREAS',
   ): Promise<OperationResult | null> {
     const found = this.findAudited(audit, requestId)
     if (!found) return null
     const audited = found.op
-    if (audited.operacion !== op || audited.hash !== hash || audited.id !== current.TAREA_ID) {
+    const idColumn = ID_COLUMN[tab]
+    if (audited.operacion !== op || audited.hash !== hash || audited.id !== current[idColumn]) {
       throw new OperationError('conflicto-idempotencia')
     }
     const versionChange = audited.fields.get('VERSION')
@@ -824,10 +917,11 @@ export class OperationsService {
       const next = { ...current }
       for (const [column, { despues }] of entityFields(audited)) next[column] = despues
       const row = tareas.rows.find((r) => r.sheetRow === sheetRow)!
-      await this.writeGuarded(tareas, sheetRow, row.cells, { column: 'TAREA_ID', value: audited.id }, { column: 'VERSION', value: versionChange.antes }, next)
-      await this.verifyUpdated(audited.id, next)
+      await this.writeGuarded(tareas, sheetRow, row.cells, { column: idColumn, value: audited.id }, { column: 'VERSION', value: versionChange.antes }, next)
+      if (tab === 'TAREAS') await this.verifyUpdated(audited.id, next)
+      else await this.verifyCreated(tab, audited.id, pick(next, contractColumns(tareas)))
     }
-    return { operacion: op, entidad: 'TAREAS', id: audited.id, version: Number(versionChange.despues), repetida: true }
+    return { operacion: op, entidad: tab, id: audited.id, version: Number(versionChange.despues), repetida: true }
   }
 }
 
@@ -840,6 +934,15 @@ function creationDiff(record: Record<string, string>) {
   const diff = new Map<string, { antes: string; despues: string }>()
   for (const [column, value] of Object.entries(record)) if (value !== '') diff.set(column, { antes: '', despues: value })
   return diff
+}
+
+/** Mismo número (horas) o la misma fracción (reserva: `15%` y `0.15`); el resto, mismo texto. */
+function mismoValorCapacidad(column: string, antes: string, despues: string): boolean {
+  if (antes === despues) return true
+  if (antes === '' || despues === '') return false
+  const a = column === 'RESERVA_PCT' ? parseFraction(antes).value : column === 'HORAS_DISPONIBLES' ? parseNumber(antes).value : null
+  const b = column === 'RESERVA_PCT' ? parseFraction(despues).value : column === 'HORAS_DISPONIBLES' ? parseNumber(despues).value : null
+  return a !== null && b !== null && Math.abs(a - b) < 1e-9
 }
 
 function pick(record: Record<string, string>, columns: string[]): Record<string, string> {
@@ -856,6 +959,7 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'tarea.crear': ['TAREA_ID', 'VERSION'],
   'tarea.editar': ['VERSION'],
   'tarea.completar': ['ESTADO', 'VERSION'],
+  'capacidad.registrar': ['VERSION'],
   'tiempo.registrar': ['SESION_ID'],
   'tiempo.crear': ['SESION_ID'],
   'decision.crear': ['DECISION_ID'],

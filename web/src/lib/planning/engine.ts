@@ -24,6 +24,9 @@ export interface PlanOptions {
 }
 
 /** Pestañas sin las cuales no se puede garantizar una propuesta correcta. */
+/** Supuesto que el motor declara cuando RESERVA_PCT está vacía (la vista lo dice como «sin reserva registrada», ORD-POS-139). */
+export const SUPUESTO_RESERVA_VACIA = 'RESERVA_PCT vacía: se usa 0 % de reserva.'
+
 export const REQUIRED_TABS = ['PROYECTOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS'] as const
 
 const NO_PROJECT = '∅'
@@ -153,7 +156,7 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
       reserva = capRow.reservaPct
     } else {
       reserva = 0
-      supuestos.push('RESERVA_PCT vacía: se usa 0 % de reserva.')
+      supuestos.push(SUPUESTO_RESERVA_VACIA)
     }
   }
   const netaMin = horas === null || reserva === null ? null : Math.max(0, Math.round(horas * 60 * (1 - reserva)))

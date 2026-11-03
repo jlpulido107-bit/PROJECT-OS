@@ -523,3 +523,63 @@ function sortKeys(value: unknown): unknown {
   }
   return value
 }
+
+/**
+ * Alta o edición de la fila de una semana en CAPACIDAD_SEMANAL (ORD-POS-139, DEC-POS-029 c; docs/escritura-v1-8.md
+ * §11.1). Es el estado completo que el propietario quiere para la fila: sin `expectedVersion` es un alta; con él, una
+ * edición. `horasDisponibles` (0–168) y `reservaPct` (0–100) vacíos o null quedan vacíos, nunca 0. NOTAS no se acepta.
+ */
+export interface RegistrarCapacidadCommand {
+  requestId: string
+  semanaId: string
+  fechaInicio: string
+  /** Texto canónico (punto decimal) o null = celda vacía. */
+  horasDisponibles: string | null
+  /** Porcentaje 0–100 como texto canónico o null = celda vacía. Se escribe como `N%`, que el lector lee como fracción. */
+  reservaPct: string | null
+  estado: string | null
+  /** Solo al editar; ausente = alta. */
+  expectedVersion?: number
+}
+
+const CAPACIDAD_KEYS = ['requestId', 'semanaId', 'fechaInicio', 'horasDisponibles', 'reservaPct', 'estado', 'expectedVersion'] as const
+/** SEMANA_ID: el formato de la hoja no está fijado (p. ej. `2026-W45`); un código corto sin espacios. */
+const SEMANA_ID = /^[A-Z0-9][A-Z0-9_-]{1,29}$/
+const DECIMAL_2 = /^\d{1,3}(\.\d{1,2})?$/
+
+/** Número 0..max con hasta 2 decimales, como texto canónico; vacío o null → null (nunca 0). */
+function rango(c: Checker, input: Record<string, unknown>, key: string, max: number): string | null {
+  const value = input[key]
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return null
+  const text = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim().replace(',', '.') : null
+  if (text === null || !DECIMAL_2.test(text)) {
+    c.setError(key, 'Número con hasta 2 decimales')
+    return null
+  }
+  const n = Number(text)
+  if (!(n >= 0 && n <= max)) {
+    c.setError(key, `Entre 0 y ${max}`)
+    return null
+  }
+  return String(n)
+}
+
+export function parseRegistrarCapacidad(body: unknown): RegistrarCapacidadCommand {
+  const input = asObject(body)
+  const c = new Checker(input, CAPACIDAD_KEYS)
+  const cmd: RegistrarCapacidadCommand = {
+    requestId: c.requestId(),
+    semanaId: c.pattern('semanaId', SEMANA_ID, true, 'ID de semana no válido (letras, números y guiones)', (s) => s.trim().toUpperCase()) ?? '',
+    fechaInicio: c.date('fechaInicio', true) ?? '',
+    horasDisponibles: rango(c, input, 'horasDisponibles', LIMITS.horasSemanaMax),
+    reservaPct: rango(c, input, 'reservaPct', LIMITS.reservaPctMax),
+    estado: c.pattern('estado', CODE, false, 'Código en MAYÚSCULAS (p. ej. APROBADA)', (s) => s.trim().toUpperCase()),
+  }
+  if (c.has('expectedVersion')) {
+    const version = input.expectedVersion
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) c.setError('expectedVersion', 'Versión esperada no válida')
+    else cmd.expectedVersion = version
+  }
+  c.done()
+  return cmd
+}

@@ -1,3 +1,4 @@
+import type { EdicionCapacidad } from './planificacion-capacidad'
 import type { PlanningInput, PlanResult } from './planning/types'
 
 /**
@@ -26,7 +27,11 @@ export interface OpcionHito {
 /** Lo que el servidor manda al navegador solo con la edición encendida para la sesión del propietario. */
 export type EdicionSemana =
   | { encendida: false }
-  | { encendida: true; versiones: Record<string, number>; hitosPorProyecto: Record<string, OpcionHito[]> }
+  | {
+    encendida: true; versiones: Record<string, number>; hitosPorProyecto: Record<string, OpcionHito[]>
+    /** Panel «Capacidad de la semana» (ORD-POS-139); sin él, el panel no muestra el formulario. */
+    capacidad?: EdicionCapacidad
+  }
 
 export interface TarjetaSemana {
   id: string

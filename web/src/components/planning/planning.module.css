@@ -82,3 +82,9 @@
 @media (max-width: 520px) {
   .tarjetasSemana { grid-template-columns: minmax(0, 1fr); }
 }
+/* Panel «Capacidad de la semana» (ORD-POS-139). */
+.capacidadPanel { display: grid; gap: 6px; margin: 0.75rem 0; min-width: 0; overflow-wrap: anywhere; }
+.capacidadPanel h3, .capacidadPanel p { margin: 0; }
+.capacidadForm { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); align-items: end; }
+.capacidadForm :global(.form-actions) { grid-column: 1 / -1; }
+.capacidadForm input, .capacidadForm select { width: 100%; min-width: 0; }
