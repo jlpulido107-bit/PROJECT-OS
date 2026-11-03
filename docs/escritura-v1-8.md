@@ -368,3 +368,39 @@ web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_IDEAS_ALTA
 ```
 
 Quitar `ECO_PIPELINE_WRITE_MODE` sin quitar también `ECO_IDEAS_ALTA` hace fallar el render: no se aplica nada.
+
+## 10. Edición de la planificación por el propietario (ORD-POS-136, DEC-POS-029)
+
+DEC-POS-029 (b, f y g): el propietario edita `FECHA_PLAN`, `HORAS_ESTIMADAS` e `HITO_ID` desde la tarjeta de cada tarea
+de la capa Semana de `/planificacion`, con su sesión de Google. `ESTADO`, `BLOQUEO`, cancelar y reabrir siguen fuera;
+Tiempos sigue proponiendo por paquete (DEC-POS-024). Capacidad, escenarios y calendario ICS son órdenes aparte.
+
+- **Bandera.** `PLANIFICACION_EDICION_PROPIETARIO`: solo `true`. Exige `PLANIFICACION_EDICION_PROPIETARIO_EMAIL` con un
+  único correo que esté en `AUTH_ALLOWED_EMAILS` (la misma comprobación que §7; `planificacionEdicionPropietario` en
+  `web/src/lib/operations/config.ts`), y la escritura habilitada.
+- **Apagada (por defecto), o con otra sesión.** Cada tarjeta dice «Edición apagada» y no hay formulario; el navegador no
+  recibe versiones.
+- **Encendida.** **Editar** abre los 3 campos; **Guardar** manda `PATCH /api/operaciones/tareas/<id>` con
+  `expectedVersion` y solo esos campos (vacío = celda vacía, nunca 0). Es la ruta y la operación `tarea.editar` de
+  siempre: el servidor no cambia, y valida, audita (`ACTOR` = el correo de la sesión) y verifica como en cualquier
+  edición. Tras guardar, la vista se recalcula con `router.refresh()`. En conflicto de versión se recarga la vista y
+  se muestran el valor actual y el tuyo, con «Usar el actual» o «Guardar el mío sobre el actual».
+- **Límite conocido.** La bandera solo decide qué muestra la tarjeta: cualquier escritor de `AUTH_WRITER_EMAILS` ya podía
+  editar esos campos por `/tareas/<id>/editar` y la API, y lo sigue pudiendo.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+```bash
+export PLANIFICACION_EDICION_PROPIETARIO=true
+export PLANIFICACION_EDICION_PROPIETARIO_EMAIL='<correo del propietario>'
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar las dos con «+»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+Otro valor que `true`, una sola de las dos, un correo mal formado o la falta de `WRITE_MODE=sheets` hacen fallar el
+render sin aplicar nada.
+
+### Revertir
+
+`web/deploy/cloudrun/deploy.sh --desde-activa --quitar PLANIFICACION_EDICION_PROPIETARIO` (quita también el correo).
+Las tarjetas vuelven a «Edición apagada»; lo ya guardado queda en la hoja y en `AUDITORIA`.

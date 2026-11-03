@@ -8,6 +8,7 @@ import { DEFAULT_SCENARIO, isDefaultScenario, normalizeScenario, ScenarioError, 
 import type { PlanningInput, PlanResult, ProjectPriority, Scenario, TaskCategory, TaskPlan } from '@/lib/planning/types'
 import { diasSemana, type Bloque } from '@/lib/planificacion-semana'
 import type { HitoSemana } from '@/lib/planificacion-semana-hitos'
+import { tarjetasSemana, type EdicionSemana } from '@/lib/planificacion-edicion'
 import { CapaSemana } from './capa-semana'
 import styles from './planning.module.css'
 
@@ -72,7 +73,14 @@ const CATEGORY_TONE: Record<TaskCategory, 'ok' | 'info' | 'warn' | 'muted'> = {
 }
 const DECISION_LABEL: Record<ReviewDecision, string> = { pendiente: 'Pendiente', aceptado: 'Aceptado', rechazado: 'Rechazado', ajustado: 'Ajustado' }
 
-export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { input: PlanningInput; referenceDate: string; timeZone: string; hitosSemana: Bloque<HitoSemana[]> }) {
+export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edicion = { encendida: false } }: {
+  input: PlanningInput
+  referenceDate: string
+  timeZone: string
+  hitosSemana: Bloque<HitoSemana[]>
+  /** ORD-POS-136: edición en línea de la capa Semana; apagada si no se pasa. */
+  edicion?: EdicionSemana
+}) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [scenario, setScenario] = useState<Scenario>(() => normalizeScenario({}))
   const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null)
@@ -137,7 +145,7 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana }: { 
         {plan.referencia.desde !== plan.referencia.fecha ? ` · se planifica desde ${plan.referencia.desde}` : ''}
       </p>
 
-      <CapaSemana dias={diasSemana(plan, input.pestanasNoDisponibles)} hitos={hitosSemana} />
+      <CapaSemana dias={diasSemana(plan, input.pestanasNoDisponibles)} hitos={hitosSemana} tarjetas={tarjetasSemana(plan, input)} edicion={edicion} />
 
       <details className="diagnostics">
         <summary>Detalle del plan</summary>

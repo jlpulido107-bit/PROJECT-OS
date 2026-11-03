@@ -96,10 +96,32 @@ export function segundoGeminiSupervisado(env: NodeJS.ProcessEnv = process.env): 
  * con deploy.sh; el token del agente PM nunca cierra (guard.ts).
  */
 export function tareasCierrePropietario(env: NodeJS.ProcessEnv = process.env): string | null {
-  if (env.TAREAS_CIERRE_PROPIETARIO !== 'true') return null
-  const email = env.TAREAS_CIERRE_PROPIETARIO_EMAIL?.trim().toLowerCase() ?? ''
+  return correoPropietario(env.TAREAS_CIERRE_PROPIETARIO, env.TAREAS_CIERRE_PROPIETARIO_EMAIL, env)
+}
+
+/** Comprobación de correo de DEC-POS-023: bandera `true` exacta y un único correo que además esté en AUTH_ALLOWED_EMAILS. */
+function correoPropietario(bandera: string | undefined, correo: string | undefined, env: NodeJS.ProcessEnv): string | null {
+  if (bandera !== 'true') return null
+  const email = correo?.trim().toLowerCase() ?? ''
   if (!/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(email)) return null
   return isEmailAllowed(email, parseAllowedEmails(env.AUTH_ALLOWED_EMAILS)) ? email : null
+}
+
+/**
+ * ORD-POS-136 (DEC-POS-029 a, b y g): edición en línea de FECHA_PLAN, HORAS_ESTIMADAS e HITO_ID desde la capa Semana,
+ * apagada por defecto. Solo con PLANIFICACION_EDICION_PROPIETARIO=true exacto y un único correo en
+ * PLANIFICACION_EDICION_PROPIETARIO_EMAIL que esté en AUTH_ALLOWED_EMAILS (misma comprobación que DEC-POS-023). Solo
+ * decide si la tarjeta muestra el formulario: el guardado usa PATCH /api/operaciones/tareas/{id} sin cambios en el
+ * servidor. Solo el propietario la pone en Cloud Run con deploy.sh.
+ */
+export function planificacionEdicionPropietario(env: NodeJS.ProcessEnv = process.env): string | null {
+  return correoPropietario(env.PLANIFICACION_EDICION_PROPIETARIO, env.PLANIFICACION_EDICION_PROPIETARIO_EMAIL, env)
+}
+
+/** La sesión es la del propietario con PLANIFICACION_EDICION_PROPIETARIO encendida (ORD-POS-136). */
+export function puedeEditarPlanificacion(email: unknown, env: NodeJS.ProcessEnv = process.env): boolean {
+  const owner = planificacionEdicionPropietario(env)
+  return owner !== null && typeof email === 'string' && email.trim().toLowerCase() === owner
 }
 
 /** El correo de la sesión es el del propietario con la bandera encendida (para mostrar el botón; el guard lo repite). */
