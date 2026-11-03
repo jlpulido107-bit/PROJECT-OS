@@ -1,4 +1,4 @@
-import { OPTIONAL_WRITE_COLUMNS, WRITE_HEADERS, type WriteTab } from './constants'
+import { MIGRATION_TABS, OPTIONAL_WRITE_COLUMNS, WRITE_HEADERS, type WriteTab } from './constants'
 import { OperationError } from './errors'
 
 /**
@@ -39,7 +39,7 @@ export class InMemoryTableStore implements TableStore {
 
   async readTable(tab: WriteTab): Promise<string[][]> {
     const values = this.tabs.get(tab)
-    if (!values) throw new OperationError('esquema-invalido')
+    if (!values) throw pestanaFaltante(tab)
     return values.map((row) => [...row])
   }
 
@@ -59,6 +59,16 @@ export class InMemoryTableStore implements TableStore {
   snapshot(): Record<string, string[][]> {
     return Object.fromEntries([...this.tabs.entries()].map(([tab, values]) => [tab, values.map((row) => [...row])]))
   }
+}
+
+/**
+ * Error de una pestaña que no existe: `migracion-pendiente` (422, con la pestaña) si la crea una migración del propietario
+ * (MIGRATION_TABS, ORD-POS-141); `esquema-invalido` en cualquier otra, como siempre.
+ */
+export function pestanaFaltante(tab: WriteTab): OperationError {
+  return MIGRATION_TABS.includes(tab)
+    ? new OperationError('migracion-pendiente', { detail: { pestana: tab } })
+    : new OperationError('esquema-invalido')
 }
 
 /* ------------------------------ Mapeo por encabezados ------------------------------ */

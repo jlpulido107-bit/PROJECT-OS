@@ -74,6 +74,8 @@ export type OperationErrorCode =
   | 'version-faltante'
   | 'semana-inexistente'
   | 'capacidad-semana-ocupada'
+  | 'escenario-inexistente'
+  | 'escenario-archivado'
 
 const STATUS: Record<OperationErrorCode, number> = {
   'no-autenticado': 401,
@@ -150,6 +152,8 @@ const STATUS: Record<OperationErrorCode, number> = {
   'version-faltante': 409,
   'semana-inexistente': 422,
   'capacidad-semana-ocupada': 409,
+  'escenario-inexistente': 404,
+  'escenario-archivado': 409,
 }
 
 const MESSAGES: Record<OperationErrorCode, string> = {
@@ -226,6 +230,8 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'migracion-pendiente': 'La hoja aún no tiene la migración que pide esta operación (la aplica el propietario, docs/escritura-v1-8.md §11.2). No se escribió nada.',
   'version-faltante': 'La fila no tiene VERSION (o no es un entero): escribe 1 en la hoja, según la migración, antes de editarla. No se escribió nada.',
   'semana-inexistente': 'Esa semana no tiene fila en CAPACIDAD_SEMANAL: no hay nada que editar. Recarga la vista.',
+  'escenario-inexistente': 'Ese escenario no existe en ESCENARIOS. Recarga la vista.',
+  'escenario-archivado': 'El escenario ya estaba archivado; no se escribió nada.',
   'capacidad-semana-ocupada': 'Ya hay otra fila de CAPACIDAD_SEMANAL con FECHA_INICIO en esa semana: deja una sola. No se escribió nada.',
 }
 

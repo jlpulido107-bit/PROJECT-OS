@@ -1,7 +1,7 @@
 import { MAX_DATA_ROWS } from '../schema'
-import type { WriteTab } from './constants'
+import { MIGRATION_TABS, type WriteTab } from './constants'
 import { OperationError } from './errors'
-import type { TableStore } from './table-store'
+import { pestanaFaltante, type TableStore } from './table-store'
 
 /**
  * Adaptador de ESCRITURA a Google Sheets (V1.4) — PREPARADO, NO CONECTADO.
@@ -71,7 +71,9 @@ export class SheetsTableStore implements TableStore {
     let data: { values?: unknown }
     try {
       data = (await this.call('GET', `${range}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`)) as { values?: unknown }
-    } catch {
+    } catch (error) {
+      // Sheets responde 400 a un rango de una pestaña que no existe: si la crea una migración (ORD-POS-141), se dice así.
+      if (MIGRATION_TABS.includes(tab) && error instanceof Error && error.message === 'HTTP 400') throw pestanaFaltante(tab)
       throw new OperationError('lectura-fallida')
     }
     const values = Array.isArray(data.values) ? (data.values as unknown[][]) : []

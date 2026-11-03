@@ -15,7 +15,7 @@ import {
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
-  derivedRequestId, payloadHash, type CompleteTaskCommand, type RegistrarCapacidadCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
+  derivedRequestId, payloadHash, type ArchivarEscenarioCommand, type CompleteTaskCommand, type GuardarEscenarioCommand, type RegistrarCapacidadCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
   type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
 import {
@@ -86,8 +86,12 @@ const TASK_FIELD_COLUMNS: Record<keyof TaskChanges, string> = {
 }
 
 const ID_COLUMN: Record<EntityTab, string> = {
-  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID', CAPACIDAD_SEMANAL: 'SEMANA_ID',
+  TAREAS: 'TAREA_ID', TIEMPOS: 'SESION_ID', DECISIONES: 'DECISION_ID', ORDENES_CODEX: 'ORDEN_ID', CAPACIDAD_SEMANAL: 'SEMANA_ID', ESCENARIOS: 'ESCENARIO_ID',
 }
+
+/** ESTADO de una fila de ESCENARIOS (ORD-POS-141): se da de alta ACTIVO y solo se puede archivar. */
+export const ESCENARIO_ACTIVO = 'ACTIVO'
+export const ESCENARIO_ARCHIVADO = 'ARCHIVADO'
 
 /** Columnas de CAPACIDAD_SEMANAL que `capacidad.registrar` escribe (NOTAS nunca; VERSION y ACTUALIZADO_EN, el servidor). */
 const CAPACIDAD_CAMPOS = ['FECHA_INICIO', 'HORAS_DISPONIBLES', 'RESERVA_PCT', 'ESTADO'] as const
@@ -345,6 +349,75 @@ export class OperationsService {
       await this.writeGuarded(cap, row.sheetRow, row.cells, { column: 'SEMANA_ID', value: cmd.semanaId }, { column: 'VERSION', value: current.VERSION! }, next)
       await this.verifyCreated('CAPACIDAD_SEMANAL', cmd.semanaId, pick(next, contractColumns(cap)))
       return { operacion: op, entidad: 'CAPACIDAD_SEMANAL', id: cmd.semanaId, version: currentVersion + 1, repetida: false }
+    })
+  }
+
+  /**
+   * Guardar un escenario de simulación (ORD-POS-141, DEC-POS-029 d; docs/escritura-v1-8.md §11.1, §11.2 y §11.4): solo
+   * alta de una fila en ESCENARIOS con ID ESC-NNN, ESTADO ACTIVO y VERSION 1. No lee ni escribe ninguna otra pestaña de
+   * datos: guardar un escenario nunca cambia el plan. Sin la pestaña (migración del propietario), 422
+   * `migracion-pendiente` sin escribir nada, ni AUDITORIA. Quién puede llamarla lo decide el guard.
+   */
+  guardarEscenario(cmd: GuardarEscenarioCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'escenario.guardar'
+      const hash = payloadHash(op, cmd)
+      const [escenarios, audit] = await this.views('ESCENARIOS', 'AUDITORIA')
+      const replay = await this.replayCreate(op, hash, cmd.requestId, audit, escenarios)
+      if (replay) return replay
+
+      const id = this.nextSequentialId(escenarios, 'ESCENARIO_ID', 'ESC-')
+      if (findById(escenarios, 'ESCENARIO_ID', id).length > 0) throw new OperationError('conflicto-concurrente')
+      const now = this.clock()
+      const record: Record<string, string> = {
+        ESCENARIO_ID: id,
+        NOMBRE: cmd.nombre,
+        SEMANA_ID: cmd.semanaId,
+        PARAMETROS: cmd.parametros,
+        CREADO_EN: meridaIsoTimestamp(now),
+        HUELLA: cmd.huella,
+        ESTADO: ESCENARIO_ACTIVO,
+        VERSION: '1',
+      }
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ESCENARIOS', id, creationDiff(record), now, audit)
+      await this.appendEntity('ESCENARIOS', escenarios, record)
+      await this.verifyCreated('ESCENARIOS', id, record)
+      return { operacion: op, entidad: 'ESCENARIOS', id, version: 1, repetida: false }
+    })
+  }
+
+  /**
+   * Archivar un escenario (ORD-POS-141): ESTADO ACTIVO → ARCHIVADO y VERSION + 1, con la versión esperada y AUDITORIA
+   * antes de escribir. Nunca borra la fila ni toca NOMBRE, PARAMETROS ni HUELLA. Ya archivado: 409 `escenario-archivado`.
+   */
+  archivarEscenario(cmd: ArchivarEscenarioCommand, ctx: OperationContext): Promise<OperationResult> {
+    return this.exclusive(async () => {
+      const op: OperationName = 'escenario.archivar'
+      const hash = payloadHash(op, cmd)
+      const [escenarios, audit] = await this.views('ESCENARIOS', 'AUDITORIA')
+      const matches = findById(escenarios, 'ESCENARIO_ID', cmd.escenarioId)
+      if (matches.length > 1) throw new OperationError('conflicto-concurrente')
+      const row = matches[0]
+      if (!row) throw new OperationError('escenario-inexistente')
+      const current = toRecord(escenarios, row.cells)
+      const replay = await this.replayUpdate(op, hash, cmd.requestId, audit, escenarios, row.sheetRow, current, 'ESCENARIOS')
+      if (replay) return replay
+
+      if (!/^\d+$/.test(current.VERSION ?? '')) throw new OperationError('version-faltante')
+      const currentVersion = Number(current.VERSION)
+      if (currentVersion !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { versionActual: currentVersion } })
+      if ((current.ESTADO ?? '').toUpperCase() === ESCENARIO_ARCHIVADO) throw new OperationError('escenario-archivado')
+
+      const now = this.clock()
+      const next: Record<string, string> = { ...current, ESTADO: ESCENARIO_ARCHIVADO, VERSION: String(currentVersion + 1) }
+      const diff = new Map<string, { antes: string; despues: string }>([
+        ['ESTADO', { antes: current.ESTADO ?? '', despues: ESCENARIO_ARCHIVADO }],
+        ['VERSION', { antes: current.VERSION!, despues: next.VERSION! }],
+      ])
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ESCENARIOS', cmd.escenarioId, diff, now, audit)
+      await this.writeGuarded(escenarios, row.sheetRow, row.cells, { column: 'ESCENARIO_ID', value: cmd.escenarioId }, { column: 'VERSION', value: current.VERSION! }, next)
+      await this.verifyCreated('ESCENARIOS', cmd.escenarioId, pick(next, contractColumns(escenarios)))
+      return { operacion: op, entidad: 'ESCENARIOS', id: cmd.escenarioId, version: currentVersion + 1, repetida: false }
     })
   }
 
@@ -890,14 +963,14 @@ export class OperationsService {
       const matches = Object.entries(record).every(([column, value]) => (stored[column] ?? '') === value)
       if (!matches && found.later.length === 0) throw new OperationError('estado-divergente')
     }
-    const version = tab === 'TAREAS' || tab === 'CAPACIDAD_SEMANAL' ? Number(record.VERSION ?? '1') : undefined
+    const version = tab === 'TAREAS' || tab === 'CAPACIDAD_SEMANAL' || tab === 'ESCENARIOS' ? Number(record.VERSION ?? '1') : undefined
     return { operacion: op, entidad: tab, id: audited.id, version, repetida: true }
   }
 
   /** Idempotencia de ediciones: repetir si ya se aplicó, completar si la versión sigue siendo la anterior. */
   private async replayUpdate(
     op: OperationName, hash: string, requestId: string, audit: TableView, tareas: TableView, sheetRow: number,
-    current: Record<string, string>, tab: 'TAREAS' | 'CAPACIDAD_SEMANAL' = 'TAREAS',
+    current: Record<string, string>, tab: 'TAREAS' | 'CAPACIDAD_SEMANAL' | 'ESCENARIOS' = 'TAREAS',
   ): Promise<OperationResult | null> {
     const found = this.findAudited(audit, requestId)
     if (!found) return null
@@ -960,6 +1033,8 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'tarea.editar': ['VERSION'],
   'tarea.completar': ['ESTADO', 'VERSION'],
   'capacidad.registrar': ['VERSION'],
+  'escenario.guardar': ['ESCENARIO_ID', 'VERSION'],
+  'escenario.archivar': ['ESTADO', 'VERSION'],
   'tiempo.registrar': ['SESION_ID'],
   'tiempo.crear': ['SESION_ID'],
   'decision.crear': ['DECISION_ID'],
@@ -974,7 +1049,7 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'orden.cerrar_fusionado': ['ESTADO'],
 }
 /** Operaciones que modifican un registro existente (no reescriben su ID). */
-const TRANSITION_OPS = new Set(['tarea.editar', 'tarea.completar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar', 'orden.cerrar_fusionado'])
+const TRANSITION_OPS = new Set(['tarea.editar', 'tarea.completar', 'escenario.archivar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar', 'orden.cerrar_fusionado'])
 const AUDIT_ID_PATTERN = /^(AUD-\d{14}-[0-9A-F]+)-(\d{2})(?:-(\d{2}))?$/
 
 /**

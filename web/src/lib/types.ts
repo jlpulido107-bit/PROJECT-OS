@@ -60,6 +60,18 @@ export interface Capacidad {
   version: string | null
 }
 
+/** Fila de ESCENARIOS (ORD-POS-141, DEC-POS-029 d). PARAMETROS es JSON y se valida al cargar, nunca se confía en él. */
+export interface EscenarioGuardado {
+  id: string
+  nombre: string | null
+  semanaId: string | null
+  parametros: string | null
+  creadoEn: Timestamp | null
+  huella: string | null
+  estado: string | null
+  version: string | null
+}
+
 export interface Asignacion {
   id: string
   semanaId: string | null
@@ -242,6 +254,8 @@ export interface Dataset {
   ordenesConBandera: boolean
   /** CAPACIDAD_SEMANAL ya tiene la columna VERSION (migración de ORD-POS-139); sin ella, la capacidad no se edita. */
   capacidadConVersion: boolean
+  /** Filas de ESCENARIOS (ORD-POS-141, pestaña opcional de la migración §11.2); vacía si falta. */
+  escenarios: EscenarioGuardado[]
   supervision: Supervision[]
   issues: DataIssue[]
   /** Hay más incidencias de las que se conservaron. */

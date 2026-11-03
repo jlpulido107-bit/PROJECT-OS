@@ -41,7 +41,7 @@ const PRIVATE_PAGES = [
 ]
 const PRIVATE_APIS = [
   '/api/resumen', '/api/planificacion', '/api/control', '/api/operaciones/tareas', '/api/operaciones/tareas/POS-001', '/api/operaciones/tareas/POS-001/completar',
-  '/api/operaciones/tiempos', '/api/operaciones/ideas', '/api/operaciones/capacidad', '/api/operaciones/decisiones', '/api/operaciones/ordenes', '/api/operaciones/ordenes/ORD-POS-001',
+  '/api/operaciones/tiempos', '/api/operaciones/ideas', '/api/operaciones/capacidad', '/api/operaciones/escenarios', '/api/operaciones/escenarios/archivar', '/api/operaciones/decisiones', '/api/operaciones/ordenes', '/api/operaciones/ordenes/ORD-POS-001',
   '/api/operaciones/ordenes/ORD-POS-001/ejecutar', '/api/operaciones/ordenes/ORD-POS-001/supervision',
   '/api/finanzas/movimientos', '/api/finanzas/recurrentes/confirmar',
   '/api/finanzas/agente/rendimiento', '/api/finanzas/agente/cargo-extra',

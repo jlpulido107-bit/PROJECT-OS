@@ -10,6 +10,7 @@ import { commitDesplegado } from '@/lib/despliegue'
 import { canWrite, isWriter, puedeCerrarTareas, puedeEditarPlanificacion } from '@/lib/operations/config'
 import { githubClient } from '@/lib/operations/dispatch'
 import type { EdicionSemana } from '@/lib/planificacion-edicion'
+import { escenariosActivos } from '@/lib/planificacion-escenarios'
 import { capaFlujo, githubDeFlujo } from '@/lib/planificacion-flujo'
 import { hitosSemana } from '@/lib/planificacion-semana-hitos'
 import { capaHoy } from '@/lib/planificacion-v2'
@@ -55,6 +56,8 @@ export default async function PlanningPage() {
           migrada: data.capacidadConVersion,
           versiones: Object.fromEntries(data.capacidad.map((c) => [c.id, /^\d+$/.test(c.version ?? '') ? Number(c.version) : null])),
         },
+        // Escenarios guardados (ORD-POS-141): Guardar y Archivar solo con la pestaña ESCENARIOS de la migración (§11.2).
+        escenarios: { migrada: data.tabs.ESCENARIOS?.ok === true },
       }
     : { encendida: false }
   // El servidor fija la fecha de referencia (hoy en Mérida); el motor puro se ejecuta en el navegador para
@@ -63,11 +66,12 @@ export default async function PlanningPage() {
     <>
       <h1>Planificación semanal y diaria</h1>
       <Freshness data={data} />
-      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS', 'ORDENES_CODEX']} />
+      <TabWarnings data={data} tabs={['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS', 'ORDENES_CODEX', 'ESCENARIOS']} />
       <HoyView capa={hoy} puedeCerrar={puedeCerrar} />
       <FlujoView capa={flujo} />
       {/* Semana visible y «Detalle del plan» plegado: los pinta PlanningView, porque la capa Semana sigue el escenario del cliente. */}
-      <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} edicion={edicion} />
+      <PlanningView input={input} referenceDate={referenceDate} timeZone={MERIDA_TZ} hitosSemana={hitosSemana(data, referenceDate)} edicion={edicion}
+        guardados={escenariosActivos(data.escenarios)} />
     </>
   )
 }
