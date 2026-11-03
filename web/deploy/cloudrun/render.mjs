@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + ideasAlta(env, problems) + commitDesplegado(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + commitDesplegado(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, ECO_IDEAS_ALTA ni DEPLOY_COMMIT_SHA')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA ni DEPLOY_COMMIT_SHA')
   return output.replace(marker, writeBlock)
 }
 
@@ -233,6 +233,35 @@ function tiemposAgente(env, problems) {
     '              valueFrom:',
     '                secretKeyRef:',
     '                  name: project-os-tiempos-agente-token-sha256',
+    `                  key: '${version}'`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-142, DEC-POS-029 e y g; docs/escritura-v1-8.md §11.3): calendario ICS de solo lectura, apagado por
+ * defecto. Las dos van juntas y solo las exporta el propietario:
+ * - PLANIFICACION_ICS: solo `true`. Enciende GET /api/planificacion/calendario.ics?token=<secreto>. No depende de WRITE_MODE.
+ * - SECRET_VERSION_CALENDARIO_ICS: versión del secreto project-os-calendario-ics-token-sha256 (CALENDARIO_ICS_TOKEN_SHA256,
+ *   el SHA-256 del secreto del enlace; nunca el secreto). Rotar = versión nueva del secreto y redespliegue.
+ * Sin ninguna de las dos, el YAML no cambia; nunca se imprime un valor.
+ */
+function calendarioIcs(env, problems) {
+  const flag = (env.PLANIFICACION_ICS ?? '').trim()
+  const version = (env.SECRET_VERSION_CALENDARIO_ICS ?? '').trim()
+  if (!flag && !version) return ''
+  const antes = problems.length
+  if (flag && flag !== 'true') problems.push('PLANIFICACION_ICS solo admite true')
+  if (!flag || !version) problems.push('PLANIFICACION_ICS y SECRET_VERSION_CALENDARIO_ICS van juntas')
+  if (version && !/^[1-9][0-9]*$/.test(version)) problems.push('SECRET_VERSION_CALENDARIO_ICS no tiene el formato esperado')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: PLANIFICACION_ICS',
+    "              value: 'true'",
+    '            - name: CALENDARIO_ICS_TOKEN_SHA256',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-calendario-ics-token-sha256',
     `                  key: '${version}'`,
     '',
   ].join('\n')

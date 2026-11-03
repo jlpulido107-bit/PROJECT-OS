@@ -108,9 +108,16 @@ describe('smoke remoto (scripts/smoke-remote.mjs)', () => {
     const apiDir = path.join(ROOT, 'web', 'src', 'app', 'api')
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts'))
       .map((f) => `/api/${path.relative(apiDir, path.dirname(f)).split(path.sep).join('/')}`)
-      .filter((r) => !r.startsWith('/api/auth/') && r !== '/api/health')
+      // El calendario ICS (ORD-POS-142) no pide sesión: va aparte, con su comprobación de 404 sin token.
+      .filter((r) => !r.startsWith('/api/auth/') && r !== '/api/health' && r !== '/api/planificacion/calendario.ics')
     const apis = list('PRIVATE_APIS')
     for (const route of routes) expect(apis.some((p) => toPattern(route).test(p)), route).toBe(true)
+  })
+
+  it('comprueba que el calendario ICS sin token responde 404 sin calendario (ORD-POS-142)', () => {
+    expect(list('PRIVATE_APIS')).not.toContain('/api/planificacion/calendario.ics')
+    expect(script).toContain("get('/api/planificacion/calendario.ics')")
+    expect(script).toMatch(/ics\.status === 404 && !icsBody\.includes\('BEGIN:VCALENDAR'\)/)
   })
 
   it('solo usa GET, sin cookies ni cuerpos de respuesta impresos', () => {

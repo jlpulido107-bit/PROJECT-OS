@@ -63,6 +63,11 @@ for (const path of PRIVATE_APIS) {
   check(`${path} sin sesión → 401 sin datos`, api.status === 401 && Object.keys(apiBody).join() === 'error', api.status)
 }
 
+// ORD-POS-142: el calendario ICS no pide sesión; sin token responde 404 (encendido o apagado) y nunca el calendario.
+const ics = await get('/api/planificacion/calendario.ics')
+const icsBody = await ics.text().catch(() => '')
+check('/api/planificacion/calendario.ics sin token → 404 sin calendario', ics.status === 404 && !icsBody.includes('BEGIN:VCALENDAR'), ics.status)
+
 const login = await get('/login')
 check('/login → 200', login.status === 200, login.status)
 check('Strict-Transport-Security', (login.headers.get('strict-transport-security') ?? '').includes('max-age='), '')

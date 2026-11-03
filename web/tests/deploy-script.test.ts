@@ -317,6 +317,27 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('PLANIFICACION_ICS (ORD-POS-142): se conserva de la activa con su secreto y --quitar retira las dos', () => {
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'PLANIFICACION_ICS', value: 'true' },
+        { name: 'CALENDARIO_ICS_TOKEN_SHA256', valueFrom: { secretKeyRef: { name: 'project-os-calendario-ics-token-sha256', key: '2' } } })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toMatch(/PLANIFICACION_ICS|CALENDARIO_ICS/)
+      for (const nombre of ['PLANIFICACION_ICS', 'CALENDARIO_ICS_TOKEN_SHA256']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        expect(apagada.out).toMatch(/Variables quitadas:\n  - CALENDARIO_ICS_TOKEN_SHA256\n  - PLANIFICACION_ICS\n/)
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, PLANIFICACION_ICS: 'true', SECRET_VERSION_CALENDARIO_ICS: '2' } })
+      expect(nueva.code).toBe(0)
+      for (const nombre of ['PLANIFICACION_ICS', 'CALENDARIO_ICS_TOKEN_SHA256']) expect(nueva.out).toContain(`  + ${nombre}\n`)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, PLANIFICACION_ICS: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('RADAROS_SHEET_ID (ORD-POS-067): se conserva de la activa como literal, sin imprimir el valor, y se quita con --quitar', () => {
       const activa = JSON.parse(full)
       const id = 'LIBRO_RADAROS_SINTETICO_0123456789'
