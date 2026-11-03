@@ -1,3 +1,4 @@
+import { movimientos, sinFijadasVacias } from './scenario'
 import type { PlanResult, Scenario } from './types'
 
 /**
@@ -7,6 +8,11 @@ import type { PlanResult, Scenario } from './types'
  *   elementos aceptados en filas de PLAN_DIARIO / PLAN_ITEMS (ver docs/planificacion-v1-5.md §6).
  */
 export const EXPORT_SCHEMA = 'project-os.planificacion.propuesta/v1'
+/**
+ * v2 (ORD-POS-137) = v1 + movimientos simulados: `escenario.fijadas` (tarea → fecha) y `fijada: true` en cada elemento
+ * de una tarea movida. Solo se usa cuando hay movimientos; sin ellos la exportación sigue siendo v1, idéntica.
+ */
+export const EXPORT_SCHEMA_V2 = 'project-os.planificacion.propuesta/v2'
 
 export type ReviewDecision = 'pendiente' | 'aceptado' | 'rechazado' | 'ajustado'
 
@@ -16,7 +22,7 @@ export interface ReviewState {
 }
 
 export interface ProposalExport {
-  esquema: typeof EXPORT_SCHEMA
+  esquema: typeof EXPORT_SCHEMA | typeof EXPORT_SCHEMA_V2
   aviso: string
   semanaIso: string
   fechaReferencia: string
@@ -33,6 +39,8 @@ export interface ProposalExport {
     minutosPropuestos: number
     decision: ReviewDecision
     minutosRevisados: number | null
+    /** Solo en v2: la tarea se movió a este día en la simulación. */
+    fijada?: true
   }>
 }
 
@@ -41,14 +49,15 @@ export function reviewKey(fecha: string, tareaId: string): string {
 }
 
 export function buildExport(plan: PlanResult, scenario: Scenario, review: ReviewState): ProposalExport {
+  const v2 = movimientos(scenario) > 0
   return {
-    esquema: EXPORT_SCHEMA,
+    esquema: v2 ? EXPORT_SCHEMA_V2 : EXPORT_SCHEMA,
     aviso: 'Propuesta simulada: no se guardó ni se aplicó en Google Sheets.',
     semanaIso: plan.referencia.semanaIso,
     fechaReferencia: plan.referencia.fecha,
     zona: plan.referencia.zona,
     huellaEntrada: plan.huella,
-    escenario: scenario,
+    escenario: sinFijadasVacias(scenario),
     supuestos: plan.supuestos,
     capacidad: { origen: plan.capacidad.origen, netaMin: plan.capacidad.netaMin, libreMin: plan.capacidad.libreMin },
     elementos: plan.dias.flatMap((d) => d.items.map((i) => {
@@ -62,6 +71,7 @@ export function buildExport(plan: PlanResult, scenario: Scenario, review: Review
         minutosPropuestos: i.minutos,
         decision,
         minutosRevisados: decision === 'ajustado' ? r?.minutos ?? null : decision === 'aceptado' ? i.minutos : decision === 'rechazado' ? 0 : null,
+        ...(v2 && i.fijada ? { fijada: true as const } : {}),
       }
     })),
   }

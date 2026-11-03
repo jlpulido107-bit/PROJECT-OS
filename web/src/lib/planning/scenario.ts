@@ -1,3 +1,4 @@
+import { isCivilDate } from './calendar'
 import type { ProjectPriority, Scenario } from './types'
 
 /**
@@ -28,6 +29,9 @@ export const SCENARIO_LIMITS = {
 
 const PROJECT_PRIORITIES: readonly ProjectPriority[] = ['ALTA', 'MEDIA', 'BAJA']
 const PROJECT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/
+const TASK_ID = PROJECT_ID
+/** Tope de movimientos simulados por escenario. */
+export const MAX_FIJADAS = 200
 
 export class ScenarioError extends Error {
   constructor(readonly field: string, message: string) {
@@ -105,7 +109,34 @@ export function normalizeScenario(partial: Partial<Record<keyof Scenario, unknow
       s.prioridadProyecto[project] = value as ProjectPriority
     }
   }
+  if (partial.fijadas !== undefined && partial.fijadas !== null) {
+    const raw = partial.fijadas
+    if (typeof raw !== 'object' || Array.isArray(raw)) throw new ScenarioError('fijadas', 'Objeto tarea → fecha')
+    const entries = Object.entries(raw as Record<string, unknown>)
+    if (entries.length > MAX_FIJADAS) throw new ScenarioError('fijadas', 'Demasiados movimientos')
+    const fijadas: Record<string, string> = {}
+    for (const [taskId, fecha] of entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+      if (!TASK_ID.test(taskId)) throw new ScenarioError('fijadas', 'ID de tarea inválido')
+      if (!isCivilDate(fecha)) throw new ScenarioError('fijadas', 'Usa una fecha AAAA-MM-DD válida')
+      fijadas[taskId] = fecha
+    }
+    // Vacío = sin movimientos: no se agrega el campo, así el escenario (y su huella) es el mismo de siempre.
+    if (entries.length > 0) s.fijadas = fijadas
+  }
   return s
+}
+
+/** Número de movimientos simulados del escenario. */
+export function movimientos(s: Scenario): number {
+  return s.fijadas ? Object.keys(s.fijadas).length : 0
+}
+
+/** El escenario sin el campo `fijadas` cuando está vacío (huella y exportación v1 idénticas a las de antes). */
+export function sinFijadasVacias(s: Scenario): Scenario {
+  if (movimientos(s) > 0 || !Object.hasOwn(s, 'fijadas')) return s
+  const rest = { ...s }
+  delete rest.fijadas
+  return rest
 }
 
 /** Escenario desde parámetros de URL (API GET). `prioridad.SIG=ALTA` fija la prioridad simulada de un proyecto. */
@@ -135,6 +166,7 @@ export function isDefaultScenario(s: Scenario): boolean {
     s.sobrecargaPct === 0 &&
     !s.descontarRegistrado &&
     s.diasLaborables.join(',') === DEFAULT_SCENARIO.diasLaborables.join(',') &&
-    Object.keys(s.prioridadProyecto).length === 0
+    Object.keys(s.prioridadProyecto).length === 0 &&
+    movimientos(s) === 0
   )
 }
