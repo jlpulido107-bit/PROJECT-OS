@@ -470,6 +470,25 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('ECO_TABULADOR (ORD-POS-145): exportada es variable nueva, se conserva de la activa, --quitar la retira y solo admite true', () => {
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, ECO_TABULADOR: 'true' } })
+      expect(nueva.code).toBe(0)
+      expect(nueva.out).toContain('  + ECO_TABULADOR\n')
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'ECO_TABULADOR', value: 'true' })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('ECO_TABULADOR')
+      const apagada = run(['--desde-activa', '--quitar', 'ECO_TABULADOR', '--dry-run'], { raw, env: min })
+      expect(apagada.code).toBe(0)
+      expect(apagada.out).toContain('  - ECO_TABULADOR\n')
+      const mala = run(['--desde-activa'], { raw, env: { ...min, ECO_TABULADOR: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.out).toContain('ECO_TABULADOR solo admite true')
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('DEPLOY_COMMIT_SHA (ORD-POS-124): si la activa no la tiene, es «variable nueva» y no falla; nunca se toma de la activa', () => {
       const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, DEPLOY_COMMIT_SHA: SHA_NUEVO } })
       expect(nueva.code).toBe(0)

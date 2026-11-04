@@ -3,6 +3,7 @@ import 'server-only'
 import { planificacionEdicionPropietario, pmPuedeRegistrarPr, segundoGeminiSupervisado, tareasCierrePropietario } from './operations/config'
 import { finanzasAgenteMode } from './finanzas/agente-config'
 import { ecoIdeasAltaHabilitada } from './radaros/ideas-alta'
+import { ecoTabuladorHabilitado } from './radaros/pipeline-tabulador'
 import { ecoPipelineWriteMode } from './radaros/pipeline-escritura-config'
 import { tiemposAgenteHabilitado } from './tiempos-agente'
 import { calendarioIcsTokenHash } from './calendario-ics-acceso'
@@ -28,6 +29,7 @@ export const BANDERAS: Readonly<Record<string, Bandera>> = {
   FINANZAS_AGENTE_MODE: { nombre: 'Agente de finanzas (registro de cortes)', encendida: (env) => finanzasAgenteMode(env) === 'sheets' },
   ECO_PIPELINE_WRITE_MODE: { nombre: 'Escritura del pipeline de /eco', encendida: (env) => ecoPipelineWriteMode(env) === 'sheets' },
   ECO_IDEAS_ALTA: { nombre: 'Alta de ideas en RADAROS por el PM', encendida: ecoIdeasAltaHabilitada },
+  ECO_TABULADOR: { nombre: 'Tabulador de cotizaciones de /eco/pipeline', encendida: ecoTabuladorHabilitado },
   PLANIFICACION_EDICION_PROPIETARIO: {
     nombre: 'Edición de la planificación por el propietario', encendida: (env) => planificacionEdicionPropietario(env) !== null,
   },

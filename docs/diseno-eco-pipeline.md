@@ -73,7 +73,7 @@ no leí el canvas; la construcción lo consulta para el estilo, no para el compo
 | --- | --- | --- |
 | Identidad | `PRODUCTO_ID`, `NOMBRE`, `ASIN`, `IDEA_ID`, `ORIGEN`, `ETAPA`, `ETAPA_DESDE` | El propietario; `PRODUCTO_ID`, `ETAPA_DESDE` y `ORIGEN` los pone el servidor |
 | Keepa (foto) | `KEEPA_FECHA`, `KEEPA_PRECIO_MXN_AVG90`, `KEEPA_BSR_AVG90`, `KEEPA_VENTAS_MES`, `KEEPA_OFERTAS` | Alta o migración (§9); solo lectura en la ficha. Para datos vivos, el enlace al ranking de /eco por `IDEA_ID` |
-| Costo máximo | `COSTO_MAX_MXN` | El propietario, o una fórmula de la hoja (❓ §12); el dashboard no lo calcula |
+| Costo máximo | `COSTO_MAX_MXN` | El propietario, o una fórmula de la hoja (❓ §12); el dashboard lo calcula aparte en «Comparar» (§14.4) sin tocar esta columna |
 | Criterios K1–K6 | `K1` … `K6` | Los del radar de Keepa (§9); su significado vive en `PIPE_PARAMETROS` (§3.6) |
 | Proveedor | `PROVEEDOR_ELEGIDO_ID` y la tabla de sus cotizaciones con muestra (§3.3) | El propietario |
 | Seguimiento | Fechas de §5 y embarques (§3.4) | El propietario |
@@ -573,10 +573,11 @@ ECO se cruza con FINANZAS (hoy no: camino b deja FINANZAS fuera; cruzarlos serí
 
 - ❓ Columnas y significado de K1–K6 del radar de Keepa, y formato de exportación del artifact (§9, P-3).
 - ❓ Si `COSTO_MAX_MXN` y `COSTO_ATERRIZADO_MXN` los captura el propietario o son fórmulas de la hoja (si son fórmulas,
-  esas columnas pasan a solo lectura en el dashboard y la ruta las rechaza).
+  esas columnas pasan a solo lectura en el dashboard y la ruta las rechaza). Desde ORD-POS-145 el dashboard calcula
+  ambos aparte, sin tocar esas columnas (§14).
 - ❓ Lista final de `CANAL` de proveedores y si hace falta más de una muestra por cotización.
 - ❓ Que la protección de pestañas (§6.2) no estorbe al activador de RADAROS (corrida inerte en la activación).
-- ❓ Moneda del tope de $30,000 (§11).
+- ❓ Moneda del tope de $30,000 (§11). ORD-POS-145 lo usa en MXN para el capital del primer lote (§14.5).
 
 ## 13. Datos que nunca van al repositorio
 
@@ -584,3 +585,110 @@ ECO se cruza con FINANZAS (hoy no: camino b deja FINANZAS fuera; cruzarlos serí
 - Sin proveedores, contactos, precios ni ASIN reales: los ejemplos y las pruebas son sintéticos.
 - El CSV del radar y los TSV de la migración se guardan fuera del repositorio; `.gitignore` no basta como control, así
   que el script escribe su salida fuera del árbol del repositorio por defecto (P-3).
+
+## 14. Tabulador de cotizaciones (ORD-POS-145, DEC-ECO-008)
+
+Orden ORD-POS-145 (tarea POS-048, espejo de ECO-019; paquetes PAQ-2026-11-04-03 y PAQ-2026-11-04-05), riesgo MEDIO.
+Fuente de las fórmulas: DEC-ECO-008 (DECISIONES, **PENDIENTE** al escribir esto) y las respuestas del propietario del
+2026-11-04, publicadas por el PM en el [issue #323](https://github.com/jlpulido107-bit/PROJECT-OS/issues/323#issuecomment-6644077749).
+Código: [`web/src/lib/radaros/pipeline-tabulador.ts`](../web/src/lib/radaros/pipeline-tabulador.ts) (funciones puras) y la
+sección «Comparar cotizaciones» de `/eco/pipeline`. **Solo lectura:** no escribe en ninguna pestaña, no crea vías de
+escritura y no cambia la escritura del pipeline (§6), SCORING ni el kill flag. Las columnas manuales `COSTO_ATERRIZADO_MXN`
+(cotización) y `COSTO_MAX_MXN` (producto) no se tocan; el cálculo se muestra junto a ellas.
+
+### 14.1 Migración explícita de `PIPE_COTIZACIONES`
+
+La aplica **solo el propietario, a mano en la hoja de RADAROS**, después de fusionar y desplegar. Ningún agente la aplica.
+Antes de aplicarla todo sigue igual: la lectura no exige las columnas nuevas, la escritura del pipeline (§6) solo valida
+las 23 de §3.3 y escribe por celda, y «Comparar» dice «Migración pendiente» y deja «Por confirmar» lo que falte.
+
+1. En la fila 1 de `PIPE_COTIZACIONES`, después de `VERSION` (columna W), escribir en este orden, exactos y sin repetir:
+   `PAIS_ORIGEN`, `CERTIFICADO_ORIGEN`, `UNIDADES_POR_SET`, `CANTIDAD_COTIZADA`, `TIPO_CAMBIO`, `TIPO_CAMBIO_FECHA`,
+   `FLETE_LOCAL_EXPORT`, `FLETE_INTERNACIONAL`, `SEGURO`, `IGI_PCT`, `DTA`, `AGENTE_ADUANAL`, `FLETE_CEDIS` y
+   `COSTO_ATERRIZADO_CALC_MXN` (columnas X a AK; el lector llega a AZ).
+2. `VERSION` queda donde está y no cambia en ninguna fila: agregar columnas no es editar filas.
+3. Idempotente: si alguna ya existe, se agregan solo las que faltan, al final (`migracionCotizaciones`, probada).
+4. Comprobar: `/eco/pipeline` → «Comparar cotizaciones» sin el aviso «Migración pendiente».
+5. Revertir: borrar esas columnas completas. Nada más depende de ellas.
+
+Unidades de cada celda (por embarque cotizado, `CANTIDAD_COTIZADA` unidades):
+
+| Columna | Contenido |
+| --- | --- |
+| `PAIS_ORIGEN` | Código de 2 letras; decide `IGI_PCT_<país>` (CN, US, VN, CO; cualquier otro → OTRO) |
+| `CERTIFICADO_ORIGEN` | `SI` o `NO` (T-MEC o CPTPP). `SI` → IGI 0 %. Vacío → se supone `NO` y se marca SUPUESTO |
+| `UNIDADES_POR_SET` | Unidades por set, la unidad de venta |
+| `CANTIDAD_COTIZADA` | Unidades del embarque cotizado |
+| `TIPO_CAMBIO`, `TIPO_CAMBIO_FECHA` | MXN por USD y su fecha; solo con `MONEDA` = USD |
+| `FLETE_LOCAL_EXPORT`, `FLETE_INTERNACIONAL`, `SEGURO` | Montos del embarque en la `MONEDA` de la cotización |
+| `IGI_PCT`, `DTA` | Porcentajes en puntos (20 = 20 %) sobre el valor en aduana |
+| `AGENTE_ADUANAL`, `FLETE_CEDIS` | MXN por embarque. `FLETE_CEDIS` = 0 en DDP: ya incluido |
+| `COSTO_ATERRIZADO_CALC_MXN` | Costo aterrizado **por set** en MXN. El dashboard no lo escribe; si tiene valor y difiere del cálculo en más de 1 MXN, «Comparar» lo señala |
+
+### 14.2 Claves de `PIPE_PARAMETROS`
+
+Las da de alta el propietario (columnas `CLAVE` y `VALOR`). Porcentajes en puntos, con o sin «%» (`0.8` = 0.8 %).
+
+| Clave | Uso |
+| --- | --- |
+| `TIPO_CAMBIO_USD_MXN`, `TIPO_CAMBIO_USD_MXN_FECHA` | Tipo de cambio si la cotización no trae el suyo |
+| `IGI_PCT_CN`, `IGI_PCT_US`, `IGI_PCT_VN`, `IGI_PCT_CO`, `IGI_PCT_OTRO` | IGI por país de origen |
+| `DTA_PCT` | DTA, porcentaje del valor en aduana (referencia 0.8 % ❓, la verifica el propietario con su agente aduanal) |
+| `AGENTE_ADUANAL_REF`, `FLETE_CEDIS_REF` | MXN por embarque |
+| `MARGEN_K2_PCT`, `PPC_PCT`, `DEVOLUCIONES_PCT` | 25, 15 y 8; sin la clave se usan esos valores de la orden |
+
+Si la cotización deja vacío un componente que tiene parámetro, se usa el parámetro y se marca **SUPUESTO**. Si tampoco
+hay parámetro (o el componente no tiene: precio, cantidad, fletes y seguro), el componente y el total quedan
+**«Por confirmar»**: un faltante nunca vale 0. Un valor que no es número (por ejemplo «1,000.50» con separador de miles)
+se trata como vacío y se avisa.
+
+### 14.3 Costo aterrizado (normalizado a DDP en el CEDIS de Amazon MX)
+
+Mercancía = `PRECIO_UNIT` × `CANTIDAD_COTIZADA` × tipo de cambio (1 en MXN; solo MXN y USD). Valor en aduana = mercancía +
+los fletes y el seguro que el incoterm no incluye. IGI y DTA = porcentaje × valor en aduana.
+
+| Incoterm | Se suma a la mercancía |
+| --- | --- |
+| EXW | flete local y despacho de exportación + flete internacional + seguro + IGI + DTA + agente aduanal + flete al CEDIS |
+| FOB (y FCA) | flete internacional + seguro + IGI + DTA + agente aduanal + flete al CEDIS |
+| CIF (y DAP) | IGI + DTA + agente aduanal + flete al CEDIS |
+| DDP | flete al CEDIS, solo si no lo incluye |
+
+Otro valor de `INCOTERM` (incluido `OTRO`) deja la cotización «Por confirmar». Costo por set = total ÷
+(`CANTIDAD_COTIZADA` ÷ `UNIDADES_POR_SET`). El IVA de importación no entra: va aparte, como flujo de efectivo.
+
+### 14.4 `COSTO_MAX_MXN` por producto
+
+COSTO_MAX_MXN = precio − comisión − FBA − 0.15 × precio − 0.08 × precio − 0.25 × precio (todos sobre el mismo precio).
+El producto se liga a su idea por `IDEA_ID`. Precio: `AMZ_PRECIO_MXN` de UNIT_ECONOMICS; si está vacío, `PRECIO_MXN` de la
+última semana `OK` de AMZ_RESUMEN. Comisión (`*_COMISION_MXN`, o `*_COMISION_PCT` × precio) y FBA (`*_FBA_MXN`): primero
+UNIT_ECONOMICS y después AMZ_RESUMEN. «Fecha de sus datos»: `TARIFAS_FECHA` (o la semana) de AMZ_RESUMEN si el precio sale
+de ahí; si sale de UNIT_ECONOMICS, su `AMZ_TARIFAS_FECHA` o «sin fecha». Sin precio, comisión o FBA: «Por confirmar».
+Referencias de DEC-ECO-008 por verificar: EC-006 unos 65 MXN, EC-015 unos 96 MXN.
+
+### 14.5 Vista «Comparar cotizaciones»
+
+`/eco/pipeline?comparar=<PRODUCTO_ID>#comparar`. Para el producto: COSTO_MAX_MXN calculado con su fecha, sus insumos y
+el valor manual de la hoja. Cotizaciones ordenadas por costo aterrizado por set (menor primero; «Por confirmar» y
+`DESCARTADA` al final) con ESTADO, PROVEEDOR, PAÍS, INCOTERM, MOQ, plazo, «Cumple» o «No cumple por X MXN», y el capital del
+primer lote (MOQ × costo aterrizado por unidad) contra el tope de 30,000 MXN. Cada cotización tiene su desglose plegable.
+Estados válidos: `SOLICITADA`, `RECIBIDA`, `RECIBIDA (PARCIAL)` y `DESCARTADA`; cualquier otro (incluidos `ELEGIDA` y
+`RECHAZADA` de §3.3) se muestra con «Estado no válido» y no se oculta.
+
+### 14.6 Bandera `ECO_TABULADOR`
+
+Apagada por defecto: sin `ECO_TABULADOR=true` exacto, `/eco/pipeline` no muestra «Comparar» ni el desglose, aunque llegue
+`?comparar=`. La pone **solo el propietario** con `deploy.sh`; ningún agente la enciende. No depende de `WRITE_MODE` ni de
+la escritura del pipeline.
+
+```bash
+export ECO_TABULADOR=true
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ ECO_TABULADOR»
+web/deploy/cloudrun/deploy.sh --desde-activa
+# Apagar:
+web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_TABULADOR
+```
+
+Límites conocidos: el capital del primer lote escala el costo por unidad del embarque cotizado al MOQ, aunque los fletes
+no son lineales; la escritura del pipeline (§6) aún valida `INCOTERM` contra EXW, FOB, CIF, DDP y OTRO, así que FCA y DAP, y
+las columnas de §14.1, se capturan en la hoja hasta otra orden.
