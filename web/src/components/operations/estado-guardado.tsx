@@ -26,6 +26,7 @@ export function EstadoGuardado({ estado, actual, tuyo, children, registro = 'la 
           {estado.version !== null ? <> Versión {estado.version}.</> : null} Queda en AUDITORIA.
         </p>
       ) : null}
+      {estado.tipo === 'guardado' && estado.aviso ? <p className="alert alert-warn small" role="status">{estado.aviso}</p> : null}
       {estado.tipo === 'conflicto' ? (
         <div className="alert alert-danger small" role="alert">
           <p>

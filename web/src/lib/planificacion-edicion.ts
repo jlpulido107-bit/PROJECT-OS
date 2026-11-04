@@ -100,7 +100,7 @@ export function cuerpoEdicion(version: number, actual: ValoresEdicion, escrito: 
 export type EstadoGuardado =
   | { tipo: 'inactivo' }
   | { tipo: 'guardando' }
-  | { tipo: 'guardado'; version: number | null; repetida: boolean }
+  | { tipo: 'guardado'; version: number | null; repetida: boolean; aviso?: string }
   | { tipo: 'conflicto'; versionActual: number | null; mensaje: string }
   | { tipo: 'error'; mensaje: string; campos: Record<string, string> }
 
@@ -108,14 +108,18 @@ export type EstadoGuardado =
 export type EnvioOperacion =
   | { status: 'idle' }
   | { status: 'sending' }
-  | { status: 'done'; result: { version?: number; repetida: boolean } }
+  | { status: 'done'; result: { version?: number; repetida: boolean; aviso?: string } }
   | { status: 'error'; error: { codigo: string; mensaje: string; campos?: Record<string, string>; detalle?: Record<string, unknown> } }
 
 export function estadoGuardado(envio: EnvioOperacion): EstadoGuardado {
   switch (envio.status) {
     case 'idle': return { tipo: 'inactivo' }
     case 'sending': return { tipo: 'guardando' }
-    case 'done': return { tipo: 'guardado', version: typeof envio.result.version === 'number' ? envio.result.version : null, repetida: envio.result.repetida }
+    case 'done': return {
+      tipo: 'guardado', version: typeof envio.result.version === 'number' ? envio.result.version : null, repetida: envio.result.repetida,
+      // ORD-POS-143: aviso del 80 % del límite de filas que trae la respuesta ok.
+      ...(typeof envio.result.aviso === 'string' && envio.result.aviso ? { aviso: envio.result.aviso } : {}),
+    }
     case 'error': {
       if (envio.error.codigo === 'conflicto-version') {
         const v = envio.error.detalle?.versionActual

@@ -616,3 +616,43 @@ Mérida (`America/Merida`, la zona del motor). Dos clases de evento, nada más:
   ni datos de otras pestañas u otros libros: solo lee `TAREAS`, `PLAN_DIARIO` y `PLAN_ITEMS`.
 - **Respuesta:** `Content-Type: text/calendar`, `Cache-Control: no-store` y `X-Robots-Tag: noindex`; texto escapado según
   RFC 5545. Es solo lectura: no usa Google Tasks y no hay ida y vuelta; un cambio en el calendario no toca la hoja.
+
+## 12. Límite de filas y archivo de AUDITORIA (ORD-POS-143)
+
+El dashboard lee cada pestaña de la hoja maestra hasta `MAX_DATA_ROWS` filas de datos (5000, `web/src/lib/schema.ts`).
+Si una pestaña pasa de ahí, la lectura falla (`503 lectura-fallida`, motivo `limite-filas`) y se bloquean todas las
+escrituras que la leen. Pasó con `AUDITORIA` el 2026-11-04. `AUDITORIA` es la que más crece: cada operación añade una
+fila por campo.
+
+- **Aviso al 80 %.** Si una escritura deja una pestaña escrita (casi siempre `AUDITORIA`) con 4000 filas de datos o
+  más, la respuesta ok trae `aviso`. El dashboard lo muestra junto a «Guardado», en los formularios, en la edición de
+  /planificacion y en «Aplicar movimientos al plan». Las pestañas solo leídas no avisan.
+- **En el tope, 503 sin escribir.** Antes de la primera escritura, si una pestaña leída por la operación ya tiene 5000
+  filas, o si la pestaña donde se escribe las pasaría con las filas nuevas, la API responde `503 pestana-llena` con
+  `detalle.pestana`. No se escribe nada, tampoco `AUDITORIA`. Lo mismo pasa antes de cada alta posterior.
+- **Límite conocido.** Los lanzamientos de revisión y corrección (`orden.supervision_*`) respetan el tope, pero su
+  respuesta no lleva `aviso`.
+
+### Archivar AUDITORIA (solo el propietario, a mano)
+
+Hazlo al ver el aviso o el `503 pestana-llena`. **Nunca por la API:** no hay ruta que borre ni archive. Ningún agente
+lo hace. El límite no se sube.
+
+1. **Pausa.** No escribas desde el dashboard ni con el PM mientras archivas.
+2. **Respaldo.** En la hoja maestra: Archivo → Historial de versiones → Nombrar la versión actual, por ejemplo
+   «antes de archivar AUDITORIA AAAA-MM-DD».
+3. **Copiar.** Copia las filas más antiguas de `AUDITORIA` a una pestaña `AUDITORIA_ARCHIVO_AAAA` (el año de las filas)
+   o a otro libro. Pega solo valores. Deja en `AUDITORIA` al menos las filas del último mes. La API nunca lee esa
+   pestaña.
+4. **Borrar.** Borra esas filas de `AUDITORIA` sin tocar el encabezado (fila 1). Borra filas completas: no dejes
+   filas vacías en medio.
+5. **Comprobar.** Recarga el dashboard. Las vistas que leen `AUDITORIA` (órdenes, operaciones) cargan sin error. Haz una
+   escritura de prueba pequeña y revisa que no salga el aviso.
+
+**Efectos sobre lo archivado** (la API solo ve lo que queda en `AUDITORIA`):
+
+- Un `requestId` archivado ya no se reconoce como repetido. Si se reenvía, se aplica otra vez.
+- Una intención auditada sin efecto (`escritura-fallida` sin reintento) ya no se completa al reintentar. La
+  conciliación tampoco la lista. Antes de archivar, revisa que la conciliación no tenga pendientes.
+- Una cita «sí» del propietario usada por el PM (DEC-POS-011) ya no cuenta como usada para otra orden.
+- Las reservas de lanzamiento caducan a las 2 horas. Archivar filas de más de un mes no les afecta.

@@ -58,6 +58,7 @@ export type OperationErrorCode =
   | 'tipo-cambio-sin-dato'
   | 'eco-esquema-invalido'
   | 'eco-pestana-llena'
+  | 'pestana-llena'
   | 'campo-no-permitido'
   | 'campo-solo-lectura'
   | 'registro-inexistente'
@@ -139,6 +140,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'tipo-cambio-sin-dato': 409,
   'eco-esquema-invalido': 400,
   'eco-pestana-llena': 409,
+  'pestana-llena': 503,
   'campo-no-permitido': 400,
   'campo-solo-lectura': 409,
   'registro-inexistente': 404,
@@ -221,6 +223,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'tipo-cambio-sin-dato': 'Falta un TIPO_CAMBIO_DEFECTO válido en PARAMETROS para revisar el tope; no se escribió nada.',
   'eco-esquema-invalido': 'RADAROS no tiene las pestañas PIPE_* o las columnas que exige el pipeline (o hay una repetida); no se escribió nada.',
   'eco-pestana-llena': 'Una pestaña PIPE_* llegó al límite de filas; archívala (diseño /eco pipeline §7.2) y vuelve a intentarlo. No se escribió nada.',
+  'pestana-llena': 'Una pestaña de la hoja llegó al límite de filas (detalle: pestana); el propietario la archiva a mano (docs/escritura-v1-8.md §12) y se vuelve a intentar. No se escribió nada.',
   'campo-no-permitido': 'La solicitud trae campos que esta operación no admite; no se escribió nada.',
   'campo-solo-lectura': 'Esa celda es una fórmula de la hoja y es de solo lectura en el dashboard; no se escribió nada.',
   'registro-inexistente': 'El registro no existe en el pipeline.',
