@@ -6,7 +6,7 @@ import { extraerCriterios } from '@/lib/supervision/criterios'
 import { MARCA_DICTAMEN, evaluarDictamen } from '@/lib/supervision/dictamen'
 import { politicaDeRepo, repoSinCi } from '@/lib/supervision/politica'
 
-/** Repositorios sin CI (ORD-POS-051): CONFORME con CI_AUSENTE y pruebas propias solo en SIGSAH y RADAROS. */
+/** Repositorios sin CI (ORD-POS-051): CONFORME con CI_AUSENTE y pruebas propias solo en RADAROS (SIGSAH salió en ORD-POS-144). */
 const HEAD = 'a'.repeat(40)
 const CRITERIOS = '1. Uno'
 const crit = extraerCriterios(CRITERIOS)
@@ -27,9 +27,10 @@ const evaluar = (r: unknown, repo: string, riesgo = 'BAJO') => evaluarDictamen(
   { id: 'ORD-ECO-001', riesgo, criterios: CRITERIOS }, { repo, numero: 7 })
 
 describe('política de CI por repositorio', () => {
-  it('solo SIGSAH y RADAROS, sin distinguir mayúsculas; PROJECT-OS y el resto requieren CI', () => {
-    expect(['jlpulido107-bit/SIGSAH', 'JLPULIDO107-BIT/radaros', 'jlpulido107-bit/sigsah'].map(repoSinCi)).toEqual([true, true, true])
-    expect(['jlpulido107-bit/PROJECT-OS', 'otro/SIGSAH', 'jlpulido107-bit/SIGSAH2', ''].map(repoSinCi)).toEqual([false, false, false, false])
+  it('solo RADAROS, sin distinguir mayúsculas; PROJECT-OS, SIGSAH y el resto requieren CI (ORD-POS-144)', () => {
+    expect(['jlpulido107-bit/RADAROS', 'JLPULIDO107-BIT/radaros'].map(repoSinCi)).toEqual([true, true])
+    expect(['jlpulido107-bit/PROJECT-OS', 'jlpulido107-bit/SIGSAH', 'jlpulido107-bit/sigsah', 'otro/RADAROS', 'jlpulido107-bit/RADAROS2', ''].map(repoSinCi)).toEqual([false, false, false, false, false, false])
+    expect(politicaDeRepo('jlpulido107-bit/SIGSAH', ['1']).ciRequerida).toBe(true)
     expect(politicaDeRepo('jlpulido107-bit/Radaros', ['1'])).toEqual({ ciRequerida: false, criteriosEsperados: ['1'] })
     expect(politicaDeRepo('jlpulido107-bit/project-os', ['1']).ciRequerida).toBe(true)
   })
@@ -45,14 +46,14 @@ describe('política de CI por repositorio', () => {
     ['prueba propia de otro head', { propias: [{ comando: 'x', sha: 'c'.repeat(40), codigoSalida: 0 }], ci: { estado: 'CI_AUSENTE' }, autor: [] }],
     ['CI EXITO declarada en repo sin CI', { propias: [{ comando: 'x', sha: HEAD, codigoSalida: 0 }], ci: { estado: 'EXITO', sha: HEAD }, autor: [] }],
   ])('repo sin CI, %s: CONFORME no válido; sigue en INCONCLUSO', (_, evidencia) => {
-    const repo = 'jlpulido107-bit/SIGSAH'
+    const repo = 'jlpulido107-bit/RADAROS'
     expect(evaluar(reporte(repo, { evidencia }), repo).estado.tipo).toBe('invalido')
     const inconcluso = reporte(repo, { evidencia, criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'sin pruebas' }], veredicto: 'INCONCLUSO' })
     expect(evaluar(inconcluso, repo)).toMatchObject({ siguiente: 'Revisar entradas del dictamen', estado: { dictamen: { veredicto: 'INCONCLUSO' } } })
   })
 
   it('«sin CI · pruebas del revisor» solo con al menos una prueba propia con código 0 (ORD-POS-052)', () => {
-    const repo = 'jlpulido107-bit/SIGSAH'
+    const repo = 'jlpulido107-bit/RADAROS'
     const inconcluso = (propias: unknown[]) => evaluar(reporte(repo, { evidencia: { propias, ci: { estado: 'CI_AUSENTE' }, autor: [] }, criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'x' }], veredicto: 'INCONCLUSO' }), repo)
     const sinCi = (ev: ReturnType<typeof evaluar>) => ev.estado.tipo === 'vigente' && ev.estado.dictamen.sinCi === true
     expect(sinCi(inconcluso([]))).toBe(false)
@@ -61,7 +62,7 @@ describe('política de CI por repositorio', () => {
   })
 
   it('repo de REPOS_SIN_CI con un dictamen con CI EXITO: /ordenes avisa de quitarlo de la lista (ORD-POS-052)', () => {
-    const repo = 'jlpulido107-bit/SIGSAH'
+    const repo = 'jlpulido107-bit/RADAROS'
     const conCi = reporte(repo, { evidencia: { propias: [{ comando: 'x', sha: HEAD, codigoSalida: 0 }], ci: { estado: 'EXITO', sha: HEAD }, autor: [] } })
     const ev = evaluar(conCi, repo)
     expect(ev).toMatchObject({ estado: { tipo: 'invalido' }, ciDetectada: true })
@@ -69,6 +70,17 @@ describe('política de CI por repositorio', () => {
     expect(evaluar(reporte(repo), repo).ciDetectada).toBeUndefined()
     expect(evaluar(reporte(repo, { headSha: 'c'.repeat(40), evidencia: conCi.evidencia }), repo).ciDetectada).toBeUndefined()
     expect(evaluar(conCi, 'jlpulido107-bit/PROJECT-OS').ciDetectada).toBeUndefined()
+  })
+
+  it('SIGSAH (ORD-POS-144): CONFORME con CI_AUSENTE ahora se rechaza; con CI EXITO del head se acepta', () => {
+    const repo = 'jlpulido107-bit/SIGSAH'
+    expect(evaluar(reporte(repo), repo).estado.tipo).toBe('invalido')
+    expect(evaluar(reporte(repo), repo).ciDetectada).toBeUndefined()
+    const conCi = reporte(repo, { evidencia: { propias: [{ comando: 'npm test', sha: HEAD, codigoSalida: 0 }], ci: { estado: 'EXITO', sha: HEAD }, autor: [] } })
+    expect(evaluar(conCi, repo)).toMatchObject({ siguiente: 'Listo para tu decisión', estado: { tipo: 'vigente', dictamen: { veredicto: 'CONFORME' } } })
+    const ev = evaluar(conCi, repo)
+    expect(ev.estado.tipo === 'vigente' && ev.estado.dictamen.sinCi).toBeFalsy()
+    expect(ev.ciDetectada).toBeUndefined()
   })
 
   it('PROJECT-OS con CI_AUSENTE sigue sin poder ser CONFORME, aunque el dictamen lo pida', () => {

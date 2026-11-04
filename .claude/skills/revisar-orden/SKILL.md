@@ -176,8 +176,8 @@ hallazgo. Un `ALTO` no se reclasifica como `MEDIO`: el hallazgo pide descomponer
 
 - `CONFORME`: todos los criterios `CUMPLE`, ningún hallazgo bloqueante y comprobaciones válidas para el head
   (pruebas propias con SHA = head y salida 0; CI `EXITO` con SHA = head). En un repositorio sin CI
-  (`REPOS_SIN_CI` de `web/src/lib/supervision/politica.ts`): CI `CI_AUSENTE` y al menos una prueba propia de «Cómo
-  probar» sobre el head con salida 0; si falta, el criterio queda `NO_VERIFICADO` y el veredicto, `INCONCLUSO`.
+  (`REPOS_SIN_CI` de `web/src/lib/supervision/politica.ts`; hoy solo RADAROS, SIGSAH requiere CI desde
+  ORD-POS-144): CI `CI_AUSENTE` y al menos una prueba propia de «Cómo probar» sobre el head con salida 0; si falta, el criterio queda `NO_VERIFICADO` y el veredicto, `INCONCLUSO`.
 - `CAMBIOS`: algún hallazgo bloqueante o criterio `NO_CUMPLE`.
 - `INCONCLUSO`: sin bloqueantes, pero algún criterio `NO_VERIFICADO`.
 
