@@ -129,7 +129,7 @@ export interface PlanActual {
 }
 
 export type ResultadoDia =
-  | { tipo: 'guardado'; fecha: string; planId: string; version: number | null; repetida: boolean }
+  | { tipo: 'guardado'; fecha: string; planId: string; version: number | null; repetida: boolean; aviso?: string }
   | { tipo: 'conflicto'; fecha: string; mensaje: string; planActual: PlanActual | null }
   | { tipo: 'error'; fecha: string; codigo: string; mensaje: string }
 
@@ -156,7 +156,11 @@ export function textoItemActual(i: PlanActual['items'][number]): string {
 export function resultadoDia(fecha: string, json: unknown): ResultadoDia {
   const r = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
   if (r?.ok === true) {
-    return { tipo: 'guardado', fecha, planId: typeof r.id === 'string' ? r.id : '', version: typeof r.version === 'number' ? r.version : null, repetida: r.repetida === true }
+    return {
+      tipo: 'guardado', fecha, planId: typeof r.id === 'string' ? r.id : '', version: typeof r.version === 'number' ? r.version : null, repetida: r.repetida === true,
+      // ORD-POS-143: aviso del 80 % del límite de filas que trae la respuesta ok.
+      ...(typeof r.aviso === 'string' && r.aviso ? { aviso: r.aviso } : {}),
+    }
   }
   const error = r && r.error && typeof r.error === 'object' ? (r.error as Record<string, unknown>) : null
   const codigo = typeof error?.codigo === 'string' ? error.codigo : 'error'

@@ -16,6 +16,8 @@ interface OpSuccess {
   version?: number
   repetida: boolean
   operacion: string
+  /** ORD-POS-143: una pestaña escrita pasó del 80 % del límite de filas. */
+  aviso?: string
 }
 interface OpFailure {
   ok: false
@@ -131,6 +133,7 @@ function Status({ state, children }: { state: OpState; children?: ReactNode }) {
           <span className="mono">{state.result.id}</span>
           {state.result.version ? ` · versión ${state.result.version}` : ''}
         </p>
+        {state.result.aviso ? <p className="alert alert-warn small">{state.result.aviso}</p> : null}
         {children}
       </div>
     )

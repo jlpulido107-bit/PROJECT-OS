@@ -47,7 +47,7 @@ function Dia({ dia }: { dia: DiaParaAplicar }) {
 
 function Resultado({ r }: { r: ResultadoDia }) {
   if (r.tipo === 'guardado') {
-    return <li data-resultado="guardado"><strong>{fechaCorta(r.fecha)}</strong>: {r.repetida ? 'ya estaba guardado' : 'guardado'} en <span className="mono">{r.planId}</span>{r.version !== null ? `, versión ${r.version}` : ''}. Queda en AUDITORIA.</li>
+    return <li data-resultado="guardado"><strong>{fechaCorta(r.fecha)}</strong>: {r.repetida ? 'ya estaba guardado' : 'guardado'} en <span className="mono">{r.planId}</span>{r.version !== null ? `, versión ${r.version}` : ''}. Queda en AUDITORIA.{r.aviso ? <span className="alert-warn" role="status"> {r.aviso}</span> : null}</li>
   }
   if (r.tipo === 'conflicto') {
     return (

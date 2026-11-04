@@ -10,6 +10,7 @@ import {
   WRITE_HEADERS, type EntityTab, type OperationName,
 } from './constants'
 import { OperationError } from './errors'
+import { ContadorFilas } from './limite-filas'
 import { esSesionClaude, REPOSITORIOS, repoDeUrl } from './github'
 import {
   cell, contractColumns, findById, readView, toRecord, toRow, type TableStore, type TableView,
@@ -49,6 +50,8 @@ export interface OperationResult {
   version?: number
   /** La solicitud ya se había aplicado (idempotencia) o se completó una intención auditada (roll-forward). */
   repetida: boolean
+  /** ORD-POS-143: una pestaña escrita quedó en el 80 % o más de MAX_DATA_ROWS; el dashboard lo muestra al escritor. */
+  aviso?: string
 }
 
 export interface ReconcileItem {
@@ -123,21 +126,36 @@ interface AuditedOperation {
   integridad: 'completa' | 'parcial' | 'inconsistente'
 }
 
+function esResultado(value: unknown): value is OperationResult {
+  return typeof value === 'object' && value !== null && 'operacion' in value && 'repetida' in value
+}
+
 const ORIGIN_PATTERN = /^dashboard-v1\.4;modo=(mock|sheets);op=([a-z._]+);req=([0-9a-f-]{36});h=([0-9a-f]{16})(?:;agente=pm)?$/
 
 export class OperationsService {
   private queue: Promise<unknown> = Promise.resolve()
   private readonly clock: () => Date
   private readonly randomHex: (bytes: number) => string
+  /** Cuenta las filas de cada pestaña de la operación en curso: tope y aviso del 80 % (ORD-POS-143). */
+  private readonly filas: ContadorFilas
+  private readonly store: TableStore
 
-  constructor(private readonly store: TableStore, private readonly options: ServiceOptions) {
+  constructor(store: TableStore, private readonly options: ServiceOptions) {
+    this.filas = new ContadorFilas(store)
+    this.store = this.filas
     this.clock = options.clock ?? (() => new Date())
     this.randomHex = options.randomHex ?? ((n) => randomBytes(n).toString('hex'))
   }
 
   /** Serializa las escrituras de ESTE proceso. No coordina entre instancias (contrato §6). */
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this.queue.then(fn, fn)
+    const op = async (): Promise<T> => {
+      this.filas.reiniciar()
+      const result = await fn()
+      const aviso = this.filas.aviso()
+      return aviso && esResultado(result) ? { ...result, aviso } : result
+    }
+    const run = this.queue.then(op, op)
     this.queue = run.catch(() => undefined)
     return run
   }
@@ -1078,7 +1096,9 @@ export class OperationsService {
   private async appendAudit(rows: string[][]) {
     try {
       await this.store.appendRows('AUDITORIA', rows)
-    } catch {
+    } catch (error) {
+      // En el tope de filas (ORD-POS-143) no se escribió nada: se dice cuál pestaña está llena.
+      if (error instanceof OperationError && error.code === 'pestana-llena') throw error
       throw new OperationError('auditoria-fallida')
     }
   }
