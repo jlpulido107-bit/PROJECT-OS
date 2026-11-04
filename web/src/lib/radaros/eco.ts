@@ -2,6 +2,7 @@ import { civilDateInZone, parseTimestamp } from '../dates'
 import { cellText, parseNumber } from '../parse'
 import { MAX_DATA_ROWS } from '../schema'
 import { construirPipeline, PIPE_TABS, type PipelineVista, type PipeTab } from './pipeline'
+import { construirTabulador, type TabuladorVista } from './pipeline-tabulador'
 import { leerTabla, mapear, type Bloque, type Fila } from './tabla'
 
 export type { Bloque, Fila } from './tabla'
@@ -251,6 +252,8 @@ export interface EcoVista {
   candidatos: { estado: 'pendiente'; mensaje: string }
   tendencias: Bloque<Tendencias>
   pipeline: PipelineVista
+  /** Tabulador de cotizaciones (ORD-POS-145); /eco/pipeline solo lo muestra con ECO_TABULADOR=true. */
+  tabulador: TabuladorVista
   /** Nombre de PRODUCTS por ID de idea, para «ID · nombre» en /eco y /eco/pipeline (ORD-POS-135). */
   nombres: Map<string, string>
 }
@@ -265,6 +268,7 @@ export function construirEco(raw: EcoRaw, now: number): EcoVista {
     candidatos: { estado: 'pendiente', mensaje: 'AMZ_CANDIDATOS: pendiente de V1.3 (sus columnas las fija el diseño de V1.3).' },
     tendencias: tendencias(raw.ML_TRENDS_ANALISIS_AUTO),
     pipeline: construirPipeline(raw, now),
+    tabulador: construirTabulador(raw),
     nombres,
   }
 }

@@ -15,10 +15,14 @@ import { CAMPOS, type EcoCampoOperacion } from '@/lib/radaros/pipeline-escritura
 import { versionDeFila } from '@/lib/radaros/pipeline-formularios'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
 import { FiltroAuto } from '@/components/filtro-auto'
+import {
+  ecoTabuladorHabilitado, formatoMxn, POR_CONFIRMAR, TOPE_CAPITAL_MXN, veredicto, type Componente, type FilaComparada,
+  type TabuladorVista,
+} from '@/lib/radaros/pipeline-tabulador'
 
 export const metadata: Metadata = { title: 'Pipeline de ECOMMERCE' }
 
-type Search = { producto?: string; proveedor?: string; fproveedor?: string; origen?: string; vencidas?: string; estado?: string }
+type Search = { producto?: string; proveedor?: string; fproveedor?: string; origen?: string; vencidas?: string; estado?: string; comparar?: string }
 
 /** Estados vacíos de §8: «pestaña sin crear» y «columna obligatoria ausente»; las demás pestañas se pintan igual. */
 function EstadoPipe<T>({ bloque, children }: { bloque: Bloque<T>; children: (datos: T) => ReactNode }) {
@@ -315,6 +319,114 @@ function FichaProveedor({ v, p, tarjetas, verContacto, editable }: { v: Pipeline
   )
 }
 
+const ETIQUETA_ORIGEN: Record<Componente['origen'], string> = { COTIZACION: 'Cotización', SUPUESTO: 'SUPUESTO', POR_CONFIRMAR: POR_CONFIRMAR }
+
+/** Desglose visible del costo aterrizado (criterio 3): cada componente con su origen; un faltante dice «Por confirmar». */
+function Desglose({ f }: { f: FilaComparada }) {
+  const c = f.costo
+  return (
+    <details>
+      <summary>Desglose de {f.id} ({c.base ? `${c.incoterm} → ${c.base}` : 'INCOTERM no válido'})</summary>
+      <div className="table-wrap">
+        <table aria-label={`Desglose de ${f.id}`}>
+          <thead><tr><th scope="col">Componente</th><th scope="col">MXN</th><th scope="col">Origen</th><th scope="col">Detalle</th></tr></thead>
+          <tbody>
+            {c.componentes.map((x) => (
+              <tr key={`${x.clave}-${x.etiqueta}`}>
+                <td>{x.etiqueta}</td><td className="mono">{formatoMxn(x.mxn)}</td>
+                <td>{x.origen === 'COTIZACION' ? ETIQUETA_ORIGEN[x.origen] : <Badge tone="warn">{ETIQUETA_ORIGEN[x.origen]}</Badge>}</td>
+                <td><Text value={x.detalle} empty="—" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <dl className="meta">
+        <Dato label="Valor en aduana (MXN)" value={c.base === 'DDP' ? 'No aplica (DDP)' : formatoMxn(c.valorAduanaMxn)} />
+        <Dato label="Total del embarque (MXN)" value={formatoMxn(c.totalMxn)} />
+        <Dato label="Sets" value={c.sets === null ? POR_CONFIRMAR : String(Number(c.sets.toFixed(4)))} />
+        <Dato label="Costo aterrizado por set (MXN)" value={formatoMxn(c.porSetMxn)} />
+        <Dato label="Tipo de cambio" value={c.tipoCambio ? `${c.tipoCambio.valor}${c.tipoCambio.fecha ? ` (${c.tipoCambio.fecha})` : ''}${c.tipoCambio.origen === 'SUPUESTO' ? ' · SUPUESTO' : ''}` : POR_CONFIRMAR} />
+        {f.calcHoja ? <Dato label="COSTO_ATERRIZADO_CALC_MXN en la hoja" value={`${f.calcHoja.valor}${f.calcHoja.difiere ? ' (no coincide con el cálculo)' : ''}`} /> : null}
+      </dl>
+      {c.porConfirmar.length ? <ul className="list" aria-label={`Por confirmar en ${f.id}`}>{c.porConfirmar.map((m) => <li key={m}><Badge tone="warn">{POR_CONFIRMAR}</Badge> {m}</li>)}</ul> : null}
+      {c.avisos.length ? <ul className="list">{c.avisos.map((m) => <li key={m}><Badge tone="warn">Aviso</Badge> {m}</li>)}</ul> : null}
+      <p className="small muted">El IVA de importación no entra en el costo aterrizado: va aparte, como flujo de efectivo.</p>
+    </details>
+  )
+}
+
+/** Vista «Comparar» por producto (criterios 4 y 5), solo con ECO_TABULADOR=true. */
+function Comparar({ tab, tarjetas, productoId }: { tab: TabuladorVista; tarjetas: Tarjeta[]; productoId: string | undefined }) {
+  const elegido = productoId ? tarjetas.find((t) => t.id === productoId) : undefined
+  const cmp = elegido ? tab.comparar(elegido.id, elegido.fila.IDEA_ID ?? null) : null
+  const max = cmp?.costoMaximo
+  return (
+    <>
+      <form method="get" action="/eco/pipeline#comparar" className="filters" aria-label="Elegir producto para comparar">
+        <FiltroAuto />
+        <label>Producto{' '}
+          <select name="comparar" defaultValue={elegido?.id ?? ''}>
+            <option value="">Elige un producto</option>
+            {tarjetas.map((t) => <option key={t.id} value={t.id}>{t.nombre ? `${t.id} · ${t.nombre}` : t.id}</option>)}
+          </select>
+        </label>{' '}
+        <button type="submit">Comparar</button>
+      </form>
+      {tab.migracion && tab.migracion.faltan.length ? (
+        <p className="small"><Badge tone="warn">Migración pendiente</Badge> <code>PIPE_COTIZACIONES</code> aún no tiene {tab.migracion.faltan.join(', ')} (la agrega el propietario, docs/diseno-eco-pipeline.md §14.1). Esos componentes quedan «{POR_CONFIRMAR}» o SUPUESTO.</p>
+      ) : null}
+      {tab.parametros.avisos.map((a) => <p key={a} className="small"><Badge tone="warn">Aviso</Badge> {a}</p>)}
+      {productoId && !elegido ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
+      {cmp && max && elegido ? (
+        <>
+          <h3>{elegido.nombre ?? elegido.id}: costo máximo</h3>
+          <dl className="meta">
+            <Dato label="COSTO_MAX_MXN calculado" value={formatoMxn(max.mxn)} />
+            <Dato label="Fecha de sus datos" value={max.fecha} />
+            <Dato label="Precio de venta" value={max.precio ? `${formatoMxn(max.precio.mxn)} (${max.precio.fuente})` : POR_CONFIRMAR} />
+            <Dato label="Comisión de Amazon" value={formatoMxn(max.comisionMxn)} />
+            <Dato label="FBA" value={formatoMxn(max.fbaMxn)} />
+            <Dato label="PPC, devoluciones y margen K2" value={`${max.porcentajes.ppc * 100} %, ${max.porcentajes.devoluciones * 100} % y ${max.porcentajes.margenK2 * 100} % del precio`} />
+            <Dato label="COSTO_MAX_MXN en la hoja (manual)" value={elegido.fila.COSTO_MAX_MXN} />
+          </dl>
+          {max.porConfirmar.length ? <ul className="list">{max.porConfirmar.map((m) => <li key={m}><Badge tone="warn">{POR_CONFIRMAR}</Badge> {m}</li>)}</ul> : null}
+          {cmp.filas.length ? (
+            <>
+              <div className="table-wrap">
+                <table aria-label="Cotizaciones comparadas">
+                  <thead>
+                    <tr>
+                      {['Cotización', 'Estado', 'Proveedor', 'País', 'Incoterm', 'MOQ', 'Plazo (días)', 'Costo aterrizado por set (MXN)', 'Contra el máximo', `Capital del primer lote (tope ${formatoMxn(TOPE_CAPITAL_MXN)} MXN)`].map((h) => <th key={h} scope="col">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cmp.filas.map((f) => (
+                      <tr key={f.id}>
+                        <td className="mono">{f.id}</td>
+                        <td><Text value={f.estado} empty="—" />{f.estadoValido ? null : <> <Badge tone="warn" title="SOLICITADA, RECIBIDA, RECIBIDA (PARCIAL) o DESCARTADA">Estado no válido</Badge></>}</td>
+                        <td><Text value={f.proveedor ?? f.proveedorId} empty="—" /></td>
+                        <td><Text value={f.pais} empty="—" /></td>
+                        <td><Text value={f.incoterm} empty="—" /></td>
+                        <td>{f.moq === null ? POR_CONFIRMAR : f.moq}</td>
+                        <td><Text value={f.plazoDias} empty="—" /></td>
+                        <td className="mono">{formatoMxn(f.costo.porSetMxn)}{f.costo.supuestos.length ? <> <Badge tone="warn" title={f.costo.supuestos.join(', ')}>SUPUESTO</Badge></> : null}</td>
+                        <td>{f.diferenciaMxn === null ? POR_CONFIRMAR : <Badge tone={f.diferenciaMxn <= 0 ? 'ok' : 'danger'}>{veredicto(f.diferenciaMxn)}</Badge>}</td>
+                        <td>{f.capitalPrimerLoteMxn === null ? POR_CONFIRMAR : <>{formatoMxn(f.capitalPrimerLoteMxn)} {f.capitalPrimerLoteMxn <= TOPE_CAPITAL_MXN ? <Badge tone="ok">Dentro del tope</Badge> : <Badge tone="danger">Excede por {formatoMxn(f.capitalPrimerLoteMxn - TOPE_CAPITAL_MXN)} MXN</Badge>}</>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {cmp.filas.map((f) => <Desglose key={f.id} f={f} />)}
+            </>
+          ) : <Empty>Sin cotizaciones para este producto.</Empty>}
+        </>
+      ) : null}
+    </>
+  )
+}
+
 export default async function EcoPipelinePage({ searchParams }: { searchParams: Promise<Search> }) {
   const { user, result } = await privateEco('/eco/pipeline')
   const params = await searchParams
@@ -347,6 +459,8 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
   const editable = ecoPipelineCanWrite(user.email)
   const verContacto = writeAccess(user.email).allowed || editable
   const v = paraLector(result.vista.pipeline, verContacto)
+  // ORD-POS-145: la vista «Comparar» solo con ECO_TABULADOR=true (la pone el propietario con deploy.sh).
+  const tabulador = ecoTabuladorHabilitado() ? result.vista.tabulador : null
   const tarjetas = v.productos.estado === 'ok' ? v.productos.datos.tarjetas : []
   const producto = params.producto ? tarjetas.find((t) => t.id === params.producto) : undefined
   const proveedor = params.proveedor && v.proveedores.estado === 'ok' ? v.proveedores.datos.filas.find((p) => p.PROVEEDOR_ID === params.proveedor) : undefined
@@ -358,7 +472,7 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         {editable
           ? 'Puedes arrastrar una tarjeta o usar «Mover a…»: solo cambia de columna cuando la hoja lo confirma.'
           : 'Solo lectura: esta vista no mueve tarjetas.'}{' '}
-        No calcula costos: muestra lo que hay en la hoja. Vencido = fecha esperada anterior a hoy ({v.hoy}).
+        {tabulador ? 'Solo «Comparar cotizaciones» calcula costos (DEC-ECO-008); el resto muestra lo que hay en la hoja.' : 'No calcula costos: muestra lo que hay en la hoja.'} Vencido = fecha esperada anterior a hoy ({v.hoy}).
       </p>
       {v.parametros.bloque.estado === 'ok' ? null : (
         <p className="small muted">
@@ -373,6 +487,11 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         {editable ? <FormularioEco titulo="Nuevo producto" url="/api/eco/pipeline/productos" campos={CAMPOS['eco.producto.crear']} /> : null}
         <Tablero v={v} filtro={params} editable={editable} />
       </Section>
+      {tabulador ? (
+        <Section title="Comparar cotizaciones" id="comparar">
+          <EstadoPipe bloque={tabulador.bloque}>{() => <Comparar tab={tabulador} tarjetas={tarjetas} productoId={params.comparar} />}</EstadoPipe>
+        </Section>
+      ) : null}
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
       {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} /> : null}
       <Section title="Proveedores" id="proveedores">

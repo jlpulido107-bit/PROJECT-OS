@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + commitDesplegado(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + commitDesplegado(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA ni DEPLOY_COMMIT_SHA')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR ni DEPLOY_COMMIT_SHA')
   return output.replace(marker, writeBlock)
 }
 
@@ -283,6 +283,22 @@ function ideasAlta(env, problems) {
   if ((env.ECO_PIPELINE_WRITE_MODE ?? '').trim() !== 'sheets') problems.push('ECO_IDEAS_ALTA exige ECO_PIPELINE_WRITE_MODE=sheets (usa su cuenta de escritura)')
   if (problems.length > antes) return ''
   return ['            - name: ECO_IDEAS_ALTA', "              value: 'true'", ''].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-145, DEC-ECO-008; docs/diseno-eco-pipeline.md §14.6): tabulador de cotizaciones de /eco/pipeline,
+ * de solo lectura y apagado por defecto. Solo lo exporta el propietario:
+ * - ECO_TABULADOR: solo `true`. Muestra la vista «Comparar cotizaciones»; no escribe nada ni depende de WRITE_MODE.
+ * Sin ella, el YAML no cambia.
+ */
+function ecoTabulador(env, problems) {
+  const flag = (env.ECO_TABULADOR ?? '').trim()
+  if (!flag) return ''
+  if (flag !== 'true') {
+    problems.push('ECO_TABULADOR solo admite true')
+    return ''
+  }
+  return ['            - name: ECO_TABULADOR', "              value: 'true'", ''].join('\n')
 }
 
 /**
