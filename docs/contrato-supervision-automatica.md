@@ -98,6 +98,13 @@ la declara no requerida, el reporte puede ser `CONFORME` dejando constancia de l
 es `CONFORME`. **Nunca** cuenta como éxito implícito. Una CI requerida pendiente no es éxito: no se solicita la revisión
 hasta que termine.
 
+La política local vive en `REPOS_SIN_CI` de `web/src/lib/supervision/politica.ts`: hoy solo `jlpulido107-bit/RADAROS`
+la declara no requerida. PROJECT-OS y SIGSAH la requieren: SIGSAH salió de la lista en ORD-POS-144 (2026-11-04) porque
+ya tiene CI (workflow Validar), y desde entonces un dictamen de SIGSAH con `CI_AUSENTE` no es `CONFORME` válido; con
+`EXITO` del head sí. Los dictámenes ya publicados no se revalidan ni se reescriben, y los estados ya registrados
+(`REVISADA` incluida) no cambian; en un PR de SIGSAH aún abierto, un dictamen con `CI_AUSENTE` deja de contar y hace
+falta una revisión nueva del head.
+
 #### Contrato versión 2 (rol y modelo del revisor)
 
 Con `versionContrato` `"2"`, el reporte declara quién lo emite, para que `/ordenes` dé por cumplida la doble revisión de
