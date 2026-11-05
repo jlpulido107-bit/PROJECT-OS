@@ -4,9 +4,9 @@ import { MAX_DATA_ROWS } from '../schema'
 import { OperationError } from '../operations/errors'
 import { meridaIsoTimestamp } from '../operations/time'
 import { payloadHash } from '../operations/validation'
-import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES, ETAPAS, type Etapa } from './pipeline'
+import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES, ETAPAS, nombreClave, type Etapa } from './pipeline'
 import { ECO_WRITE_TABS, type Celda, type EcoPipelineStore, type EcoWriteTab } from './pipeline-escritura-store'
-import { COLUMNAS_NUMERICAS, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
+import { COLUMNAS_NUMERICAS, COLUMNAS_OPCIONALES, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
 import { requiereMotivo, transicionPermitida } from './pipeline-transiciones'
 
 /**
@@ -25,12 +25,24 @@ export type EcoOperationName = (typeof ECO_OPERATIONS)[number]
 
 export type Entidad = 'producto' | 'proveedor' | 'cotizacion' | 'embarque'
 
-/** §3: pestaña, columna de ID, prefijo y columnas que exige la escritura (todas las del diseño). */
-export const ENTIDADES: Record<Entidad, { tab: EcoWriteTab; idCol: string; prefijo: string; columnas: readonly string[] }> = {
-  producto: { tab: 'PIPE_PRODUCTOS', idCol: 'PRODUCTO_ID', prefijo: 'PRD', columnas: COLUMNAS_PRODUCTOS },
-  proveedor: { tab: 'PIPE_PROVEEDORES', idCol: 'PROVEEDOR_ID', prefijo: 'PRV', columnas: COLUMNAS_PROVEEDORES },
-  cotizacion: { tab: 'PIPE_COTIZACIONES', idCol: 'COTIZACION_ID', prefijo: 'COT', columnas: COLUMNAS_COTIZACIONES },
-  embarque: { tab: 'PIPE_EMBARQUES', idCol: 'EMBARQUE_ID', prefijo: 'EMB', columnas: COLUMNAS_EMBARQUES },
+/**
+ * §3: pestaña, columna de ID, prefijo y columnas que exige la escritura (todas las del diseño). `opcionales` son las de
+ * las migraciones (§14.1 y §15.1, ORD-POS-146): no se exigen, y escribirlas sin que existan es 409
+ * `eco-migracion-pendiente`.
+ */
+export const ENTIDADES: Record<Entidad, { tab: EcoWriteTab; idCol: string; prefijo: string; columnas: readonly string[]; opcionales: readonly string[] }> = {
+  producto: { tab: 'PIPE_PRODUCTOS', idCol: 'PRODUCTO_ID', prefijo: 'PRD', columnas: COLUMNAS_PRODUCTOS, opcionales: [] },
+  proveedor: { tab: 'PIPE_PROVEEDORES', idCol: 'PROVEEDOR_ID', prefijo: 'PRV', columnas: COLUMNAS_PROVEEDORES, opcionales: COLUMNAS_OPCIONALES.PIPE_PROVEEDORES },
+  cotizacion: { tab: 'PIPE_COTIZACIONES', idCol: 'COTIZACION_ID', prefijo: 'COT', columnas: COLUMNAS_COTIZACIONES, opcionales: COLUMNAS_OPCIONALES.PIPE_COTIZACIONES },
+  embarque: { tab: 'PIPE_EMBARQUES', idCol: 'EMBARQUE_ID', prefijo: 'EMB', columnas: COLUMNAS_EMBARQUES, opcionales: [] },
+}
+
+/** ORD-POS-146: una columna que la operación quiere escribir y que la fila 1 no tiene (migración pendiente). */
+function conMigracion(libro: Libro, e: Entidad, valores: Registro) {
+  const { tab } = ENTIDADES[e]
+  // Un campo vacío no escribe nada: solo cuentan las columnas con valor.
+  const faltan = Object.entries(valores).filter(([c, v]) => v !== '' && !libro[tab].indice.has(c)).map(([c]) => c)
+  if (faltan.length) throw new OperationError('eco-migracion-pendiente', { detail: { pestana: tab, columnas: faltan.join(',') } })
 }
 
 /** Las mismas columnas que la AUDITORIA de PROJECT-OS (§3.5). */
@@ -279,11 +291,25 @@ export class EcoPipelineWriteService {
   /* --------------------------------------- Proveedores --------------------------------------- */
 
   crearProveedor(cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
-    return this.crear('eco.proveedor.crear', 'proveedor', cmd, ctx, (_libro, r) => ({ ...r, ESTADO: 'ACTIVO' }))
+    return this.crear('eco.proveedor.crear', 'proveedor', cmd, ctx, (libro, r) => {
+      this.nombreLibre(libro, celdaTexto(r.NOMBRE), null)
+      return { ...r, ESTADO: 'ACTIVO' }
+    })
   }
 
   editarProveedor(id: string, cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
-    return this.editar('eco.proveedor.editar', 'proveedor', id, cmd, ctx, () => undefined)
+    return this.editar('eco.proveedor.editar', 'proveedor', id, cmd, ctx, (libro, merged, actual) => {
+      const nombre = celdaTexto(merged.NOMBRE)
+      if (nombreClave(nombre) !== nombreClave(celdaTexto(actual.NOMBRE))) this.nombreLibre(libro, nombre, id)
+    })
+  }
+
+  /** ORD-POS-146 (criterio 1): un proveedor con el mismo nombre (sin acentos, mayúsculas ni signos) no se duplica. */
+  private nombreLibre(libro: Libro, nombre: string, propio: string | null) {
+    const t = libro.PIPE_PROVEEDORES
+    const clave = nombreClave(nombre)
+    const otro = t.filas.find((f) => texto(t, f, 'PROVEEDOR_ID') !== propio && clave !== '' && nombreClave(texto(t, f, 'NOMBRE')) === clave)
+    if (otro) throw new OperationError('proveedor-duplicado', { detail: { id: texto(t, otro, 'PROVEEDOR_ID') } })
   }
 
   /* -------------------------------------- Cotizaciones -------------------------------------- */
@@ -294,7 +320,13 @@ export class EcoPipelineWriteService {
       if (!this.filas(libro, 'proveedor').some((f) => texto(libro.PIPE_PROVEEDORES, f, 'PROVEEDOR_ID') === r.PROVEEDOR_ID)) {
         throw new OperationError('referencia-inexistente', { fields: { proveedorId: 'No existe.' } })
       }
-      const registro = { ...r, ESTADO: 'SOLICITADA', MUESTRA_ESTADO: r.MUESTRA_ESTADO || 'NO_PEDIDA' }
+      // ORD-POS-146: puede nacer RECIBIDA (con los cinco datos de §3.3) o RECHAZADA; sin estado, SOLICITADA.
+      const estado = celdaTexto(r.ESTADO) || 'SOLICITADA'
+      if (estado === 'RECIBIDA') {
+        const faltan = ['PRECIO_UNIT', 'MONEDA', 'MOQ', 'PLAZO_PRODUCCION_DIAS', 'INCOTERM'].filter((col) => celdaTexto(r[col]) === '')
+        if (faltan.length) throw new OperationError('requisito-faltante', { detail: { requisito: faltan.join(',') } })
+      }
+      const registro = { ...r, ESTADO: estado, MUESTRA_ESTADO: r.MUESTRA_ESTADO || 'NO_PEDIDA' }
       this.fechas('cotizacion', registro)
       return registro
     })
@@ -409,14 +441,14 @@ export class EcoPipelineWriteService {
 
   /** La única fila con ese ID: ninguna es 404 y dos o más, 409 `conflicto-concurrente` (§6.3). */
   private unica(libro: Libro, e: Entidad, id: string): { indice: number; fila: unknown[]; actual: Registro } {
-    const { tab, idCol, columnas } = ENTIDADES[e]
+    const { tab, idCol, columnas, opcionales } = ENTIDADES[e]
     const t = libro[tab]
     const indices = t.filas.flatMap((f, i) => (texto(t, f, idCol) === id ? [i] : []))
     if (indices.length === 0) throw new OperationError('registro-inexistente')
     if (indices.length > 1) throw new OperationError('conflicto-concurrente')
     const fila = t.filas[indices[0]!]!
     const actual: Registro = {}
-    for (const c of columnas) {
+    for (const c of [...columnas, ...opcionales.filter((o) => t.indice.has(o))]) {
       const v = valor(t, fila, c)
       actual[c] = typeof v === 'number' ? v : celdaTexto(v)
     }
@@ -446,6 +478,7 @@ export class EcoPipelineWriteService {
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
       conCupo(libro)
+      conMigracion(libro, e, cmd.valores)
       const registro = validar(libro, { ...cmd.valores })
       const id = this.siguienteId(libro, e)
       const stamp = this.stamp()
@@ -468,6 +501,7 @@ export class EcoPipelineWriteService {
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
       conCupo(libro)
+      conMigracion(libro, e, cmd.valores)
       const { actual } = this.unica(libro, e, id)
       const version = this.versionDe(actual)
       if (version !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { version } })
@@ -550,11 +584,11 @@ export class EcoPipelineWriteService {
     if (a.hash !== hash) throw new OperationError('conflicto-idempotencia')
     const e = (Object.keys(ENTIDADES) as Entidad[]).find((k) => ENTIDADES[k].tab === a.entidad)
     if (!e) throw new OperationError('auditoria-inconsistente')
-    const { tab, idCol, columnas } = ENTIDADES[e]
+    const { tab, idCol, columnas, opcionales } = ENTIDADES[e]
     const antes: Registro = {}
     const despues: Registro = {}
     for (const [campo, v] of a.campos) {
-      if (!columnas.includes(campo)) continue
+      if (!columnas.includes(campo) && !opcionales.includes(campo)) continue
       antes[campo] = celdaDeTexto(campo, v.antes)
       despues[campo] = celdaDeTexto(campo, v.despues)
     }

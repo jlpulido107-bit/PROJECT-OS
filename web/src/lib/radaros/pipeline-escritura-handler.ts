@@ -34,6 +34,12 @@ function mensajeDe(error: OperationError): string {
   if (error.code === 'eco-pestana-llena' && pestana) {
     return `La pestaña ${pestana} llegó al límite de ${limite} filas: archívala (diseño /eco pipeline §7.2) y vuelve a intentarlo. No se escribió nada.`
   }
+  // ORD-POS-146: el ID del proveedor existente y las columnas de la migración pendiente (nombres fijos del esquema).
+  const { id, columnas } = error.detail ?? {}
+  if (error.code === 'proveedor-duplicado' && id) return `Ya existe el proveedor ${id} con ese nombre; no se duplica. No se escribió nada.`
+  if (error.code === 'eco-migracion-pendiente' && pestana && columnas) {
+    return `${pestana} aún no tiene ${String(columnas).split(',').join(', ')}: la migración la aplica el propietario (diseño /eco pipeline §14.1 y §15.1). Deja esos campos vacíos o espera la migración. No se escribió nada.`
+  }
   return MENSAJES[error.code] ?? error.message
 }
 

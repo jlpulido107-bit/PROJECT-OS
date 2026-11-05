@@ -511,7 +511,7 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
   it('eco.proveedor.crear y editar: PRV-NNNN en ACTIVO; INACTIVO en vez de borrar', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro())
     const svc = servicio(s)
-    const r = await svc.crearProveedor(parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'Fábrica sintética', canal: '1688', pais: 'CN', contacto: 'chat-de-tienda-sintetico' }), CTX)
+    const r = await svc.crearProveedor(parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'Fábrica sintética', canal: '1688', pais: 'CN' }), CTX)
     expect(r.id).toBe('PRV-0003')
     expect(registro(s, 'PIPE_PROVEEDORES', 'PRV-0003')).toMatchObject({ ESTADO: 'ACTIVO', CANAL: '1688', VERSION: 1 })
     expect((await svc.editarProveedor('PRV-0003', parseEco('eco.proveedor.editar', { requestId: rid(), expectedVersion: 1, estado: 'INACTIVO' }), CTX)).version).toBe(2)
@@ -532,7 +532,8 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
     expect(await codigo(crear({ productoId: 'PRD-0002' }))).toBe('referencia-inexistente')
     expect(await codigo(crear({ productoId: 'PRD-0099' }))).toBe('referencia-inexistente')
     expect(await codigo(crear({ proveedorId: 'PRV-0099' }))).toBe('referencia-inexistente')
-    expect(await codigo(() => parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0001', proveedorId: 'PRV-0001', estado: 'ELEGIDA' }))).toBe('campo-no-permitido')
+    // ORD-POS-146: el alta admite SOLICITADA, RECIBIDA o RECHAZADA; ELEGIDA sigue siendo solo por edición.
+    expect(await codigo(() => parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0001', proveedorId: 'PRV-0001', estado: 'ELEGIDA' }))).toBe('validacion')
     expect(await codigo(editar('COT-0001', 1, { estado: 'RECIBIDA' }))).toBe('requisito-faltante')
     expect(await codigo(editar('COT-0001', 1, { estado: 'ELEGIDA', precioUnit: 2, moneda: 'USD', moq: 10, plazoProduccionDias: 5, incoterm: 'FOB' }))).toBe('transicion-no-permitida')
     expect(await codigo(editar('COT-0001', 1, { estado: 'RECIBIDA', fechaRecibida: '2026-10-19', precioUnit: 2, moneda: 'USD', moq: 10, plazoProduccionDias: 5, incoterm: 'FOB' }))).toBe('validacion')
@@ -991,13 +992,14 @@ describe('criterio 9: hallazgos de revisiones', () => {
   it('CONTACTO acepta un «+» inicial (teléfono) y llega exacto en RAW, sin apóstrofo (ORD-POS-104, H4); =, - y @ siguen fuera', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro())
     const svc = servicio(s)
-    const crear = (contacto: string) => svc.crearProveedor(parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'Con teléfono', canal: 'NACIONAL', pais: 'MX', contacto }), CTX)
-    const r = await crear('+52 999 123')
+    // ORD-POS-146: el alta ya no lleva CONTACTO (sin datos de personas); el contacto comercial se captura al editar.
+    const alta = await svc.crearProveedor(parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'Con teléfono', canal: 'NACIONAL', pais: 'MX' }), CTX)
+    const r = await svc.editarProveedor(alta.id, parseEco('eco.proveedor.editar', { requestId: rid(), expectedVersion: 1, contacto: '+52 999 123' }), CTX)
     expect(registro(s, 'PIPE_PROVEEDORES', r.id).CONTACTO).toBe('+52 999 123')
     // La verificación releyó el mismo texto y la auditoría lo guarda igual, sin apóstrofo.
     expect(auditoria(s).find((a) => a.CAMPO === 'CONTACTO')!.VALOR_DESPUES).toBe('+52 999 123')
     for (const malo of ['=HYPERLINK("http://x")', '-1+1', '@SUM(A1)']) {
-      expect(await codigo(() => parseEco('eco.proveedor.crear', { requestId: rid(), nombre: 'x', canal: 'OTRO', pais: 'MX', contacto: malo })), malo).toBe('validacion')
+      expect(await codigo(() => parseEco('eco.proveedor.editar', { requestId: rid(), expectedVersion: 1, contacto: malo })), malo).toBe('validacion')
     }
     // En los demás textos, un «+» inicial sigue rechazado.
     expect(await codigo(() => parseEco('eco.proveedor.crear', { requestId: rid(), nombre: '+52', canal: 'OTRO', pais: 'MX' }))).toBe('validacion')

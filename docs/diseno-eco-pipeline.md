@@ -672,8 +672,9 @@ Referencias de DEC-ECO-008 por verificar: EC-006 unos 65 MXN, EC-015 unos 96 MXN
 el valor manual de la hoja. Cotizaciones ordenadas por costo aterrizado por set (menor primero; «Por confirmar» y
 `DESCARTADA` al final) con ESTADO, PROVEEDOR, PAÍS, INCOTERM, MOQ, plazo, «Cumple» o «No cumple por X MXN», y el capital del
 primer lote (MOQ × costo aterrizado por unidad) contra el tope de 30,000 MXN. Cada cotización tiene su desglose plegable.
-Estados válidos: `SOLICITADA`, `RECIBIDA`, `RECIBIDA (PARCIAL)` y `DESCARTADA`; cualquier otro (incluidos `ELEGIDA` y
-`RECHAZADA` de §3.3) se muestra con «Estado no válido» y no se oculta.
+Estados válidos: desde ORD-POS-146 (§15.4), la misma lista de §3.3, `SOLICITADA`, `RECIBIDA`, `ELEGIDA` y `RECHAZADA`;
+`RECHAZADA` va al final con «Por confirmar». Cualquier otro (incluidos los antiguos `RECIBIDA (PARCIAL)` y `DESCARTADA`)
+se muestra con «Estado no válido» y no se oculta ni se reescribe.
 
 ### 14.6 Bandera `ECO_TABULADOR`
 
@@ -690,5 +691,92 @@ web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_TABULADOR
 ```
 
 Límites conocidos: el capital del primer lote escala el costo por unidad del embarque cotizado al MOQ, aunque los fletes
-no son lineales; la escritura del pipeline (§6) aún valida `INCOTERM` contra EXW, FOB, CIF, DDP y OTRO, así que FCA y DAP, y
-las columnas de §14.1, se capturan en la hoja hasta otra orden.
+no son lineales. Desde ORD-POS-146 (§15) la escritura acepta FCA y DAP y el alta de cotización captura las columnas de
+§14.1 (salvo `COSTO_ATERRIZADO_CALC_MXN`, que el dashboard nunca escribe).
+
+**Corrección (ORD-POS-146).** En «Fuera de alcance», la orden ORD-POS-145 decía «escribir cotizaciones (sigue siendo del
+PM con «sí»)». Ese texto no es correcto: en las pestañas `PIPE_*` solo escribe el propietario con su sesión del dashboard
+(§1 y §4.1); el PM, las sesiones de Claude y las rutinas nunca escriben cotizaciones, ni con «sí».
+
+## 15. Alta rápida de proveedores y cotizaciones (ORD-POS-146, POS-050)
+
+Orden ORD-POS-146 ([issue #327](https://github.com/jlpulido107-bit/PROJECT-OS/issues/327); paquete PAQ-2026-11-05-05),
+riesgo MEDIO. Sección «Alta rápida» de `/eco/pipeline` (`#alta-rapida`), visible solo con `ecoPipelineCanWrite(email)`:
+alta de proveedor, alta de cotización con las columnas del tabulador y «Pegar tabla de Gemini». Reúsa `FormularioEco`, las
+rutas de alta de §4.1 y su guard; no crea rutas, operaciones ni vías de escritura, y sigue inerte sin
+`ECO_PIPELINE_WRITE_MODE` (§7.1). Código: `pipeline-escritura-validacion.ts` (campos), `pipeline-escritura-service.ts`
+(duplicados, migración, estado inicial), `pipeline-formularios.ts` (revisión en pantalla), `pipeline-pegado.ts` (pegado),
+`pipeline-tabulador.ts` (`pistasCotizacion`) y `web/src/components/eco/pegar-gemini.tsx`.
+
+**Solo escribe la sesión del propietario** (§1, §4.1 y §4.2): con el token del PM, el del agente de finanzas o cualquier
+`Authorization`, las rutas responden 401 antes de leer la sesión, el cuerpo o pedir el servicio. Ni el PM ni otra sesión
+de Claude escriben cotizaciones (ver la corrección al final de §14.6).
+
+### 15.1 Proveedores y migración explícita de `PIPE_PROVEEDORES`
+
+Formulario de alta: `NOMBRE`, `CANAL`, `PAIS`, `ANOS_PLATAFORMA` (años en la plataforma, entero ≥ 0), `VERIFIED_SUPPLIER`
+y `TRADE_ASSURANCE` (`SI` o `NO`) y `NOTAS`. El alta ya no pide `CONTACTO`; el contacto comercial (§6.4) se sigue
+capturando al editar. En `NOMBRE` y `NOTAS` se rechaza un correo o un teléfono (10 dígitos o más): 400 «Sin correos ni
+teléfonos de personas», en la pantalla y en el servidor.
+
+**Sin duplicados por nombre.** Antes de enviar, la pantalla compara el nombre con los proveedores leídos y avisa «Ya existe
+PRV-NNNN»; el servidor repite la comparación con la hoja recién leída (409 `proveedor-duplicado`, con el ID, sin escribir).
+Se compara sin acentos, mayúsculas, signos ni espacios: «Fábrica Uno, S.A.» = «fabrica uno sa». Renombrar al editar a un
+nombre que ya existe también es 409.
+
+Migración, **solo el propietario, a mano en la hoja de RADAROS**, después de fusionar y desplegar:
+
+1. En la fila 1 de `PIPE_PROVEEDORES`, después de `VERSION` (columna J), escribir en este orden, exactos y sin repetir:
+   `ANOS_PLATAFORMA`, `VERIFIED_SUPPLIER` y `TRADE_ASSURANCE` (columnas K a M).
+2. `VERSION` no cambia en ninguna fila: agregar columnas no es editar filas.
+3. Antes de aplicarla todo sigue igual: el alta sin esos tres campos funciona y llenarlos responde 409
+   `eco-migracion-pendiente` con la pestaña y las columnas, sin auditoría ni fila (igual con las columnas de §14.1 en
+   `PIPE_COTIZACIONES`). La escritura nunca crea columnas.
+4. Revertir: borrar esas columnas completas.
+
+### 15.2 Cotizaciones con las columnas del tabulador
+
+El alta de cotización incluye todas las columnas de §14.1 salvo `COSTO_ATERRIZADO_CALC_MXN` (`PAIS_ORIGEN`,
+`CERTIFICADO_ORIGEN`, `UNIDADES_POR_SET`, `CANTIDAD_COTIZADA`, `TIPO_CAMBIO`, `TIPO_CAMBIO_FECHA`, `FLETE_LOCAL_EXPORT`,
+`FLETE_INTERNACIONAL`, `SEGURO`, `IGI_PCT`, `DTA`, `AGENTE_ADUANAL`, `FLETE_CEDIS`), más `INCOTERM` y la muestra.
+`INCOTERM` acepta EXW, FCA, FOB, CIF, DAP, DDP y OTRO; `IGI_PCT` y `DTA` son puntos de 0 a 100.
+
+- **Pistas.** Debajo de cada campo del tabulador se lee qué tomará si queda vacío, con el valor tal como está en
+  `PIPE_PARAMETROS` (§14.2): `TIPO_CAMBIO_USD_MXN` con su fecha, `IGI_PCT_<país>` de cada país, `DTA_PCT`,
+  `AGENTE_ADUANAL_REF` y `FLETE_CEDIS_REF`; «se supone NO» en `CERTIFICADO_ORIGEN`; «Por confirmar» si no hay clave o el
+  componente no tiene parámetro (cantidad, unidades por set, fletes y seguro). Se muestran aunque `ECO_TABULADOR` esté
+  apagada: solo leen texto, no calculan.
+- **Estado inicial.** El alta acepta `ESTADO` `SOLICITADA` (por defecto), `RECIBIDA` (con `FECHA_RECIBIDA` y los cinco
+  datos de §3.3, si no 409 `requisito-faltante`) o `RECHAZADA`. `ELEGIDA` sigue siendo solo por edición.
+- La edición de cotizaciones existentes no cambia (fuera de alcance).
+
+### 15.3 «Pegar tabla de Gemini»
+
+Recibe la tabla B del Gem 3 («Módulo 3 · Compras», tarea B, en `POS/referencia/gemini-gems.md` de NOTAS), en Markdown o
+copiada de una hoja (tabuladores), con estas columnas: `COTIZACION_ID | PRD / EC | PROVEEDOR (empresa) | ESTADO |
+FECHA_RECIBIDA | PRECIO_UNIT | MONEDA | MOQ | PLAZO_PRODUCCION_DIAS | INCOTERM | PAIS_ORIGEN | CERTIFICADO_ORIGEN |
+UNIDADES_POR_SET | FLETE_INTERNACIONAL | IGI_PCT | COSTO_ATERRIZADO_MXN | MUESTRA_COSTO | MUESTRA_MONEDA | NOTAS`.
+
+1. «Generar borradores» interpreta el texto **en el navegador** y no envía nada. Un borrador por fila, con los campos del
+   alta de cotización ya llenos y editables.
+2. `PRD / EC`: el `PRD-NNNN`; si solo trae la idea (`EC-006`), el único producto no descartado con ese `IDEA_ID`.
+   `PROVEEDOR (empresa)`: por nombre (misma comparación de §15.1) o un `PRV-NNNN`; si no existe, la fila lo marca y se da
+   de alta antes en «Nuevo proveedor». `COTIZACION_ID` de Gemini no se guarda: el ID lo pone la hoja.
+3. `ESTADO`: `RECIBIDA (PARCIAL)` → `RECIBIDA` con «parcial» al inicio de `NOTAS`; `DESCARTADA` → `RECHAZADA`. «por
+   confirmar», «[NV]» y «—» → vacío; «(DATO)» y «(SUPUESTO)» se quitan y se anotan; «1,000» → 1000; «20 %» → 20.
+4. Marcadas y **nunca guardadas**: columnas no reconocidas (se listan), filas con otro número de celdas o encabezado
+   repetido (se muestra su texto), filas **duplicadas** (mismo `COTIZACION_ID` que la hoja, o mismo producto, proveedor,
+   incoterm, precio y moneda que una de la hoja, que una fila anterior del pegado o que una ya guardada en esa pantalla) y
+   filas con errores (valores fuera de su lista o formato, producto descartado o inexistente, correos o teléfonos).
+5. El propietario corrige y pulsa «Confirmar y guardar esta fila»: la pantalla revisa otra vez lo corregido y lo envía a
+   `POST /api/eco/pipeline/cotizaciones`, una fila por vez y con un `requestId` nuevo. El servidor repite todo.
+
+No conecta Gmail ni Gemini: el propietario copia la tabla de su documento en «ECO-RADAROS › Para Ideas» y la pega.
+
+### 15.4 Una sola lista de estados
+
+`ESTADOS_COTIZACION` (en `pipeline.ts`) es la única lista: `SOLICITADA · RECIBIDA · ELEGIDA · RECHAZADA`. La usan el
+formulario, la escritura (§3.3) y el tabulador (§14.5), que deja de marcar `RECHAZADA` como «Estado no válido». Las filas
+que digan `RECIBIDA (PARCIAL)` o `DESCARTADA` no se reescriben: el tabulador las muestra con «Estado no válido» y el
+propietario las corrige a mano si quiere.
+

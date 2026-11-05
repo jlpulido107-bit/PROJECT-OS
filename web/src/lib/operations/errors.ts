@@ -66,6 +66,8 @@ export type OperationErrorCode =
   | 'requisito-faltante'
   | 'asin-duplicado'
   | 'elegida-duplicada'
+  | 'proveedor-duplicado'
+  | 'eco-migracion-pendiente'
   | 'instrucciones-sin-columna'
   | 'idea-encabezados-distintos'
   | 'idea-fila-ocupada'
@@ -148,6 +150,8 @@ const STATUS: Record<OperationErrorCode, number> = {
   'requisito-faltante': 409,
   'asin-duplicado': 409,
   'elegida-duplicada': 409,
+  'proveedor-duplicado': 409,
+  'eco-migracion-pendiente': 409,
   'instrucciones-sin-columna': 422,
   'idea-encabezados-distintos': 409,
   'idea-fila-ocupada': 409,
@@ -231,6 +235,8 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'requisito-faltante': 'Falta un dato que exige ese cambio; no se escribió nada.',
   'asin-duplicado': 'Ese ASIN ya está en otro producto (uno descartado solo vuelve con «reabrir»); no se escribió nada.',
   'elegida-duplicada': 'El producto ya tiene una cotización ELEGIDA; no se escribió nada.',
+  'proveedor-duplicado': 'Ya existe un proveedor con ese nombre (detalle: id); no se duplica. No se escribió nada.',
+  'eco-migracion-pendiente': 'La pestaña aún no tiene las columnas de la migración (detalle: pestana y columnas; la agrega el propietario, diseño /eco pipeline §14.1 y §15.1). No se escribió nada.',
   'instrucciones-sin-columna': 'La pestaña TAREAS aún no tiene la columna INSTRUCCIONES (la añade el propietario con la migración); quita las instrucciones o espera la migración. No se escribió nada.',
   'idea-encabezados-distintos': 'Los encabezados de PRODUCTS (A a P) o de SCORING (A a L) del libro de RADAROS no son los esperados (detalle: columnas); no se escribió nada.',
   'idea-fila-ocupada': 'La primera fila con PRODUCT_ID vacío en PRODUCTS tiene otros datos; no se editan filas existentes. No se escribió nada.',

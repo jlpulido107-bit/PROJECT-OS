@@ -215,18 +215,19 @@ const RAW = {
   PIPE_COTIZACIONES: [
     encabezado,
     fila({ ...BASE_USD, COTIZACION_ID: 'COT-0001', INCOTERM: 'EXW', MOQ: '600' }),
-    fila({ ...BASE_USD, COTIZACION_ID: 'COT-0002', INCOTERM: 'DDP', MONEDA: 'MXN', PRECIO_UNIT: '5', FLETE_CEDIS: '0', MOQ: '6000', ESTADO: 'RECIBIDA (PARCIAL)' }),
+    fila({ ...BASE_USD, COTIZACION_ID: 'COT-0002', INCOTERM: 'DDP', MONEDA: 'MXN', PRECIO_UNIT: '5', FLETE_CEDIS: '0', MOQ: '6000', ESTADO: 'RECIBIDA', NOTAS: 'parcial' }),
     fila({ ...BASE_USD, COTIZACION_ID: 'COT-0003', INCOTERM: 'FOB', SEGURO: '', ESTADO: 'ELEGIDA' }),
-    fila({ ...BASE_USD, COTIZACION_ID: 'COT-0004', INCOTERM: 'DDP', MONEDA: 'MXN', PRECIO_UNIT: '1', FLETE_CEDIS: '0', ESTADO: 'DESCARTADA' }),
+    fila({ ...BASE_USD, COTIZACION_ID: 'COT-0004', INCOTERM: 'DDP', MONEDA: 'MXN', PRECIO_UNIT: '1', FLETE_CEDIS: '0', ESTADO: 'RECHAZADA' }),
+    fila({ ...BASE_USD, COTIZACION_ID: 'COT-0005', INCOTERM: 'DDP', MONEDA: 'MXN', PRECIO_UNIT: '2', FLETE_CEDIS: '0', ESTADO: 'DESCARTADA' }),
   ],
   PIPE_PARAMETROS: PARAMETROS,
   UNIT_ECONOMICS: UE,
 }
 
 describe('vista «Comparar» (criterios 5 y 6)', () => {
-  it('ordenada por costo aterrizado; «Por confirmar» y DESCARTADA al final; cumple, no cumple y capital del primer lote', () => {
+  it('ordenada por costo aterrizado; «Por confirmar» y RECHAZADA (o la antigua DESCARTADA) al final; cumple, no cumple y capital del primer lote', () => {
     const cmp = construirTabulador(RAW).comparar('PRD-0001', 'EC-006')
-    expect(cmp.filas.map((f) => f.id)).toEqual(['COT-0002', 'COT-0001', 'COT-0003', 'COT-0004'])
+    expect(cmp.filas.map((f) => f.id)).toEqual(['COT-0002', 'COT-0001', 'COT-0003', 'COT-0004', 'COT-0005'])
     const [ddp, exw, fob] = cmp.filas
     expect(ddp!.costo.porSetMxn).toBe(30) // 5 × 6, flete incluido
     expect(veredicto(ddp!.diferenciaMxn)).toBe('Cumple')
@@ -236,7 +237,10 @@ describe('vista «Comparar» (criterios 5 y 6)', () => {
     expect(fob!.costo.porSetMxn).toBeNull()
     expect(fob!.diferenciaMxn).toBeNull()
     expect(ddp!.estadoValido).toBe(true)
-    expect(fob!.estadoValido).toBe(false) // ELEGIDA no es de los cuatro del criterio 6
+    // ORD-POS-146 (criterio 4): una sola lista; ELEGIDA y RECHAZADA son válidas y la antigua DESCARTADA no (no se reescribe).
+    expect(fob!.estadoValido).toBe(true)
+    expect(cmp.filas[3]!.estadoValido).toBe(true)
+    expect(cmp.filas[4]!.estadoValido).toBe(false)
     expect(exw!.proveedor).toBe('Proveedor sintético')
   })
 

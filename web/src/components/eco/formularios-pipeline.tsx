@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState, type FormEvent } from 'react'
-import { cuerpo, enviar, type CampoForm, type Resultado } from '@/lib/radaros/pipeline-formularios'
+import { cuerpo, enviar, nombreClave, type CampoForm, type Resultado } from '@/lib/radaros/pipeline-formularios'
 
 /* --------------------------------------------------------------------------------------------
  * Alta y edición de producto, proveedor, cotización y embarque (ORD-POS-110, docs/diseno-eco-pipeline.md §4.1). Solo
@@ -21,9 +21,14 @@ export interface FormularioEcoProps {
   iniciales?: Record<string, string | null>
   /** Solo en la edición (PATCH con expectedVersion). */
   version?: number
+  /** ORD-POS-146 (criterio 2): por columna, qué valor tomará el tabulador si el campo queda vacío. */
+  pistas?: Record<string, string>
+  /** ORD-POS-146 (criterio 1): registros existentes; si el campo `clave` coincide por nombre, avisa y no envía. */
+  duplicados?: { clave: string; existentes: ReadonlyArray<{ id: string; nombre: string }> }
 }
 
-function Entrada({ c, valor, error }: { c: CampoForm; valor: string; error?: string }) {
+/** Un campo del formulario; lo reúsan el alta, la edición y los borradores del pegado (ORD-POS-146). */
+export function Entrada({ c, valor, error, pista }: { c: CampoForm; valor: string; error?: string; pista?: string }) {
   const t = c.tipo
   const comunes = { name: c.clave, defaultValue: valor, required: c.obligatorio, 'aria-invalid': error ? true : undefined }
   let control
@@ -46,6 +51,7 @@ function Entrada({ c, valor, error }: { c: CampoForm; valor: string; error?: str
     <label className="field">
       <span>{c.columna}{c.obligatorio ? ' *' : ''}</span>
       {control}
+      {pista ? <span className="small muted">{pista}</span> : null}
       {error ? <span className="field-error">{error}</span> : null}
     </label>
   )
@@ -73,9 +79,10 @@ function Mensaje({ r, campos }: { r: Resultado; campos: readonly CampoForm[] }) 
 }
 
 /** Un formulario de alta (POST) o de edición (PATCH con expectedVersion); requestId nuevo en cada envío. */
-export function FormularioEco({ titulo, url, campos, iniciales, version }: FormularioEcoProps) {
+export function FormularioEco({ titulo, url, campos, iniciales, version, pistas, duplicados }: FormularioEcoProps) {
   const router = useRouter()
   const [estado, setEstado] = useState<Estado>({ status: 'idle' })
+  const [duplicado, setDuplicado] = useState<string | null>(null)
   const edicion = version !== undefined && iniciales ? { version, iniciales } : undefined
 
   async function guardar(event: FormEvent<HTMLFormElement>) {
@@ -84,6 +91,14 @@ export function FormularioEco({ titulo, url, campos, iniciales, version }: Formu
     const form = event.currentTarget
     const valores: Record<string, string> = {}
     for (const [k, v] of new FormData(form).entries()) if (typeof v === 'string') valores[k] = v
+    // ORD-POS-146: mismo nombre que un registro existente (sin acentos, mayúsculas ni signos) → aviso, sin enviar. El
+    // servidor repite la comprobación con la hoja recién leída.
+    if (duplicados) {
+      const clave = nombreClave(valores[duplicados.clave])
+      const otro = clave ? duplicados.existentes.find((x) => nombreClave(x.nombre) === clave) : undefined
+      setDuplicado(otro ? `Ya existe ${otro.id} «${otro.nombre}»: no se duplica. Edítalo en su ficha.` : null)
+      if (otro) return
+    }
     setEstado({ status: 'sending' })
     const r = await enviar(url, edicion ? 'PATCH' : 'POST', cuerpo(campos, valores, () => crypto.randomUUID(), edicion))
     setEstado({ status: 'hecho', r })
@@ -99,7 +114,8 @@ export function FormularioEco({ titulo, url, campos, iniciales, version }: Formu
     <details className="eco-form">
       <summary>{titulo}</summary>
       <form onSubmit={guardar} aria-label={titulo}>
-        {campos.map((c) => <Entrada key={c.clave} c={c} valor={iniciales?.[c.columna] ?? ''} error={errores[c.clave]} />)}
+        {campos.map((c) => <Entrada key={c.clave} c={c} valor={iniciales?.[c.columna] ?? ''} error={errores[c.clave]} pista={pistas?.[c.columna]} />)}
+        {duplicado ? <div className="alert alert-warn" role="alert"><p><strong>No se guardó.</strong> {duplicado}</p></div> : null}
         {estado.status === 'hecho' ? <Mensaje r={estado.r} campos={campos} /> : <div aria-live="polite" className="visually-hidden">{sending ? 'Guardando…' : ''}</div>}
         <p><button type="submit" className="button button-primary" disabled={sending} aria-busy={sending}>{sending ? 'Guardando…' : 'Guardar'}</button></p>
       </form>

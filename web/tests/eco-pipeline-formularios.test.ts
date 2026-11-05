@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RateLimiter } from '@/lib/operations/rate-limit'
 import type { EcoResult } from '@/lib/radaros/data'
 import { construirEco } from '@/lib/radaros/eco'
-import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES } from '@/lib/radaros/pipeline'
+import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_MIGRACION_PROVEEDORES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES } from '@/lib/radaros/pipeline'
+import { COLUMNAS_MIGRACION_COTIZACIONES } from '@/lib/radaros/pipeline-tabulador'
 import { ecoPipelineWrite } from '@/lib/radaros/pipeline-escritura-handler'
 import { COLUMNAS_AUDITORIA, EcoPipelineWriteService, type EcoContext, type EcoResultado } from '@/lib/radaros/pipeline-escritura-service'
 import { InMemoryEcoStore, type Celda } from '@/lib/radaros/pipeline-escritura-store'
@@ -34,11 +35,14 @@ const ACTIVA: Record<string, string> = {
 }
 
 type Rec = Record<string, Celda>
+/** Con las migraciones de §14.1 y §15.1 ya aplicadas por el propietario (ORD-POS-146). */
+const PRV_COLS = [...COLUMNAS_PROVEEDORES, ...COLUMNAS_MIGRACION_PROVEEDORES]
+const COT_COLS = [...COLUMNAS_COTIZACIONES, ...COLUMNAS_MIGRACION_COTIZACIONES]
 const fila = (cols: readonly string[], r: Rec): Celda[] => cols.map((c) => r[c] ?? '')
 const libro = () => ({
   PIPE_PRODUCTOS: [[...COLUMNAS_PRODUCTOS], fila(COLUMNAS_PRODUCTOS, { PRODUCTO_ID: 'PRD-0001', NOMBRE: 'Termo', ORIGEN: 'MANUAL', ETAPA: 'COTIZANDO', ETAPA_DESDE: '2026-10-01T09:00:00-06:00', COSTO_MAX_MXN: 150, VERSION: 2 })],
-  PIPE_PROVEEDORES: [[...COLUMNAS_PROVEEDORES], fila(COLUMNAS_PROVEEDORES, { PROVEEDOR_ID: 'PRV-0001', NOMBRE: 'Fábrica', CANAL: 'ALIBABA', PAIS: 'CN', ESTADO: 'ACTIVO', VERSION: 1 })],
-  PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES], fila(COLUMNAS_COTIZACIONES, {
+  PIPE_PROVEEDORES: [PRV_COLS, fila(PRV_COLS, { PROVEEDOR_ID: 'PRV-0001', NOMBRE: 'Fábrica', CANAL: 'ALIBABA', PAIS: 'CN', ESTADO: 'ACTIVO', VERSION: 1 })],
+  PIPE_COTIZACIONES: [COT_COLS, fila(COT_COLS, {
     COTIZACION_ID: 'COT-0001', PRODUCTO_ID: 'PRD-0001', PROVEEDOR_ID: 'PRV-0001', ESTADO: 'ELEGIDA', MUESTRA_ESTADO: 'NO_PEDIDA',
     PRECIO_UNIT: 2.5, MONEDA: 'USD', MOQ: 500, PLAZO_PRODUCCION_DIAS: 20, INCOTERM: 'FOB', VERSION: 1,
   })],
@@ -88,7 +92,7 @@ const nuevoId = () => crypto.randomUUID()
 describe('criterios 1, 4 y 5: alta y edición de cada entidad por las rutas existentes', () => {
   const casos = [
     { ruta: 'productos', tab: 'PIPE_PRODUCTOS', alta: { nombre: 'Vaso térmico', asin: 'B000000009', keepaVentasMes: '120' }, cambio: { nombre: 'Vaso térmico 500 ml' } },
-    { ruta: 'proveedores', tab: 'PIPE_PROVEEDORES', alta: { nombre: 'Taller', canal: '1688', pais: 'CN', contacto: '+52 999 000 0000' }, cambio: { estado: 'INACTIVO' } },
+    { ruta: 'proveedores', tab: 'PIPE_PROVEEDORES', alta: { nombre: 'Taller', canal: '1688', pais: 'CN', anosPlataforma: '6' }, cambio: { estado: 'INACTIVO', contacto: '+52 999 000 0000' } },
     { ruta: 'cotizaciones', tab: 'PIPE_COTIZACIONES', alta: { productoId: 'PRD-0001', proveedorId: 'PRV-0001', precioUnit: '0.125', moneda: 'USD' }, cambio: { moq: '300', notas: 'Pedir muestra' } },
     { ruta: 'embarques', tab: 'PIPE_EMBARQUES', alta: { productoId: 'PRD-0001', cotizacionId: 'COT-0001', unidades: '200' }, cambio: { estado: 'PAGADO', fechaPago: '2026-10-20' } },
   ] as const

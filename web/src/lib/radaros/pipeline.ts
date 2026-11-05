@@ -39,6 +39,21 @@ export const COLUMNAS_PROVEEDORES = [
   'PROVEEDOR_ID', 'NOMBRE', 'CANAL', 'PAIS', 'CONTACTO', 'ESTADO', 'NOTAS', 'CREADO', 'ACTUALIZADO', 'VERSION',
 ] as const
 const OBLIGATORIAS_PROVEEDORES = ['PROVEEDOR_ID', 'NOMBRE', 'ESTADO'] as const
+/**
+ * ORD-POS-146 (§15.1): columnas que la migración del propietario agrega al final de PIPE_PROVEEDORES, después de
+ * `VERSION`. Opcionales para la lectura y la escritura: sin ellas todo sigue igual y escribirlas responde 409
+ * `eco-migracion-pendiente`.
+ */
+export const COLUMNAS_MIGRACION_PROVEEDORES = ['ANOS_PLATAFORMA', 'VERIFIED_SUPPLIER', 'TRADE_ASSURANCE'] as const
+
+/**
+ * ORD-POS-146 (criterio 4): la ÚNICA lista de estados de cotización, para el formulario, la escritura y el tabulador.
+ * Una cotización parcial es `RECIBIDA` con «parcial» en NOTAS; una descartada, `RECHAZADA`.
+ */
+export const ESTADOS_COTIZACION = ['SOLICITADA', 'RECIBIDA', 'ELEGIDA', 'RECHAZADA'] as const
+
+/** ORD-POS-146: vive en pipeline-formularios.ts (sin dependencias, también la usa la pantalla). */
+export { nombreClave } from './pipeline-formularios'
 
 export const COLUMNAS_COTIZACIONES = [
   'COTIZACION_ID', 'PRODUCTO_ID', 'PROVEEDOR_ID', 'ESTADO', 'FECHA_SOLICITUD', 'FECHA_RESPUESTA_ESPERADA',
@@ -204,7 +219,7 @@ function agrupar(lista: Fila[], col: string): Map<string, Fila[]> {
 export function construirPipeline(raw: PipeRaw, now: number): PipelineVista {
   const hoy = civilDateInZone(now)
   const params = parametros(raw.PIPE_PARAMETROS)
-  const proveedores = mapear(tabla('PIPE_PROVEEDORES', raw.PIPE_PROVEEDORES, COLUMNAS_PROVEEDORES, OBLIGATORIAS_PROVEEDORES), ({ filas: f }) => ({ filas: f }))
+  const proveedores = mapear(tabla('PIPE_PROVEEDORES', raw.PIPE_PROVEEDORES, [...COLUMNAS_PROVEEDORES, ...COLUMNAS_MIGRACION_PROVEEDORES], OBLIGATORIAS_PROVEEDORES), ({ filas: f }) => ({ filas: f }))
   const cotizaciones = mapear(tabla('PIPE_COTIZACIONES', raw.PIPE_COTIZACIONES, COLUMNAS_COTIZACIONES, OBLIGATORIAS_COTIZACIONES), ({ filas: f }) => ({ filas: f }))
   const embarques = mapear(tabla('PIPE_EMBARQUES', raw.PIPE_EMBARQUES, COLUMNAS_EMBARQUES, OBLIGATORIAS_EMBARQUES), ({ filas: f }) => ({ filas: f }))
   const historial = mapear(tabla('PIPE_AUDITORIA', raw.PIPE_AUDITORIA, COLUMNAS_HISTORIAL, COLUMNAS_HISTORIAL), ({ filas: f }) => ({
