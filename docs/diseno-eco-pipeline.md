@@ -605,7 +605,8 @@ las 23 de §3.3 y escribe por celda, y «Comparar» dice «Migración pendiente�
 1. En la fila 1 de `PIPE_COTIZACIONES`, después de `VERSION` (columna W), escribir en este orden, exactos y sin repetir:
    `PAIS_ORIGEN`, `CERTIFICADO_ORIGEN`, `UNIDADES_POR_SET`, `CANTIDAD_COTIZADA`, `TIPO_CAMBIO`, `TIPO_CAMBIO_FECHA`,
    `FLETE_LOCAL_EXPORT`, `FLETE_INTERNACIONAL`, `SEGURO`, `IGI_PCT`, `DTA`, `AGENTE_ADUANAL`, `FLETE_CEDIS` y
-   `COSTO_ATERRIZADO_CALC_MXN` (columnas X a AK; el lector llega a AZ).
+   `COSTO_ATERRIZADO_CALC_MXN` (columnas X a AK; el lector llega a AZ). Desde ORD-POS-147 (§14.7), además `PRECIO_POR`
+   al final (columna AL).
 2. `VERSION` queda donde está y no cambia en ninguna fila: agregar columnas no es editar filas.
 3. Idempotente: si alguna ya existe, se agregan solo las que faltan, al final (`migracionCotizaciones`, probada).
 4. Comprobar: `/eco/pipeline` → «Comparar cotizaciones» sin el aviso «Migración pendiente».
@@ -617,13 +618,14 @@ Unidades de cada celda (por embarque cotizado, `CANTIDAD_COTIZADA` unidades):
 | --- | --- |
 | `PAIS_ORIGEN` | Código de 2 letras; decide `IGI_PCT_<país>` (CN, US, VN, CO; cualquier otro → OTRO) |
 | `CERTIFICADO_ORIGEN` | `SI` o `NO` (T-MEC o CPTPP). `SI` → IGI 0 %. Vacío → se supone `NO` y se marca SUPUESTO |
-| `UNIDADES_POR_SET` | Unidades por set, la unidad de venta |
-| `CANTIDAD_COTIZADA` | Unidades del embarque cotizado |
+| `UNIDADES_POR_SET` | Piezas por set, la unidad de venta. Solo se usa si el precio es por pieza |
+| `CANTIDAD_COTIZADA` | Cantidad del embarque cotizado (el lote), en la unidad de `PRECIO_POR` |
 | `TIPO_CAMBIO`, `TIPO_CAMBIO_FECHA` | MXN por USD y su fecha; solo con `MONEDA` = USD |
 | `FLETE_LOCAL_EXPORT`, `FLETE_INTERNACIONAL`, `SEGURO` | Montos del embarque en la `MONEDA` de la cotización |
 | `IGI_PCT`, `DTA` | Porcentajes en puntos (20 = 20 %) sobre el valor en aduana |
 | `AGENTE_ADUANAL`, `FLETE_CEDIS` | MXN por embarque. `FLETE_CEDIS` = 0 en DDP: ya incluido |
 | `COSTO_ATERRIZADO_CALC_MXN` | Costo aterrizado **por set** en MXN. El dashboard no lo escribe; si tiene valor y difiere del cálculo en más de 1 MXN, «Comparar» lo señala |
+| `PRECIO_POR` | `PIEZA` o `SET` (ORD-POS-147): unidad de `PRECIO_UNIT`, `CANTIDAD_COTIZADA` y `MOQ`. Vacía → por pieza y SUPUESTO |
 
 ### 14.2 Claves de `PIPE_PARAMETROS`
 
@@ -654,8 +656,9 @@ los fletes y el seguro que el incoterm no incluye. IGI y DTA = porcentaje × val
 | CIF (y DAP) | IGI + DTA + agente aduanal + flete al CEDIS |
 | DDP | flete al CEDIS, solo si no lo incluye |
 
-Otro valor de `INCOTERM` (incluido `OTRO`) deja la cotización «Por confirmar». Costo por set = total ÷
-(`CANTIDAD_COTIZADA` ÷ `UNIDADES_POR_SET`). El IVA de importación no entra: va aparte, como flujo de efectivo.
+Otro valor de `INCOTERM` (incluido `OTRO`) deja la cotización «Por confirmar». Costo por set: con `PRECIO_POR` = `SET`,
+total ÷ `CANTIDAD_COTIZADA`; con `PIEZA`, total ÷ (`CANTIDAD_COTIZADA` ÷ `UNIDADES_POR_SET`) (§14.7). El IVA de
+importación no entra: va aparte, como flujo de efectivo.
 
 ### 14.4 `COSTO_MAX_MXN` por producto
 
@@ -670,8 +673,9 @@ Referencias de DEC-ECO-008 por verificar: EC-006 unos 65 MXN, EC-015 unos 96 MXN
 
 `/eco/pipeline?comparar=<PRODUCTO_ID>#comparar`. Para el producto: COSTO_MAX_MXN calculado con su fecha, sus insumos y
 el valor manual de la hoja. Cotizaciones ordenadas por costo aterrizado por set (menor primero; «Por confirmar» y
-`DESCARTADA` al final) con ESTADO, PROVEEDOR, PAÍS, INCOTERM, MOQ, plazo, «Cumple» o «No cumple por X MXN», y el capital del
-primer lote (MOQ × costo aterrizado por unidad) contra el tope de 30,000 MXN. Cada cotización tiene su desglose plegable.
+`DESCARTADA` al final) con ESTADO, PROVEEDOR, PAÍS, INCOTERM, precio por, MOQ y cantidad cotizada (con su unidad), plazo,
+«Cumple» o «No cumple por X MXN», el capital del primer lote contra el tope de 30,000 MXN, el mínimo del proveedor y los sets
+que caben en el tope (§14.7). Cada cotización tiene su desglose plegable.
 Estados válidos: desde ORD-POS-146 (§15.4), la misma lista de §3.3, `SOLICITADA`, `RECIBIDA`, `ELEGIDA` y `RECHAZADA`;
 `RECHAZADA` va al final con «Por confirmar». Cualquier otro (incluidos los antiguos `RECIBIDA (PARCIAL)` y `DESCARTADA`)
 se muestra con «Estado no válido» y no se oculta ni se reescribe.
@@ -690,13 +694,47 @@ web/deploy/cloudrun/deploy.sh --desde-activa
 web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_TABULADOR
 ```
 
-Límites conocidos: el capital del primer lote escala el costo por unidad del embarque cotizado al MOQ, aunque los fletes
-no son lineales. Desde ORD-POS-146 (§15) la escritura acepta FCA y DAP y el alta de cotización captura las columnas de
+Límites conocidos: el «mínimo del proveedor» (§14.7) escala el costo por unidad del lote cotizado al MOQ, aunque los fletes
+no son lineales; el capital del primer lote ya no (usa la cantidad cotizada). Desde ORD-POS-146 (§15) la escritura acepta FCA y DAP y el alta de cotización captura las columnas de
 §14.1 (salvo `COSTO_ATERRIZADO_CALC_MXN`, que el dashboard nunca escribe).
 
 **Corrección (ORD-POS-146).** En «Fuera de alcance», la orden ORD-POS-145 decía «escribir cotizaciones (sigue siendo del
 PM con «sí»)». Ese texto no es correcto: en las pestañas `PIPE_*` solo escribe el propietario con su sesión del dashboard
 (§1 y §4.1); el PM, las sesiones de Claude y las rutinas nunca escriben cotizaciones, ni con «sí».
+
+### 14.7 Precio por pieza o por set, DDP con entrega y capital del primer lote (ORD-POS-147)
+
+Orden ORD-POS-147 ([issue #329](https://github.com/jlpulido107-bit/PROJECT-OS/issues/329), tarea POS-050, paquete
+PAQ-2026-11-05-06), riesgo MEDIO. Corrige tres fallas que salieron al cargar cotizaciones reales; mientras no esté
+desplegada y migrada, sigue valiendo el arreglo manual del propietario (`UNIDADES_POR_SET` = 1 y `FLETE_CEDIS` = 0).
+
+1. **Pieza o set.** El alta de cotización pide, obligatorio, «El precio es por» (`PRECIO_POR`: `PIEZA` o `SET`).
+   `PRECIO_UNIT`, `CANTIDAD_COTIZADA` y `MOQ` se leen en esa unidad. Con `SET`, sets = `CANTIDAD_COTIZADA` y el costo por
+   set = total ÷ sets, sin `UNIDADES_POR_SET` (ejemplo: 12.76 USD × 500 sets → 12.76 × TC por set en DDP con entrega
+   incluida). Con `PIEZA`, como antes: sets = `CANTIDAD_COTIZADA` ÷ `UNIDADES_POR_SET`. Una fila sin `PRECIO_POR` (las
+   anteriores a la orden) se lee por pieza y se marca **SUPUESTO**; nunca se reescribe. Otro valor → «Por confirmar».
+2. **DDP con entrega.** La casilla «Incluye entrega en CEDIS Amazon» (alta y pegado) guarda `FLETE_CEDIS` = 0; no es
+   columna y no se envía. Sin la casilla, en DDP se pide el monto, salvo que haya `FLETE_CEDIS_REF` en `PIPE_PARAMETROS`
+   (el tabulador lo usa como SUPUESTO). La casilla fuera de DDP, o con un flete distinto de 0, es un error en pantalla.
+   Regla: `reglaEntregaCedis` (`pipeline-formularios.ts`).
+3. **Capital del primer lote** = `CANTIDAD_COTIZADA` × costo aterrizado por unidad del precio (el total del lote cotizado),
+   contra `TOPE_CAPITAL_MXN` (30,000, sin cambio). Sin cantidad: «Por confirmar»; nunca usa el MOQ en su lugar. Junto a
+   él: **mínimo del proveedor** = `MOQ` × ese costo, y **sets que caben en el tope** = ⌊30,000 ÷ costo por set⌋. Ejemplo:
+   500 sets × ~197 MXN ≈ 98,500 MXN → «Excede»; el MOQ de 10 sets da un mínimo de ~1,970 MXN.
+4. **Unidades.** En el formulario, las etiquetas de `MOQ` y `CANTIDAD_COTIZADA` dicen «(sets)» o «(piezas)» según lo
+   elegido; en «Comparar», «10 sets», «500 sets».
+5. **Filas existentes.** El criterio opcional de convertirlas desde la pantalla no se implementó: el propietario escribe
+   `PRECIO_POR` a mano en las filas que quiera (por ejemplo COT-0004 a COT-0006, y entonces deshace su arreglo manual).
+
+**Migración explícita (solo el propietario, a mano en la hoja de RADAROS, después de fusionar y desplegar).** En la fila 1
+de `PIPE_COTIZACIONES`, escribir `PRECIO_POR` después de la última columna de §14.1 (`COSTO_ATERRIZADO_CALC_MXN`). `VERSION`
+no cambia en ninguna fila. **Hasta aplicarla, el alta de cotización responde 409 `eco-migracion-pendiente`** («aún no tiene
+PRECIO_POR») y no escribe nada, porque el campo es obligatorio; la lectura y «Comparar» siguen funcionando (por pieza,
+SUPUESTO). Comprobar: «Comparar» sin «Migración pendiente». Revertir: borrar la columna completa.
+
+**Pegado.** La tabla B del Gem 3 no trae `PRECIO_POR`: cada borrador lo pide antes de poder confirmarse. Si la tabla trae
+columnas `PRECIO_POR` («pieza», «pcs», «set», «juego»…), `CANTIDAD_COTIZADA`, `FLETE_CEDIS` o `INCLUYE_ENTREGA_CEDIS`
+(«SI», «sí», «x»), se usan.
 
 ## 15. Alta rápida de proveedores y cotizaciones (ORD-POS-146, POS-050)
 
@@ -739,7 +777,8 @@ Migración, **solo el propietario, a mano en la hoja de RADAROS**, después de f
 El alta de cotización incluye todas las columnas de §14.1 salvo `COSTO_ATERRIZADO_CALC_MXN` (`PAIS_ORIGEN`,
 `CERTIFICADO_ORIGEN`, `UNIDADES_POR_SET`, `CANTIDAD_COTIZADA`, `TIPO_CAMBIO`, `TIPO_CAMBIO_FECHA`, `FLETE_LOCAL_EXPORT`,
 `FLETE_INTERNACIONAL`, `SEGURO`, `IGI_PCT`, `DTA`, `AGENTE_ADUANAL`, `FLETE_CEDIS`), más `INCOTERM` y la muestra.
-`INCOTERM` acepta EXW, FCA, FOB, CIF, DAP, DDP y OTRO; `IGI_PCT` y `DTA` son puntos de 0 a 100.
+`INCOTERM` acepta EXW, FCA, FOB, CIF, DAP, DDP y OTRO; `IGI_PCT` y `DTA` son puntos de 0 a 100. Desde ORD-POS-147
+(§14.7), también «El precio es por» (`PRECIO_POR`, obligatorio) y la casilla «Incluye entrega en CEDIS Amazon».
 
 - **Pistas.** Debajo de cada campo del tabulador se lee qué tomará si queda vacío, con el valor tal como está en
   `PIPE_PARAMETROS` (§14.2): `TIPO_CAMBIO_USD_MXN` con su fecha, `IGI_PCT_<país>` de cada país, `DTA_PCT`,

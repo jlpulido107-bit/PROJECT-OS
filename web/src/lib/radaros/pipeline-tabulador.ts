@@ -23,7 +23,19 @@ export const COLUMNAS_MIGRACION_COTIZACIONES = [
   'PAIS_ORIGEN', 'CERTIFICADO_ORIGEN', 'UNIDADES_POR_SET', 'CANTIDAD_COTIZADA', 'TIPO_CAMBIO', 'TIPO_CAMBIO_FECHA',
   'FLETE_LOCAL_EXPORT', 'FLETE_INTERNACIONAL', 'SEGURO', 'IGI_PCT', 'DTA', 'AGENTE_ADUANAL', 'FLETE_CEDIS',
   'COSTO_ATERRIZADO_CALC_MXN',
+  // ORD-POS-147 (criterio 1): al final, después de COSTO_ATERRIZADO_CALC_MXN; la agrega el propietario a mano (§14.1).
+  'PRECIO_POR',
 ] as const
+
+/**
+ * ORD-POS-147 (criterio 1, §14.7): la unidad del precio. `PRECIO_UNIT`, `CANTIDAD_COTIZADA` y `MOQ` se leen en ella. Con
+ * `SET`, el costo por set sale de la cantidad de sets sin tocar `UNIDADES_POR_SET`. Una fila sin `PRECIO_POR` (anterior a
+ * la orden) se lee por pieza, como antes, y se marca SUPUESTO; nunca se reescribe.
+ */
+export const PRECIOS_POR = ['PIEZA', 'SET'] as const
+export type PrecioPor = (typeof PRECIOS_POR)[number]
+/** Etiqueta en plural de la unidad, para MOQ y cantidad (criterio 4). */
+export const UNIDAD_PLURAL: Record<PrecioPor, string> = { PIEZA: 'piezas', SET: 'sets' }
 
 export interface MigracionCotizaciones {
   /** Columnas de §14.1 que faltan, en el orden en que se agregan al final. Vacía = migración aplicada. */
@@ -103,7 +115,14 @@ export interface CostoAterrizado {
   totalMxn: number | null
   sets: number | null
   porSetMxn: number | null
+  /** Por pieza; con `SET` necesita `UNIDADES_POR_SET` (si no, null). */
   porUnidadMxn: number | null
+  /** ORD-POS-147: unidad de `PRECIO_UNIT`, `CANTIDAD_COTIZADA` y `MOQ`; null si `PRECIO_POR` no es PIEZA ni SET. */
+  unidad: PrecioPor | null
+  /** `CANTIDAD_COTIZADA` en esa unidad; null si vacía o 0. */
+  cantidad: number | null
+  /** Total ÷ `CANTIDAD_COTIZADA`: costo aterrizado por unidad del precio (por set con `SET`, por pieza con `PIEZA`). */
+  porUnidadPrecioMxn: number | null
   tipoCambio: { valor: number; fecha: string | null; origen: Origen } | null
   /** Componentes que salieron de PIPE_PARAMETROS porque la cotización los dejó vacíos. */
   supuestos: string[]
@@ -213,6 +232,13 @@ export function costoAterrizado(c: Fila, p: Parametros): CostoAterrizado {
   /** Un monto convertido con el tipo de cambio de PIPE_PARAMETROS es también SUPUESTO. */
   const origenFx = (): Origen => (tipoCambio?.origen === 'SUPUESTO' ? 'SUPUESTO' : 'COTIZACION')
 
+  // ORD-POS-147 (criterio 1): unidad del precio; vacía = PIEZA (como antes de la orden) y SUPUESTO.
+  const precioPorTexto = c.PRECIO_POR?.trim() ? c.PRECIO_POR : null
+  const unidad: PrecioPor | null = precioPorTexto === null ? 'PIEZA' : (PRECIOS_POR.find((x) => x === normalizeCode(precioPorTexto)) ?? null)
+  if (precioPorTexto === null) supuestos.push('Precio por pieza (PRECIO_POR vacío)')
+  else if (!unidad) porConfirmar.push(`PRECIO_POR «${precioPorTexto.slice(0, 40)}» no es PIEZA ni SET`)
+  const enUnidad = unidad ? ` ${UNIDAD_PLURAL[unidad]}` : ''
+
   const cantidad = numeroDe('CANTIDAD_COTIZADA')
   const enMoneda = (col: string, etiqueta: string): Componente => {
     const v = numeroDe(col)
@@ -227,7 +253,7 @@ export function costoAterrizado(c: Fila, p: Parametros): CostoAterrizado {
   if (precio === null) mercancia = falta('Mercancía', 'PRECIO_UNIT vacío')
   else if (cantidad === null || cantidad <= 0) mercancia = falta('Mercancía', 'CANTIDAD_COTIZADA vacía o 0')
   else if (fx === null) mercancia = falta('Mercancía', 'sin tipo de cambio')
-  else mercancia = { clave: 'PRECIO_UNIT', etiqueta: 'Mercancía', mxn: precio * cantidad * fx, origen: origenFx(), detalle: `${precio} ${moneda} × ${cantidad}${fx !== 1 ? ` × ${fx}` : ''}` }
+  else mercancia = { clave: 'PRECIO_UNIT', etiqueta: 'Mercancía', mxn: precio * cantidad * fx, origen: origenFx(), detalle: `${precio} ${moneda} × ${cantidad}${enUnidad}${fx !== 1 ? ` × ${fx}` : ''}` }
   componentes.push({ ...mercancia, clave: 'PRECIO_UNIT' })
 
   /** Componente en MXN con respaldo en PIPE_PARAMETROS (SUPUESTO). */
@@ -284,18 +310,31 @@ export function costoAterrizado(c: Fila, p: Parametros): CostoAterrizado {
     else componentes.push({ clave: 'DTA', etiqueta: 'DTA', mxn: valorAduanaMxn * dta.f, origen: dta.origen, detalle: `${dta.detalle} del valor en aduana` })
     componentes.push(enMxn('AGENTE_ADUANAL', 'AGENTE_ADUANAL_REF', 'Agente aduanal'))
   }
-  // DDP: flete al CEDIS solo si la cotización no lo incluye (0 en FLETE_CEDIS = incluido).
+  // DDP: flete al CEDIS solo si la cotización no lo incluye (0 en FLETE_CEDIS = incluido; ORD-POS-147, criterio 2: es lo
+  // que guarda la casilla «Incluye entrega en CEDIS Amazon»).
   if (base) componentes.push(enMxn('FLETE_CEDIS', 'FLETE_CEDIS_REF', 'Flete al CEDIS'))
 
   const totalMxn = base ? suma(componentes) : null
   const unidadesSet = numeroDe('UNIDADES_POR_SET')
+  const upsValido = unidadesSet !== null && unidadesSet > 0 ? unidadesSet : null
+  const cantidadValida = cantidad !== null && cantidad > 0 ? cantidad : null
   let sets: number | null = null
-  if (unidadesSet === null || unidadesSet <= 0) porConfirmar.push('UNIDADES_POR_SET vacío o 0')
-  else if (cantidad !== null && cantidad > 0) sets = cantidad / unidadesSet
+  let piezas: number | null = null
+  if (unidad === 'SET') {
+    // Precio y cantidad por set: UNIDADES_POR_SET no interviene en el costo por set.
+    sets = cantidadValida
+    piezas = cantidadValida !== null && upsValido !== null ? cantidadValida * upsValido : null
+  } else if (unidad === 'PIEZA') {
+    piezas = cantidadValida
+    if (upsValido === null) porConfirmar.push('UNIDADES_POR_SET vacío o 0')
+    else if (cantidadValida !== null) sets = cantidadValida / upsValido
+  }
   const porSetMxn = totalMxn !== null && sets !== null ? totalMxn / sets : null
-  const porUnidadMxn = totalMxn !== null && cantidad !== null && cantidad > 0 ? totalMxn / cantidad : null
+  const porUnidadMxn = totalMxn !== null && piezas !== null ? totalMxn / piezas : null
+  const porUnidadPrecioMxn = totalMxn !== null && cantidadValida !== null && unidad ? totalMxn / cantidadValida : null
   return {
-    incoterm: incotermTexto, base, componentes, valorAduanaMxn, totalMxn, sets, porSetMxn, porUnidadMxn, tipoCambio,
+    incoterm: incotermTexto, base, componentes, valorAduanaMxn, totalMxn, sets, porSetMxn, porUnidadMxn, unidad,
+    cantidad: cantidadValida, porUnidadPrecioMxn, tipoCambio,
     supuestos: [...new Set(supuestos)], porConfirmar: totalMxn !== null && porSetMxn !== null ? [] : porConfirmar, avisos,
   }
 }
@@ -391,8 +430,15 @@ export interface FilaComparada {
   calcHoja: { valor: string; difiere: boolean } | null
   /** porSet − COSTO_MAX_MXN: ≤ 0 cumple; null = «Por confirmar». */
   diferenciaMxn: number | null
-  /** MOQ × costo aterrizado por unidad. */
+  /**
+   * ORD-POS-147 (criterio 3): `CANTIDAD_COTIZADA` × costo aterrizado por unidad del precio (el lote cotizado). null =
+   * «Por confirmar» (sin cantidad o sin costo); nunca usa el MOQ en su lugar.
+   */
   capitalPrimerLoteMxn: number | null
+  /** «Mínimo del proveedor»: MOQ × costo aterrizado por unidad del precio. */
+  minimoProveedorMxn: number | null
+  /** «Sets que caben en el tope»: TOPE_CAPITAL_MXN ÷ costo por set, hacia abajo. */
+  setsEnTope: number | null
 }
 
 export interface Comparacion {
@@ -450,7 +496,9 @@ export function construirTabulador(raw: PipeRaw & { UNIT_ECONOMICS?: unknown[][]
         incoterm: c.INCOTERM ?? null, moq, plazoDias: c.PLAZO_PRODUCCION_DIAS ?? null, costo,
         calcHoja: calc === null ? null : { valor: calc, difiere: costo.porSetMxn === null || calcNum === null || Math.abs(calcNum - costo.porSetMxn) > 1 },
         diferenciaMxn: costo.porSetMxn !== null && max.mxn !== null ? costo.porSetMxn - max.mxn : null,
-        capitalPrimerLoteMxn: moq !== null && costo.porUnidadMxn !== null ? moq * costo.porUnidadMxn : null,
+        capitalPrimerLoteMxn: costo.cantidad !== null && costo.porUnidadPrecioMxn !== null ? costo.cantidad * costo.porUnidadPrecioMxn : null,
+        minimoProveedorMxn: moq !== null && costo.porUnidadPrecioMxn !== null ? moq * costo.porUnidadPrecioMxn : null,
+        setsEnTope: costo.porSetMxn !== null && costo.porSetMxn > 0 ? Math.floor(TOPE_CAPITAL_MXN / costo.porSetMxn) : null,
       }
     })
     return { productoId, costoMaximo: max, filas: filas.sort(ordenar) }
@@ -495,12 +543,13 @@ export function pistasCotizacion(p: Parametros): Record<string, string> {
     IGI_PCT: `Si lo dejas vacío: se usará IGI_PCT_<PAIS_ORIGEN> de PIPE_PARAMETROS (SUPUESTO): ${igi}. Sin país ni valor, «${POR_CONFIRMAR}».`,
     DTA: usa('DTA_PCT'),
     AGENTE_ADUANAL: usa('AGENTE_ADUANAL_REF', ' MXN'),
-    FLETE_CEDIS: usa('FLETE_CEDIS_REF', ' MXN') + ' En DDP, 0 = ya incluido.',
+    FLETE_CEDIS: usa('FLETE_CEDIS_REF', ' MXN') + ' En DDP, marca «Incluye entrega en CEDIS Amazon» si ya lo incluye (guarda 0).',
     CERTIFICADO_ORIGEN: 'Si lo dejas vacío: se supone NO (SUPUESTO); SI pone el IGI en 0 %.',
     PAIS_ORIGEN: 'Decide qué IGI_PCT_<país> de PIPE_PARAMETROS se usa (CN, US, VN, CO; cualquier otro, OTRO).',
+    PRECIO_POR: 'PRECIO_UNIT, MOQ y CANTIDAD_COTIZADA se leen en esta unidad. Con «SET», el costo por set no usa UNIDADES_POR_SET.',
     PRECIO_UNIT: sinParametro,
-    CANTIDAD_COTIZADA: sinParametro,
-    UNIDADES_POR_SET: sinParametro,
+    CANTIDAD_COTIZADA: `${sinParametro} Es el lote cotizado: el capital del primer lote es esta cantidad × el costo aterrizado.`,
+    UNIDADES_POR_SET: `${sinParametro} Solo hace falta si el precio es por pieza.`,
     FLETE_LOCAL_EXPORT: `${sinParametro} Solo cuenta en EXW.`,
     FLETE_INTERNACIONAL: `${sinParametro} Cuenta en EXW, FCA y FOB.`,
     SEGURO: `${sinParametro} Cuenta en EXW, FCA y FOB.`,

@@ -25,6 +25,7 @@ import {
   EcoSheetsStore, InMemoryEcoStore, letraColumna, type Celda, type CeldaCambio, type EcoPipelineStore, type EcoWriteTab,
 } from '@/lib/radaros/pipeline-escritura-store'
 import { parseEco, parseIdRuta, parseMover } from '@/lib/radaros/pipeline-escritura-validacion'
+import { COLUMNAS_MIGRACION_COTIZACIONES } from '@/lib/radaros/pipeline-tabulador'
 import { TRANSICIONES } from '@/lib/radaros/pipeline-transiciones'
 import { MAX_DATA_ROWS } from '@/lib/schema'
 
@@ -75,14 +76,16 @@ type Rec = Record<string, Celda>
 const fila = (cols: readonly string[], r: Rec): Celda[] => cols.map((c) => r[c] ?? '')
 const prd = (id: string, etapa: Etapa, r: Rec = {}) => fila(COLUMNAS_PRODUCTOS, { PRODUCTO_ID: id, NOMBRE: `Producto ${id}`, ORIGEN: 'MANUAL', ETAPA: etapa, ETAPA_DESDE: '2026-10-01T09:00:00-06:00', VERSION: 1, ...r })
 const prv = (id: string, estado = 'ACTIVO', r: Rec = {}) => fila(COLUMNAS_PROVEEDORES, { PROVEEDOR_ID: id, NOMBRE: `Proveedor ${id}`, CANAL: 'ALIBABA', PAIS: 'CN', ESTADO: estado, VERSION: 1, ...r })
-const cot = (id: string, producto: string, proveedor: string, estado: string, r: Rec = {}) => fila(COLUMNAS_COTIZACIONES, { COTIZACION_ID: id, PRODUCTO_ID: producto, PROVEEDOR_ID: proveedor, ESTADO: estado, MUESTRA_ESTADO: 'NO_PEDIDA', VERSION: 1, ...r })
+/** ORD-POS-147: con la migración de §14.1 aplicada (incluida PRECIO_POR), que el alta de cotización necesita. */
+const COT_HDR = [...COLUMNAS_COTIZACIONES, ...COLUMNAS_MIGRACION_COTIZACIONES]
+const cot = (id: string, producto: string, proveedor: string, estado: string, r: Rec = {}) => fila(COT_HDR, { COTIZACION_ID: id, PRODUCTO_ID: producto, PROVEEDOR_ID: proveedor, ESTADO: estado, MUESTRA_ESTADO: 'NO_PEDIDA', VERSION: 1, ...r })
 const RECIBIDA = { PRECIO_UNIT: 2.5, MONEDA: 'USD', MOQ: 500, PLAZO_PRODUCCION_DIAS: 20, INCOTERM: 'FOB' }
 
 function libro(over: Partial<Record<string, unknown[][]>> = {}) {
   return {
     PIPE_PRODUCTOS: [[...COLUMNAS_PRODUCTOS], prd('PRD-0001', 'SUGERIDO', { ASIN: 'B000000001' }), prd('PRD-0002', 'EVALUANDO', { VERSION: 2 }), prd('PRD-0003', 'COTIZANDO', { COSTO_MAX_MXN: 150 })],
     PIPE_PROVEEDORES: [[...COLUMNAS_PROVEEDORES], prv('PRV-0001'), prv('PRV-0002', 'INACTIVO')],
-    PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES]],
+    PIPE_COTIZACIONES: [COT_HDR],
     PIPE_EMBARQUES: [[...COLUMNAS_EMBARQUES]],
     PIPE_AUDITORIA: [[...COLUMNAS_AUDITORIA]],
     PIPE_PARAMETROS: [['CLAVE', 'VALOR']],
@@ -446,7 +449,7 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
   /** Un producto en `desde` con todos los requisitos de cualquier destino ya cumplidos. */
   const completo = (desde: Etapa) => new InMemoryEcoStore(RADAROS, libro({
     PIPE_PRODUCTOS: [[...COLUMNAS_PRODUCTOS], prd('PRD-0001', desde, { ASIN: 'B000000001', COSTO_MAX_MXN: 150, PROVEEDOR_ELEGIDO_ID: 'PRV-0001', VERSION: 4, MOTIVO_DESCARTE: desde === 'DESCARTADO' ? 'antes' : '' })],
-    PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES], cot('COT-0001', 'PRD-0001', 'PRV-0001', 'ELEGIDA', { ...RECIBIDA, MUESTRA_ESTADO: 'APROBADA' })],
+    PIPE_COTIZACIONES: [COT_HDR, cot('COT-0001', 'PRD-0001', 'PRV-0001', 'ELEGIDA', { ...RECIBIDA, MUESTRA_ESTADO: 'APROBADA' })],
   }))
 
   it.each(ETAPAS.flatMap((desde) => ETAPAS.filter((a) => a !== desde).map((a) => [desde, a] as const)))('mover %s → %s: permitido solo si está en la tabla', async (desde, a) => {
@@ -468,7 +471,7 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
   it('requisitos de §5.1: sin escribir y con 409 requisito-faltante', async () => {
     const sinCosto = new InMemoryEcoStore(RADAROS, libro())
     expect(await codigo(mover(servicio(sinCosto), 'PRD-0002', 'EVALUANDO', 'COTIZANDO', 2))).toBe('requisito-faltante')
-    const sinRecibida = new InMemoryEcoStore(RADAROS, libro({ PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES], cot('COT-0001', 'PRD-0003', 'PRV-0001', 'SOLICITADA')] }))
+    const sinRecibida = new InMemoryEcoStore(RADAROS, libro({ PIPE_COTIZACIONES: [COT_HDR, cot('COT-0001', 'PRD-0003', 'PRV-0001', 'SOLICITADA')] }))
     expect(await codigo(mover(servicio(sinRecibida), 'PRD-0003', 'COTIZANDO', 'MUESTRA', 1))).toBe('requisito-faltante')
     const variantes: Array<[Rec, Rec]> = [
       [{ PROVEEDOR_ELEGIDO_ID: 'PRV-0001' }, { ESTADO: 'RECIBIDA', MUESTRA_ESTADO: 'APROBADA' }],
@@ -479,7 +482,7 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
     for (const [p, c] of variantes) {
       const s = new InMemoryEcoStore(RADAROS, libro({
         PIPE_PRODUCTOS: [[...COLUMNAS_PRODUCTOS], prd('PRD-0001', 'MUESTRA', p)],
-        PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES], cot('COT-0001', 'PRD-0001', 'PRV-0001', String(c.ESTADO), { ...RECIBIDA, ...c })],
+        PIPE_COTIZACIONES: [COT_HDR, cot('COT-0001', 'PRD-0001', 'PRV-0001', String(c.ESTADO), { ...RECIBIDA, ...c })],
       }))
       expect(await codigo(mover(servicio(s), 'PRD-0001', 'MUESTRA', 'EN_VENTA', 1)), JSON.stringify([p, c])).toBe('requisito-faltante')
       expect(auditoria(s)).toHaveLength(0)
@@ -525,7 +528,7 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
   it('eco.cotizacion.crear y editar: SOLICITADA → RECIBIDA (con sus datos) → ELEGIDA, una ELEGIDA por producto, fechas', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro({ PIPE_PRODUCTOS: [[...COLUMNAS_PRODUCTOS], prd('PRD-0001', 'COTIZANDO'), prd('PRD-0002', 'DESCARTADO')] }))
     const svc = servicio(s)
-    const crear = (body: Record<string, unknown>) => svc.crearCotizacion(parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0001', proveedorId: 'PRV-0001', ...body }), CTX)
+    const crear = (body: Record<string, unknown>) => svc.crearCotizacion(parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0001', proveedorId: 'PRV-0001', precioPor: 'PIEZA', ...body }), CTX)
     const editar = (id: string, version: number, body: Record<string, unknown>) => svc.editarCotizacion(id, parseEco('eco.cotizacion.editar', { requestId: rid(), expectedVersion: version, ...body }), CTX)
     expect((await crear({ fechaSolicitud: '2026-10-20', fechaRespuestaEsperada: '2026-10-27' })).id).toBe('COT-0001')
     expect(registro(s, 'PIPE_COTIZACIONES', 'COT-0001')).toMatchObject({ ESTADO: 'SOLICITADA', MUESTRA_ESTADO: 'NO_PEDIDA', FECHA_SOLICITUD: '2026-10-20' })
@@ -551,7 +554,7 @@ describe('criterio 3: las 9 operaciones, IDs de §3, expectedVersion e idempoten
 
   it('eco.embarque.crear y editar: cotización ELEGIDA del mismo producto, PLANEADO → PAGADO → EN_TRANSITO → RECIBIDO_FBA', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro({
-      PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES], cot('COT-0001', 'PRD-0003', 'PRV-0001', 'ELEGIDA', RECIBIDA), cot('COT-0002', 'PRD-0003', 'PRV-0001', 'RECIBIDA', RECIBIDA)],
+      PIPE_COTIZACIONES: [COT_HDR, cot('COT-0001', 'PRD-0003', 'PRV-0001', 'ELEGIDA', RECIBIDA), cot('COT-0002', 'PRD-0003', 'PRV-0001', 'RECIBIDA', RECIBIDA)],
     }))
     const svc = servicio(s)
     const crear = (body: Record<string, unknown>) => svc.crearEmbarque(parseEco('eco.embarque.crear', { requestId: rid(), productoId: 'PRD-0003', cotizacionId: 'COT-0001', unidades: 300, ...body }), CTX)
@@ -731,7 +734,7 @@ describe('criterio 4: auditoría antes de la entidad y verificación después (�
   })
 
   it('❓ §12: una celda que es fórmula de la hoja (COSTO_MAX_MXN, COSTO_ATERRIZADO_MXN) es de solo lectura', async () => {
-    const f = new FallaStore(libro({ PIPE_COTIZACIONES: [[...COLUMNAS_COTIZACIONES], cot('COT-0001', 'PRD-0003', 'PRV-0001', 'SOLICITADA')] }))
+    const f = new FallaStore(libro({ PIPE_COTIZACIONES: [COT_HDR, cot('COT-0001', 'PRD-0003', 'PRV-0001', 'SOLICITADA')] }))
     f.formulasHoja.set(`PIPE_PRODUCTOS!3!${COLUMNAS_PRODUCTOS.indexOf('COSTO_MAX_MXN')}`, '=SCORING!B2*0.3')
     f.formulasHoja.set(`PIPE_COTIZACIONES!2!${COLUMNAS_COTIZACIONES.indexOf('COSTO_ATERRIZADO_MXN')}`, '=H2*20')
     const svc = servicio(f)
@@ -1027,7 +1030,7 @@ describe('criterio 9: hallazgos de revisiones', () => {
 describe('ORD-POS-104: hallazgos no bloqueantes de ORD-POS-102', () => {
   it('criterio 1: los 4 montos aceptan hasta 4 decimales; 5 decimales, coma, negativos y notación científica no', () => {
     const cot = (precioUnit: unknown, extra: Record<string, unknown> = {}) =>
-      parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0003', proveedorId: 'PRV-0001', precioUnit, ...extra })
+      parseEco('eco.cotizacion.crear', { requestId: rid(), productoId: 'PRD-0003', proveedorId: 'PRV-0001', precioPor: 'PIEZA', precioUnit, ...extra })
     for (const ok of ['0.125', '0.1234', 0.125, 0.1234, '12']) expect(cot(ok).valores.PRECIO_UNIT, String(ok)).toBe(Number(ok))
     expect(cot('1', { costoAterrizadoMxn: '0.1234', muestraCosto: '0.125' }).valores).toMatchObject({ COSTO_ATERRIZADO_MXN: 0.1234, MUESTRA_COSTO: 0.125 })
     const emb = parseEco('eco.embarque.crear', { requestId: rid(), productoId: 'PRD-0003', cotizacionId: 'COT-0001', unidades: 10, costoTotal: '1234.5678' })

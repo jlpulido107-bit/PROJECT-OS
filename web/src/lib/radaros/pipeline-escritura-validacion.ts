@@ -3,7 +3,7 @@ import { OperationError } from '../operations/errors'
 import { cleanText } from '../operations/sanitize'
 import { COLUMNAS_MIGRACION_PROVEEDORES, ESTADOS_COTIZACION, ETAPAS, type Etapa } from './pipeline'
 import { pareceContacto } from './pipeline-formularios'
-import { COLUMNAS_MIGRACION_COTIZACIONES } from './pipeline-tabulador'
+import { COLUMNAS_MIGRACION_COTIZACIONES, PRECIOS_POR } from './pipeline-tabulador'
 import type { Celda } from './pipeline-escritura-store'
 
 /**
@@ -45,6 +45,8 @@ interface Campo {
   tipo: Tipo
   /** Obligatorio en el alta y no se puede vaciar al editar. */
   obligatorio?: boolean
+  /** Texto del formulario en lugar del nombre de la columna (ORD-POS-147). */
+  etiqueta?: string
 }
 
 const texto = (clave: string, columna: string, max: number, obligatorio = false, multilinea = false): Campo => ({ clave, columna, tipo: { k: 'texto', max, multilinea }, obligatorio })
@@ -126,6 +128,9 @@ const COTIZACION_COMUNES: Campo[] = [
  * ORD-POS-146 (criterio 2): las columnas del tabulador (§14.1) en el alta, en el orden en que se capturan. No incluye
  * `COSTO_ATERRIZADO_CALC_MXN`: el dashboard nunca la escribe. La edición de cotizaciones no cambia (fuera de alcance).
  */
+/** ORD-POS-147 (criterio 1): obligatorio en el alta; `PRECIO_UNIT`, `MOQ` y `CANTIDAD_COTIZADA` se leen en esa unidad. */
+const PRECIO_POR_CAMPO: Campo = { ...lista('precioPor', 'PRECIO_POR', PRECIOS_POR, true), etiqueta: 'El precio es por' }
+
 const COTIZACION_TABULADOR: Campo[] = [
   { clave: 'paisOrigen', columna: 'PAIS_ORIGEN', tipo: { k: 'pais' } },
   lista('certificadoOrigen', 'CERTIFICADO_ORIGEN', SI_NO),
@@ -161,7 +166,7 @@ export const CAMPOS = {
   'eco.cotizacion.crear': [
     id('productoId', 'PRODUCTO_ID', 'PRD', true), id('proveedorId', 'PROVEEDOR_ID', 'PRV', true),
     lista('estado', 'ESTADO', ESTADOS_ALTA_COTIZACION), fecha('fechaRecibida', 'FECHA_RECIBIDA'),
-    ...COTIZACION_COMUNES.slice(0, -1), ...COTIZACION_TABULADOR, notas,
+    PRECIO_POR_CAMPO, ...COTIZACION_COMUNES.slice(0, -1), ...COTIZACION_TABULADOR, notas,
   ],
   'eco.cotizacion.editar': [
     lista('estado', 'ESTADO', ESTADOS_COTIZACION, true), fecha('fechaRecibida', 'FECHA_RECIBIDA'),

@@ -192,7 +192,7 @@ describe('criterio 2: el formulario de cotización trae las columnas del tabulad
 
   it('alta con las columnas del tabulador (FCA y porcentajes en puntos); RECIBIDA exige sus cinco datos', async () => {
     const s = servidor()
-    const base = { productoId: 'PRD-0003', proveedorId: 'PRV-0002' }
+    const base = { productoId: 'PRD-0003', proveedorId: 'PRV-0002', precioPor: 'PIEZA' }
     const ok = await alta(s, 'cotizaciones', {
       ...base, estado: 'RECIBIDA', fechaRecibida: '2026-11-04', precioUnit: '2.35', moneda: 'USD', moq: '500', plazoProduccionDias: '20', incoterm: 'FCA',
       paisOrigen: 'CN', certificadoOrigen: 'NO', unidadesPorSet: '6', cantidadCotizada: '3000', fleteInternacional: '420', igiPct: '20', dta: '0.8',
@@ -207,7 +207,7 @@ describe('criterio 2: el formulario de cotización trae las columnas del tabulad
   it('sin la migración de §14.1, llenar una columna del tabulador responde 409 y no escribe nada', async () => {
     const s = servidor(false)
     const antes = s.snapshot()
-    const r = await alta(s, 'cotizaciones', { productoId: 'PRD-0003', proveedorId: 'PRV-0002', paisOrigen: 'CN' })
+    const r = await alta(s, 'cotizaciones', { productoId: 'PRD-0003', proveedorId: 'PRV-0002', precioPor: 'SET', paisOrigen: 'CN' })
     expect(r).toMatchObject({ tipo: 'conflicto' })
     expect(s.snapshot()).toEqual(antes)
   })
@@ -239,11 +239,13 @@ describe('criterio 3: «Pegar tabla de Gemini» (tabla B del Gem 3)', () => {
     expect(r.columnas.every((c) => c.destino !== null)).toBe(true)
     expect(r.borradores).toHaveLength(2)
     const [a, b] = r.borradores
-    expect(a).toMatchObject({ reconocida: true, idGemini: 'COT-0102', duplicada: null, errores: {} })
+    // ORD-POS-147 (criterio 1): la tabla B no trae PRECIO_POR; el borrador lo pide antes de poder confirmarse.
+    expect(a).toMatchObject({ reconocida: true, idGemini: 'COT-0102', duplicada: null, errores: { precioPor: 'Obligatorio.' } })
     expect(a!.valores).toMatchObject({ productoId: 'PRD-0003', proveedorId: 'PRV-0002', estado: 'RECIBIDA', precioUnit: '2.35', moq: '500', igiPct: '20', certificadoOrigen: '', costoAterrizadoMxn: '1250.50' })
     expect(b!.valores).toMatchObject({ productoId: 'PRD-0003', estado: 'RECIBIDA', moq: '1000', notas: 'parcial. falta flete', fleteInternacional: '' })
     expect(b!.notas.join(' ')).toMatch(/EC-006 → PRD-0003.*|RECIBIDA con «parcial»/)
-    expect(r.borradores.every(confirmable)).toBe(true)
+    expect(r.borradores.some(confirmable)).toBe(false)
+    expect(r.borradores.every((x) => confirmable({ ...x, errores: {} }))).toBe(true)
   })
 
   it('nada se guarda sin confirmar; al confirmar una fila se guarda solo esa, por la ruta de alta', async () => {
@@ -252,11 +254,11 @@ describe('criterio 3: «Pegar tabla de Gemini» (tabla B del Gem 3)', () => {
     expect(s.llamadas).toHaveLength(0) // generar no envía nada
     const [a] = r.borradores
     // El propietario corrige el borrador antes de confirmar (p. ej. la fecha) y confirma solo esa fila.
-    const res = await enviar('/api/eco/pipeline/cotizaciones', 'POST', cuerpo(CAMPOS['eco.cotizacion.crear'], { ...a!.valores, fechaRecibida: '2026-11-03' }, nuevoId), s.f)
+    const res = await enviar('/api/eco/pipeline/cotizaciones', 'POST', cuerpo(CAMPOS['eco.cotizacion.crear'], { ...a!.valores, fechaRecibida: '2026-11-03', precioPor: 'SET' }, nuevoId), s.f)
     expect(res).toMatchObject({ tipo: 'ok', id: 'COT-0002' })
     expect(s.llamadas).toHaveLength(1)
     expect(s.tabla('PIPE_COTIZACIONES')).toHaveLength(2)
-    expect(s.tabla('PIPE_COTIZACIONES')[1]).toMatchObject({ PROVEEDOR_ID: 'PRV-0002', ESTADO: 'RECIBIDA', FECHA_RECIBIDA: '2026-11-03', PRECIO_UNIT: '2.35', IGI_PCT: '20' })
+    expect(s.tabla('PIPE_COTIZACIONES')[1]).toMatchObject({ PROVEEDOR_ID: 'PRV-0002', ESTADO: 'RECIBIDA', FECHA_RECIBIDA: '2026-11-03', PRECIO_UNIT: '2.35', IGI_PCT: '20', PRECIO_POR: 'SET' })
   })
 
   it('tabla con errores: columnas y filas no reconocidas quedan marcadas y no se guardan; los valores malos, con su motivo', () => {
@@ -290,7 +292,9 @@ describe('criterio 3: «Pegar tabla de Gemini» (tabla B del Gem 3)', () => {
     expect(porId!.duplicada).toContain('COT-0001 ya existe')
     expect(porFirma!.duplicada).toContain('Igual a COT-0001')
     expect(primera!.duplicada).toBeNull()
-    expect(confirmable(primera!)).toBe(true)
+    // ORD-POS-147: sin PRECIO_POR y en DDP sin flete ni FLETE_CEDIS_REF, el borrador los pide; corregidos, se confirma.
+    expect(Object.keys(primera!.errores).sort()).toEqual(['fleteCedis', 'precioPor'])
+    expect(confirmable({ ...primera!, errores: {} })).toBe(true)
     expect(repetida!.duplicada).toMatch(/Igual a la fila de la línea 5 del pegado/)
     expect([porId, porFirma, repetida].some((b) => confirmable(b!))).toBe(false)
   })
