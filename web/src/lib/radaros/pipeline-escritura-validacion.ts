@@ -1,7 +1,9 @@
 import { parseCivilDate } from '../dates'
 import { OperationError } from '../operations/errors'
 import { cleanText } from '../operations/sanitize'
-import { ETAPAS, type Etapa } from './pipeline'
+import { COLUMNAS_MIGRACION_PROVEEDORES, ESTADOS_COTIZACION, ETAPAS, type Etapa } from './pipeline'
+import { pareceContacto } from './pipeline-formularios'
+import { COLUMNAS_MIGRACION_COTIZACIONES } from './pipeline-tabulador'
 import type { Celda } from './pipeline-escritura-store'
 
 /**
@@ -13,14 +15,19 @@ import type { Celda } from './pipeline-escritura-store'
 
 export const CANALES = ['ALIBABA', '1688', 'MADE_IN_CHINA', 'NACIONAL', 'OTRO'] as const
 export const ESTADOS_PROVEEDOR = ['ACTIVO', 'INACTIVO'] as const
-export const ESTADOS_COTIZACION = ['SOLICITADA', 'RECIBIDA', 'ELEGIDA', 'RECHAZADA'] as const
+/** ORD-POS-146 (criterio 4): una sola lista, definida en pipeline.ts y compartida con el tabulador. */
+export { ESTADOS_COTIZACION }
+/** Estados con los que puede nacer una cotización (ORD-POS-146): `ELEGIDA` solo por edición, con sus requisitos. */
+export const ESTADOS_ALTA_COTIZACION = ['SOLICITADA', 'RECIBIDA', 'RECHAZADA'] as const
 export const MONEDAS = ['USD', 'CNY', 'MXN'] as const
-export const INCOTERMS = ['EXW', 'FOB', 'CIF', 'DDP', 'OTRO'] as const
+/** ORD-POS-146: los del tabulador (§14.3) más `OTRO`, que el tabulador deja «Por confirmar». */
+export const INCOTERMS = ['EXW', 'FCA', 'FOB', 'CIF', 'DAP', 'DDP', 'OTRO'] as const
+export const SI_NO = ['SI', 'NO'] as const
 export const ESTADOS_MUESTRA = ['NO_PEDIDA', 'PEDIDA', 'RECIBIDA', 'APROBADA', 'RECHAZADA'] as const
 export const ESTADOS_EMBARQUE = ['PLANEADO', 'PAGADO', 'EN_TRANSITO', 'RECIBIDO_FBA', 'CANCELADO'] as const
 
 type Tipo =
-  | { k: 'texto'; max: number; multilinea?: boolean }
+  | { k: 'texto'; max: number; multilinea?: boolean; sinContacto?: boolean }
   | { k: 'contacto' }
   | { k: 'asin' }
   | { k: 'idea' }
@@ -30,6 +37,7 @@ type Tipo =
   | { k: 'lista'; valores: readonly string[] }
   | { k: 'id'; prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB' }
   | { k: 'pais' }
+  | { k: 'pct' }
 
 interface Campo {
   clave: string
@@ -48,6 +56,9 @@ const entero = (clave: string, columna: string, min: number, obligatorio = false
 const lista = (clave: string, columna: string, valores: readonly string[], obligatorio = false): Campo => ({ clave, columna, tipo: { k: 'lista', valores }, obligatorio })
 const id = (clave: string, columna: string, prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB', obligatorio = false): Campo => ({ clave, columna, tipo: { k: 'id', prefijo }, obligatorio })
 const notas = texto('notas', 'NOTAS', 1000, false, true)
+/** ORD-POS-146 (criterio 1): en el alta rápida de proveedores no entran correos ni teléfonos de personas. */
+const sinContacto = (c: Campo): Campo => (c.tipo.k === 'texto' ? { ...c, tipo: { ...c.tipo, sinContacto: true } } : c)
+const pct = (clave: string, columna: string): Campo => ({ clave, columna, tipo: { k: 'pct' } })
 
 const K = ['K1', 'K2', 'K3', 'K4', 'K5', 'K6'].map((c) => texto(c.toLowerCase(), c, 40))
 
@@ -70,11 +81,27 @@ const KEEPA: Campo[] = [
   entero('keepaOfertas', 'KEEPA_OFERTAS', 0),
 ]
 
-const PROVEEDOR: Campo[] = [
-  texto('nombre', 'NOMBRE', 120, true),
+/** §15.1 (ORD-POS-146): columnas de la migración de PIPE_PROVEEDORES. */
+const PROVEEDOR_AUDITORIA: Campo[] = [
+  entero('anosPlataforma', 'ANOS_PLATAFORMA', 0),
+  lista('verifiedSupplier', 'VERIFIED_SUPPLIER', SI_NO),
+  lista('tradeAssurance', 'TRADE_ASSURANCE', SI_NO),
+]
+/** Alta (ORD-POS-146, criterio 1): sin `CONTACTO` y sin correos ni teléfonos en el nombre o las notas. */
+const PROVEEDOR_ALTA: Campo[] = [
+  sinContacto(texto('nombre', 'NOMBRE', 120, true)),
+  lista('canal', 'CANAL', CANALES, true),
+  { clave: 'pais', columna: 'PAIS', tipo: { k: 'pais' }, obligatorio: true },
+  ...PROVEEDOR_AUDITORIA,
+  sinContacto(notas),
+]
+/** Edición: la de ORD-POS-110 (con `CONTACTO` comercial, §6.4) más las columnas de la migración. */
+const PROVEEDOR_EDICION: Campo[] = [
+  sinContacto(texto('nombre', 'NOMBRE', 120, true)),
   lista('canal', 'CANAL', CANALES, true),
   { clave: 'pais', columna: 'PAIS', tipo: { k: 'pais' }, obligatorio: true },
   { clave: 'contacto', columna: 'CONTACTO', tipo: { k: 'contacto' } },
+  ...PROVEEDOR_AUDITORIA,
   notas,
 ]
 
@@ -95,6 +122,26 @@ const COTIZACION_COMUNES: Campo[] = [
   notas,
 ]
 
+/**
+ * ORD-POS-146 (criterio 2): las columnas del tabulador (§14.1) en el alta, en el orden en que se capturan. No incluye
+ * `COSTO_ATERRIZADO_CALC_MXN`: el dashboard nunca la escribe. La edición de cotizaciones no cambia (fuera de alcance).
+ */
+const COTIZACION_TABULADOR: Campo[] = [
+  { clave: 'paisOrigen', columna: 'PAIS_ORIGEN', tipo: { k: 'pais' } },
+  lista('certificadoOrigen', 'CERTIFICADO_ORIGEN', SI_NO),
+  entero('unidadesPorSet', 'UNIDADES_POR_SET', 1),
+  entero('cantidadCotizada', 'CANTIDAD_COTIZADA', 1),
+  monto('tipoCambio', 'TIPO_CAMBIO'),
+  fecha('tipoCambioFecha', 'TIPO_CAMBIO_FECHA'),
+  monto('fleteLocalExport', 'FLETE_LOCAL_EXPORT'),
+  monto('fleteInternacional', 'FLETE_INTERNACIONAL'),
+  monto('seguro', 'SEGURO'),
+  pct('igiPct', 'IGI_PCT'),
+  pct('dta', 'DTA'),
+  monto('agenteAduanal', 'AGENTE_ADUANAL'),
+  monto('fleteCedis', 'FLETE_CEDIS'),
+]
+
 const EMBARQUE_COMUNES: Campo[] = [
   entero('unidades', 'UNIDADES', 1, true),
   fecha('fechaPago', 'FECHA_PAGO'),
@@ -109,9 +156,13 @@ const EMBARQUE_COMUNES: Campo[] = [
 export const CAMPOS = {
   'eco.producto.crear': [...PRODUCTO_EDITABLES, ...KEEPA],
   'eco.producto.editar': PRODUCTO_EDITABLES,
-  'eco.proveedor.crear': PROVEEDOR,
-  'eco.proveedor.editar': [...PROVEEDOR, lista('estado', 'ESTADO', ESTADOS_PROVEEDOR, true)],
-  'eco.cotizacion.crear': [id('productoId', 'PRODUCTO_ID', 'PRD', true), id('proveedorId', 'PROVEEDOR_ID', 'PRV', true), ...COTIZACION_COMUNES],
+  'eco.proveedor.crear': PROVEEDOR_ALTA,
+  'eco.proveedor.editar': [...PROVEEDOR_EDICION, lista('estado', 'ESTADO', ESTADOS_PROVEEDOR, true)],
+  'eco.cotizacion.crear': [
+    id('productoId', 'PRODUCTO_ID', 'PRD', true), id('proveedorId', 'PROVEEDOR_ID', 'PRV', true),
+    lista('estado', 'ESTADO', ESTADOS_ALTA_COTIZACION), fecha('fechaRecibida', 'FECHA_RECIBIDA'),
+    ...COTIZACION_COMUNES.slice(0, -1), ...COTIZACION_TABULADOR, notas,
+  ],
   'eco.cotizacion.editar': [
     lista('estado', 'ESTADO', ESTADOS_COTIZACION, true), fecha('fechaRecibida', 'FECHA_RECIBIDA'),
     fecha('muestraFechaRecibida', 'MUESTRA_FECHA_RECIBIDA'), ...COTIZACION_COMUNES,
@@ -122,9 +173,18 @@ export const CAMPOS = {
 
 export type EcoCampoOperacion = keyof typeof CAMPOS
 
+/**
+ * Columnas de las migraciones (§14.1 y §15.1) que la escritura admite solo si la fila 1 ya las tiene: sin la migración
+ * responde 409 `eco-migracion-pendiente` y no escribe nada. `COSTO_ATERRIZADO_CALC_MXN` no se escribe nunca.
+ */
+export const COLUMNAS_OPCIONALES = {
+  PIPE_PROVEEDORES: [...COLUMNAS_MIGRACION_PROVEEDORES],
+  PIPE_COTIZACIONES: COLUMNAS_MIGRACION_COTIZACIONES.filter((c) => c !== 'COSTO_ATERRIZADO_CALC_MXN'),
+} as const
+
 /** Columnas que se escriben como número (el resto, texto en RAW). */
 export const COLUMNAS_NUMERICAS: ReadonlySet<string> = new Set(
-  [...Object.values(CAMPOS).flat().filter((c) => c.tipo.k === 'numero' || c.tipo.k === 'entero').map((c) => c.columna), 'VERSION'],
+  [...Object.values(CAMPOS).flat().filter((c) => c.tipo.k === 'numero' || c.tipo.k === 'entero' || c.tipo.k === 'pct').map((c) => c.columna), 'VERSION'],
 )
 
 const REQUEST_ID = /^[0-9a-f-]{36}$/
@@ -138,6 +198,7 @@ const DECIMAL = { 2: /^\d{1,10}(\.\d{1,2})?$/, 4: /^\d{1,10}(\.\d{1,4})?$/ } as 
 const ENTERO = /^\d{1,9}$/
 /** §4.3: texto que empieza por = + - @ se rechaza (se escribiría en una hoja con fórmulas). */
 const FORMULA_START = /^[=+\-@]/
+const PCT_PUNTOS = /^\d{1,3}(\.\d{1,4})?$/
 
 export function idValido(prefijo: string, valor: string): boolean {
   return new RegExp(`^${prefijo}-\\d{4,}$`).test(valor)
@@ -211,6 +272,11 @@ function valorCampo(c: Campo, raw: unknown, fields: Fields): Celda | null {
   switch (t.k) {
     case 'texto':
       out = textoLimpio(s, t.max, t.multilinea ?? false, fields, c.clave)
+      if (!fields[c.clave] && t.sinContacto && pareceContacto(String(out))) fields[c.clave] = 'Sin correos ni teléfonos de personas.'
+      break
+    case 'pct':
+      if (!PCT_PUNTOS.test(s) || Number(s) > 100) fields[c.clave] = 'Porcentaje en puntos de 0 a 100 (20 = 20 %), hasta 4 decimales.'
+      else out = Number(s)
       break
     case 'contacto': {
       // ORD-POS-102 (hallazgo de revisión): un teléfono como «+52 …» es válido. Se acepta un «+» inicial tal cual:

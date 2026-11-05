@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Badge, Empty, Section, StateBadge, Text } from '@/components/ui'
 import { ColumnaSoltable, TableroEditable, TarjetaMovible } from '@/components/eco/tablero-escritura'
 import { FormularioEco } from '@/components/eco/formularios-pipeline'
+import { PegarTablaGemini } from '@/components/eco/pegar-gemini'
 import { writeAccess } from '@/components/operations/write-access'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
@@ -13,11 +14,12 @@ import { etiquetaIdea } from '@/lib/radaros/eco-columnas'
 import { ecoPipelineCanWrite } from '@/lib/radaros/pipeline-escritura-config'
 import { CAMPOS, type EcoCampoOperacion } from '@/lib/radaros/pipeline-escritura-validacion'
 import { versionDeFila } from '@/lib/radaros/pipeline-formularios'
+import type { ContextoPegado } from '@/lib/radaros/pipeline-pegado'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
 import { FiltroAuto } from '@/components/filtro-auto'
 import {
-  ecoTabuladorHabilitado, formatoMxn, POR_CONFIRMAR, TOPE_CAPITAL_MXN, veredicto, type Componente, type FilaComparada,
-  type TabuladorVista,
+  ecoTabuladorHabilitado, ESTADOS_TABULADOR, formatoMxn, pistasCotizacion, POR_CONFIRMAR, TOPE_CAPITAL_MXN, veredicto,
+  type Componente, type FilaComparada, type TabuladorVista,
 } from '@/lib/radaros/pipeline-tabulador'
 
 export const metadata: Metadata = { title: 'Pipeline de ECOMMERCE' }
@@ -187,7 +189,47 @@ function Columna({ e, lista, editable }: { e: (typeof ETAPAS)[number]; lista: Ta
   )
 }
 
-function FichaProducto({ v, t, editable, nombres }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string> }) {
+/** ORD-POS-146 (criterio 1): proveedores existentes, para avisar de un nombre repetido antes de enviar. */
+function proveedoresExistentes(v: PipelineVista): Array<{ id: string; nombre: string }> {
+  return v.proveedores.estado === 'ok'
+    ? v.proveedores.datos.filas.flatMap((p) => (p.PROVEEDOR_ID && p.NOMBRE ? [{ id: p.PROVEEDOR_ID, nombre: p.NOMBRE }] : []))
+    : []
+}
+
+/** ORD-POS-146 (criterio 3): lo que el pegado necesita de la hoja para resolver y revisar cada fila. */
+function contextoPegado(v: PipelineVista, tarjetas: Tarjeta[]): ContextoPegado {
+  const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas : []
+  return {
+    campos: CAMPOS['eco.cotizacion.crear'],
+    productos: tarjetas.map((t) => ({ id: t.id, ideaId: t.fila.IDEA_ID ?? null, etapa: t.etapaTexto })),
+    proveedores: proveedoresExistentes(v),
+    cotizaciones: cots.flatMap((c) => (c.COTIZACION_ID ? [{
+      id: c.COTIZACION_ID, productoId: c.PRODUCTO_ID ?? null, proveedorId: c.PROVEEDOR_ID ?? null, incoterm: c.INCOTERM ?? null,
+      precioUnit: c.PRECIO_UNIT ?? null, moneda: c.MONEDA ?? null,
+    }] : [])),
+  }
+}
+
+/**
+ * «Alta rápida» (ORD-POS-146): proveedor, cotización con las columnas del tabulador y el pegado de la tabla B de Gemini.
+ * Reúsa `FormularioEco` y las rutas de alta; solo la ve el escritor del pipeline (§4.2) y el servidor repite todo.
+ */
+function AltaRapida({ v, tarjetas, pistas }: { v: PipelineVista; tarjetas: Tarjeta[]; pistas: Record<string, string> }) {
+  return (
+    <Section title="Alta rápida de proveedores y cotizaciones" id="alta-rapida">
+      <p className="small muted">
+        Solo escribe tu sesión del dashboard: el token del PM y los de otros agentes se rechazan. Sin correos ni teléfonos de
+        personas. Los campos vacíos de la cotización toman el valor de <code>PIPE_PARAMETROS</code> que indica cada uno.
+      </p>
+      <FormularioEco titulo="Nuevo proveedor" url="/api/eco/pipeline/proveedores" campos={CAMPOS['eco.proveedor.crear']}
+        duplicados={{ clave: 'nombre', existentes: proveedoresExistentes(v) }} />
+      <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} pistas={pistas} />
+      <PegarTablaGemini contexto={contextoPegado(v, tarjetas)} pistas={pistas} />
+    </Section>
+  )
+}
+
+function FichaProducto({ v, t, editable, nombres, pistas }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string>; pistas: Record<string, string> }) {
   const f = t.fila
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas.filter((c) => c.PRODUCTO_ID === t.id) : []
   const embs = v.embarques.estado === 'ok' ? v.embarques.datos.filas.filter((e) => e.PRODUCTO_ID === t.id) : []
@@ -228,7 +270,7 @@ function FichaProducto({ v, t, editable, nombres }: { v: PipelineVista; t: Tarje
       {editable ? (
         <>
           {cots.map((c) => c.COTIZACION_ID ? <Editar key={c.COTIZACION_ID} titulo={`Editar cotización ${c.COTIZACION_ID}`} ruta="cotizaciones" id={c.COTIZACION_ID} op="eco.cotizacion.editar" fila={c} /> : null)}
-          <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} iniciales={{ PRODUCTO_ID: t.id }} />
+          <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} iniciales={{ PRODUCTO_ID: t.id }} pistas={pistas} />
         </>
       ) : null}
       <h3>Seguimiento</h3>
@@ -301,6 +343,8 @@ function FichaProveedor({ v, p, tarjetas, verContacto, editable }: { v: Pipeline
       <dl className="meta meta-wide">
         <Dato label="PROVEEDOR_ID" value={id} /><Dato label="Nombre" value={p.NOMBRE} /><Dato label="Canal" value={p.CANAL} />
         <Dato label="País" value={p.PAIS} />
+        <Dato label="Años en la plataforma" value={p.ANOS_PLATAFORMA} /><Dato label="Verified Supplier" value={p.VERIFIED_SUPPLIER} />
+        <Dato label="Trade Assurance" value={p.TRADE_ASSURANCE} />
         {verContacto ? <Dato label="Contacto" value={p.CONTACTO} /> : null}
         <div><dt>Estado</dt><dd><StateBadge code={p.ESTADO ?? null} /></dd></div>
       </dl>
@@ -404,7 +448,7 @@ function Comparar({ tab, tarjetas, productoId }: { tab: TabuladorVista; tarjetas
                     {cmp.filas.map((f) => (
                       <tr key={f.id}>
                         <td className="mono">{f.id}</td>
-                        <td><Text value={f.estado} empty="—" />{f.estadoValido ? null : <> <Badge tone="warn" title="SOLICITADA, RECIBIDA, RECIBIDA (PARCIAL) o DESCARTADA">Estado no válido</Badge></>}</td>
+                        <td><Text value={f.estado} empty="—" />{f.estadoValido ? null : <> <Badge tone="warn" title={ESTADOS_TABULADOR.join(', ')}>Estado no válido</Badge></>}</td>
                         <td><Text value={f.proveedor ?? f.proveedorId} empty="—" /></td>
                         <td><Text value={f.pais} empty="—" /></td>
                         <td><Text value={f.incoterm} empty="—" /></td>
@@ -462,6 +506,8 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
   // ORD-POS-145: la vista «Comparar» solo con ECO_TABULADOR=true (la pone el propietario con deploy.sh).
   const tabulador = ecoTabuladorHabilitado() ? result.vista.tabulador : null
   const tarjetas = v.productos.estado === 'ok' ? v.productos.datos.tarjetas : []
+  // ORD-POS-146 (criterio 2): las pistas leen PIPE_PARAMETROS aunque ECO_TABULADOR esté apagada (solo texto, sin cálculo).
+  const pistas = editable ? pistasCotizacion(result.vista.tabulador.parametros) : {}
   const producto = params.producto ? tarjetas.find((t) => t.id === params.producto) : undefined
   const proveedor = params.proveedor && v.proveedores.estado === 'ok' ? v.proveedores.datos.filas.find((p) => p.PROVEEDOR_ID === params.proveedor) : undefined
   return (
@@ -487,15 +533,16 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         {editable ? <FormularioEco titulo="Nuevo producto" url="/api/eco/pipeline/productos" campos={CAMPOS['eco.producto.crear']} /> : null}
         <Tablero v={v} filtro={params} editable={editable} />
       </Section>
+      {editable ? <AltaRapida v={v} tarjetas={tarjetas} pistas={pistas} /> : null}
       {tabulador ? (
         <Section title="Comparar cotizaciones" id="comparar">
           <EstadoPipe bloque={tabulador.bloque}>{() => <Comparar tab={tabulador} tarjetas={tarjetas} productoId={params.comparar} />}</EstadoPipe>
         </Section>
       ) : null}
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
-      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} /> : null}
+      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} pistas={pistas} /> : null}
       <Section title="Proveedores" id="proveedores">
-        {editable ? <FormularioEco titulo="Nuevo proveedor" url="/api/eco/pipeline/proveedores" campos={CAMPOS['eco.proveedor.crear']} /> : null}
+        {editable ? <p className="small"><a href="#alta-rapida">Nuevo proveedor en «Alta rápida»</a></p> : null}
         <Proveedores v={v} filtro={params} verContacto={verContacto} />
       </Section>
       {params.proveedor && !proveedor ? <div className="alert alert-warn" role="status"><p>No hay un proveedor con ese ID.</p></div> : null}

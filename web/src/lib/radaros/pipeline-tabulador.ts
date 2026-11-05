@@ -1,5 +1,5 @@
 import { normalizeCode, parseNumber } from '../parse'
-import { COLUMNAS_COTIZACIONES, type PipeRaw } from './pipeline'
+import { COLUMNAS_COTIZACIONES, ESTADOS_COTIZACION, type PipeRaw } from './pipeline'
 import { leerTabla, type Bloque, type Fila } from './tabla'
 
 /**
@@ -73,8 +73,12 @@ type Base = 'EXW' | 'FOB' | 'CIF' | 'DDP'
 /** FCA se trata como FOB y DAP como CIF más impuestos (criterio 1). */
 const BASE: Record<Incoterm, Base> = { EXW: 'EXW', FCA: 'FOB', FOB: 'FOB', CIF: 'CIF', DAP: 'CIF', DDP: 'DDP' }
 
-/** Criterio 6. */
-export const ESTADOS_TABULADOR = ['SOLICITADA', 'RECIBIDA', 'RECIBIDA (PARCIAL)', 'DESCARTADA'] as const
+/**
+ * ORD-POS-146 (criterio 4): la misma lista del formulario y de la escritura (pipeline.ts). Sustituye la de ORD-POS-145
+ * (`RECIBIDA (PARCIAL)` y `DESCARTADA`): una parcial es `RECIBIDA` con «parcial» en NOTAS y una descartada, `RECHAZADA`.
+ * Las filas que ya digan otra cosa no se reescriben: se muestran con «Estado no válido».
+ */
+export const ESTADOS_TABULADOR = ESTADOS_COTIZACION
 
 export const POR_CONFIRMAR = 'Por confirmar'
 
@@ -407,9 +411,10 @@ export interface TabuladorVista {
 
 const COLUMNAS_LECTURA = [...COLUMNAS_COTIZACIONES, ...COLUMNAS_MIGRACION_COTIZACIONES] as const
 
-/** Orden de la vista «Comparar»: costo aterrizado por set de menor a mayor; «Por confirmar» y DESCARTADA al final. */
+/** Orden de la vista «Comparar»: costo aterrizado por set de menor a mayor; «Por confirmar» y RECHAZADA (o la antigua
+ * DESCARTADA) al final. */
 function ordenar(a: FilaComparada, b: FilaComparada): number {
-  const descartada = (f: FilaComparada) => (normalizeCode(f.estado) === 'DESCARTADA' ? 1 : 0)
+  const descartada = (f: FilaComparada) => (['RECHAZADA', 'DESCARTADA'].includes(normalizeCode(f.estado) ?? '') ? 1 : 0)
   if (descartada(a) !== descartada(b)) return descartada(a) - descartada(b)
   const [x, y] = [a.costo.porSetMxn, b.costo.porSetMxn]
   if (x !== null && y !== null && x !== y) return x - y
@@ -464,4 +469,40 @@ export function veredicto(diferenciaMxn: number | null): string {
 export function formatoMxn(v: number | null): string {
   if (v === null) return POR_CONFIRMAR
   return v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/**
+ * ORD-POS-146 (criterio 2): qué tomará el tabulador si el campo de la cotización queda vacío, por columna. Lee las claves
+ * de §14.2 tal como están en PIPE_PARAMETROS (texto, sin convertir); los componentes sin parámetro quedan «Por confirmar».
+ */
+export function pistasCotizacion(p: Parametros): Record<string, string> {
+  const de = (clave: string) => {
+    const v = p.texto(clave)
+    return v === null || v.trim() === '' ? null : v.trim()
+  }
+  const usa = (clave: string, sufijo = '') => {
+    const v = de(clave)
+    return v === null
+      ? `Si lo dejas vacío: no hay ${clave} en PIPE_PARAMETROS; quedará «${POR_CONFIRMAR}».`
+      : `Si lo dejas vacío: se usará ${clave} = ${v}${sufijo} de PIPE_PARAMETROS (SUPUESTO).`
+  }
+  const sinParametro = `Si lo dejas vacío: no tiene parámetro en PIPE_PARAMETROS; el costo aterrizado quedará «${POR_CONFIRMAR}».`
+  const igi = [...PAISES_IGI, 'OTRO'].map((x) => `${x} ${de(`IGI_PCT_${x}`) ?? 'sin valor'}`).join(', ')
+  const fechaTc = de('TIPO_CAMBIO_USD_MXN_FECHA')
+  return {
+    TIPO_CAMBIO: usa('TIPO_CAMBIO_USD_MXN', fechaTc ? ` (${fechaTc})` : '') + ' Solo en USD; en MXN vale 1.',
+    TIPO_CAMBIO_FECHA: de('TIPO_CAMBIO_USD_MXN_FECHA') ? usa('TIPO_CAMBIO_USD_MXN_FECHA') : 'Si lo dejas vacío: la fecha de TIPO_CAMBIO_USD_MXN_FECHA de PIPE_PARAMETROS, si la hay.',
+    IGI_PCT: `Si lo dejas vacío: se usará IGI_PCT_<PAIS_ORIGEN> de PIPE_PARAMETROS (SUPUESTO): ${igi}. Sin país ni valor, «${POR_CONFIRMAR}».`,
+    DTA: usa('DTA_PCT'),
+    AGENTE_ADUANAL: usa('AGENTE_ADUANAL_REF', ' MXN'),
+    FLETE_CEDIS: usa('FLETE_CEDIS_REF', ' MXN') + ' En DDP, 0 = ya incluido.',
+    CERTIFICADO_ORIGEN: 'Si lo dejas vacío: se supone NO (SUPUESTO); SI pone el IGI en 0 %.',
+    PAIS_ORIGEN: 'Decide qué IGI_PCT_<país> de PIPE_PARAMETROS se usa (CN, US, VN, CO; cualquier otro, OTRO).',
+    PRECIO_UNIT: sinParametro,
+    CANTIDAD_COTIZADA: sinParametro,
+    UNIDADES_POR_SET: sinParametro,
+    FLETE_LOCAL_EXPORT: `${sinParametro} Solo cuenta en EXW.`,
+    FLETE_INTERNACIONAL: `${sinParametro} Cuenta en EXW, FCA y FOB.`,
+    SEGURO: `${sinParametro} Cuenta en EXW, FCA y FOB.`,
+  }
 }
