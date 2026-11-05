@@ -2,8 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useState, type FormEvent } from 'react'
-import { Entrada } from '@/components/eco/formularios-pipeline'
-import { cuerpo, enviar, type Resultado } from '@/lib/radaros/pipeline-formularios'
+import { CasillaEntregaCedis, Entrada } from '@/components/eco/formularios-pipeline'
+import { CASILLA_ENTREGA_CEDIS, cuerpo, enviar, etiquetaCampo, reglaEntregaCedis, type Resultado } from '@/lib/radaros/pipeline-formularios'
 import {
   confirmable, firmaDe, parsearTablaGemini, revisarBorrador, type Borrador, type ContextoPegado, type ResultadoPegado,
 } from '@/lib/radaros/pipeline-pegado'
@@ -30,6 +30,7 @@ function FilaBorrador({ b, contexto, pistas, guardadas, alGuardar }: {
   const router = useRouter()
   const [estado, setEstado] = useState<EstadoFila>({ status: 'borrador' })
   const [revision, setRevision] = useState({ errores: b.errores, duplicada: b.duplicada })
+  const [precioPor, setPrecioPor] = useState(b.valores.precioPor ?? '')
   const titulo = `Fila de la línea ${b.linea}`
 
   if (!b.reconocida) {
@@ -51,7 +52,9 @@ function FilaBorrador({ b, contexto, pistas, guardadas, alGuardar }: {
     setRevision(r)
     if (!confirmable({ reconocida: true, ...r })) return
     setEstado({ status: 'sending' })
-    const res = await enviar('/api/eco/pipeline/cotizaciones', 'POST', cuerpo(contexto.campos, valores, () => crypto.randomUUID()))
+    // ORD-POS-147 (criterio 2): con la casilla de DDP marcada se envía FLETE_CEDIS = 0 (ya revisado arriba).
+    const aEnviar = reglaEntregaCedis(valores, contexto.fleteCedisRef ?? null).valores
+    const res = await enviar('/api/eco/pipeline/cotizaciones', 'POST', cuerpo(contexto.campos, aEnviar, () => crypto.randomUUID()))
     setEstado({ status: 'hecho', r: res })
     if (res.tipo === 'ok') {
       alGuardar(firmaDe(valores), res.id)
@@ -66,7 +69,11 @@ function FilaBorrador({ b, contexto, pistas, guardadas, alGuardar }: {
   const bloqueada = revision.duplicada !== null
   return (
     <li className="card">
-      <form onSubmit={confirmar} aria-label={titulo}>
+      <form onSubmit={confirmar} aria-label={titulo} onChange={(e) => {
+        const t: EventTarget = e.target
+        if (!(t instanceof HTMLSelectElement)) return
+        if (t.name === 'precioPor') setPrecioPor(t.value)
+      }}>
         <p>
           <strong>{titulo}</strong>
           {b.idGemini ? <> · <span className="mono">{b.idGemini}</span> de Gemini (el ID real lo pone la hoja)</> : null}
@@ -75,8 +82,9 @@ function FilaBorrador({ b, contexto, pistas, guardadas, alGuardar }: {
         {revision.duplicada ? <div className="alert alert-warn" role="alert"><p><strong>Duplicada: no se guarda.</strong> {revision.duplicada}</p></div> : null}
         <fieldset disabled={guardada !== null || sending} className="stack">
           {contexto.campos.map((c) => (
-            <Entrada key={c.clave} c={c} valor={b.valores[c.clave] ?? ''} error={revision.errores[c.clave]} pista={pistas?.[c.columna]} />
+            <Entrada key={c.clave} c={c} valor={b.valores[c.clave] ?? ''} error={revision.errores[c.clave]} pista={pistas?.[c.columna]} etiqueta={etiquetaCampo(c, precioPor)} />
           ))}
+          <CasillaEntregaCedis marcada={b.valores[CASILLA_ENTREGA_CEDIS] === 'SI'} error={revision.errores[CASILLA_ENTREGA_CEDIS]} />
         </fieldset>
         {guardada ? (
           <div className="alert alert-ok" role="status"><p><strong>{guardada.repetida ? 'Ya estaba guardada.' : 'Guardada.'}</strong> <span className="mono">{guardada.id}</span></p></div>

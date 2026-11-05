@@ -1,4 +1,4 @@
-import { nombreClave, pareceContacto, validarCampo, type CampoForm } from './pipeline-formularios'
+import { CASILLA_ENTREGA_CEDIS, nombreClave, pareceContacto, reglaEntregaCedis, validarCampo, type CampoForm } from './pipeline-formularios'
 
 /**
  * «Pegar tabla de Gemini» (ORD-POS-146, criterio 3; docs/diseno-eco-pipeline.md §15.3). Convierte la tabla B del Gem 3
@@ -25,7 +25,23 @@ const DESTINO: Record<string, string> = {
   CERTIFICADO_ORIGEN: 'certificadoOrigen', UNIDADES_POR_SET: 'unidadesPorSet', FLETE_INTERNACIONAL: 'fleteInternacional',
   IGI_PCT: 'igiPct', COSTO_ATERRIZADO_MXN: 'costoAterrizadoMxn', MUESTRA_COSTO: 'muestraCosto', MUESTRA_MONEDA: 'muestraMoneda',
   NOTAS: 'notas',
+  // ORD-POS-147 (criterios 1 y 2): columnas opcionales que la tabla B puede traer; sin ellas, el borrador las pide.
+  PRECIO_POR: 'precioPor', 'PRECIO POR': 'precioPor', 'EL PRECIO ES POR': 'precioPor',
+  CANTIDAD_COTIZADA: 'cantidadCotizada', FLETE_CEDIS: 'fleteCedis',
+  INCLUYE_ENTREGA_CEDIS: CASILLA_ENTREGA_CEDIS, 'INCLUYE ENTREGA EN CEDIS': CASILLA_ENTREGA_CEDIS,
+  'INCLUYE ENTREGA EN CEDIS AMAZON': CASILLA_ENTREGA_CEDIS,
 }
+
+/** ORD-POS-147: «pieza», «pcs», «set», «juego»… → PIEZA o SET; otro texto queda tal cual y la revisión lo marca. */
+function precioPor(v: string): string {
+  const s = sinAcentos(v).toUpperCase().replace(/^POR\s+/, '').trim()
+  if (/^(PIEZAS?|PZAS?|PCS?|PIECES?|UNIDAD(ES)?|UNITS?)$/.test(s)) return 'PIEZA'
+  if (/^(SETS?|JUEGOS?|KITS?)$/.test(s)) return 'SET'
+  return s
+}
+
+/** ORD-POS-147: la casilla en el pegado; «SI», «sí», «yes», «x» o «true» la marcan. */
+const marcaSi = (v: string) => (/^(SI|YES|X|TRUE)$/.test(sinAcentos(v).toUpperCase()) ? 'SI' : '')
 
 export interface ContextoPegado {
   /** `CAMPOS['eco.cotizacion.crear']`: los mismos del formulario de alta. */
@@ -33,6 +49,8 @@ export interface ContextoPegado {
   productos: ReadonlyArray<{ id: string; ideaId: string | null; etapa: string | null }>
   proveedores: ReadonlyArray<{ id: string; nombre: string }>
   cotizaciones: ReadonlyArray<{ id: string; productoId: string | null; proveedorId: string | null; incoterm: string | null; precioUnit: string | null; moneda: string | null }>
+  /** ORD-POS-147 (criterio 2): FLETE_CEDIS_REF de PIPE_PARAMETROS; null si no hay. */
+  fleteCedisRef?: number | null
 }
 
 export interface ColumnaPegada {
@@ -126,6 +144,8 @@ export function revisarBorrador(
     if (faltan.length && !errores.estado) errores.estado = `RECIBIDA exige ${faltan.join(', ')}.`
   }
   if (!errores.notas && pareceContacto(valores.notas ?? '')) errores.notas = 'Sin correos ni teléfonos de personas.'
+  // ORD-POS-147 (criterio 2): la misma regla de DDP que el formulario de alta.
+  for (const [k, m] of Object.entries(reglaEntregaCedis(valores, ctx.fleteCedisRef ?? null).errores)) if (!errores[k]) errores[k] = m
 
   let duplicada: string | null = null
   const id = opciones.idGemini ?? null
@@ -236,6 +256,14 @@ export function parsearTablaGemini(texto: string, ctx: ContextoPegado): Resultad
             : 'Vacío; escribe el PRV-NNNN.'
         }
         if (pareceContacto(v)) errores.proveedorId = 'Sin correos ni teléfonos de personas.'
+        return
+      }
+      if (destino === 'precioPor') {
+        valores.precioPor = v ? precioPor(v) : ''
+        return
+      }
+      if (destino === CASILLA_ENTREGA_CEDIS) {
+        valores[CASILLA_ENTREGA_CEDIS] = marcaSi(v)
         return
       }
       if (destino === 'estado') {

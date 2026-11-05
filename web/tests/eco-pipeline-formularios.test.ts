@@ -93,7 +93,7 @@ describe('criterios 1, 4 y 5: alta y edición de cada entidad por las rutas exis
   const casos = [
     { ruta: 'productos', tab: 'PIPE_PRODUCTOS', alta: { nombre: 'Vaso térmico', asin: 'B000000009', keepaVentasMes: '120' }, cambio: { nombre: 'Vaso térmico 500 ml' } },
     { ruta: 'proveedores', tab: 'PIPE_PROVEEDORES', alta: { nombre: 'Taller', canal: '1688', pais: 'CN', anosPlataforma: '6' }, cambio: { estado: 'INACTIVO', contacto: '+52 999 000 0000' } },
-    { ruta: 'cotizaciones', tab: 'PIPE_COTIZACIONES', alta: { productoId: 'PRD-0001', proveedorId: 'PRV-0001', precioUnit: '0.125', moneda: 'USD' }, cambio: { moq: '300', notas: 'Pedir muestra' } },
+    { ruta: 'cotizaciones', tab: 'PIPE_COTIZACIONES', alta: { productoId: 'PRD-0001', proveedorId: 'PRV-0001', precioPor: 'SET', precioUnit: '0.125', moneda: 'USD' }, cambio: { moq: '300', notas: 'Pedir muestra' } },
     { ruta: 'embarques', tab: 'PIPE_EMBARQUES', alta: { productoId: 'PRD-0001', cotizacionId: 'COT-0001', unidades: '200' }, cambio: { estado: 'PAGADO', fechaPago: '2026-10-20' } },
   ] as const
 
@@ -206,7 +206,8 @@ describe('criterio 2: los formularios se pintan solo si ecoPipelineCanWrite(emai
     }
     expect(nombres('Nuevo producto')).toEqual(CAMPOS['eco.producto.crear'].map((c) => c.clave))
     expect(nombres('Editar producto')).toEqual(CAMPOS['eco.producto.editar'].map((c) => c.clave))
-    expect(nombres('Nueva cotización')).toEqual(CAMPOS['eco.cotizacion.crear'].map((c) => c.clave))
+    // ORD-POS-147 (criterio 2): más la casilla «Incluye entrega en CEDIS Amazon», que no es columna y nunca se envía.
+    expect(nombres('Nueva cotización')).toEqual([...CAMPOS['eco.cotizacion.crear'].map((c) => c.clave), 'incluyeEntregaCedis'])
     expect(nombres('Nuevo embarque')).toEqual(CAMPOS['eco.embarque.crear'].map((c) => c.clave))
     expect(h).toMatch(/aria-label="Nueva cotización".*?name="productoId" value="PRD-0001"/s)
     expect(await pagina(DUENO, ACTIVA, { proveedor: 'PRV-0001' })).toContain('aria-label="Editar proveedor"')

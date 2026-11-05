@@ -18,7 +18,8 @@ import type { ContextoPegado } from '@/lib/radaros/pipeline-pegado'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
 import { FiltroAuto } from '@/components/filtro-auto'
 import {
-  ecoTabuladorHabilitado, ESTADOS_TABULADOR, formatoMxn, pistasCotizacion, POR_CONFIRMAR, TOPE_CAPITAL_MXN, veredicto,
+  ecoTabuladorHabilitado, ESTADOS_TABULADOR, formatoMxn, pistasCotizacion, POR_CONFIRMAR, TOPE_CAPITAL_MXN, UNIDAD_PLURAL, veredicto,
+  type PrecioPor,
   type Componente, type FilaComparada, type TabuladorVista,
 } from '@/lib/radaros/pipeline-tabulador'
 
@@ -197,10 +198,11 @@ function proveedoresExistentes(v: PipelineVista): Array<{ id: string; nombre: st
 }
 
 /** ORD-POS-146 (criterio 3): lo que el pegado necesita de la hoja para resolver y revisar cada fila. */
-function contextoPegado(v: PipelineVista, tarjetas: Tarjeta[]): ContextoPegado {
+function contextoPegado(v: PipelineVista, tarjetas: Tarjeta[], fleteCedisRef: number | null): ContextoPegado {
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas : []
   return {
     campos: CAMPOS['eco.cotizacion.crear'],
+    fleteCedisRef,
     productos: tarjetas.map((t) => ({ id: t.id, ideaId: t.fila.IDEA_ID ?? null, etapa: t.etapaTexto })),
     proveedores: proveedoresExistentes(v),
     cotizaciones: cots.flatMap((c) => (c.COTIZACION_ID ? [{
@@ -214,7 +216,7 @@ function contextoPegado(v: PipelineVista, tarjetas: Tarjeta[]): ContextoPegado {
  * «Alta rápida» (ORD-POS-146): proveedor, cotización con las columnas del tabulador y el pegado de la tabla B de Gemini.
  * Reúsa `FormularioEco` y las rutas de alta; solo la ve el escritor del pipeline (§4.2) y el servidor repite todo.
  */
-function AltaRapida({ v, tarjetas, pistas }: { v: PipelineVista; tarjetas: Tarjeta[]; pistas: Record<string, string> }) {
+function AltaRapida({ v, tarjetas, pistas, fleteCedisRef }: { v: PipelineVista; tarjetas: Tarjeta[]; pistas: Record<string, string>; fleteCedisRef: number | null }) {
   return (
     <Section title="Alta rápida de proveedores y cotizaciones" id="alta-rapida">
       <p className="small muted">
@@ -223,13 +225,13 @@ function AltaRapida({ v, tarjetas, pistas }: { v: PipelineVista; tarjetas: Tarje
       </p>
       <FormularioEco titulo="Nuevo proveedor" url="/api/eco/pipeline/proveedores" campos={CAMPOS['eco.proveedor.crear']}
         duplicados={{ clave: 'nombre', existentes: proveedoresExistentes(v) }} />
-      <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} pistas={pistas} />
-      <PegarTablaGemini contexto={contextoPegado(v, tarjetas)} pistas={pistas} />
+      <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} pistas={pistas} entregaCedis={{ fleteCedisRef }} />
+      <PegarTablaGemini contexto={contextoPegado(v, tarjetas, fleteCedisRef)} pistas={pistas} />
     </Section>
   )
 }
 
-function FichaProducto({ v, t, editable, nombres, pistas }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string>; pistas: Record<string, string> }) {
+function FichaProducto({ v, t, editable, nombres, pistas, fleteCedisRef }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string>; pistas: Record<string, string>; fleteCedisRef: number | null }) {
   const f = t.fila
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas.filter((c) => c.PRODUCTO_ID === t.id) : []
   const embs = v.embarques.estado === 'ok' ? v.embarques.datos.filas.filter((e) => e.PRODUCTO_ID === t.id) : []
@@ -270,7 +272,7 @@ function FichaProducto({ v, t, editable, nombres, pistas }: { v: PipelineVista; 
       {editable ? (
         <>
           {cots.map((c) => c.COTIZACION_ID ? <Editar key={c.COTIZACION_ID} titulo={`Editar cotización ${c.COTIZACION_ID}`} ruta="cotizaciones" id={c.COTIZACION_ID} op="eco.cotizacion.editar" fila={c} /> : null)}
-          <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} iniciales={{ PRODUCTO_ID: t.id }} pistas={pistas} />
+          <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} iniciales={{ PRODUCTO_ID: t.id }} pistas={pistas} entregaCedis={{ fleteCedisRef }} />
         </>
       ) : null}
       <h3>Seguimiento</h3>
@@ -388,6 +390,7 @@ function Desglose({ f }: { f: FilaComparada }) {
       <dl className="meta">
         <Dato label="Valor en aduana (MXN)" value={c.base === 'DDP' ? 'No aplica (DDP)' : formatoMxn(c.valorAduanaMxn)} />
         <Dato label="Total del embarque (MXN)" value={formatoMxn(c.totalMxn)} />
+        <Dato label="El precio es por" value={c.unidad ? c.unidad.toLowerCase() : POR_CONFIRMAR} />
         <Dato label="Sets" value={c.sets === null ? POR_CONFIRMAR : String(Number(c.sets.toFixed(4)))} />
         <Dato label="Costo aterrizado por set (MXN)" value={formatoMxn(c.porSetMxn)} />
         <Dato label="Tipo de cambio" value={c.tipoCambio ? `${c.tipoCambio.valor}${c.tipoCambio.fecha ? ` (${c.tipoCambio.fecha})` : ''}${c.tipoCambio.origen === 'SUPUESTO' ? ' · SUPUESTO' : ''}` : POR_CONFIRMAR} />
@@ -398,6 +401,11 @@ function Desglose({ f }: { f: FilaComparada }) {
       <p className="small muted">El IVA de importación no entra en el costo aterrizado: va aparte, como flujo de efectivo.</p>
     </details>
   )
+}
+
+/** ORD-POS-147 (criterio 4): MOQ y cantidad con su unidad («500 sets», «600 piezas»). */
+function enUnidad(n: number, unidad: PrecioPor | null): string {
+  return unidad ? `${n.toLocaleString('es-MX')} ${UNIDAD_PLURAL[unidad]}` : String(n)
 }
 
 /** Vista «Comparar» por producto (criterios 4 y 5), solo con ECO_TABULADOR=true. */
@@ -441,7 +449,7 @@ function Comparar({ tab, tarjetas, productoId }: { tab: TabuladorVista; tarjetas
                 <table aria-label="Cotizaciones comparadas">
                   <thead>
                     <tr>
-                      {['Cotización', 'Estado', 'Proveedor', 'País', 'Incoterm', 'MOQ', 'Plazo (días)', 'Costo aterrizado por set (MXN)', 'Contra el máximo', `Capital del primer lote (tope ${formatoMxn(TOPE_CAPITAL_MXN)} MXN)`].map((h) => <th key={h} scope="col">{h}</th>)}
+                      {['Cotización', 'Estado', 'Proveedor', 'País', 'Incoterm', 'Precio por', 'MOQ', 'Cantidad cotizada', 'Plazo (días)', 'Costo aterrizado por set (MXN)', 'Contra el máximo', `Capital del primer lote (tope ${formatoMxn(TOPE_CAPITAL_MXN)} MXN)`, 'Mínimo del proveedor (MXN)', 'Sets que caben en el tope'].map((h) => <th key={h} scope="col">{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -452,11 +460,15 @@ function Comparar({ tab, tarjetas, productoId }: { tab: TabuladorVista; tarjetas
                         <td><Text value={f.proveedor ?? f.proveedorId} empty="—" /></td>
                         <td><Text value={f.pais} empty="—" /></td>
                         <td><Text value={f.incoterm} empty="—" /></td>
-                        <td>{f.moq === null ? POR_CONFIRMAR : f.moq}</td>
+                        <td>{f.costo.unidad ? f.costo.unidad.toLowerCase() : POR_CONFIRMAR}</td>
+                        <td>{f.moq === null ? POR_CONFIRMAR : enUnidad(f.moq, f.costo.unidad)}</td>
+                        <td>{f.costo.cantidad === null ? POR_CONFIRMAR : enUnidad(f.costo.cantidad, f.costo.unidad)}</td>
                         <td><Text value={f.plazoDias} empty="—" /></td>
                         <td className="mono">{formatoMxn(f.costo.porSetMxn)}{f.costo.supuestos.length ? <> <Badge tone="warn" title={f.costo.supuestos.join(', ')}>SUPUESTO</Badge></> : null}</td>
                         <td>{f.diferenciaMxn === null ? POR_CONFIRMAR : <Badge tone={f.diferenciaMxn <= 0 ? 'ok' : 'danger'}>{veredicto(f.diferenciaMxn)}</Badge>}</td>
                         <td>{f.capitalPrimerLoteMxn === null ? POR_CONFIRMAR : <>{formatoMxn(f.capitalPrimerLoteMxn)} {f.capitalPrimerLoteMxn <= TOPE_CAPITAL_MXN ? <Badge tone="ok">Dentro del tope</Badge> : <Badge tone="danger">Excede por {formatoMxn(f.capitalPrimerLoteMxn - TOPE_CAPITAL_MXN)} MXN</Badge>}</>}</td>
+                        <td className="mono">{formatoMxn(f.minimoProveedorMxn)}</td>
+                        <td>{f.setsEnTope === null ? POR_CONFIRMAR : f.setsEnTope.toLocaleString('es-MX')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -508,6 +520,8 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
   const tarjetas = v.productos.estado === 'ok' ? v.productos.datos.tarjetas : []
   // ORD-POS-146 (criterio 2): las pistas leen PIPE_PARAMETROS aunque ECO_TABULADOR esté apagada (solo texto, sin cálculo).
   const pistas = editable ? pistasCotizacion(result.vista.tabulador.parametros) : {}
+  // ORD-POS-147 (criterio 2): sin la casilla de DDP y sin este parámetro, el alta pide el flete al CEDIS.
+  const fleteCedisRef = editable ? result.vista.tabulador.parametros.numero('FLETE_CEDIS_REF') : null
   const producto = params.producto ? tarjetas.find((t) => t.id === params.producto) : undefined
   const proveedor = params.proveedor && v.proveedores.estado === 'ok' ? v.proveedores.datos.filas.find((p) => p.PROVEEDOR_ID === params.proveedor) : undefined
   return (
@@ -533,14 +547,14 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         {editable ? <FormularioEco titulo="Nuevo producto" url="/api/eco/pipeline/productos" campos={CAMPOS['eco.producto.crear']} /> : null}
         <Tablero v={v} filtro={params} editable={editable} />
       </Section>
-      {editable ? <AltaRapida v={v} tarjetas={tarjetas} pistas={pistas} /> : null}
+      {editable ? <AltaRapida v={v} tarjetas={tarjetas} pistas={pistas} fleteCedisRef={fleteCedisRef} /> : null}
       {tabulador ? (
         <Section title="Comparar cotizaciones" id="comparar">
           <EstadoPipe bloque={tabulador.bloque}>{() => <Comparar tab={tabulador} tarjetas={tarjetas} productoId={params.comparar} />}</EstadoPipe>
         </Section>
       ) : null}
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
-      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} pistas={pistas} /> : null}
+      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} pistas={pistas} fleteCedisRef={fleteCedisRef} /> : null}
       <Section title="Proveedores" id="proveedores">
         {editable ? <p className="small"><a href="#alta-rapida">Nuevo proveedor en «Alta rápida»</a></p> : null}
         <Proveedores v={v} filtro={params} verContacto={verContacto} />

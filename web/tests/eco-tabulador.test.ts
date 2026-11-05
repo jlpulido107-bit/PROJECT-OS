@@ -30,7 +30,7 @@ const BASE_USD = {
   COTIZACION_ID: 'COT-0001', PRODUCTO_ID: 'PRD-0001', PROVEEDOR_ID: 'PRV-0001', ESTADO: 'RECIBIDA', MONEDA: 'USD',
   PRECIO_UNIT: '1', CANTIDAD_COTIZADA: '600', UNIDADES_POR_SET: '6', TIPO_CAMBIO: '20', TIPO_CAMBIO_FECHA: '2026-11-03',
   FLETE_LOCAL_EXPORT: '50', FLETE_INTERNACIONAL: '100', SEGURO: '10', PAIS_ORIGEN: 'CN', CERTIFICADO_ORIGEN: 'NO',
-  AGENTE_ADUANAL: '2000', FLETE_CEDIS: '500',
+  AGENTE_ADUANAL: '2000', FLETE_CEDIS: '500', PRECIO_POR: 'PIEZA',
 }
 const mxn = (c: ReturnType<typeof costoAterrizado>, etiqueta: string) => c.componentes.find((x) => x.etiqueta === etiqueta)?.mxn
 
@@ -171,12 +171,16 @@ describe('COSTO_MAX_MXN (criterio 4)', () => {
 describe('migración de PIPE_COTIZACIONES (criterios 1 y 7)', () => {
   const ACTUAL = [...COLUMNAS_COTIZACIONES]
 
-  it('agrega las 14 columnas al final, después de VERSION, sin tocar las existentes', () => {
+  it('agrega las 15 columnas al final (PRECIO_POR la última, ORD-POS-147), después de VERSION, sin tocar las existentes', () => {
     const m = migracionCotizaciones(ACTUAL)
     expect(m.faltan).toEqual([...COLUMNAS_MIGRACION_COTIZACIONES])
     expect(m.encabezado.slice(0, ACTUAL.length)).toEqual(ACTUAL)
     expect(m.encabezado[ACTUAL.length - 1]).toBe('VERSION')
-    expect(m.encabezado).toHaveLength(ACTUAL.length + 14)
+    expect(m.encabezado).toHaveLength(ACTUAL.length + 15)
+    expect(m.encabezado.at(-1)).toBe('PRECIO_POR')
+    // Con la migración de ORD-POS-145 ya aplicada, solo falta PRECIO_POR, al final.
+    const de145 = migracionCotizaciones([...ACTUAL, ...COLUMNAS_MIGRACION_COTIZACIONES.slice(0, 14)])
+    expect(de145.faltan).toEqual(['PRECIO_POR'])
     expect(m.sinVersion).toBe(false)
   })
 
@@ -191,14 +195,14 @@ describe('migración de PIPE_COTIZACIONES (criterios 1 y 7)', () => {
   it('parcial: solo agrega las que faltan; avisa encabezados repetidos y falta de VERSION', () => {
     const m = migracionCotizaciones([...ACTUAL, 'PAIS_ORIGEN', 'SEGURO'])
     expect(m.faltan).not.toContain('PAIS_ORIGEN')
-    expect(m.faltan).toHaveLength(12)
+    expect(m.faltan).toHaveLength(13)
     expect(migracionCotizaciones(['COTIZACION_ID', 'ESTADO', 'ESTADO']).repetidos).toEqual(['ESTADO'])
     expect(migracionCotizaciones(['COTIZACION_ID']).sinVersion).toBe(true)
   })
 
   it('antes de la migración la lectura sigue: las columnas nuevas quedan vacías y el total «Por confirmar»', () => {
     const tab = construirTabulador({ PIPE_COTIZACIONES: [ACTUAL, ['COT-0001', 'PRD-0001', 'PRV-0001', 'SOLICITADA']] })
-    expect(tab.migracion?.faltan).toHaveLength(14)
+    expect(tab.migracion?.faltan).toHaveLength(15)
     const cmp = tab.comparar('PRD-0001', null)
     expect(cmp.filas[0]!.costo.totalMxn).toBeNull()
   })
@@ -232,8 +236,11 @@ describe('vista «Comparar» (criterios 5 y 6)', () => {
     expect(ddp!.costo.porSetMxn).toBe(30) // 5 × 6, flete incluido
     expect(veredicto(ddp!.diferenciaMxn)).toBe('Cumple')
     expect(veredicto(exw!.diferenciaMxn)).toMatch(/^No cumple por 1[\d,]+\.\d{2} MXN$/)
-    expect(ddp!.capitalPrimerLoteMxn).toBe(30_000) // 6 000 × 5 = tope exacto
-    expect(exw!.capitalPrimerLoteMxn).toBeCloseTo(600 * (20_861.6 / 600))
+    // ORD-POS-147 (criterio 3): capital = CANTIDAD_COTIZADA × costo; el MOQ solo da el «mínimo del proveedor».
+    expect(ddp!.capitalPrimerLoteMxn).toBe(3_000) // 600 piezas × 5
+    expect(ddp!.minimoProveedorMxn).toBe(30_000) // MOQ 6 000 × 5 = tope exacto
+    expect(ddp!.setsEnTope).toBe(1_000) // 30 000 ÷ 30 por set
+    expect(exw!.capitalPrimerLoteMxn).toBeCloseTo(20_861.6)
     expect(fob!.costo.porSetMxn).toBeNull()
     expect(fob!.diferenciaMxn).toBeNull()
     expect(ddp!.estadoValido).toBe(true)

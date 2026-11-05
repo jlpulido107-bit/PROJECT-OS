@@ -13,7 +13,7 @@ export type TipoCampo =
   | { k: 'lista'; valores: readonly string[] }
   | { k: 'id'; prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB' }
 
-export interface CampoForm { clave: string; columna: string; tipo: TipoCampo; obligatorio?: boolean }
+export interface CampoForm { clave: string; columna: string; tipo: TipoCampo; obligatorio?: boolean; etiqueta?: string }
 
 export type Resultado =
   | { tipo: 'ok'; id: string; repetida: boolean; aviso: string | null }
@@ -129,4 +129,43 @@ export function validarCampo(c: CampoForm, raw: string): string | null {
  */
 export function nombreClave(nombre: string | null | undefined): string {
   return (nombre ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+/**
+ * ORD-POS-147 (criterio 4): texto de la etiqueta de un campo. `MOQ` y `CANTIDAD_COTIZADA` muestran la unidad elegida en
+ * «El precio es por» (`PRECIO_POR`): sets o piezas; sin elegir, lo dicen.
+ */
+export function etiquetaCampo(c: CampoForm, precioPor: string | null | undefined): string {
+  const base = c.etiqueta ? `${c.etiqueta} (${c.columna})` : c.columna
+  if (c.columna !== 'MOQ' && c.columna !== 'CANTIDAD_COTIZADA') return base
+  const u = (precioPor ?? '').trim().toUpperCase()
+  return `${base} (${u === 'SET' ? 'sets' : u === 'PIEZA' ? 'piezas' : 'en la unidad de «El precio es por»'})`
+}
+
+/** ORD-POS-147 (criterio 2): nombre de la casilla «Incluye entrega en CEDIS Amazon»; no es columna y nunca se envía. */
+export const CASILLA_ENTREGA_CEDIS = 'incluyeEntregaCedis'
+
+/**
+ * Regla de la casilla «Incluye entrega en CEDIS Amazon» (ORD-POS-147, criterio 2; §14.7). La aplican el formulario de alta
+ * y el pegado antes de enviar. Con `INCOTERM` DDP y la casilla marcada, `FLETE_CEDIS` = 0 (incluido). Sin la casilla, en
+ * DDP se pide el monto, salvo que haya `FLETE_CEDIS_REF` en PIPE_PARAMETROS (el tabulador lo usará como SUPUESTO). La
+ * casilla fuera de DDP es un error: no se adivina qué quiso decir.
+ */
+export function reglaEntregaCedis(
+  valores: Record<string, string>, fleteCedisRef: number | null,
+): { valores: Record<string, string>; errores: Record<string, string> } {
+  const errores: Record<string, string> = {}
+  const marcada = (valores[CASILLA_ENTREGA_CEDIS] ?? '').trim() === 'SI'
+  const ddp = (valores.incoterm ?? '').trim().toUpperCase() === 'DDP'
+  const flete = (valores.fleteCedis ?? '').trim()
+  const out = { ...valores }
+  delete out[CASILLA_ENTREGA_CEDIS]
+  if (marcada && !ddp) errores[CASILLA_ENTREGA_CEDIS] = 'Solo con INCOTERM DDP.'
+  else if (marcada) {
+    if (flete !== '' && Number(flete) !== 0) errores.fleteCedis = 'Con «Incluye entrega en CEDIS Amazon» marcada, FLETE_CEDIS es 0: vacíalo o desmarca la casilla.'
+    else out.fleteCedis = '0'
+  } else if (ddp && flete === '' && fleteCedisRef === null) {
+    errores.fleteCedis = 'En DDP: escribe el flete al CEDIS (MXN) o marca «Incluye entrega en CEDIS Amazon». No hay FLETE_CEDIS_REF en PIPE_PARAMETROS.'
+  }
+  return { valores: out, errores }
 }
