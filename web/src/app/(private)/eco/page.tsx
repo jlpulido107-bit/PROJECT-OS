@@ -4,12 +4,12 @@ import { Badge, Empty, Section, StateBadge, Text } from '@/components/ui'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
 import {
-  COLUMNA_ID_IDEA, COLUMNAS_PUNTUACION, filtrarTendencias, GRUPOS_SCORING, type Bloque, type Corridas, type Fila,
+  COLUMNA_ID_IDEA, COLUMNAS_PUNTUACION, filtrarTendencias, GRUPO_MACRO_TRENDS, GRUPOS_SCORING, type Bloque, type Corridas, type Fila,
   type Ranking, type Tendencias, type UnitEconomics,
 } from '@/lib/radaros/eco'
 import {
-  ayudaColumna, COLUMNAS_CORRIDAS_ECO, estadoCorrida, etiquetaIdea, formatearInstante, formatearValor, SIN_DATO, tituloColumna,
-  type Columna,
+  ayudaColumna, COLUMNAS_CORRIDAS_ECO, estadoCorrida, etiquetaIdea, formatearInstante, formatearValor, K4_VIGENCIA_DIAS, SIN_DATO,
+  tituloColumna, type Columna, type EtiquetaK4,
 } from '@/lib/radaros/eco-columnas'
 import { FiltroAuto } from '@/components/filtro-auto'
 
@@ -156,6 +156,13 @@ function BloqueCorridas({ datos }: { datos: Corridas }) {
   )
 }
 
+/** Etiqueta K4 (ORD-POS-148); sin valor en K4_MACRO_STATUS, nada. */
+function EtiquetaMacro({ k4 }: { k4: EtiquetaK4 | null }) {
+  return k4 ? <Badge tone={k4.tono} title={k4.ayuda}>{k4.texto}</Badge> : null
+}
+
+const AYUDA_K4 = `Validación macro de Google Trends que calcula RADAROS (K4_MACRO_STATUS); «consulta vencida» = más de ${K4_VIGENCIA_DIAS} días. Un veto lo decide el propietario.`
+
 function BloqueRanking({ datos }: { datos: Ranking }) {
   return (
     <>
@@ -173,6 +180,7 @@ function BloqueRanking({ datos }: { datos: Ranking }) {
             <tr>
               <th scope="col">Idea</th><th scope="col">Puntuación</th><Encabezado col="AMZ_SEMANA" /><Encabezado col="AMZ_ESTADO" />
               <th scope="col">Última semana en AMZ_RESUMEN</th><th scope="col">Semanas con historial</th>
+              {datos.conColumnasTrends ? <th scope="col">Validación macro (K4) <Ayuda texto={AYUDA_K4} /></th> : null}
             </tr>
           </thead>
           <tbody>
@@ -184,6 +192,7 @@ function BloqueRanking({ datos }: { datos: Ranking }) {
                 <Celda fila={idea.campos} col="AMZ_ESTADO" />
                 <td>{idea.resumen ? <>{idea.resumen.ultimaSemana} <StateBadge code={idea.resumen.estado} /></> : <span className="muted">—</span>}</td>
                 <td>{idea.resumen ? idea.resumen.semanas : <span className="muted">0</span>}</td>
+                {datos.conColumnasTrends ? <td><EtiquetaMacro k4={idea.k4} /></td> : null}
               </tr>
             ))}
           </tbody>
@@ -198,6 +207,12 @@ function BloqueRanking({ datos }: { datos: Ranking }) {
           <TablaColumnas filas={datos.ideas.map((i) => i.campos)} columnas={[COLUMNA_ID_IDEA, ...columnas]} label={`Insumos de ${grupo}`} clave={COLUMNA_ID_IDEA} nombres={datos.nombres} />
         </details>
       ))}
+      {datos.conColumnasTrends ? (
+        <details>
+          <summary>Macro (Trends)</summary>
+          <TablaColumnas filas={datos.ideas.map((i) => i.campos)} columnas={[COLUMNA_ID_IDEA, ...GRUPO_MACRO_TRENDS]} label="Insumos de Macro (Trends)" clave={COLUMNA_ID_IDEA} nombres={datos.nombres} />
+        </details>
+      ) : null}
       {LEYENDA_SIN_DATO}
     </>
   )

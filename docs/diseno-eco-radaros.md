@@ -87,6 +87,22 @@ vacío, no numérico en una columna numérica o columna sin leer (el lector pide
 (`PRODUCT_ID` y «Producto / Idea», leídos por el PM el 2026-11-02) ya están en `COLUMNAS_ID_PRODUCTS` y
 `COLUMNAS_NOMBRE_PRODUCTS` de [`eco.ts`](../web/src/lib/radaros/eco.ts) (ORD-POS-135); si cambian, ajustarlos y su prueba.
 
+Validación macro de Trends — K4 (ORD-POS-148). ORD-ECO-024 (RADAROS#54) agregó al final de `SCORING`
+`KW_RAIZ_TRENDS`, `TREND_INTERANUAL`, `TREND_PENDIENTE_52S`, `TREND_CV_52S`, `K4_MACRO_STATUS` y `TREND_FECHA` (✅ AL:AQ,
+leídas por el PM con el conector el 2026-11-07; dentro del rango `A1:AZ` del lector). /eco las lee por encabezado
+(`COLUMNAS_TRENDS_SCORING` en [`eco.ts`](../web/src/lib/radaros/eco.ts)) y, solo lectura:
+
+| Dónde | Qué muestra |
+| --- | --- |
+| Ranking, columna «Validación macro (K4)» | Etiqueta según el inicio de `K4_MACRO_STATUS`: `APROBADO` → «K4 aprobado»; `ESTACIONAL: pico en nov, dic` → «K4 estacional: pico en nov, dic»; `VETO: …` → «K4 veto: propuesta KILL: decide el propietario» (el motivo, en la ayuda); `SIN_DATOS: motivo` → «K4 sin datos: motivo»; otro valor, tal cual. Sin valor, sin etiqueta. Si `TREND_FECHA` tiene más de 30 días (días civiles en `America/Merida`), la etiqueta termina en «· consulta vencida». El orden del ranking no cambia |
+| Detalle, grupo plegable «Macro (Trends)» | Keyword, interanual, pendiente de 52 semanas (% al mes), CV de 52 semanas y fecha de la consulta; vacío (p. ej. con `SIN_DATOS`) = «—», nunca 0 |
+
+Si `SCORING` no tiene ninguna de las 6 columnas, /eco se ve igual que antes: sin columna K4, sin grupo y sin aviso.
+`TREND_FECHA` se entiende como AAAA-MM-DD (con o sin hora), número de serie de Sheets o D/M/AAAA (es-MX); una fecha
+ilegible no marca la consulta como vencida. /eco no consulta SerpApi ni escribe en `SCORING`: las consultas y la clave
+`SERPAPI_KEY` viven solo en RADAROS (Apps Script). La lógica de la etiqueta es `etiquetaK4` en
+[`eco-columnas.ts`](../web/src/lib/radaros/eco-columnas.ts); sus pruebas, `web/tests/eco-k4.test.ts`.
+
 ### 3.3 Unit economics — `UNIT_ECONOMICS` (📄 V1.2 §2.2)
 
 | Columnas que lee | Qué muestra |

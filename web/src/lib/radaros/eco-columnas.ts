@@ -1,4 +1,4 @@
-import { formatTimestamp, parseTimestamp } from '../dates'
+import { civilDateInZone, daysBetween, formatTimestamp, parseCivilDate, parseTimestamp } from '../dates'
 import { parseNumber } from '../parse'
 
 /**
@@ -68,6 +68,17 @@ export const COLUMNAS_ECO: Readonly<Record<string, Columna>> = {
   AMZ_FBA_MXN: { titulo: 'Tarifa FBA por unidad (MXN)', formato: 'mxn', ayuda: 'Tarifa de logística de Amazon por unidad (estimación).' },
   AMZ_OTRAS_TARIFAS_MXN: { titulo: 'Otras tarifas (MXN)', formato: 'mxn', ayuda: 'Resto de las tarifas estimadas (cierre variable y otras).' },
   AMZ_TARIFAS_FECHA: { titulo: 'Fecha de la estimación de tarifas', formato: 'fecha_serie', ayuda: 'Cuándo se pidió la estimación a SP-API.' },
+  // Validación macro de Trends (K4, ORD-POS-148; RADAROS ORD-ECO-024). Con SIN_DATOS las métricas van vacías: «—».
+  KW_RAIZ_TRENDS: { titulo: 'Keyword en Google Trends', formato: 'texto', ayuda: 'Término raíz que RADAROS consultó en Google Trends.' },
+  TREND_INTERANUAL: {
+    titulo: 'Interanual (últimas 12 semanas ÷ mismo periodo del año anterior)', formato: 'decimal',
+    ayuda: 'Por encima de 1, más interés que hace un año.',
+  },
+  TREND_PENDIENTE_52S: { titulo: 'Pendiente de 52 semanas (% al mes)', formato: 'pct', ayuda: 'Cambio del interés por mes en el último año.' },
+  TREND_CV_52S: {
+    titulo: 'Variación de 52 semanas (CV)', formato: 'decimal', ayuda: 'Coeficiente de variación del interés; alto = demanda irregular o estacional.',
+  },
+  TREND_FECHA: { titulo: 'Fecha de la consulta a Trends', formato: 'fecha_serie', ayuda: 'Cuándo consultó RADAROS a Google Trends.' },
 }
 
 /**
@@ -189,6 +200,64 @@ function fechaDeSerie(raw: string): string | null {
   const dias = Math.floor(Number(t))
   if (dias < 1 || dias > SERIE_MAXIMO) return null
   return new Date((dias - SERIE_EPOCA_UNIX) * DIA_MS).toISOString().slice(0, 10)
+}
+
+/**
+ * Validación macro K4 de `K4_MACRO_STATUS` (ORD-POS-148). Solo presentación: el estado lo decide RADAROS; un VETO es una
+ * propuesta de KILL que decide el propietario, nunca una acción de /eco.
+ */
+export interface EtiquetaK4 {
+  tipo: 'APROBADO' | 'ESTACIONAL' | 'VETO' | 'SIN_DATOS' | 'OTRO'
+  texto: string
+  tono: EstadoCorrida['tono']
+  ayuda: string
+  /** `TREND_FECHA` con más de `K4_VIGENCIA_DIAS` días (zona America/Merida). */
+  vencida: boolean
+}
+
+export const K4_VIGENCIA_DIAS = 30
+const K4_PREFIJO = /^(APROBADO|ESTACIONAL|VETO|SIN_DATOS)(?![A-Z0-9_])\s*:?\s*(.*)$/i
+const FECHA_DMY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+
+/**
+ * Día civil de `TREND_FECHA`: AAAA-MM-DD (con o sin hora), número de serie de Sheets o D/M/AAAA.
+ * atajo: D/M/AAAA supone la configuración regional es-MX de la hoja (igual que `numeroCelda`); con otra, mejorarlo.
+ * Sin fecha entendible, null: la etiqueta no se marca vencida porque no se sabe.
+ */
+function fechaCivilCelda(raw: string | null): string | null {
+  const t = raw?.trim()
+  if (!t) return null
+  const dmy = FECHA_DMY.exec(t)
+  if (dmy) return parseCivilDate(`${dmy[3]}-${dmy[2]!.padStart(2, '0')}-${dmy[1]!.padStart(2, '0')}`).value
+  const f = fechaDeSerie(t)
+  return f ? parseCivilDate(f).value : null
+}
+
+/** Etiqueta K4 según el inicio de `K4_MACRO_STATUS`; sin valor, null (no se muestra etiqueta). */
+export function etiquetaK4(status: string | null, fecha: string | null, now: number): EtiquetaK4 | null {
+  const s = status?.trim()
+  if (!s) return null
+  const m = K4_PREFIJO.exec(s)
+  const tipo = (m ? m[1]!.toUpperCase() : 'OTRO') as EtiquetaK4['tipo']
+  const detalle = m?.[2]?.trim() ?? ''
+  const conDetalle = (base: string) => (detalle ? `${base}: ${detalle}` : base)
+  const base: Omit<EtiquetaK4, 'vencida'> = {
+    APROBADO: { tipo, texto: 'K4 aprobado', tono: 'ok' as const, ayuda: 'La demanda en Google Trends pasa la validación macro.' },
+    ESTACIONAL: { tipo, texto: conDetalle('K4 estacional'), tono: 'warn' as const, ayuda: 'Demanda estacional: concentra su interés en esos meses.' },
+    VETO: {
+      tipo, texto: 'K4 veto: propuesta KILL: decide el propietario', tono: 'danger' as const,
+      ayuda: `RADAROS propone descartar la idea; /eco no la descarta. ${s}`,
+    },
+    SIN_DATOS: { tipo, texto: conDetalle('K4 sin datos'), tono: 'muted' as const, ayuda: 'No hubo datos de Trends; las métricas quedan vacías.' },
+    OTRO: { tipo, texto: `K4: ${s}`, tono: 'neutral' as const, ayuda: `Valor de K4_MACRO_STATUS no reconocido: ${s}.` },
+  }[tipo]
+  const civil = fechaCivilCelda(fecha)
+  const vencida = civil !== null && daysBetween(civil, civilDateInZone(now)) > K4_VIGENCIA_DIAS
+  if (!vencida) return { ...base, vencida }
+  return {
+    ...base, vencida, texto: `${base.texto} · consulta vencida`,
+    ayuda: `${base.ayuda} Consulta de Trends del ${civil}: más de ${K4_VIGENCIA_DIAS} días.`,
+  }
 }
 
 const ENTERO = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 })

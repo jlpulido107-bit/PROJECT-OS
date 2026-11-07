@@ -1,5 +1,6 @@
 import { civilDateInZone, parseTimestamp } from '../dates'
 import { cellText, parseNumber } from '../parse'
+import { etiquetaK4, type EtiquetaK4 } from './eco-columnas'
 import { MAX_DATA_ROWS } from '../schema'
 import { construirPipeline, PIPE_TABS, type PipelineVista, type PipeTab } from './pipeline'
 import { construirTabulador, type TabuladorVista } from './pipeline-tabulador'
@@ -58,6 +59,17 @@ export const GRUPOS_SCORING = {
 export const COLUMNAS_ID_PRODUCTS = [COLUMNA_ID_IDEA, 'ID', 'PRODUCT_ID'] as const
 export const COLUMNAS_NOMBRE_PRODUCTS = ['PRODUCTO_IDEA', 'NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO', 'IDEA', 'DESCRIPCION'] as const
 const COLUMNAS_SCORING_AMZ = ['AMZ_SEMANA', ...Object.values(GRUPOS_SCORING).flat(), 'AMZ_ESTADO']
+
+/**
+ * Validación macro de Google Trends (K4, ORD-POS-148): columnas que ORD-ECO-024 (RADAROS#54) agregó al final de SCORING
+ * (✅ AL:AQ leídas por el PM con el conector el 2026-11-07). Se leen por encabezado; si no está ninguna, /eco no
+ * cambia. /eco no consulta SerpApi ni escribe en SCORING: solo muestra lo que RADAROS dejó.
+ */
+export const COLUMNAS_TRENDS_SCORING = [
+  'KW_RAIZ_TRENDS', 'TREND_INTERANUAL', 'TREND_PENDIENTE_52S', 'TREND_CV_52S', 'K4_MACRO_STATUS', 'TREND_FECHA',
+] as const
+/** Grupo «Macro (Trends)» del detalle de cada idea; `K4_MACRO_STATUS` va como etiqueta en el ranking. */
+export const GRUPO_MACRO_TRENDS = ['KW_RAIZ_TRENDS', 'TREND_INTERANUAL', 'TREND_PENDIENTE_52S', 'TREND_CV_52S', 'TREND_FECHA'] as const
 
 export const COLUMNAS_RESUMEN = ['SEMANA', 'MARKETPLACE', 'IDEA_ID', 'ASINS_USADOS', 'ESTADO'] as const
 const OBLIGATORIAS_RESUMEN = ['SEMANA', 'IDEA_ID', 'ESTADO'] as const
@@ -148,6 +160,8 @@ export interface IdeaRanking {
   nombre: string | null
   puntuacion: string | null
   campos: Fila
+  /** Etiqueta K4 de `K4_MACRO_STATUS` (ORD-POS-148); null sin valor. */
+  k4: EtiquetaK4 | null
   resumen: { ultimaSemana: string; estado: string | null; semanas: number } | null
 }
 
@@ -155,6 +169,8 @@ export interface Ranking {
   columnaPuntuacion: string | null
   /** false si SCORING aún no tiene ninguna columna AMZ_* (antes de activar V1.2). */
   conColumnasAmz: boolean
+  /** false si SCORING no tiene ninguna columna de Trends (ORD-POS-148): sin etiqueta K4 ni grupo «Macro (Trends)». */
+  conColumnasTrends: boolean
   ideas: IdeaRanking[]
   /** Nombre de PRODUCTS por ID de idea. */
   nombres: Map<string, string>
@@ -181,9 +197,9 @@ function resumenPorIdea(rows: unknown[][] | undefined) {
 }
 
 function ranking(
-  scoring: unknown[][] | undefined, resumenRows: unknown[][] | undefined, nombres: Map<string, string>,
+  scoring: unknown[][] | undefined, resumenRows: unknown[][] | undefined, nombres: Map<string, string>, now: number,
 ): Bloque<Ranking> {
-  const columnas = [COLUMNA_ID_IDEA, ...COLUMNAS_PUNTUACION, ...COLUMNAS_SCORING_AMZ]
+  const columnas = [COLUMNA_ID_IDEA, ...COLUMNAS_PUNTUACION, ...COLUMNAS_SCORING_AMZ, ...COLUMNAS_TRENDS_SCORING]
   const tabla = leerTabla('SCORING', scoring, columnas, [COLUMNA_ID_IDEA], NO_EXISTE('SCORING'), 'Sin ideas en SCORING.')
   const { bloque, porIdea } = resumenPorIdea(resumenRows)
   return mapear(tabla, ({ encabezados, filas }) => {
@@ -193,6 +209,7 @@ function ranking(
       const r = porIdea.get(id)
       return {
         id, nombre: nombres.get(id) ?? null, puntuacion: columnaPuntuacion ? (f[columnaPuntuacion] ?? null) : null, campos: f,
+        k4: etiquetaK4(f.K4_MACRO_STATUS ?? null, f.TREND_FECHA ?? null, now),
         resumen: r ? { ultimaSemana: r.ultimaSemana, estado: r.estado, semanas: r.semanas.size } : null,
       }
     })
@@ -204,7 +221,10 @@ function ranking(
       if ((x === null) !== (y === null)) return x === null ? 1 : -1
       return a.id.localeCompare(b.id, 'es')
     })
-    return { columnaPuntuacion, conColumnasAmz: COLUMNAS_SCORING_AMZ.some((c) => encabezados.has(c)), ideas, nombres, resumen: bloque }
+    return {
+      columnaPuntuacion, conColumnasAmz: COLUMNAS_SCORING_AMZ.some((c) => encabezados.has(c)),
+      conColumnasTrends: COLUMNAS_TRENDS_SCORING.some((c) => encabezados.has(c)), ideas, nombres, resumen: bloque,
+    }
   })
 }
 
@@ -263,7 +283,7 @@ export function construirEco(raw: EcoRaw, now: number): EcoVista {
   const nombres = nombresIdeas(raw.PRODUCTS)
   return {
     corridas: corridas(raw.AMZ_CORRIDAS, now),
-    ranking: ranking(raw.SCORING, raw.AMZ_RESUMEN, nombres),
+    ranking: ranking(raw.SCORING, raw.AMZ_RESUMEN, nombres, now),
     unitEconomics: unitEconomics(raw.UNIT_ECONOMICS, nombres),
     candidatos: { estado: 'pendiente', mensaje: 'AMZ_CANDIDATOS: pendiente de V1.3 (sus columnas las fija el diseño de V1.3).' },
     tendencias: tendencias(raw.ML_TRENDS_ANALISIS_AUTO),
