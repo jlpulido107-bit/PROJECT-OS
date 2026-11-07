@@ -281,10 +281,10 @@ describe('bandera ECO_TABULADOR (criterio 7)', () => {
   it('apagada: la vista «Comparar» y el desglose no se muestran, aunque llegue ?comparar=', async () => {
     vi.stubEnv('ECO_TABULADOR', '')
     const h = await html({ comparar: 'PRD-0001' })
-    expect(h).toContain('Tablero')
+    expect(h).toContain('Compras por producto')
     expect(h).not.toContain('Comparar cotizaciones')
     expect(h).not.toContain('Desglose de')
-    expect(h).toContain('No calcula costos')
+    expect(h).toContain('Tabulador apagado (ECO_TABULADOR): no calcula costos')
   })
 
   it('encendida: comparación del producto con costo máximo, fecha, veredicto y desglose', async () => {

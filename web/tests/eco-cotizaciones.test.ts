@@ -7,6 +7,7 @@ import type { EcoResult } from '@/lib/radaros/data'
 import { construirEco } from '@/lib/radaros/eco'
 import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_MIGRACION_PROVEEDORES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES } from '@/lib/radaros/pipeline'
 import { columnaDe, construirBandeja, textoSeguimiento } from '@/lib/radaros/pipeline-bandeja'
+import { destinoCotizaciones } from '@/lib/radaros/pipeline-compras'
 import { ecoPipelineWrite } from '@/lib/radaros/pipeline-escritura-handler'
 import {
   COLUMNAS_AUDITORIA, DIAS_RESPUESTA, EcoPipelineWriteService, REQUISITOS_ELEGIDA, REQUISITOS_RECIBIDA, type EcoContext, type EcoResultado,
@@ -361,48 +362,186 @@ describe('criterios 2 y 7: bandeja en 3 columnas, vencidas y seguimiento', () =>
 const estado = vi.hoisted(() => ({ result: null as unknown, email: 'lector@example.com' }))
 vi.mock('@/lib/page-data', () => ({ privateEco: async () => ({ user: { email: estado.email }, result: estado.result }) }))
 vi.mock('@/components/operations/write-access', () => ({ writeAccess: () => ({ allowed: false }) }))
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+  redirect: (url: string) => { throw new Error(`REDIRECT ${url}`) },
+}))
+vi.mock('@/lib/auth', async (original) => ({ ...(await original<typeof import('@/lib/auth')>()), requireUser: async () => ({ email: estado.email }) }))
 
-describe('criterio 1: /eco/cotizaciones, enlazada desde /eco/pipeline', () => {
+/* ------------------- ORD-POS-150 (POS-053): compras por producto en /eco/pipeline ------------------- */
+
+describe('ORD-POS-150: pipeline y cotizaciones en una vista', () => {
   afterEach(() => vi.unstubAllEnvs())
 
-  async function pagina(email: string, vars: Record<string, string>) {
+  async function pagina(email: string, vars: Record<string, string>, search: Record<string, string> = {}) {
     for (const [k, v] of Object.entries(vars)) vi.stubEnv(k, v)
     estado.email = email
     estado.result = { estado: 'ok', vista: construirEco(libro() as unknown as Parameters<typeof construirEco>[0], NOW.getTime()), fetchedAt: NOW.getTime() } satisfies EcoResult
-    const { default: Page } = await import('@/app/(private)/eco/cotizaciones/page')
-    return renderToStaticMarkup(await Page())
+    const { default: Page } = await import('@/app/(private)/eco/pipeline/page')
+    return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(search) }))
+  }
+  const LECTOR = 'lector@example.com'
+  const chip = (h: string, titulo: string) => {
+    const ini = h.lastIndexOf('<a', h.indexOf(`${titulo} <strong>`))
+    return h.slice(ini, h.indexOf('</a>', ini))
+  }
+  // La lista no anida otras <ul>: va de su etiqueta al primer </ul>.
+  const lista = (h: string) => {
+    const ini = h.indexOf('aria-label="Lista de productos"')
+    return ini < 0 ? '' : h.slice(ini, h.indexOf('</ul>', ini))
   }
 
-  it('el escritor ve las 3 columnas, «Pedir», «Recibir» con sus valores por defecto y «Más detalles» plegado', async () => {
-    const h = await pagina(DUENO, { ...ACTIVA, ECO_TABULADOR: 'true' })
-    for (const t of ['aria-label="Esperando respuesta"', 'aria-label="Por completar"', 'aria-label="Listas para comparar"', 'aria-label="Pedir cotización"']) expect(h).toContain(t)
+  it('criterio 1: 3 chips con los conteos de construirBandeja (vencidas aparte) y, al tocar uno, la lista se filtra', async () => {
+    const h = await pagina(LECTOR, { ...ACTIVA, ECO_TABULADOR: 'true' })
+    expect(chip(h, 'Esperando respuesta')).toMatch(/href="\/eco\/pipeline\?paso=esperando#productos"[^>]*>Esperando respuesta <strong>1<\/strong><span class="badge badge-danger">1 vencida<\/span>/)
+    expect(chip(h, 'Por completar')).toContain('Por completar <strong>1</strong>')
+    expect(chip(h, 'Listas para decidir')).toContain('Listas para decidir <strong>1</strong>')
+    // Activas por omisión: sin el descartado; «Todas» lo trae.
+    expect(lista(h)).toContain('PRD-0003')
+    expect(lista(h)).not.toContain('PRD-0004')
+    expect(h).toMatch(/<select name="etapa"><option value="ACTIVAS" selected="">Activas<\/option><option value="TODAS">Todas<\/option>/)
+    expect(lista(await pagina(LECTOR, ACTIVA, { etapa: 'TODAS' }))).toContain('PRD-0004')
+    // El chip activo lleva aria-current y vuelve a tocarse para quitarlo; un paso sin cotizaciones deja la lista vacía.
+    const listas = await pagina(LECTOR, ACTIVA, { paso: 'listas', etapa: 'TODAS' })
+    expect(chip(listas, 'Listas para decidir')).toMatch(/href="\/eco\/pipeline\?etapa=TODAS#productos" aria-current="true"/)
+    expect(lista(listas)).toContain('PRD-0003')
+    expect(lista(listas)).not.toContain('PRD-0004')
+    expect(listas).toContain('Quitar filtro')
+    // Un paso inventado se ignora (sin filtro).
+    expect(lista(await pagina(LECTOR, ACTIVA, { paso: 'otro' }))).toContain('PRD-0003')
+  })
+
+  it('criterio 2: renglón con etapa y días, costo máximo, mejor cotización con veredicto y conteo por paso; «Vista tablero» conserva el tablero', async () => {
+    const h = await pagina(LECTOR, { ...ACTIVA, ECO_TABULADOR: 'true' })
+    const r = lista(h)
+    expect(r).toContain('Portavasos sintético')
+    expect(r).toMatch(/Cotizando · \d+ días/)
+    expect(r).toContain('Costo máximo: <span class="mono">65.00 MXN</span>')
+    // La mejor es la primera con costo en el orden de «Comparar»: COT-0002 (la única con costo por set).
+    const tab = construirTabulador(libro() as unknown as Parameters<typeof construirTabulador>[0])
+    const cmp = tab.comparar('PRD-0003', 'EC-006')
+    const mejor = cmp.filas.find((f) => f.costo.porSetMxn !== null)!
+    expect(mejor.id).toBe('COT-0002')
+    expect(r).toContain(`Mejor: <span class="mono">${mejor.costo.porSetMxn!.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</span> (Sandes Sintético)`)
+    expect(r).toContain('No cumple por')
+    expect(r).toContain('1 esperando respuesta · 1 por completar · 1 listas para decidir')
+    expect(h).toContain('href="/eco/pipeline?vista=tablero#tablero">Vista tablero</a>')
+    const tablero = await pagina(LECTOR, ACTIVA, { vista: 'tablero' })
+    for (const e of ['Sugerido', 'Evaluando', 'Cotizando', 'Muestra', 'En venta', 'Descartado']) expect(tablero).toContain(`aria-label="${e}"`)
+    expect(tablero).not.toContain('aria-label="Lista de productos"')
+  })
+
+  it('criterio 3: ficha con 4 indicadores, cotizaciones en 3 columnas con sus acciones, «Pedir a otro proveedor» y Comparar en 6 columnas', async () => {
+    const h = await pagina(DUENO, { ...ACTIVA, ECO_TABULADOR: 'true' }, { producto: 'PRD-0003' })
+    for (const t of ['Costo máximo por set', 'Mejor cotización', 'Precio objetivo', 'Capital del lote (tope 30,000.00 MXN)']) expect(h).toContain(`<span class="stat-label">${t}</span>`)
+    expect(h).toContain('<span class="stat-value">3.51 USD</span>')
+    for (const t of ['Esperando respuesta de PRD-0003', 'Por completar de PRD-0003', 'Listas para decidir de PRD-0003']) expect(h).toContain(`aria-label="${t}"`)
     expect(h).toContain('class="card card-vencida"')
     expect(h).toContain('Copiar seguimiento')
+    expect(h).toContain('aria-label="Recibir COT-0001"')
+    expect(h).toContain('aria-label="Completar COT-0003"')
+    expect(h).toContain('aria-label="Elegir COT-0002"')
+    for (const t of ['Rechazar COT-0002', 'Contraoferta de COT-0002']) expect(h).toContain(`aria-label="${t}"`)
+    // «Recibir» conserva sus valores por defecto visibles y «Más detalles» plegado (ORD-POS-149).
     const ini = h.indexOf('aria-label="Recibir COT-0001"')
     const form = h.slice(ini, h.indexOf('</form>', ini))
     expect(form).toMatch(/<select name="moneda">(?:<option[^>]*>[^<]*<\/option>)*?<option value="USD" selected="">/)
-    expect(form).toMatch(/<select name="certificadoOrigen">(?:<option[^>]*>[^<]*<\/option>)*?<option value="NO" selected="">/)
-    expect(form).toMatch(/name="paisOrigen"[^>]*value="CN"/)
-    expect(form).toContain('name="incluyeEntregaCedis" checked="" value="SI"')
-    expect(form).toMatch(/<span>PRECIO_UNIT \*<\/span><input[^>]*required=""/)
     expect(form).toMatch(/<summary>Más detalles<\/summary>[\s\S]*name="seguro"/)
     expect(h).toContain('Precio objetivo: <strong class="mono">3.51 USD</strong> por set DDP')
-    expect(h).toContain('No cumple por')
+    // «Pedir a otro proveedor» con el producto ya elegido.
+    const pedir = h.slice(h.indexOf('id="pedir-producto"'), h.indexOf('</details>', h.indexOf('id="pedir-producto"')))
+    expect(pedir).toContain('<summary>Pedir a otro proveedor</summary>')
+    expect(pedir).toMatch(/<option value="PRD-0003" selected="">/)
+    // Comparar: 6 columnas visibles; el resto en «Más columnas»; el desglose plegado.
+    const tabla = h.slice(h.indexOf('aria-label="Cotizaciones comparadas"'), h.indexOf('</thead>', h.indexOf('aria-label="Cotizaciones comparadas"')))
+    expect([...tabla.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((m) => m[1])).toEqual(['Proveedor', 'Estado', 'Costo por set (MXN)', 'Contra el máximo', 'Capital del lote (tope 30,000.00 MXN)', 'Plazo (días)'])
+    expect(h).toMatch(/<summary>Más columnas<\/summary>[\s\S]*Mínimo del proveedor \(MXN\)[\s\S]*Sets que caben en el tope/)
+    expect(h).toMatch(/<summary>Desglose por cotización<\/summary>[\s\S]*Desglose de COT-0002/)
   })
 
-  it('un lector no ve controles de escritura; sin ECO_TABULADOR no hay números', async () => {
-    const h = await pagina('lector@example.com', ACTIVA)
-    expect(h).toContain('aria-label="Listas para comparar"')
-    expect(h).not.toMatch(/Pedir cotización|Recibir COT|Rechazar COT|Contraoferta/)
-    expect(h).not.toContain('Precio objetivo')
-    expect(h).toContain('Tabulador apagado')
+  it('criterio 3: Comparar da las mismas cifras que el tabulador para el producto de prueba', async () => {
+    const h = await pagina(LECTOR, { ...ACTIVA, ECO_TABULADOR: 'true' }, { comparar: 'PRD-0003' })
+    const cmp = construirTabulador(libro() as unknown as Parameters<typeof construirTabulador>[0]).comparar('PRD-0003', 'EC-006')
+    const mxn = (v: number) => v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    expect(cmp.costoMaximo.mxn).toBe(65)
+    for (const f of cmp.filas) {
+      if (f.costo.porSetMxn !== null) expect(h).toContain(`<td class="mono">${mxn(f.costo.porSetMxn)}`)
+      if (f.capitalPrimerLoteMxn !== null) expect(h).toContain(`${mxn(f.capitalPrimerLoteMxn)} <span class="badge`)
+      if (f.diferenciaMxn !== null) expect(h).toContain(`No cumple por ${mxn(f.diferenciaMxn)} MXN`)
+      if (f.minimoProveedorMxn !== null) expect(h).toContain(`<td class="mono">${mxn(f.minimoProveedorMxn)}</td>`)
+    }
   })
 
-  it('/eco/pipeline enlaza la bandeja y el menú la incluye', () => {
-    const pipe = readFileSync(path.join(__dirname, '..', 'src', 'app', '(private)', 'eco', 'pipeline', 'page.tsx'), 'utf8')
-    expect(pipe).toContain('href="/eco/cotizaciones"')
-    expect(readFileSync(path.join(__dirname, '..', 'src', 'lib', 'nav.ts'), 'utf8')).toContain("href: '/eco/cotizaciones'")
+  it('criterio 4: Identidad y Keepa, Seguimiento y embarques, y Notas e historial plegados; Proveedores en su subpestaña', async () => {
+    const h = await pagina(LECTOR, ACTIVA, { producto: 'PRD-0003' })
+    for (const t of ['Identidad y Keepa', 'Seguimiento y embarques', 'Notas e historial']) expect(h).toMatch(new RegExp(`<details class="plegable"><summary>${t}`))
+    // La subpestaña Productos no pinta la lista de proveedores; Proveedores sí, con su ficha.
+    expect(h).not.toContain('aria-label="Proveedores"')
+    expect(h).toContain('href="/eco/pipeline?seccion=proveedores#proveedores"')
+    const prv = await pagina(LECTOR, ACTIVA, { seccion: 'proveedores' })
+    expect(prv).toContain('aria-label="Proveedores"')
+    expect(prv).toMatch(/<a href="\/eco\/pipeline\?seccion=proveedores#proveedores" aria-current="page">Proveedores<\/a>/)
+    expect(prv).not.toContain('aria-label="Lista de productos"')
+    expect(await pagina(LECTOR, ACTIVA, { proveedor: 'PRV-0002' })).toContain('Ficha de proveedor · Sandes Sintético')
+  })
+
+  it('criterio 5: /eco/cotizaciones redirige a /eco/pipeline y conserva el paso; los enlaces antiguos siguen funcionando', async () => {
+    expect(destinoCotizaciones({})).toBe('/eco/pipeline#productos')
+    expect(destinoCotizaciones({ paso: 'porCompletar' })).toBe('/eco/pipeline?paso=porCompletar#productos')
+    expect(destinoCotizaciones({ paso: '<script>' })).toBe('/eco/pipeline#productos')
+    expect(destinoCotizaciones({ paso: ['listas', 'esperando'] })).toBe('/eco/pipeline#productos')
+    const { default: Redirige } = await import('@/app/(private)/eco/cotizaciones/page')
+    await expect(Redirige({ searchParams: Promise.resolve({ paso: 'listas' }) })).rejects.toThrow('REDIRECT /eco/pipeline?paso=listas#productos')
+    // ?producto=, ?comparar= (con #comparar) y ?proveedor= abren lo mismo que antes.
+    expect(await pagina(LECTOR, ACTIVA, { producto: 'PRD-0003' })).toContain('id="ficha-producto"')
+    const cmp = await pagina(LECTOR, { ...ACTIVA, ECO_TABULADOR: 'true' }, { comparar: 'PRD-0003' })
+    expect(cmp).toContain('id="ficha-producto"')
+    expect(cmp).toContain('<section id="comparar"')
+    expect(await pagina(LECTOR, ACTIVA, { producto: 'PRD-9999' })).toContain('No hay un producto con ese ID.')
+  })
+
+  it('criterio 5: «Alta rápida» deja de ser sección: el alta de proveedor en «Pedir» y el pegado de Gemini en «Recibir»', async () => {
+    const h = await pagina(DUENO, ACTIVA)
+    expect(h).not.toContain('alta-rapida')
+    const pedir = h.slice(h.indexOf('id="pedir"'), h.indexOf('id="recibir"'))
+    expect(pedir).toContain('aria-label="Pedir cotización"')
+    expect(pedir).toContain('aria-label="Nuevo proveedor"')
+    const recibir = h.slice(h.indexOf('id="recibir"'))
+    expect(recibir).toContain('aria-label="Pegar tabla de Gemini"')
+    const nav = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'nav.ts'), 'utf8')
+    expect(nav).toContain("items: [{ href: '/eco', label: 'Ideas' }, { href: '/eco/pipeline', label: 'Compras' }]")
+    expect(nav).not.toContain("href: '/eco/cotizaciones'")
+  })
+
+  it('la sesión del propietario ve los botones; un lector y el escritor con la escritura apagada no', async () => {
+    const CONTROLES = /Pedir cotización|Pedir a otro proveedor|Recibir COT|Completar COT|Elegir COT|Rechazar COT|Contraoferta|Pegar tabla de Gemini|Nuevo producto|Editar cotización|draggable|Mover a/
+    expect(await pagina(DUENO, ACTIVA, { producto: 'PRD-0003' })).toMatch(CONTROLES)
+    for (const [email, vars] of [[LECTOR, ACTIVA], [DUENO, { ...ACTIVA, ECO_PIPELINE_WRITE_MODE: '' }]] as const) {
+      for (const search of [{ producto: 'PRD-0003' }, { vista: 'tablero' }, {}] as Record<string, string>[]) {
+        const h = await pagina(email, { ...vars, ECO_TABULADOR: 'true' }, search)
+        expect(h).not.toMatch(CONTROLES)
+      }
+      // Copiar el seguimiento no escribe nada: también lo ve el lector.
+      expect(await pagina(email, vars, { producto: 'PRD-0003' })).toContain('Copiar seguimiento')
+    }
+  })
+
+  it('con ECO_TABULADOR apagada no hay números ni Comparar, y se dice por qué', async () => {
+    const h = await pagina(DUENO, ACTIVA, { producto: 'PRD-0003', comparar: 'PRD-0003' })
+    expect(h).toContain('Tabulador apagado (ECO_TABULADOR)')
+    expect(h).toContain('Tabulador apagado (<code>ECO_TABULADOR</code>): sin costo máximo, mejor cotización, precio objetivo, capital ni «Comparar»')
+    expect(h).not.toMatch(/Comparar cotizaciones|Costo máximo:|stat-label|Precio objetivo|Costo por set|No cumple por|Desglose de/)
+  })
+
+  it('accesible con teclado y a 390 px: chips y subpestañas son enlaces, los plegados son <details>, la lista y la ficha se apilan', async () => {
+    const h = await pagina(LECTOR, { ...ACTIVA, ECO_TABULADOR: 'true' }, { producto: 'PRD-0003' })
+    expect(h).toContain('role="group" aria-label="Bandeja de cotizaciones"')
+    expect(h).toMatch(/<nav class="subnav" aria-label="Secciones de compras"><a href="\/eco\/pipeline#productos" aria-current="page">Productos<\/a>/)
+    expect(h).toMatch(/<li class="card compras-fila" aria-current="true">/)
+    expect(h).not.toMatch(/<(div|span|li)[^>]*onClick|tabindex="-1"/)
+    const css = readFileSync(path.join(__dirname, '..', 'src', 'app', 'globals.css'), 'utf8')
+    expect(css).toMatch(/@media \(max-width: 900px\) \{\n\s+\.compras-layout \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+    expect(css).toMatch(/\.chip \{[^}]*min-height: 40px/)
   })
 })
 

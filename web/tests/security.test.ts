@@ -203,7 +203,13 @@ describe('garantías de seguridad del código', () => {
     const pages = sources.filter((s) => s.file.startsWith(path.join('app', '(private)')) && s.file.endsWith('page.tsx'))
     expect(pages.length).toBeGreaterThanOrEqual(6)
     // /eco (ORD-POS-067) y /finanzas (ORD-POS-074) usan privateEco y privateFinanzas: la misma verificación de sesión.
-    for (const { file, text } of pages) expect(text, file).toMatch(/privateData\(|privateEco\(|privateFinanzas\(/)
+    // /eco/cotizaciones (ORD-POS-150) solo redirige: verifica la sesión con requireUser y no lee ningún dato.
+    for (const { file, text } of pages) {
+      if (file === path.join('app', '(private)', 'eco', 'cotizaciones', 'page.tsx')) {
+        expect(text).toMatch(/await requireUser\([^)]*\)\n\s+redirect\(/)
+        expect(text).not.toMatch(/getEco|getDataset|sheets-client|privateEco/)
+      } else expect(text, file).toMatch(/privateData\(|privateEco\(|privateFinanzas\(/)
+    }
     const api = sources.find((s) => s.file === path.join('app', 'api', 'resumen', 'route.ts'))!.text
     expect(api.indexOf('currentUser()')).toBeLessThan(api.indexOf('getDataset()'))
   })

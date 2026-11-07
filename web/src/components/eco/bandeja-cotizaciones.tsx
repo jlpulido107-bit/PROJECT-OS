@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { CasillaEntregaCedis, Entrada, Mensaje } from '@/components/eco/formularios-pipeline'
 import {
   CASILLA_ENTREGA_CEDIS, cuerpo, enviar, etiquetaCampo, nombreClave, reglaEntregaCedis, validarCampo, type CampoForm, type Resultado,
@@ -33,6 +33,8 @@ export interface PedirProps {
   productos: ReadonlyArray<{ id: string; nombre: string | null }>
   proveedores: ReadonlyArray<{ id: string; nombre: string; canal: string | null; pais: string | null }>
   canales: readonly string[]
+  /** ORD-POS-150: «Pedir a otro proveedor» desde la ficha llega con el producto ya elegido. */
+  productoId?: string
 }
 
 /**
@@ -40,8 +42,10 @@ export interface PedirProps {
  * proveedor nuevo; uno existente conserva el suyo. Si el proveedor es nuevo, primero se da de alta (con su propio
  * requestId) y luego se pide la cotización; si la segunda falla, el proveedor ya queda y el siguiente intento lo reúsa.
  */
-export function PedirCotizacion({ productos, proveedores, canales }: PedirProps) {
+export function PedirCotizacion({ productos, proveedores, canales, productoId }: PedirProps) {
   const router = useRouter()
+  // Puede haber dos «Pedir» en la página (arriba y en la ficha): cada uno con su propia lista de proveedores.
+  const listaId = `proveedores-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [estado, setEstado] = useState<Estado>({ status: 'idle' })
   const [nombre, setNombre] = useState('')
   const [errores, setErrores] = useState<Record<string, string>>({})
@@ -90,7 +94,7 @@ export function PedirCotizacion({ productos, proveedores, canales }: PedirProps)
     <form onSubmit={pedir} aria-label="Pedir cotización" className="eco-form">
       <label className="field">
         <span>Producto *</span>
-        <select name="productoId" required defaultValue="" aria-invalid={errores.productoId ? true : undefined}>
+        <select name="productoId" required defaultValue={productoId && productos.some((p) => p.id === productoId) ? productoId : ''} aria-invalid={errores.productoId ? true : undefined}>
           <option value="">—</option>
           {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre ? `${p.id} · ${p.nombre}` : p.id}</option>)}
         </select>
@@ -98,9 +102,9 @@ export function PedirCotizacion({ productos, proveedores, canales }: PedirProps)
       </label>
       <label className="field">
         <span>Proveedor *</span>
-        <input name="proveedor" type="text" list="proveedores-existentes" autoComplete="off" maxLength={120} required value={nombre}
+        <input name="proveedor" type="text" list={listaId} autoComplete="off" maxLength={120} required value={nombre}
           onChange={(e) => setNombre(e.target.value)} aria-invalid={errores.proveedor ? true : undefined} />
-        <datalist id="proveedores-existentes">{proveedores.map((p) => <option key={p.id} value={p.nombre}>{p.id}</option>)}</datalist>
+        <datalist id={listaId}>{proveedores.map((p) => <option key={p.id} value={p.nombre}>{p.id}</option>)}</datalist>
         <span className="small muted">
           {existente ? `${existente.id} (canal ${existente.canal ?? '—'}, ${existente.pais ?? '—'})` : nuevo ? 'Proveedor nuevo: se da de alta con nombre, país y canal.' : 'Escribe para buscar; si no existe, se crea.'}
         </span>
@@ -144,6 +148,8 @@ export interface RecibirProps {
   fleteCedisRef: number | null
   /** Para el pegado: los campos del alta (mismas limpiezas que «Pegar tabla de Gemini»). */
   pegado: ContextoPegado
+  /** ORD-POS-150: «Recibir» en «Esperando respuesta» y «Completar» en «Por completar» (el mismo formulario). */
+  accion?: 'Recibir' | 'Completar'
 }
 
 /** Criterio 4: visibles, con su valor por defecto visible antes de guardar, y el resto plegado en «Más detalles». */
@@ -160,7 +166,7 @@ export const DETALLES_RECIBIR = [
  * respecto de la hoja, más los valores por defecto que se ven en pantalla. «DDP incluye CEDIS» viene marcada: en DDP
  * guarda FLETE_CEDIS = 0; con otro incoterm no aplica y no se envía.
  */
-export function RecibirCotizacion({ id, version, fila, defectos, campos, pistas, fleteCedisRef, pegado }: RecibirProps) {
+export function RecibirCotizacion({ id, version, fila, defectos, campos, pistas, fleteCedisRef, pegado, accion = 'Recibir' }: RecibirProps) {
   const router = useRouter()
   const [estado, setEstado] = useState<Estado>({ status: 'idle' })
   const [errores, setErrores] = useState<Record<string, string>>({})
@@ -214,7 +220,7 @@ export function RecibirCotizacion({ id, version, fila, defectos, campos, pistas,
   const ddpMarcada = borrador.valores[CASILLA_ENTREGA_CEDIS] !== undefined ? borrador.valores[CASILLA_ENTREGA_CEDIS] === 'SI' : (fila.FLETE_CEDIS ?? '') === '' || Number(fila.FLETE_CEDIS) === 0
   return (
     <details className="eco-form">
-      <summary>Recibir {id}</summary>
+      <summary>{accion} {id}</summary>
       <form onSubmit={pegar} aria-label={`Pegar respuesta de ${id}`}>
         <label className="field">
           <span>Pegar respuesta (fila de la tabla B de Gemini o líneas «PRECIO_UNIT: 10.59»)</span>
@@ -229,7 +235,7 @@ export function RecibirCotizacion({ id, version, fila, defectos, campos, pistas,
           </ul>
         ) : null}
       </form>
-      <form key={borrador.n} onSubmit={guardar} aria-label={`Recibir ${id}`} onChange={(e) => {
+      <form key={borrador.n} onSubmit={guardar} aria-label={`${accion} ${id}`} onChange={(e) => {
         const t: EventTarget = e.target
         if (t instanceof HTMLSelectElement && t.name === 'precioPor') setPrecioPor(t.value)
       }}>

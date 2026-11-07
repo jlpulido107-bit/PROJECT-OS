@@ -27,7 +27,8 @@ describe('árbol integrado V1.3–V1.6', () => {
     // /eco (ORD-POS-067): privateEco verifica la sesión y solo después lee RADAROS.
     // /eco/pipeline (ORD-POS-097) usa el mismo lector, igual de verificado.
     // /finanzas (ORD-POS-074): privateFinanzas, igual, antes de leer FINANZAS.
-    const lector: Record<string, RegExp> = { eco: /privateEco\(/, 'eco/pipeline': /privateEco\(/, 'eco/cotizaciones': /privateEco\(/, finanzas: /privateFinanzas\(/ }
+    // /eco/cotizaciones (ORD-POS-150) ya no lee datos: verifica la sesión con requireUser y redirige a /eco/pipeline.
+    const lector: Record<string, RegExp> = { eco: /privateEco\(/, 'eco/pipeline': /privateEco\(/, 'eco/cotizaciones': /await requireUser\('\/eco\/cotizaciones'\)\n\s+redirect\(/, finanzas: /privateFinanzas\(/ }
     for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toMatch(lector[page] ?? /privateData\(/)
   })
 

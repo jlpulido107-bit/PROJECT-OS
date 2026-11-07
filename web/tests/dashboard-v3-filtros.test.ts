@@ -116,7 +116,7 @@ describe('criterio 3: filtro al cambiar, con el botón intacto', () => {
     ['app/(private)/tareas/page.tsx', 1],
     ['app/(private)/actividad/page.tsx', 1],
     ['app/(private)/eco/page.tsx', 1],
-    ['app/(private)/eco/pipeline/page.tsx', 3], // ORD-POS-145: «Comparar cotizaciones»
+    ['app/(private)/eco/pipeline/page.tsx', 2], // ORD-POS-150: productos y proveedores («Comparar» abre la ficha desde la lista)
   ])('%s: %i formularios de filtro con FiltroAuto y botón', (archivo, n) => {
     const s = src(archivo)
     const forms = s.match(/<form method="get"[\s\S]*?<\/form>|<form className="filters" method="get"[\s\S]*?<\/form>/g) ?? []

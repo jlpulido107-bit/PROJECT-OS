@@ -897,7 +897,8 @@ describe('criterio 7: arrastre nativo y «Mover a…» accesible (§2.1)', () =>
     estado.email = email
     estado.result = result
     const { default: PipelinePage } = await import('@/app/(private)/eco/pipeline/page')
-    return renderToStaticMarkup(await PipelinePage({ searchParams: Promise.resolve({}) }))
+    // ORD-POS-150: el tablero por etapas es la «Vista tablero».
+    return renderToStaticMarkup(await PipelinePage({ searchParams: Promise.resolve({ vista: 'tablero' }) }))
   }
 
   it('el escritor con la escritura activa ve tarjetas arrastrables y «Mover a…» con solo las etapas permitidas', async () => {
