@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { civilDateInZone, parseCivilDate } from '../dates'
+import { addDays, civilDateInZone, parseCivilDate } from '../dates'
 import { MAX_DATA_ROWS } from '../schema'
 import { OperationError } from '../operations/errors'
 import { meridaIsoTimestamp } from '../operations/time'
@@ -19,7 +19,7 @@ import { requiereMotivo, transicionPermitida } from './pipeline-transiciones'
 /** Operaciones del pipeline. Tipo propio: nunca forman parte de `OperationName` ni de `AGENT_OPERATIONS`. */
 export const ECO_OPERATIONS = [
   'eco.producto.crear', 'eco.producto.editar', 'eco.producto.mover', 'eco.proveedor.crear', 'eco.proveedor.editar',
-  'eco.cotizacion.crear', 'eco.cotizacion.editar', 'eco.embarque.crear', 'eco.embarque.editar',
+  'eco.cotizacion.crear', 'eco.cotizacion.editar', 'eco.cotizacion.pedir', 'eco.embarque.crear', 'eco.embarque.editar',
 ] as const
 export type EcoOperationName = (typeof ECO_OPERATIONS)[number]
 
@@ -323,6 +323,7 @@ export class EcoPipelineWriteService {
       // ORD-POS-146: puede nacer RECIBIDA (con los cinco datos de §3.3) o RECHAZADA; sin estado, SOLICITADA.
       const estado = celdaTexto(r.ESTADO) || 'SOLICITADA'
       if (estado === 'RECIBIDA') {
+        // El alta con RECIBIDA (formulario completo y pegado) sigue pidiendo los cinco datos de §3.3.
         const faltan = ['PRECIO_UNIT', 'MONEDA', 'MOQ', 'PLAZO_PRODUCCION_DIAS', 'INCOTERM'].filter((col) => celdaTexto(r[col]) === '')
         if (faltan.length) throw new OperationError('requisito-faltante', { detail: { requisito: faltan.join(',') } })
       }
@@ -332,22 +333,50 @@ export class EcoPipelineWriteService {
     })
   }
 
+  /**
+   * ORD-POS-149 (criterio 3, §16.2): «Pedir» crea la cotización `SOLICITADA` con `FECHA_SOLICITUD` = hoy (Mérida) y
+   * `FECHA_RESPUESTA_ESPERADA` = hoy + 7. Solo producto abierto y proveedor `ACTIVO`.
+   */
+  pedirCotizacion(cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+    return this.crear('eco.cotizacion.pedir', 'cotizacion', cmd, ctx, (libro, r) => {
+      this.productoAbierto(libro, String(r.PRODUCTO_ID))
+      this.proveedorActivo(libro, String(r.PROVEEDOR_ID), 'proveedorId')
+      const hoy = civilDateInZone(this.clock().getTime())
+      return { ...r, ESTADO: 'SOLICITADA', FECHA_SOLICITUD: hoy, FECHA_RESPUESTA_ESPERADA: addDays(hoy, DIAS_RESPUESTA), MUESTRA_ESTADO: 'NO_PEDIDA' }
+    })
+  }
+
   editarCotizacion(id: string, cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
     return this.editar('eco.cotizacion.editar', 'cotizacion', id, cmd, ctx, (libro, merged, actual) => {
       this.productoAbierto(libro, celdaTexto(actual.PRODUCTO_ID))
       const desde = celdaTexto(actual.ESTADO)
       const a = celdaTexto(merged.ESTADO)
       if (a !== desde && !(TRANSICIONES_COTIZACION[desde] ?? []).includes(a)) throw new OperationError('transicion-no-permitida', { detail: { desde, a } })
+      // ORD-POS-149 (§16.3): RECIBIDA pide precio, moneda, MOQ e incoterm; el plazo se exige al elegir.
       if (a === 'RECIBIDA' || a === 'ELEGIDA') {
-        const faltan = ['PRECIO_UNIT', 'MONEDA', 'MOQ', 'PLAZO_PRODUCCION_DIAS', 'INCOTERM'].filter((col) => celdaTexto(merged[col]) === '')
+        const faltan = (a === 'ELEGIDA' ? REQUISITOS_ELEGIDA : REQUISITOS_RECIBIDA).filter((col) => celdaTexto(merged[col]) === '')
         if (faltan.length) throw new OperationError('requisito-faltante', { detail: { requisito: faltan.join(',') } })
+      }
+      const t = libro.PIPE_COTIZACIONES
+      const extra: Registro = {}
+      if (a === 'RECIBIDA' && desde === 'SOLICITADA') {
+        // Con la migración de §14.7, una respuesta nueva dice si el precio es por pieza o por set.
+        if (t.indice.has('PRECIO_POR') && celdaTexto(merged.PRECIO_POR) === '') throw new OperationError('requisito-faltante', { detail: { requisito: 'PRECIO_POR' } })
+        if (celdaTexto(merged.FECHA_RECIBIDA) === '') extra.FECHA_RECIBIDA = civilDateInZone(this.clock().getTime())
+      }
+      // ORD-POS-149 (criterio 5, §16.3): contraoferta. Un precio que cambia conserva el anterior en PRECIO_HISTORIAL.
+      const previo = celdaTexto(actual.PRECIO_UNIT)
+      if ('PRECIO_UNIT' in cmd.valores && previo !== '' && !iguales(actual.PRECIO_UNIT, cmd.valores.PRECIO_UNIT!)) {
+        if (!t.indice.has('PRECIO_HISTORIAL')) throw new OperationError('eco-migracion-pendiente', { detail: { pestana: 'PIPE_COTIZACIONES', columnas: 'PRECIO_HISTORIAL' } })
+        extra.PRECIO_HISTORIAL = entradaHistorial(celdaTexto(actual.PRECIO_HISTORIAL), civilDateInZone(this.clock().getTime()), actual)
       }
       if (a === 'ELEGIDA' && desde !== 'ELEGIDA') {
         const c = libro.PIPE_COTIZACIONES
         const otra = c.filas.some((f) => texto(c, f, 'COTIZACION_ID') !== id && texto(c, f, 'PRODUCTO_ID') === celdaTexto(actual.PRODUCTO_ID) && texto(c, f, 'ESTADO') === 'ELEGIDA')
         if (otra) throw new OperationError('elegida-duplicada')
       }
-      this.fechas('cotizacion', merged)
+      this.fechas('cotizacion', { ...merged, ...extra })
+      return extra
     })
   }
 
@@ -493,7 +522,7 @@ export class EcoPipelineWriteService {
 
   private editar(
     op: EcoOperationName, e: Entidad, id: string, cmd: EcoComando, ctx: EcoContext,
-    validar: (libro: Libro, merged: Registro, actual: Registro) => void,
+    validar: (libro: Libro, merged: Registro, actual: Registro) => Registro | void,
   ): Promise<EcoResultado> {
     return this.exclusive(async () => {
       const hash = payloadHash(op, { ...cmd, id })
@@ -507,8 +536,9 @@ export class EcoPipelineWriteService {
       if (version !== cmd.expectedVersion) throw new OperationError('conflicto-version', { detail: { version } })
       const despues: Registro = Object.fromEntries(Object.entries(cmd.valores).filter(([c, v]) => !iguales(actual[c], v) && !(v === '' && celdaTexto(actual[c]) === '')))
       if (!Object.keys(despues).length) throw new OperationError('sin-cambios')
-      validar(libro, { ...actual, ...cmd.valores }, actual)
-      return this.escribirEdicion(hash, cmd.requestId, ctx, op, e, id, actual, despues, libro, [])
+      // ORD-POS-149: la validación puede añadir columnas que pone el servidor (FECHA_RECIBIDA, PRECIO_HISTORIAL).
+      const extra = validar(libro, { ...actual, ...cmd.valores }, actual) ?? {}
+      return this.escribirEdicion(hash, cmd.requestId, ctx, op, e, id, actual, { ...despues, ...extra }, libro, [])
     })
   }
 
@@ -683,6 +713,26 @@ export class EcoPipelineWriteService {
       throw new OperationError('verificacion-fallida')
     }
   }
+}
+
+/** ORD-POS-149 (§16.3): datos para pasar a `RECIBIDA` (los visibles de «Recibir») y, además, el plazo para `ELEGIDA`. */
+export const REQUISITOS_RECIBIDA = ['PRECIO_UNIT', 'MONEDA', 'MOQ', 'INCOTERM'] as const
+export const REQUISITOS_ELEGIDA = [...REQUISITOS_RECIBIDA, 'PLAZO_PRODUCCION_DIAS'] as const
+/** ORD-POS-149 (criterio 3): días entre la solicitud y la respuesta esperada. */
+export const DIAS_RESPUESTA = 7
+/** Separador de las entradas de `PRECIO_HISTORIAL` (una sola línea por celda). */
+export const SEPARADOR_HISTORIAL = ' | '
+
+/**
+ * ORD-POS-149 (criterio 5): `PRECIO_HISTORIAL` + la entrada del precio que se reemplaza, con su fecha, moneda, unidad e
+ * incoterm (p. ej. «2026-11-07: 10.59 USD por SET DDP»). Solo agrega al final; nunca borra entradas anteriores.
+ */
+export function entradaHistorial(previo: string, hoy: string, actual: Registro): string {
+  const partes = [celdaTexto(actual.PRECIO_UNIT), celdaTexto(actual.MONEDA)]
+  if (celdaTexto(actual.PRECIO_POR)) partes.push(`por ${celdaTexto(actual.PRECIO_POR)}`)
+  if (celdaTexto(actual.INCOTERM)) partes.push(celdaTexto(actual.INCOTERM))
+  const entrada = `${hoy}: ${partes.filter(Boolean).join(' ')}`
+  return previo ? `${previo}${SEPARADOR_HISTORIAL}${entrada}` : entrada
 }
 
 /** §3.3: `SOLICITADA` → `RECIBIDA` → `ELEGIDA`, o `RECHAZADA` desde cualquiera. */

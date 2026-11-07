@@ -171,16 +171,16 @@ describe('COSTO_MAX_MXN (criterio 4)', () => {
 describe('migración de PIPE_COTIZACIONES (criterios 1 y 7)', () => {
   const ACTUAL = [...COLUMNAS_COTIZACIONES]
 
-  it('agrega las 15 columnas al final (PRECIO_POR la última, ORD-POS-147), después de VERSION, sin tocar las existentes', () => {
+  it('agrega las 17 columnas al final (PRECIO_POR de ORD-POS-147 y luego EVIDENCIA_URL y PRECIO_HISTORIAL de ORD-POS-149), después de VERSION, sin tocar las existentes', () => {
     const m = migracionCotizaciones(ACTUAL)
     expect(m.faltan).toEqual([...COLUMNAS_MIGRACION_COTIZACIONES])
     expect(m.encabezado.slice(0, ACTUAL.length)).toEqual(ACTUAL)
     expect(m.encabezado[ACTUAL.length - 1]).toBe('VERSION')
-    expect(m.encabezado).toHaveLength(ACTUAL.length + 15)
-    expect(m.encabezado.at(-1)).toBe('PRECIO_POR')
-    // Con la migración de ORD-POS-145 ya aplicada, solo falta PRECIO_POR, al final.
+    expect(m.encabezado).toHaveLength(ACTUAL.length + 17)
+    expect(m.encabezado.slice(-3)).toEqual(['PRECIO_POR', 'EVIDENCIA_URL', 'PRECIO_HISTORIAL'])
+    // Con la migración de ORD-POS-145 ya aplicada, solo faltan PRECIO_POR y las de ORD-POS-149, al final.
     const de145 = migracionCotizaciones([...ACTUAL, ...COLUMNAS_MIGRACION_COTIZACIONES.slice(0, 14)])
-    expect(de145.faltan).toEqual(['PRECIO_POR'])
+    expect(de145.faltan).toEqual(['PRECIO_POR', 'EVIDENCIA_URL', 'PRECIO_HISTORIAL'])
     expect(m.sinVersion).toBe(false)
   })
 
@@ -195,14 +195,14 @@ describe('migración de PIPE_COTIZACIONES (criterios 1 y 7)', () => {
   it('parcial: solo agrega las que faltan; avisa encabezados repetidos y falta de VERSION', () => {
     const m = migracionCotizaciones([...ACTUAL, 'PAIS_ORIGEN', 'SEGURO'])
     expect(m.faltan).not.toContain('PAIS_ORIGEN')
-    expect(m.faltan).toHaveLength(13)
+    expect(m.faltan).toHaveLength(15)
     expect(migracionCotizaciones(['COTIZACION_ID', 'ESTADO', 'ESTADO']).repetidos).toEqual(['ESTADO'])
     expect(migracionCotizaciones(['COTIZACION_ID']).sinVersion).toBe(true)
   })
 
   it('antes de la migración la lectura sigue: las columnas nuevas quedan vacías y el total «Por confirmar»', () => {
     const tab = construirTabulador({ PIPE_COTIZACIONES: [ACTUAL, ['COT-0001', 'PRD-0001', 'PRV-0001', 'SOLICITADA']] })
-    expect(tab.migracion?.faltan).toHaveLength(15)
+    expect(tab.migracion?.faltan).toHaveLength(17)
     const cmp = tab.comparar('PRD-0001', null)
     expect(cmp.filas[0]!.costo.totalMxn).toBeNull()
   })

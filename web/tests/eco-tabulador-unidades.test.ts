@@ -36,11 +36,12 @@ const POR_SET = 12.76 * 15.44
 
 describe('criterio 1: el precio es por pieza o por set', () => {
   it('migración explícita: PRECIO_POR va al final de PIPE_COTIZACIONES y la escritura solo la admite si la fila 1 la tiene', () => {
-    expect(COLUMNAS_MIGRACION_COTIZACIONES.at(-1)).toBe('PRECIO_POR')
+    // PRECIO_POR va justo después de COSTO_ATERRIZADO_CALC_MXN; ORD-POS-149 agrega EVIDENCIA_URL y PRECIO_HISTORIAL detrás.
+    expect(COLUMNAS_MIGRACION_COTIZACIONES[14]).toBe('PRECIO_POR')
     expect(COLUMNAS_OPCIONALES.PIPE_COTIZACIONES).toContain('PRECIO_POR')
-    const aplicada145 = [...COLUMNAS_COTIZACIONES, ...COLUMNAS_MIGRACION_COTIZACIONES.slice(0, -1)]
-    expect(migracionCotizaciones(aplicada145)).toMatchObject({ faltan: ['PRECIO_POR'], encabezado: [...aplicada145, 'PRECIO_POR'] })
-    expect(migracionCotizaciones([...aplicada145, 'PRECIO_POR']).faltan).toEqual([])
+    const aplicada145 = [...COLUMNAS_COTIZACIONES, ...COLUMNAS_MIGRACION_COTIZACIONES.slice(0, 14)]
+    expect(migracionCotizaciones(aplicada145)).toMatchObject({ faltan: ['PRECIO_POR', 'EVIDENCIA_URL', 'PRECIO_HISTORIAL'], encabezado: [...aplicada145, 'PRECIO_POR', 'EVIDENCIA_URL', 'PRECIO_HISTORIAL'] })
+    expect(migracionCotizaciones([...aplicada145, 'PRECIO_POR', 'EVIDENCIA_URL', 'PRECIO_HISTORIAL']).faltan).toEqual([])
   })
 
   it('con «set», 12.76 USD × 500 sets da 12.76 × TC por set, sin tocar UNIDADES_POR_SET', () => {

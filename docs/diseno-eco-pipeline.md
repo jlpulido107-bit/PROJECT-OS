@@ -146,7 +146,7 @@ Reglas comunes:
 | `PRODUCTO_ID`, `PROVEEDOR_ID` | Obligatorios; deben existir; producto no descartado |
 | `ESTADO` | `SOLICITADA` → `RECIBIDA` → `ELEGIDA`, o `RECHAZADA` desde cualquiera; una sola `ELEGIDA` por producto |
 | `FECHA_SOLICITUD`, `FECHA_RESPUESTA_ESPERADA`, `FECHA_RECIBIDA` | Seguimiento de la cotización (§5.2) |
-| `PRECIO_UNIT`, `MONEDA` (`USD`, `CNY`, `MXN`), `MOQ` (entero > 0), `PLAZO_PRODUCCION_DIAS`, `INCOTERM` (`EXW`, `FOB`, `CIF`, `DDP`, `OTRO`) | Obligatorios para pasar a `RECIBIDA` |
+| `PRECIO_UNIT`, `MONEDA` (`USD`, `CNY`, `MXN`), `MOQ` (entero > 0), `PLAZO_PRODUCCION_DIAS`, `INCOTERM` (`EXW`, `FOB`, `CIF`, `DDP`, `OTRO`) | Obligatorios para pasar a `RECIBIDA`. Desde ORD-POS-149 (§16.3), la edición a `RECIBIDA` pide todos menos el plazo, que se exige al pasar a `ELEGIDA`; el alta con `RECIBIDA` sigue pidiendo los cinco |
 | `COSTO_ATERRIZADO_MXN` | Número o vacío: lo captura el propietario o lo da una fórmula de la hoja (❓ §12); es el que se compara con `COSTO_MAX_MXN` |
 | `MUESTRA_ESTADO` | `NO_PEDIDA`, `PEDIDA`, `RECIBIDA`, `APROBADA`, `RECHAZADA` |
 | `MUESTRA_FECHA_PEDIDO`, `MUESTRA_FECHA_ESPERADA`, `MUESTRA_FECHA_RECIBIDA`, `MUESTRA_COSTO`, `MUESTRA_MONEDA` | Seguimiento de la muestra |
@@ -190,6 +190,7 @@ defecto.
 | `POST /api/eco/pipeline/productos/<PRODUCTO_ID>/etapa` | `eco.producto.mover` (§5.1) |
 | `POST /api/eco/pipeline/proveedores` · `PATCH …/proveedores/<PROVEEDOR_ID>` | `eco.proveedor.crear` · `eco.proveedor.editar` |
 | `POST /api/eco/pipeline/cotizaciones` · `PATCH …/cotizaciones/<COTIZACION_ID>` | `eco.cotizacion.crear` · `eco.cotizacion.editar` |
+| `POST /api/eco/pipeline/cotizaciones/pedir` (ORD-POS-149, §16.2) | `eco.cotizacion.pedir` |
 | `POST /api/eco/pipeline/embarques` · `PATCH …/embarques/<EMBARQUE_ID>` | `eco.embarque.crear` · `eco.embarque.editar` |
 
 - Viven en `/api/eco/`, fuera de `/api/operaciones/` y de `/api/finanzas/`. `AGENT_ROUTES` y `FINANZAS_AGENT_ROUTES`
@@ -491,7 +492,7 @@ propietario (DEC-POS-014). Código en `web/src/lib/radaros/` y `web/src/app/api/
 | Guard (§4.1–§4.2) | `pipeline-escritura-guard.ts` | `evaluateEcoWriteRequest`, sin rama de agente; limitador `eco` de 10 y 1 cada 3 s |
 | Núcleo de la ruta | `pipeline-escritura-handler.ts` | 401 con `Authorization` antes de sesión y cuerpo; servicio solo tras el guard |
 | Validación (§3, §4.3) | `pipeline-escritura-validacion.ts` | Lista cerrada de campos por operación (camelCase, uno por columna); 400 `campo-no-permitido` |
-| Servicio (§5, §6) | `pipeline-escritura-service.ts` | Las 9 operaciones, IDs `PREFIJO-NNNN`, transiciones, auditoría en `PIPE_AUDITORIA`, verificación |
+| Servicio (§5, §6) | `pipeline-escritura-service.ts` | Las 9 operaciones (10 desde ORD-POS-149, con `eco.cotizacion.pedir`), IDs `PREFIJO-NNNN`, transiciones, auditoría en `PIPE_AUDITORIA`, verificación |
 | Almacén (§6.2) | `pipeline-escritura-store.ts` | Lista cerrada de las cinco pestañas `PIPE_*` que se escriben; solo `RAW` |
 | Runtime | `pipeline-escritura-runtime.ts`, `pipeline-escritura-http.ts` | Único lugar que construye el almacén, con `RADAROS_SHEET_ID` y `ECO_PIPELINE_WRITE_SERVICE_ACCOUNT` |
 | Tablero (§2.1) | `web/src/components/eco/tablero-escritura.tsx`, `pipeline-transiciones.ts` | Arrastre nativo y «Mover a…» con las etapas de §5.1; motivo en un `<dialog>` |
@@ -787,7 +788,8 @@ El alta de cotización incluye todas las columnas de §14.1 salvo `COSTO_ATERRIZ
   apagada: solo leen texto, no calculan.
 - **Estado inicial.** El alta acepta `ESTADO` `SOLICITADA` (por defecto), `RECIBIDA` (con `FECHA_RECIBIDA` y los cinco
   datos de §3.3, si no 409 `requisito-faltante`) o `RECHAZADA`. `ELEGIDA` sigue siendo solo por edición.
-- La edición de cotizaciones existentes no cambia (fuera de alcance).
+- La edición de cotizaciones existentes no cambia (fuera de alcance). **Cambió con ORD-POS-149 (§16.3):** la edición
+  suma `PRECIO_POR`, las columnas de §14.1 y `EVIDENCIA_URL`, porque «Recibir» edita la misma fila.
 
 ### 15.3 «Pegar tabla de Gemini»
 
@@ -818,4 +820,81 @@ No conecta Gmail ni Gemini: el propietario copia la tabla de su documento en «E
 formulario, la escritura (§3.3) y el tabulador (§14.5), que deja de marcar `RECHAZADA` como «Estado no válido». Las filas
 que digan `RECIBIDA (PARCIAL)` o `DESCARTADA` no se reescriben: el tabulador las muestra con «Estado no válido» y el
 propietario las corrige a mano si quiere.
+
+## 16. Bandeja de cotizaciones en 3 pasos (ORD-POS-149, POS-052)
+
+Orden ORD-POS-149 ([issue #333](https://github.com/jlpulido107-bit/PROJECT-OS/issues/333); paquete PAQ-2026-11-07-01),
+riesgo MEDIO. Página `/eco/cotizaciones`, enlazada desde `/eco/pipeline` y en el menú RADAROS: el propietario pide,
+recibe y decide una cotización con pocas casillas y el precio objetivo a la vista. Reúsa `PIPE_COTIZACIONES`,
+`PIPE_PROVEEDORES`, `PIPE_PARAMETROS`, el tabulador (§14 y §14.7) y el pegado de Gemini (§15.3); no duplica cálculos.
+Código: `web/src/lib/radaros/pipeline-bandeja.ts` (reparto, valores por defecto, seguimiento),
+`pipeline-tabulador.ts` (`precioObjetivo`), `pipeline-escritura-service.ts` (`pedirCotizacion`, edición con historial),
+`pipeline-pegado.ts` (`borradorRespuesta`), `web/src/components/eco/bandeja-cotizaciones.tsx` (pantalla) y
+`web/src/app/(private)/eco/cotizaciones/page.tsx`.
+
+**Solo escribe la sesión del propietario** (§1, §4.1 y §4.2): mismas rutas y mismo guard sin agente; con el token del PM
+o cualquier `Authorization`, 401 antes de leer sesión o cuerpo, sin pedir el servicio. Inerte sin
+`ECO_PIPELINE_WRITE_MODE` (§7.1). Los controles solo los ve `ecoPipelineCanWrite(email)`; un lector ve la bandeja sin
+botones. Costo por set, veredicto, precio objetivo y capital solo con `ECO_TABULADOR=true` (§14.6), como «Comparar».
+
+### 16.1 Migración explícita de `PIPE_COTIZACIONES`
+
+La aplica **solo el propietario, a mano en la hoja de RADAROS**, después de fusionar y desplegar. En la fila 1, después de
+`PRECIO_POR` (§14.7), escribir en este orden, exactos y sin repetir: `EVIDENCIA_URL` y `PRECIO_HISTORIAL`. `VERSION` no
+cambia en ninguna fila. Idempotente (`migracionCotizaciones`: solo agrega las que faltan, al final). Hasta aplicarla, la
+bandeja funciona, pero guardar una evidencia o una contraoferta responde 409 `eco-migracion-pendiente` y no escribe nada.
+Comprobar: «Migración pendiente» desaparece de `/eco/cotizaciones` y de «Comparar». Revertir: borrar las dos columnas.
+
+| Columna | Contenido |
+| --- | --- |
+| `EVIDENCIA_URL` | Liga `https://drive.google.com/…` o `https://docs.google.com/…` (hasta 300 caracteres, sin «@»). Nunca correos ni teléfonos |
+| `PRECIO_HISTORIAL` | Precios anteriores, una entrada por contraoferta: `AAAA-MM-DD: <precio> <moneda> por <PIEZA/SET> <incoterm>`, separadas por ` \| `. La escribe solo el servidor |
+
+### 16.2 Paso 1: pedir
+
+Tres campos: producto (no descartado), proveedor con autocompletado entre los `ACTIVO` (por nombre, con la comparación
+de §15.1) y canal. Un proveedor nuevo pide solo `NOMBRE` y `PAIS`, y el canal elegido; se da de alta por la ruta de §15.1
+y luego se pide la cotización (si la segunda falla, el proveedor ya queda y el siguiente intento lo reúsa por nombre).
+Un proveedor existente conserva su canal. `POST /api/eco/pipeline/cotizaciones/pedir` (operación `eco.cotizacion.pedir`,
+solo `productoId` y `proveedorId`) crea la fila `SOLICITADA` con `FECHA_SOLICITUD` = hoy en America/Merida y
+`FECHA_RESPUESTA_ESPERADA` = hoy + 7 (`DIAS_RESPUESTA`), `MUESTRA_ESTADO` = `NO_PEDIDA`.
+
+### 16.3 Paso 2: recibir, y paso 3: decidir
+
+**Recibir** edita la misma fila (`PATCH`, `expectedVersion`; una versión vieja es 409 sin escribir). Visibles y
+obligatorios: precio, «el precio es por» (pieza o set), `INCOTERM`, `CANTIDAD_COTIZADA` y `MOQ`. Con su valor visible antes
+de guardar, donde la hoja está vacía: `MONEDA` USD, `PAIS_ORIGEN` del proveedor, `CERTIFICADO_ORIGEN` NO y
+`UNIDADES_POR_SET` de otra cotización del mismo producto, más la casilla «Incluye entrega en CEDIS Amazon» marcada (en DDP
+guarda `FLETE_CEDIS` = 0; con otro incoterm no aplica). «Más detalles», plegado: fletes, `SEGURO`, `IGI_PCT`, `DTA`,
+`AGENTE_ADUANAL`, plazo, tipo de cambio, muestra, `FECHA_RECIBIDA`, `EVIDENCIA_URL` y `NOTAS`; vacíos, el tabulador usa
+`PIPE_PARAMETROS` (§14.2). Solo se envían los campos que se ven y cambiaron: uno que no se pinta nunca se vacía.
+«Llenar borrador» acepta una fila de la tabla B de Gemini (con encabezado) o líneas `COLUMNA: valor`, con las limpiezas de
+§15.3; llena el formulario y no guarda nada hasta «Guardar». El servidor, al pasar de `SOLICITADA` a `RECIBIDA`: pide
+precio, moneda, MOQ, incoterm y, si la columna existe, `PRECIO_POR`; pone `FECHA_RECIBIDA` = hoy si viene vacía. El plazo
+se exige al pasar a `ELEGIDA` (`REQUISITOS_RECIBIDA` y `REQUISITOS_ELEGIDA`).
+
+**Decidir:** `ELEGIDA` en 1 clic (sigue la regla de una sola `ELEGIDA` por producto); `RECHAZADA` en 1 clic con un
+motivo de una línea que se agrega al final de `NOTAS` («Rechazada: …», sin borrar lo anterior). **Contraoferta:** el
+precio nuevo se guarda en `PRECIO_UNIT` y el servidor agrega el anterior a `PRECIO_HISTORIAL` en la misma escritura (con
+su auditoría de antes y después). Nunca borra entradas ni cotizaciones.
+
+### 16.4 Bandeja y precio objetivo
+
+| Columna | Qué entra |
+| --- | --- |
+| Esperando respuesta | `SOLICITADA`; vencida (respuesta esperada anterior a hoy) en rojo, primero, con «Copiar seguimiento» |
+| Por completar | `RECIBIDA` (o `ELEGIDA`) sin costo por set del tabulador; lista lo que le falta |
+| Listas para comparar | `RECIBIDA` o `ELEGIDA` con costo por set: costo, «Cumple / No cumple por X», precio objetivo y capital del lote |
+
+`RECHAZADA` y los estados fuera de la lista no entran; se cuentan y se ven en `/eco/pipeline`.
+
+**Precio objetivo** (`precioObjetivo`): el precio unitario máximo, en la `MONEDA`, el `INCOTERM` y la unidad de la
+cotización, que deja el costo por set en el `COSTO_MAX_MXN` calculado del producto (§14.4). El costo por set es lineal en
+`PRECIO_UNIT` (mercancía, IGI y DTA crecen con él; fletes, agente y CEDIS no): se evalúa el tabulador con precio 0 y 1 y se
+despeja. Sin máximo, con un dato del tabulador faltante o con costos fijos que ya superan el máximo, «Por confirmar» con
+el motivo; si usa un SUPUESTO de `PIPE_PARAMETROS`, se marca. Caso Sandes (10.59 USD DDP por set de 6, entrega incluida,
+TC 18.5, máximo 65 MXN): objetivo 65 ÷ 18.5 ≈ **3.51 USD por set**.
+
+**Seguimiento:** «Copiar seguimiento» copia un texto corto en inglés (proveedor, producto y fecha de la solicitud; pide
+precio por pieza o set, MOQ, incoterm y plazo). No envía nada, no conecta Gmail y no lleva correos ni teléfonos.
 

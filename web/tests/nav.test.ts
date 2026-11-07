@@ -13,7 +13,7 @@ const { NavLinks } = await import('@/components/nav-links')
 const TODAS = { showEco: true, showFinanzas: true, showOperations: true }
 const src = (...p: string[]) => readFileSync(path.join(__dirname, '..', 'src', ...p), 'utf8')
 
-// Las 15 rutas de hoy, con su grupo y su subpestaña esperados.
+// Las 16 rutas de hoy (ORD-POS-149: /eco/cotizaciones), con su grupo y su subpestaña esperados.
 const RUTAS: Array<[string, string, string]> = [
   ['/', 'inicio', '/'],
   ['/ordenes', 'ordenes', '/ordenes'],
@@ -26,6 +26,7 @@ const RUTAS: Array<[string, string, string]> = [
   ['/estado', 'proyectos', '/estado'],
   ['/eco', 'radaros', '/eco'],
   ['/eco/pipeline', 'radaros', '/eco/pipeline'],
+  ['/eco/cotizaciones', 'radaros', '/eco/cotizaciones'],
   ['/finanzas', 'finanzas', '/finanzas'],
   ['/agentes', 'agentes', '/agentes'],
   ['/actividad', 'agentes', '/actividad'],
@@ -33,11 +34,11 @@ const RUTAS: Array<[string, string, string]> = [
 ]
 
 describe('grupos y rutas (criterio 1)', () => {
-  it('9 grupos con las 15 rutas de siempre, sin duplicados y cada una con su página', () => {
+  it('9 grupos con las 16 rutas, sin duplicados y cada una con su página', () => {
     const g = gruposMenu(TODAS)
     expect(g.map((x) => x.id)).toEqual(['inicio', 'ordenes', 'tareas', 'planificacion', 'proyectos', 'radaros', 'finanzas', 'agentes', 'operaciones'])
     const hrefs = g.flatMap((x) => x.items.map((i) => i.href))
-    expect(hrefs).toHaveLength(15)
+    expect(hrefs).toHaveLength(16)
     expect(new Set(hrefs)).toEqual(new Set(RUTAS.map(([r]) => r)))
     for (const h of hrefs) {
       const page = h === '/' ? ['app', '(private)', 'page.tsx'] : ['app', '(private)', ...h.slice(1).split('/'), 'page.tsx']
@@ -50,7 +51,7 @@ describe('visibilidad de las condicionadas (criterio 2)', () => {
   it('sin booleanos no aparecen RADAROS, Pipeline, Finanzas ni Operaciones', () => {
     const hrefs = gruposMenu().flatMap((g) => g.items.map((i) => i.href))
     expect(hrefs).toHaveLength(11)
-    for (const h of ['/eco', '/eco/pipeline', '/finanzas', '/operaciones']) expect(hrefs).not.toContain(h)
+    for (const h of ['/eco', '/eco/pipeline', '/eco/cotizaciones', '/finanzas', '/operaciones']) expect(hrefs).not.toContain(h)
     expect(hrefs).toContain('/actividad')
   })
 

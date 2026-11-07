@@ -31,9 +31,9 @@ export function gruposMenu({ showEco = false, showFinanzas = false, showOperatio
       id: 'proyectos', label: 'Proyectos', corto: 'Proyectos',
       items: [{ href: '/proyectos', label: 'Proyectos' }, { href: '/estado', label: 'Estado' }],
     },
-    // /eco y /eco/pipeline solo con RADAROS_SHEET_ID (ORD-POS-067, ORD-POS-097); el layout pasa solo el booleano.
+    // /eco, /eco/pipeline y /eco/cotizaciones solo con RADAROS_SHEET_ID (ORD-POS-067, ORD-POS-097, ORD-POS-149); el layout pasa solo el booleano.
     ...(showEco
-      ? [{ id: 'radaros', label: 'RADAROS', corto: 'RADAROS', items: [{ href: '/eco', label: 'RADAROS' }, { href: '/eco/pipeline', label: 'Pipeline' }] }]
+      ? [{ id: 'radaros', label: 'RADAROS', corto: 'RADAROS', items: [{ href: '/eco', label: 'RADAROS' }, { href: '/eco/pipeline', label: 'Pipeline' }, { href: '/eco/cotizaciones', label: 'Cotizaciones' }] }]
       : []),
     // /finanzas solo con FINANZAS_SHEET_ID (ORD-POS-074).
     ...(showFinanzas ? [{ id: 'finanzas', label: 'Finanzas', corto: 'Finanzas', items: [{ href: '/finanzas', label: 'Finanzas' }] }] : []),

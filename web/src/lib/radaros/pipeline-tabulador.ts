@@ -25,6 +25,9 @@ export const COLUMNAS_MIGRACION_COTIZACIONES = [
   'COSTO_ATERRIZADO_CALC_MXN',
   // ORD-POS-147 (criterio 1): al final, después de COSTO_ATERRIZADO_CALC_MXN; la agrega el propietario a mano (§14.1).
   'PRECIO_POR',
+  // ORD-POS-149 (criterios 5 y 7, §16.1): liga de Drive con la evidencia y el historial de precios de la contraoferta.
+  // `PRECIO_HISTORIAL` lo escribe solo el servidor; el formulario nunca lo envía.
+  'EVIDENCIA_URL', 'PRECIO_HISTORIAL',
 ] as const
 
 /**
@@ -453,6 +456,8 @@ export interface TabuladorVista {
   parametros: Parametros
   bloque: Bloque<null>
   comparar: (productoId: string, ideaId: string | null) => Comparacion
+  /** ORD-POS-149: filas de PIPE_COTIZACIONES con las columnas de §3.3 y las de la migración (§14.1 y §16.1). */
+  cotizaciones: Fila[]
 }
 
 const COLUMNAS_LECTURA = [...COLUMNAS_COTIZACIONES, ...COLUMNAS_MIGRACION_COTIZACIONES] as const
@@ -504,7 +509,41 @@ export function construirTabulador(raw: PipeRaw & { UNIT_ECONOMICS?: unknown[][]
     return { productoId, costoMaximo: max, filas: filas.sort(ordenar) }
   }
 
-  return { migracion, parametros, bloque: t.estado === 'ok' ? { ...t, datos: null } : t, comparar }
+  return { migracion, parametros, bloque: t.estado === 'ok' ? { ...t, datos: null } : t, comparar, cotizaciones }
+}
+
+export interface PrecioObjetivo {
+  /** Precio unitario máximo en la `MONEDA`, el `INCOTERM` y la unidad (`PRECIO_POR`) de la cotización; null = no se puede. */
+  valor: number | null
+  moneda: string | null
+  incoterm: string | null
+  unidad: PrecioPor | null
+  /** Por qué no hay valor (o null si lo hay). */
+  motivo: string | null
+  /** Componentes que salieron de PIPE_PARAMETROS (el objetivo hereda el SUPUESTO). */
+  supuestos: string[]
+}
+
+/**
+ * ORD-POS-149 (criterio 6, §16.4): precio unitario máximo que cumple el `COSTO_MAX_MXN` del producto, con el mismo cálculo
+ * del tabulador. El costo por set es lineal en `PRECIO_UNIT` (la mercancía y el valor en aduana, base del IGI y del DTA,
+ * crecen con él; fletes, agente y CEDIS no), así que se evalúa `costoAterrizado` con precio 0 y con precio 1 y se despeja:
+ * objetivo = (máximo − costo con precio 0) ÷ (costo con precio 1 − costo con precio 0). Nunca inventa un dato: si el
+ * tabulador deja la cotización «Por confirmar» por algo que no sea el precio, el objetivo también.
+ */
+export function precioObjetivo(c: Fila, p: Parametros, costoMaxMxn: number | null): PrecioObjetivo {
+  const cero = costoAterrizado({ ...c, PRECIO_UNIT: '0' }, p)
+  const uno = costoAterrizado({ ...c, PRECIO_UNIT: '1' }, p)
+  const base = { moneda: c.MONEDA ?? null, incoterm: c.INCOTERM ?? null, unidad: uno.unidad, supuestos: uno.supuestos }
+  if (costoMaxMxn === null) return { ...base, valor: null, motivo: 'Sin COSTO_MAX_MXN calculado del producto' }
+  if (cero.porSetMxn === null || uno.porSetMxn === null) {
+    return { ...base, valor: null, motivo: `Faltan datos del tabulador: ${uno.porConfirmar.join('; ') || POR_CONFIRMAR}` }
+  }
+  const pendiente = uno.porSetMxn - cero.porSetMxn
+  if (!(pendiente > 0)) return { ...base, valor: null, motivo: 'El costo no depende del precio (cantidad o tipo de cambio en 0)' }
+  const valor = (costoMaxMxn - cero.porSetMxn) / pendiente
+  if (valor <= 0) return { ...base, valor: null, motivo: `Ni con precio 0 cumple: fletes e impuestos fijos ya suman ${formatoMxn(cero.porSetMxn)} MXN por set` }
+  return { ...base, valor, motivo: null }
 }
 
 /** «Cumple» o «No cumple por X MXN» (criterio 5); «Por confirmar» si falta el costo o el máximo. */

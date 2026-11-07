@@ -15,19 +15,19 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 const read = (rel: string) => readFileSync(path.join(SRC, rel), 'utf8')
 
 const PAGES = [
-  '', 'actividad', 'agentes', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'eco/pipeline', 'estado', 'finanzas', 'metricas', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
+  '', 'actividad', 'agentes', 'capacidad', 'control', 'decisiones/nueva', 'eco', 'eco/cotizaciones', 'eco/pipeline', 'estado', 'finanzas', 'metricas', 'operaciones', 'ordenes', 'ordenes/nueva', 'planificacion', 'proyectos', 'proyectos/[id]',
   'tareas', 'tareas/[id]/editar', 'tareas/nueva', 'tiempos/nuevo',
 ]
 
 describe('árbol integrado V1.3–V1.6', () => {
-  it('las 21 páginas privadas existen y verifican la sesión antes de leer datos', () => {
+  it('las 22 páginas privadas existen y verifican la sesión antes de leer datos', () => {
     const found = files(path.join(SRC, 'app', '(private)')).filter((f) => f.endsWith('page.tsx'))
       .map((f) => path.relative(path.join(SRC, 'app', '(private)'), path.dirname(f)).split(path.sep).join('/')).sort()
     expect(found).toEqual([...PAGES].sort())
     // /eco (ORD-POS-067): privateEco verifica la sesión y solo después lee RADAROS.
     // /eco/pipeline (ORD-POS-097) usa el mismo lector, igual de verificado.
     // /finanzas (ORD-POS-074): privateFinanzas, igual, antes de leer FINANZAS.
-    const lector: Record<string, RegExp> = { eco: /privateEco\(/, 'eco/pipeline': /privateEco\(/, finanzas: /privateFinanzas\(/ }
+    const lector: Record<string, RegExp> = { eco: /privateEco\(/, 'eco/pipeline': /privateEco\(/, 'eco/cotizaciones': /privateEco\(/, finanzas: /privateFinanzas\(/ }
     for (const page of PAGES) expect(read(path.join('app', '(private)', page, 'page.tsx')), page).toMatch(lector[page] ?? /privateData\(/)
   })
 
@@ -36,7 +36,7 @@ describe('árbol integrado V1.3–V1.6', () => {
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts')).map((f) => path.relative(apiDir, f).split(path.sep).join('/')).sort()
     expect(routes).toEqual([
       'auth/[...nextauth]/route.ts', 'control/route.ts',
-      'eco/pipeline/cotizaciones/[id]/route.ts', 'eco/pipeline/cotizaciones/route.ts', 'eco/pipeline/embarques/[id]/route.ts', 'eco/pipeline/embarques/route.ts',
+      'eco/pipeline/cotizaciones/[id]/route.ts', 'eco/pipeline/cotizaciones/pedir/route.ts', 'eco/pipeline/cotizaciones/route.ts', 'eco/pipeline/embarques/[id]/route.ts', 'eco/pipeline/embarques/route.ts',
       'eco/pipeline/productos/[id]/etapa/route.ts', 'eco/pipeline/productos/[id]/route.ts', 'eco/pipeline/productos/route.ts', 'eco/pipeline/proveedores/[id]/route.ts', 'eco/pipeline/proveedores/route.ts',
       'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'operaciones/capacidad/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/escenarios/archivar/route.ts', 'operaciones/escenarios/route.ts', 'operaciones/ideas/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts', 'operaciones/plan-dia/route.ts',
       'operaciones/tareas/[id]/completar/route.ts', 'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/calendario.ics/route.ts', 'planificacion/route.ts', 'resumen/route.ts',

@@ -231,7 +231,7 @@ function AltaRapida({ v, tarjetas, pistas, fleteCedisRef }: { v: PipelineVista; 
   )
 }
 
-function FichaProducto({ v, t, editable, nombres, pistas, fleteCedisRef }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string>; pistas: Record<string, string>; fleteCedisRef: number | null }) {
+function FichaProducto({ v, t, editable, nombres, pistas, fleteCedisRef, completas }: { v: PipelineVista; t: Tarjeta; editable: boolean; nombres: Map<string, string>; pistas: Record<string, string>; fleteCedisRef: number | null; completas: Map<string, Fila> }) {
   const f = t.fila
   const cots = v.cotizaciones.estado === 'ok' ? v.cotizaciones.datos.filas.filter((c) => c.PRODUCTO_ID === t.id) : []
   const embs = v.embarques.estado === 'ok' ? v.embarques.datos.filas.filter((e) => e.PRODUCTO_ID === t.id) : []
@@ -271,7 +271,7 @@ function FichaProducto({ v, t, editable, nombres, pistas, fleteCedisRef }: { v: 
       </EstadoPipe>
       {editable ? (
         <>
-          {cots.map((c) => c.COTIZACION_ID ? <Editar key={c.COTIZACION_ID} titulo={`Editar cotización ${c.COTIZACION_ID}`} ruta="cotizaciones" id={c.COTIZACION_ID} op="eco.cotizacion.editar" fila={c} /> : null)}
+          {cots.map((c) => c.COTIZACION_ID ? <Editar key={c.COTIZACION_ID} titulo={`Editar cotización ${c.COTIZACION_ID}`} ruta="cotizaciones" id={c.COTIZACION_ID} op="eco.cotizacion.editar" fila={completas.get(c.COTIZACION_ID) ?? c} /> : null)}
           <FormularioEco titulo="Nueva cotización" url="/api/eco/pipeline/cotizaciones" campos={CAMPOS['eco.cotizacion.crear']} iniciales={{ PRODUCTO_ID: t.id }} pistas={pistas} entregaCedis={{ fleteCedisRef }} />
         </>
       ) : null}
@@ -543,6 +543,7 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         </p>
       )}
       {v.parametros.avisos.map((a) => <p key={a} className="small"><Badge tone="warn">Aviso</Badge> {a}</p>)}
+      <p className="small"><a href="/eco/cotizaciones">Cotizaciones: bandeja para pedir, recibir y decidir</a></p>
       <Section title="Tablero" id="tablero">
         {editable ? <FormularioEco titulo="Nuevo producto" url="/api/eco/pipeline/productos" campos={CAMPOS['eco.producto.crear']} /> : null}
         <Tablero v={v} filtro={params} editable={editable} />
@@ -554,7 +555,8 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
         </Section>
       ) : null}
       {params.producto && !producto ? <div className="alert alert-warn" role="status"><p>No hay un producto con ese ID.</p></div> : null}
-      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} pistas={pistas} fleteCedisRef={fleteCedisRef} /> : null}
+      {producto ? <FichaProducto v={v} t={producto} editable={editable} nombres={result.vista.nombres} pistas={pistas} fleteCedisRef={fleteCedisRef}
+        completas={new Map(result.vista.tabulador.cotizaciones.flatMap((c) => (c.COTIZACION_ID ? [[c.COTIZACION_ID, c] as const] : [])))} /> : null}
       <Section title="Proveedores" id="proveedores">
         {editable ? <p className="small"><a href="#alta-rapida">Nuevo proveedor en «Alta rápida»</a></p> : null}
         <Proveedores v={v} filtro={params} verContacto={verContacto} />

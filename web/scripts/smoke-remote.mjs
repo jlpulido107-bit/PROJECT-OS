@@ -36,7 +36,7 @@ const healthBody = await health.json().catch(() => ({}))
 check('/api/health → 200 {"status":"ok"}', health.status === 200 && healthBody.status === 'ok', health.status)
 
 const PRIVATE_PAGES = [
-  '/', '/estado', '/ordenes', '/metricas', '/agentes', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones', '/eco', '/eco/pipeline', '/finanzas',
+  '/', '/estado', '/ordenes', '/metricas', '/agentes', '/proyectos', '/proyectos/POS', '/tareas', '/actividad', '/capacidad', '/planificacion', '/control', '/operaciones', '/eco', '/eco/pipeline', '/eco/cotizaciones', '/finanzas',
   '/tareas/nueva', '/tareas/POS-001/editar', '/tiempos/nuevo', '/decisiones/nueva', '/ordenes/nueva',
 ]
 const PRIVATE_APIS = [
@@ -46,7 +46,7 @@ const PRIVATE_APIS = [
   '/api/finanzas/movimientos', '/api/finanzas/recurrentes/confirmar',
   '/api/finanzas/agente/rendimiento', '/api/finanzas/agente/cargo-extra',
   '/api/eco/pipeline/productos', '/api/eco/pipeline/productos/PRD-0001', '/api/eco/pipeline/productos/PRD-0001/etapa',
-  '/api/eco/pipeline/proveedores', '/api/eco/pipeline/proveedores/PRV-0001', '/api/eco/pipeline/cotizaciones',
+  '/api/eco/pipeline/proveedores', '/api/eco/pipeline/proveedores/PRV-0001', '/api/eco/pipeline/cotizaciones', '/api/eco/pipeline/cotizaciones/pedir',
   '/api/eco/pipeline/cotizaciones/COT-0001', '/api/eco/pipeline/embarques', '/api/eco/pipeline/embarques/EMB-0001',
 ]
 
