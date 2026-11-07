@@ -38,6 +38,7 @@ type Tipo =
   | { k: 'id'; prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB' }
   | { k: 'pais' }
   | { k: 'pct' }
+  | { k: 'url' }
 
 interface Campo {
   clave: string
@@ -147,6 +148,14 @@ const COTIZACION_TABULADOR: Campo[] = [
   monto('fleteCedis', 'FLETE_CEDIS'),
 ]
 
+/**
+ * ORD-POS-149 (criterio 7): liga de Drive con la evidencia de la cotización (no un correo ni un teléfono). Solo
+ * `https://drive.google.com/…` o `https://docs.google.com/…`.
+ */
+const EVIDENCIA_URL: Campo = { clave: 'evidenciaUrl', columna: 'EVIDENCIA_URL', tipo: { k: 'url' }, etiqueta: 'Liga de Drive con la evidencia' }
+/** ORD-POS-149: en la edición (paso «Recibir»), `PRECIO_POR` se puede fijar pero no es obligatorio (filas anteriores). */
+const PRECIO_POR_EDICION: Campo = { ...PRECIO_POR_CAMPO, obligatorio: false }
+
 const EMBARQUE_COMUNES: Campo[] = [
   entero('unidades', 'UNIDADES', 1, true),
   fecha('fechaPago', 'FECHA_PAGO'),
@@ -171,7 +180,11 @@ export const CAMPOS = {
   'eco.cotizacion.editar': [
     lista('estado', 'ESTADO', ESTADOS_COTIZACION, true), fecha('fechaRecibida', 'FECHA_RECIBIDA'),
     fecha('muestraFechaRecibida', 'MUESTRA_FECHA_RECIBIDA'), ...COTIZACION_COMUNES,
+    // ORD-POS-149 (criterio 4): «Recibir» edita la misma fila con las columnas del tabulador y la evidencia.
+    PRECIO_POR_EDICION, ...COTIZACION_TABULADOR, EVIDENCIA_URL,
   ],
+  /** ORD-POS-149 (criterio 3): «Pedir» solo lleva producto y proveedor; estado y fechas los pone el servidor. */
+  'eco.cotizacion.pedir': [id('productoId', 'PRODUCTO_ID', 'PRD', true), id('proveedorId', 'PROVEEDOR_ID', 'PRV', true)],
   'eco.embarque.crear': [id('productoId', 'PRODUCTO_ID', 'PRD', true), id('cotizacionId', 'COTIZACION_ID', 'COT', true), ...EMBARQUE_COMUNES],
   'eco.embarque.editar': [lista('estado', 'ESTADO', ESTADOS_EMBARQUE, true), fecha('fechaLlegada', 'FECHA_LLEGADA'), ...EMBARQUE_COMUNES],
 } as const satisfies Record<string, readonly Campo[]>
@@ -204,6 +217,9 @@ const ENTERO = /^\d{1,9}$/
 /** §4.3: texto que empieza por = + - @ se rechaza (se escribiría en una hoja con fórmulas). */
 const FORMULA_START = /^[=+\-@]/
 const PCT_PUNTOS = /^\d{1,3}(\.\d{1,4})?$/
+/** ORD-POS-149: liga de Drive o Docs de Google, sin espacios, comillas ni «@» (nunca un correo); hasta 300 caracteres. */
+export const MENSAJE_URL = 'Liga https://drive.google.com/… o https://docs.google.com/… (hasta 300 caracteres, sin correos).'
+export const DRIVE_URL = /^https:\/\/(drive|docs)\.google\.com\/[^\s"'<>@]{1,270}$/
 
 export function idValido(prefijo: string, valor: string): boolean {
   return new RegExp(`^${prefijo}-\\d{4,}$`).test(valor)
@@ -297,6 +313,9 @@ function valorCampo(c: Campo, raw: unknown, fields: Fields): Celda | null {
       break
     case 'idea':
       if (!IDEA.test(s)) fields[c.clave] = 'ID de idea de RADAROS (p. ej. EC-004).'
+      break
+    case 'url':
+      if (!DRIVE_URL.test(s)) fields[c.clave] = MENSAJE_URL
       break
     case 'pais':
       if (!PAIS.test(s)) fields[c.clave] = 'Código ISO 3166-1 alfa-2 en mayúsculas (p. ej. CN).'

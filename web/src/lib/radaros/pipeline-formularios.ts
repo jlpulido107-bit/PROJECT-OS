@@ -7,7 +7,7 @@
 
 export type TipoCampo =
   | { k: 'texto'; max: number; multilinea?: boolean; sinContacto?: boolean }
-  | { k: 'contacto' } | { k: 'asin' } | { k: 'idea' } | { k: 'fecha' } | { k: 'pais' } | { k: 'pct' }
+  | { k: 'contacto' } | { k: 'asin' } | { k: 'idea' } | { k: 'fecha' } | { k: 'pais' } | { k: 'pct' } | { k: 'url' }
   | { k: 'numero'; decimales: 2 | 4 }
   | { k: 'entero'; min: number }
   | { k: 'lista'; valores: readonly string[] }
@@ -103,6 +103,9 @@ export function validarCampo(c: CampoForm, raw: string): string | null {
       return /^[A-Z0-9]{10}$/.test(s) ? null : '10 caracteres A-Z y 0-9.'
     case 'idea':
       return /^[A-Z]{2,4}-\d{3,4}$/.test(s) ? null : 'ID de idea de RADAROS (p. ej. EC-004).'
+    case 'url':
+      // Espejo de DRIVE_URL (pipeline-escritura-validacion.ts, ORD-POS-149); el servidor decide.
+      return /^https:\/\/(drive|docs)\.google\.com\/[^\s"'<>@]{1,270}$/.test(s) ? null : 'Liga https://drive.google.com/… o https://docs.google.com/… (hasta 300 caracteres, sin correos).'
     case 'pais':
       return /^[A-Z]{2}$/.test(s) ? null : 'Código ISO 3166-1 alfa-2 en mayúsculas (p. ej. CN).'
     case 'fecha': {

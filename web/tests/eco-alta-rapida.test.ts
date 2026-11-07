@@ -172,8 +172,9 @@ describe('criterio 2: el formulario de cotización trae las columnas del tabulad
     expect(cols).not.toContain('COSTO_ATERRIZADO_CALC_MXN')
     // INCOTERM alineado con el tabulador (más OTRO, que el tabulador deja «Por confirmar»).
     expect(INCOTERMS).toEqual([...INCOTERMS_TABULADOR, 'OTRO'])
-    // La edición de cotizaciones no cambia (fuera de alcance).
-    expect(CAMPOS['eco.cotizacion.editar'].map((c) => c.columna)).not.toContain('PAIS_ORIGEN')
+    // ORD-POS-149 (criterio 4): «Recibir» edita la misma fila, así que la edición ya trae las columnas del tabulador.
+    expect(CAMPOS['eco.cotizacion.editar'].map((c) => c.columna)).toEqual(expect.arrayContaining([...TABULADOR, 'PRECIO_POR', 'EVIDENCIA_URL']))
+    expect(CAMPOS['eco.cotizacion.editar'].map((c) => c.columna)).not.toContain('PRECIO_HISTORIAL')
   })
 
   it('cada campo vacío dice qué valor de PIPE_PARAMETROS tomará, o «Por confirmar» si no hay', () => {

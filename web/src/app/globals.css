@@ -321,3 +321,6 @@ tbody th { font-weight: 500; }
 .board-col { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-width: 0; }
 .board-col h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
 .board-col-over { outline: 2px dashed var(--accent, currentColor); outline-offset: -4px; }
+/* ORD-POS-149: bandeja de /eco/cotizaciones en 3 pasos; vencidas en rojo. */
+.board-3 { grid-template-columns: repeat(3, minmax(260px, 1fr)); }
+.card-vencida { border-left: 4px solid var(--danger-fg); }

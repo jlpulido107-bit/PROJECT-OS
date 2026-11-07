@@ -292,3 +292,53 @@ export function parsearTablaGemini(texto: string, ctx: ContextoPegado): Resultad
   }
   return { error: borradores.length ? null : 'La tabla no trae filas de datos.', columnas, borradores }
 }
+
+export interface BorradorRespuesta {
+  /** Clave del formulario → valor propuesto (sin producto, proveedor ni estado: son los de la cotización). */
+  valores: Record<string, string>
+  notas: string[]
+  /** Columnas pegadas que no se reconocen: no se usan. */
+  ignoradas: string[]
+  error: string | null
+}
+
+/**
+ * ORD-POS-149 (criterio 4, §16.3): borrador de «Recibir» a partir de la respuesta pegada, una fila de la tabla B de
+ * Gemini (Markdown o tabuladores) o líneas «COLUMNA: valor» de texto. Reúsa `parsearTablaGemini` (mismas columnas, mismas
+ * limpiezas) con el producto y el proveedor de la cotización que se está recibiendo. Nada se guarda: el propietario
+ * revisa el formulario lleno y pulsa «Guardar».
+ */
+export function borradorRespuesta(texto: string, ctx: ContextoPegado, ids: { productoId: string; proveedorId: string }): BorradorRespuesta {
+  const vacio = (error: string): BorradorRespuesta => ({ valores: {}, notas: [], ignoradas: [], error })
+  const lineas = texto.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim() !== '')
+  const tabla = lineas.filter((l) => l.includes('|') || l.includes('\t'))
+  let encabezado: string[] = []
+  let fila: string[] = []
+  const inicio = tabla.findIndex((l) => celdas(l).some((c) => DESTINO[normalEncabezado(c)]))
+  if (inicio >= 0) {
+    encabezado = celdas(tabla[inicio]!)
+    fila = celdas(tabla.slice(inicio + 1).find((l) => !SEPARADOR.test(l.trim())) ?? '')
+  } else {
+    for (const l of lineas) {
+      const m = /^\s*([^:=]{2,60}?)\s*[:=]\s*(.*)$/.exec(l)
+      if (m) {
+        encabezado.push(m[1]!)
+        fila.push(m[2]!.trim())
+      }
+    }
+  }
+  if (!encabezado.length || fila.length !== encabezado.length) return vacio('No se reconoció la respuesta: pega una fila de la tabla B con su encabezado, o líneas «PRECIO_UNIT: 10.59».')
+  // La cotización ya tiene producto y proveedor: los del texto no se usan.
+  const propias = encabezado.map((h) => DESTINO[normalEncabezado(h)])
+  const quitar = (_: string, i: number) => propias[i] !== '__producto' && propias[i] !== '__proveedor' && propias[i] !== '__id'
+  const h = ['PRD / EC', 'PROVEEDOR (empresa)', ...encabezado.filter(quitar)]
+  const f = [ids.productoId, ids.proveedorId, ...fila.filter(quitar)]
+  const r = parsearTablaGemini([h, f].map((x) => x.map((c) => c.replace(/[\t|]/g, ' ')).join('\t')).join('\n'), { ...ctx, cotizaciones: [] })
+  const b = r.borradores[0]
+  if (!b?.reconocida) return vacio(r.error ?? b?.motivo ?? 'No se reconoció la respuesta.')
+  const valores = { ...b.valores }
+  delete valores.productoId
+  delete valores.proveedorId
+  delete valores.estado
+  return { valores, notas: b.notas, ignoradas: r.columnas.filter((c) => !c.destino).map((c) => c.texto), error: null }
+}

@@ -48,7 +48,7 @@ export function Entrada({ c, valor, error, pista, etiqueta }: { c: CampoForm; va
   } else if (t.k === 'texto' && t.multilinea) {
     control = <textarea {...comunes} maxLength={t.max} rows={3} />
   } else {
-    const pista = t.k === 'fecha' ? 'AAAA-MM-DD' : t.k === 'id' ? `${t.prefijo}-NNNN` : t.k === 'pais' ? 'CN' : t.k === 'idea' ? 'EC-004' : undefined
+    const pista = t.k === 'fecha' ? 'AAAA-MM-DD' : t.k === 'id' ? `${t.prefijo}-NNNN` : t.k === 'pais' ? 'CN' : t.k === 'idea' ? 'EC-004' : t.k === 'url' ? 'https://drive.google.com/…' : undefined
     const numerico = t.k === 'numero' || t.k === 'entero'
     control = <input {...comunes} type="text" placeholder={pista} inputMode={numerico ? (t.k === 'entero' ? 'numeric' : 'decimal') : undefined} maxLength={t.k === 'texto' ? t.max : undefined} />
   }
@@ -73,7 +73,8 @@ export function CasillaEntregaCedis({ marcada, error }: { marcada: boolean; erro
   )
 }
 
-function Mensaje({ r, campos }: { r: Resultado; campos: readonly CampoForm[] }) {
+/** Resultado de un envío (lo reúsa la bandeja de /eco/cotizaciones, ORD-POS-149). */
+export function Mensaje({ r, campos }: { r: Resultado; campos: readonly CampoForm[] }) {
   if (r.tipo === 'ok') {
     return (
       <div className="alert alert-ok" role="status">
