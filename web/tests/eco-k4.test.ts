@@ -97,6 +97,9 @@ describe('/eco: columnas de Trends en SCORING', () => {
     // EC-012 sin K4_MACRO_STATUS: su fila del ranking no lleva etiqueta.
     const filaEc12 = h.split('<tr>').find((f) => f.startsWith('<th scope="row">EC-012</th><td>10</td>'))!
     expect(filaEc12).not.toContain('K4')
+    // Regla de RADAROS (REGLAS.RECIENTES = 13): promedio de las últimas 13 semanas ÷ las mismas 13 de hace un año.
+    expect(h).toContain('Interanual (últimas 13 semanas ÷ las mismas 13 de hace un año)')
+    expect(h).not.toContain('12 semanas')
   })
 
   it('SIN_DATOS con métricas vacías: «—», nunca 0', async () => {

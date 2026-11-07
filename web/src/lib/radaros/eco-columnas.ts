@@ -71,7 +71,7 @@ export const COLUMNAS_ECO: Readonly<Record<string, Columna>> = {
   // Validación macro de Trends (K4, ORD-POS-148; RADAROS ORD-ECO-024). Con SIN_DATOS las métricas van vacías: «—».
   KW_RAIZ_TRENDS: { titulo: 'Keyword en Google Trends', formato: 'texto', ayuda: 'Término raíz que RADAROS consultó en Google Trends.' },
   TREND_INTERANUAL: {
-    titulo: 'Interanual (últimas 12 semanas ÷ mismo periodo del año anterior)', formato: 'decimal',
+    titulo: 'Interanual (últimas 13 semanas ÷ las mismas 13 de hace un año)', formato: 'decimal',
     ayuda: 'Por encima de 1, más interés que hace un año.',
   },
   TREND_PENDIENTE_52S: { titulo: 'Pendiente de 52 semanas (% al mes)', formato: 'pct', ayuda: 'Cambio del interés por mes en el último año.' },
