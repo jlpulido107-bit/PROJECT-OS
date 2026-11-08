@@ -71,6 +71,12 @@ export const COLUMNAS_TRENDS_SCORING = [
 /** Grupo «Macro (Trends)» del detalle de cada idea; `K4_MACRO_STATUS` va como etiqueta en el ranking. */
 export const GRUPO_MACRO_TRENDS = ['KW_RAIZ_TRENDS', 'TREND_INTERANUAL', 'TREND_PENDIENTE_52S', 'TREND_CV_52S', 'TREND_FECHA'] as const
 
+/**
+ * «Decisión» de SCORING (VALIDATE / RESEARCH / KILL; ✅ existe en el libro real, verificado por POS · Ideas para
+ * ORD-POS-151). Se compara con `normalizarEncabezado`: «Decisión» ≡ `DECISION`. Solo se muestra; /eco no la cambia.
+ */
+export const COLUMNA_DECISION = 'DECISION'
+
 export const COLUMNAS_RESUMEN = ['SEMANA', 'MARKETPLACE', 'IDEA_ID', 'ASINS_USADOS', 'ESTADO'] as const
 const OBLIGATORIAS_RESUMEN = ['SEMANA', 'IDEA_ID', 'ESTADO'] as const
 
@@ -162,6 +168,8 @@ export interface IdeaRanking {
   campos: Fila
   /** Etiqueta K4 de `K4_MACRO_STATUS` (ORD-POS-148); null sin valor. */
   k4: EtiquetaK4 | null
+  /** «Decisión» de SCORING tal cual (VALIDATE / RESEARCH / KILL, ORD-POS-151); null vacía o sin la columna. */
+  decision: string | null
   resumen: { ultimaSemana: string; estado: string | null; semanas: number } | null
 }
 
@@ -171,6 +179,8 @@ export interface Ranking {
   conColumnasAmz: boolean
   /** false si SCORING no tiene ninguna columna de Trends (ORD-POS-148): sin etiqueta K4 ni grupo «Macro (Trends)». */
   conColumnasTrends: boolean
+  /** false si SCORING no tiene la columna «Decisión» (ORD-POS-151). */
+  conColumnaDecision: boolean
   ideas: IdeaRanking[]
   /** Nombre de PRODUCTS por ID de idea. */
   nombres: Map<string, string>
@@ -199,7 +209,9 @@ function resumenPorIdea(rows: unknown[][] | undefined) {
 function ranking(
   scoring: unknown[][] | undefined, resumenRows: unknown[][] | undefined, nombres: Map<string, string>, now: number,
 ): Bloque<Ranking> {
-  const columnas = [COLUMNA_ID_IDEA, ...COLUMNAS_PUNTUACION, ...COLUMNAS_SCORING_AMZ, ...COLUMNAS_TRENDS_SCORING]
+  // «Decisión» se busca por encabezado normalizado (≡ `DECISION`) y se lee con su encabezado tal cual (ORD-POS-151).
+  const colDecision = (scoring?.[0] ?? []).map(cellText).find((h): h is string => h !== null && normalizarEncabezado(h) === COLUMNA_DECISION) ?? null
+  const columnas = [COLUMNA_ID_IDEA, ...COLUMNAS_PUNTUACION, ...COLUMNAS_SCORING_AMZ, ...COLUMNAS_TRENDS_SCORING, ...(colDecision ? [colDecision] : [])]
   const tabla = leerTabla('SCORING', scoring, columnas, [COLUMNA_ID_IDEA], NO_EXISTE('SCORING'), 'Sin ideas en SCORING.')
   const { bloque, porIdea } = resumenPorIdea(resumenRows)
   return mapear(tabla, ({ encabezados, filas }) => {
@@ -210,6 +222,7 @@ function ranking(
       return {
         id, nombre: nombres.get(id) ?? null, puntuacion: columnaPuntuacion ? (f[columnaPuntuacion] ?? null) : null, campos: f,
         k4: etiquetaK4(f.K4_MACRO_STATUS ?? null, f.TREND_FECHA ?? null, now),
+        decision: colDecision ? (f[colDecision] ?? null) : null,
         resumen: r ? { ultimaSemana: r.ultimaSemana, estado: r.estado, semanas: r.semanas.size } : null,
       }
     })
@@ -223,7 +236,8 @@ function ranking(
     })
     return {
       columnaPuntuacion, conColumnasAmz: COLUMNAS_SCORING_AMZ.some((c) => encabezados.has(c)),
-      conColumnasTrends: COLUMNAS_TRENDS_SCORING.some((c) => encabezados.has(c)), ideas, nombres, resumen: bloque,
+      conColumnasTrends: COLUMNAS_TRENDS_SCORING.some((c) => encabezados.has(c)), conColumnaDecision: colDecision !== null, ideas, nombres,
+      resumen: bloque,
     }
   })
 }
