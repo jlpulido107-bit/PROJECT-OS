@@ -92,7 +92,8 @@ describe('Últimas corridas (criterios 3 y 4)', () => {
     const tabla = h.slice(h.indexOf('aria-label="Últimas corridas"'))
     const thead = tabla.slice(0, tabla.indexOf('</thead>'))
     for (const t of ['Semana', 'Inicio', 'Fin', 'Estado', 'Ideas', 'ASIN con datos', 'ASIN sin datos', 'Tokens de Keepa', 'Llamadas a SP-API', 'Mensaje']) {
-      expect(thead).toContain(`<th scope="col">${t} <span title=`)
+      // ORD-POS-152: las columnas tras «Más columnas» llevan la clase col-extra.
+      expect(thead).toMatch(new RegExp(`<th scope="col"( class="col-extra")?>${t} <span title=`))
     }
     expect(thead).not.toContain('CORRIDA_ID')
     expect(thead).not.toContain('<code>')
@@ -101,7 +102,7 @@ describe('Últimas corridas (criterios 3 y 4)', () => {
 
   it('Inicio y Fin en fecha y hora de Mérida', async () => {
     const h = await render(EcoPage, { AMZ_CORRIDAS: CORRIDAS })
-    expect(h).toContain(`<td>${formatearInstante('2026-11-02 06:04:00')}</td>`)
+    expect(h).toContain(`<td class="col-extra">${formatearInstante('2026-11-02 06:04:00')}</td>`)
     expect(formatearInstante('2026-11-02 06:04:00')).toMatch(/2 nov.* 2026.*06:04/)
     expect(formatearInstante('no es fecha')).toBe('no es fecha')
     expect(formatearInstante('')).toBeNull()
@@ -110,8 +111,9 @@ describe('Últimas corridas (criterios 3 y 4)', () => {
   it('mensaje vacío: «—» sin «sin dato»', async () => {
     const h = await render(EcoPage, { AMZ_CORRIDAS: CORRIDAS })
     const fila = h.slice(h.indexOf('title="Corrida 2026-W45|MX|1"'))
-    const celdas = fila.slice(0, fila.indexOf('</tr>')).split('<td>')
-    expect(celdas.at(-1)).toBe('<span class="muted">—</span></td>')
+    // ORD-POS-152: Mensaje es la última columna visible; después van las de «Más columnas».
+    const visibles = fila.slice(0, fila.indexOf('<td class="col-extra">')).split('<td>')
+    expect(visibles.at(-1)).toBe('<span class="muted">—</span></td>')
     expect(h).toContain('tope de tokens')
   })
 

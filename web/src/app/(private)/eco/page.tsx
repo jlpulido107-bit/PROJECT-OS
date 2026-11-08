@@ -20,10 +20,11 @@ import { PestanasIdea, type Pestana } from '@/components/eco/pestanas-idea'
 import { Veredicto } from '@/components/eco/veredicto'
 import { writeAccess } from '@/components/operations/write-access'
 import {
-  ayudaColumna, COLUMNAS_CORRIDAS_ECO, estadoCorrida, etiquetaIdea, formatearInstante, formatearValor, K4_VIGENCIA_DIAS, SIN_DATO,
-  tituloColumna, type Columna, type EtiquetaK4,
+  ayudaColumna, COLUMNAS_CORRIDAS_ECO, CORRIDAS_EXTRAS, CORRIDAS_VISIBLES, estadoCorrida, etiquetaIdea, formatearInstante, formatearValor, K4_VIGENCIA_DIAS, SIN_DATO,
+  TENDENCIAS_EXTRAS, TENDENCIAS_VISIBLES, tituloColumna, UNIT_EXTRAS, UNIT_VISIBLES, type Columna, type EtiquetaK4,
 } from '@/lib/radaros/eco-columnas'
 import { FiltroAuto } from '@/components/filtro-auto'
+import { COL_EXTRA, MasColumnas } from '@/components/mas-columnas'
 
 export const metadata: Metadata = { title: 'RADAROS (solo lectura)' }
 
@@ -58,9 +59,14 @@ function SinDato() {
   return <span className="muted" title={SIN_DATO}><span aria-hidden="true">—</span><span className="visually-hidden">{SIN_DATO}</span></span>
 }
 
-function Celda({ fila, col }: { fila: Fila; col: string }) {
+/** Clase de una columna que se oculta hasta pedir «Más columnas» (ORD-POS-152). */
+function claseExtra(col: string, extras?: readonly string[]): string | undefined {
+  return extras?.includes(col) ? COL_EXTRA : undefined
+}
+
+function Celda({ fila, col, className }: { fila: Fila; col: string; className?: string }) {
   const valor = formatearValor(col, fila[col] ?? null)
-  return <td>{valor === null ? <SinDato /> : valor}</td>
+  return <td className={className}>{valor === null ? <SinDato /> : valor}</td>
 }
 
 function Ayuda({ texto }: { texto: string }) {
@@ -68,11 +74,11 @@ function Ayuda({ texto }: { texto: string }) {
 }
 
 /** Título en español con ayuda (ⓘ) de una línea; sin traducción, el encabezado tal cual. */
-function Encabezado({ col, mapa }: { col: string; mapa?: Readonly<Record<string, Columna>> }) {
+function Encabezado({ col, mapa, className }: { col: string; mapa?: Readonly<Record<string, Columna>>; className?: string }) {
   const titulo = tituloColumna(col, mapa)
   const ayuda = ayudaColumna(col, mapa)
   return (
-    <th scope="col">
+    <th scope="col" className={className}>
       {titulo === col ? <code>{col}</code> : titulo}
       {ayuda ? <>{' '}<Ayuda texto={ayuda} /></> : null}
     </th>
@@ -87,9 +93,7 @@ function EstadoDeCorrida({ raw }: { raw: string | null }) {
 }
 
 /** Columnas de «Últimas corridas»; `CORRIDA_ID` va en la ayuda de la fila, no como columna. */
-const COLUMNAS_TABLA_CORRIDAS = [
-  'SEMANA', 'INICIO', 'FIN', 'ESTADO', 'IDEAS', 'ASINS_OK', 'ASINS_FALTAN', 'KEEPA_TOKENS_CONSUMIDOS', 'SPAPI_LLAMADAS', 'MENSAJE',
-] as const
+const COLUMNAS_TABLA_CORRIDAS = [...CORRIDAS_VISIBLES, ...CORRIDAS_EXTRAS]
 
 function CeldaCorrida({ fila, col }: { fila: Fila; col: (typeof COLUMNAS_TABLA_CORRIDAS)[number] }) {
   const raw = fila[col] ?? null
@@ -101,70 +105,86 @@ function CeldaCorrida({ fila, col }: { fila: Fila; col: (typeof COLUMNAS_TABLA_C
   // Un mensaje vacío es normal (corrida sin notas): «—» sin la leyenda «sin dato».
   if (col === 'MENSAJE') return <td>{raw ?? <span className="muted">—</span>}</td>
   const valor = col === 'INICIO' || col === 'FIN' ? formatearInstante(raw) : formatearValor(col, raw)
-  return <td>{valor === null ? <SinDato /> : valor}</td>
+  return <td className={claseExtra(col, CORRIDAS_EXTRAS)}>{valor === null ? <SinDato /> : valor}</td>
 }
 
 function TablaCorridas({ filas }: { filas: Fila[] }) {
   return (
-    <div className="table-wrap">
-      <table aria-label="Últimas corridas">
-        <thead><tr>{COLUMNAS_TABLA_CORRIDAS.map((c) => <Encabezado key={c} col={c} mapa={COLUMNAS_CORRIDAS_ECO} />)}</tr></thead>
-        <tbody>
-          {filas.map((f, i) => (
-            <tr key={`${f.CORRIDA_ID ?? ''}-${i}`}>
-              {COLUMNAS_TABLA_CORRIDAS.map((c) => <CeldaCorrida key={c} fila={f} col={c} />)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <MasColumnas clave="eco-corridas" extras={CORRIDAS_EXTRAS.length}>
+      <div className="table-wrap">
+        <table aria-label="Últimas corridas">
+          <thead><tr>{COLUMNAS_TABLA_CORRIDAS.map((c) => <Encabezado key={c} col={c} mapa={COLUMNAS_CORRIDAS_ECO} className={claseExtra(c, CORRIDAS_EXTRAS)} />)}</tr></thead>
+          <tbody>
+            {filas.map((f, i) => (
+              <tr key={`${f.CORRIDA_ID ?? ''}-${i}`}>
+                {COLUMNAS_TABLA_CORRIDAS.map((c) => <CeldaCorrida key={c} fila={f} col={c} />)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </MasColumnas>
   )
 }
 
 const LEYENDA_SIN_DATO = <p className="small muted">«—» = {SIN_DATO}.</p>
 
-function TablaColumnas({ filas, columnas, label, clave, nombres }: {
-  filas: Fila[]; columnas: readonly string[]; label: string; clave: string; nombres?: Map<string, string>
+/** Tabla con `visibles` siempre a la vista y `extras` tras «Más columnas» (ORD-POS-152); sin JavaScript, todas. */
+function TablaColumnas({ filas, visibles, extras, label, clave, memoria, nombres }: {
+  filas: Fila[]; visibles: readonly string[]; extras: readonly string[]; label: string; clave: string; memoria: string; nombres?: Map<string, string>
 }) {
+  const columnas = [...visibles, ...extras]
   return (
-    <div className="table-wrap">
-      <table aria-label={label}>
-        <thead><tr>{columnas.map((c) => (nombres && c === COLUMNA_ID_IDEA ? <th key={c} scope="col">Idea</th> : <Encabezado key={c} col={c} />))}</tr></thead>
-        <tbody>
-          {filas.map((f, i) => (
-            <tr key={`${f[clave] ?? ''}-${i}`}>
-              {columnas.map((c) => (nombres && c === COLUMNA_ID_IDEA
-                ? <th key={c} scope="row">{etiquetaIdea(f[c] ?? '', nombres.get(f[c] ?? ''))}</th>
-                : <Celda key={c} fila={f} col={c} />))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <MasColumnas clave={memoria} extras={extras.length}>
+      <div className="table-wrap">
+        <table aria-label={label}>
+          <thead><tr>{columnas.map((c) => (nombres && c === COLUMNA_ID_IDEA ? <th key={c} scope="col">Idea</th> : <Encabezado key={c} col={c} className={claseExtra(c, extras)} />))}</tr></thead>
+          <tbody>
+            {filas.map((f, i) => (
+              <tr key={`${f[clave] ?? ''}-${i}`}>
+                {columnas.map((c) => (nombres && c === COLUMNA_ID_IDEA
+                  ? <th key={c} scope="row">{etiquetaIdea(f[c] ?? '', nombres.get(f[c] ?? ''))}</th>
+                  : <Celda key={c} fila={f} col={c} className={claseExtra(c, extras)} />))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </MasColumnas>
+  )
+}
+
+/** Criterio 1: el estado del motor en una línea (última corrida, semana, inicio, tokens de Keepa restantes y avisos). */
+function LineaMotor({ datos }: { datos: Corridas }) {
+  const u = datos.ultima
+  return (
+    <div className="motor-linea" aria-label="Última corrida del motor">
+      {u ? (
+        <>
+          <span>Última corrida <EstadoDeCorrida raw={u.ESTADO ?? null} />{u.CORRIDA_ID ? <>{' '}<Ayuda texto={`Corrida ${u.CORRIDA_ID}`} /></> : null}</span>
+          <span>Semana <Text value={u.SEMANA ?? null} empty="—" /></span>
+          <span>Inicio <Text value={formatearInstante(u.INICIO ?? null)} empty="—" /> <span className="small muted">(hora Mérida)</span></span>
+          <span>Keepa: <Text value={u.KEEPA_TOKENS_RESTANTES ?? null} empty="—" /> tokens restantes</span>
+        </>
+      ) : <span className="muted">Sin corridas en AMZ_CORRIDAS.</span>}
+      {datos.avisos.length ? (
+        <ul className="motor-avisos" aria-label="Avisos del motor">
+          {datos.avisos.map((a) => <li key={a}><Badge tone="warn">Aviso</Badge> {a}</li>)}
+        </ul>
+      ) : null}
+      {datos.recientes.length ? <a className="small" href="#corridas">Ver últimas corridas</a> : null}
     </div>
   )
 }
 
+/** Criterio 1: «Últimas corridas» plegada abajo, con 5 columnas y «Más columnas» para el resto. */
 function BloqueCorridas({ datos }: { datos: Corridas }) {
-  const u = datos.ultima
   return (
-    <>
-      {datos.avisos.length ? (
-        <ul className="list" aria-label="Avisos del motor">
-          {datos.avisos.map((a) => <li key={a}><Badge tone="warn">Aviso</Badge> {a}</li>)}
-        </ul>
-      ) : null}
-      {u ? (
-        <dl className="meta meta-wide">
-          <div><dt>Última corrida</dt><dd><Text value={u.CORRIDA_ID ?? null} /> <EstadoDeCorrida raw={u.ESTADO ?? null} /></dd></div>
-          <div><dt>Semana</dt><dd><Text value={u.SEMANA ?? null} /></dd></div>
-          <div><dt>Inicio (hora Mérida)</dt><dd><Text value={formatearInstante(u.INICIO ?? null)} /></dd></div>
-          <div><dt>Tokens de Keepa</dt><dd><Text value={u.KEEPA_TOKENS_CONSUMIDOS ?? null} empty="—" /> consumidos · <Text value={u.KEEPA_TOKENS_RESTANTES ?? null} empty="—" /> restantes</dd></div>
-        </dl>
-      ) : null}
-      <h3>Últimas corridas</h3>
+    <details className="section plegable-seccion" id="corridas">
+      <summary><h2>Últimas corridas</h2> <span className="small muted">({datos.recientes.length})</span></summary>
       <p className="small muted">Inicio y Fin en hora de Mérida. «—» en Mensaje = la corrida no dejó nota.</p>
       <TablaCorridas filas={datos.recientes} />
-    </>
+    </details>
   )
 }
 
@@ -328,8 +348,8 @@ function BloqueUnit({ datos }: { datos: UnitEconomics }) {
     <>
       <p className="small"><strong>Las tarifas de SP-API son estimaciones no garantizadas.</strong></p>
       {datos.conColumnasAmz ? null : <p className="small muted">UNIT_ECONOMICS todavía no tiene columnas <code>AMZ_*</code>: se agregan en la activación de V1.2.</p>}
-      <TablaColumnas filas={datos.filas} label="Unit economics por idea" clave={COLUMNA_ID_IDEA} nombres={datos.nombres}
-        columnas={[COLUMNA_ID_IDEA, 'AMZ_ASIN_REF', 'AMZ_PRECIO_MXN', 'AMZ_PRECIO_MXN_AVG90', 'AMZ_COMISION_MXN', 'AMZ_COMISION_PCT', 'AMZ_FBA_MXN', 'AMZ_OTRAS_TARIFAS_MXN', 'AMZ_TARIFAS_FECHA']} />
+      <TablaColumnas filas={datos.filas} label="Unit economics por idea" clave={COLUMNA_ID_IDEA} memoria="eco-unit" nombres={datos.nombres}
+        visibles={UNIT_VISIBLES} extras={UNIT_EXTRAS} />
       {LEYENDA_SIN_DATO}
     </>
   )
@@ -361,8 +381,8 @@ function BloqueTendencias({ datos, filtro }: { datos: Tendencias; filtro: Search
         <button type="submit">Filtrar</button>
       </form>
       {filas.length > TENDENCIAS_MAX ? <p className="small muted">Se muestran {TENDENCIAS_MAX} de {filas.length} términos, en el orden de la hoja.</p> : null}
-      <TablaColumnas filas={filas.slice(0, TENDENCIAS_MAX)} label="Tendencias de Mercado Libre" clave="KEYWORD"
-        columnas={['KEYWORD', 'SEMANAS_DISTINTAS', 'PRIMERA_SEMANA', 'ULTIMA_SEMANA', 'ESTADO', 'ETIQUETA_PRELIMINAR', 'POSICION_ULTIMA']} />
+      <TablaColumnas filas={filas.slice(0, TENDENCIAS_MAX)} label="Tendencias de Mercado Libre" clave="KEYWORD" memoria="eco-tendencias"
+        visibles={TENDENCIAS_VISIBLES} extras={TENDENCIAS_EXTRAS} />
       <p className="small muted"><code>POSICION_ULTIMA</code> no es un ranking: son tres listas concatenadas.</p>
     </>
   )
@@ -416,11 +436,17 @@ export default async function EcoPage({ searchParams }: { searchParams: Promise<
         Solo lectura de la hoja de RADAROS, leída {formatInstant(result.fetchedAt)} (hora Mérida). Esta página no escribe,
         no llama a Keepa ni a SP-API y no calcula puntuaciones: muestra lo que el motor dejó en la hoja.
       </p>
-      <Section title="Estado del motor" id="motor"><EstadoBloque bloque={v.corridas}>{(d) => <BloqueCorridas datos={d} />}</EstadoBloque></Section>
+      <Section title="Estado del motor" id="motor"><EstadoBloque bloque={v.corridas}>{(d) => <LineaMotor datos={d} />}</EstadoBloque></Section>
       <Section title="Ranking de ideas" id="ranking"><EstadoBloque bloque={v.ranking}>{(d) => <BloqueRanking datos={d} unit={v.unitEconomics} compras={compras} filtro={filtro} tendencias={params} />}</EstadoBloque></Section>
       <Section title="Unit economics" id="unit-economics"><EstadoBloque bloque={v.unitEconomics}>{(d) => <BloqueUnit datos={d} />}</EstadoBloque></Section>
-      <Section title="Candidatos" id="candidatos"><Empty>{v.candidatos.mensaje}</Empty></Section>
-      <Section title="Tendencias" id="tendencias"><EstadoBloque bloque={v.tendencias}>{(d) => <BloqueTendencias datos={d} filtro={params} />}</EstadoBloque></Section>
+      {/* Criterio 4: candidatos en una línea, sin sección propia. */}
+      <p className="small muted" id="candidatos"><strong>Candidatos:</strong> {v.candidatos.mensaje}</p>
+      {/* Criterios 1 y 3: lo secundario, plegado abajo. Con un filtro de tendencias aplicado, se abre. */}
+      <details className="section plegable-seccion" id="tendencias" open={Boolean(params.estado || params.etiqueta)}>
+        <summary><h2>Tendencias</h2>{v.tendencias.estado === 'ok' ? <> <span className="small muted">({v.tendencias.datos.filas.length} términos)</span></> : null}</summary>
+        <EstadoBloque bloque={v.tendencias}>{(d) => <BloqueTendencias datos={d} filtro={params} />}</EstadoBloque>
+      </details>
+      {v.corridas.estado === 'ok' && v.corridas.datos.recientes.length ? <BloqueCorridas datos={v.corridas.datos} /> : null}
     </>
   )
 }

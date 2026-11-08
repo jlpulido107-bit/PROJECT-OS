@@ -211,7 +211,8 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 0.5rem; }
 .breadcrumb { margin-top: 1rem; }
 
-.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+/* position: relative: el texto oculto de «—» (.visually-hidden, absoluto) queda dentro del desplazamiento de la tabla y no ensancha la página (ORD-POS-152, 390 px). */
+.table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
 table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 thead th { background: var(--neutral-bg); font-weight: 600; white-space: nowrap; }
@@ -371,6 +372,14 @@ tbody th { font-weight: 500; }
   color: var(--text); cursor: pointer;
 }
 .idea-tablist [role="tab"][aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+/* ORD-POS-152: «Más columnas» (sin JavaScript no hay data-cortas y se ven todas), motor en una línea y secciones plegadas. */
+.mas-columnas[data-cortas] .col-extra { display: none; }
+.mas-columnas-boton { margin: 0 0 6px; }
+.motor-linea { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; overflow-wrap: anywhere; }
+.motor-avisos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.motor-linea .badge { white-space: normal; }
+.plegable-seccion > summary { cursor: pointer; min-height: 40px; padding: 4px 0; }
+.plegable-seccion > summary > h2 { display: inline; margin: 0; }
 @media (max-width: 480px) {
   .idea-fila { grid-template-columns: minmax(0, 1fr); }
 }
