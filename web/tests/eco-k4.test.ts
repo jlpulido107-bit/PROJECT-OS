@@ -85,18 +85,18 @@ describe('/eco: columnas de Trends en SCORING', () => {
     expect(ranking(SCORING_SIN).ideas.map((i) => i.id)).toEqual(['EC-005', 'EC-006'])
   })
 
-  it('render con columnas: etiquetas K4 en el ranking y grupo «Macro (Trends)» con sus métricas', async () => {
+  it('render con columnas: etiquetas K4 en el ranking y pestaña «Macro (Trends)» con sus métricas', async () => {
     const h = await html({ SCORING: SCORING_CON })
     expect(h).toContain('Validación macro (K4)')
     expect(h).toContain('K4 aprobado')
     expect(h).toContain('K4 veto: propuesta KILL: decide el propietario')
     expect(h).toContain('K4 sin datos: sin resultados en Trends')
     expect(h).toContain('K4 estacional: pico en nov, dic · consulta vencida')
-    expect(h).toContain('<summary>Macro (Trends)</summary>')
+    expect(h).toContain('<h4>Macro (Trends)</h4>')
     for (const t of ['tocadiscos', '1.32', '-1.11 %', '0.19', '2026-11-06', 'Pendiente de 52 semanas (% al mes)']) expect(h).toContain(t)
     // EC-012 sin K4_MACRO_STATUS: su fila del ranking no lleva etiqueta.
-    const filaEc12 = h.split('<tr>').find((f) => f.startsWith('<th scope="row">EC-012</th><td>10</td>'))!
-    expect(filaEc12).not.toContain('K4')
+    const ec12 = h.slice(h.indexOf('id="idea-EC-012"'))
+    expect(ec12.slice(0, ec12.indexOf('</summary>'))).not.toContain('K4')
     // Regla de RADAROS (REGLAS.RECIENTES = 13): promedio de las últimas 13 semanas ÷ las mismas 13 de hace un año.
     expect(h).toContain('Interanual (últimas 13 semanas ÷ las mismas 13 de hace un año)')
     expect(h).not.toContain('12 semanas')
@@ -104,11 +104,11 @@ describe('/eco: columnas de Trends en SCORING', () => {
 
   it('SIN_DATOS con métricas vacías: «—», nunca 0', async () => {
     const h = await html({ SCORING: SCORING_CON })
-    const macro = h.slice(h.indexOf('<summary>Macro (Trends)</summary>'))
-    const filaEc7 = macro.split('<tr>').find((f) => f.startsWith('<th scope="row">EC-007</th>'))!
-    expect(filaEc7).toContain('lampara')
-    expect(filaEc7.match(/sin dato/g)?.length).toBeGreaterThanOrEqual(3)
-    expect(filaEc7).not.toMatch(/>0(?:[ .,]|<)/)
+    const ec7 = h.slice(h.indexOf('id="idea-EC-007"'))
+    const macro = ec7.slice(ec7.indexOf('<h4>Macro (Trends)</h4>'), ec7.indexOf('<h4>Unit economics</h4>'))
+    expect(macro).toContain('lampara')
+    expect(macro.match(/sin dato/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(macro).not.toMatch(/>0(?:[ .,]|<)/)
   })
 
   it('ausentes: /eco se ve igual que antes, sin etiqueta, grupo ni aviso nuevos', async () => {

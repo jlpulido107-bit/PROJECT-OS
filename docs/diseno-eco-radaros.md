@@ -67,7 +67,7 @@ esta semana». Obligatorias: `SEMANA`, `INICIO`, `ESTADO`; las demás, si faltan
 
 | Fuente | Columnas que lee | Uso |
 | --- | --- | --- |
-| `SCORING` | columna de ID de la idea (❓ nombre exacto; **hipótesis:** `IDEA_ID`, valores `EC-004` a `EC-009`, V1.2 §1); columna de puntuación final (❓ nombre exacto, la definen las fórmulas actuales); `AMZ_SEMANA`, `AMZ_DEMANDA_BSR_AVG90`, `AMZ_DEMANDA_CAIDAS_BSR_30D`, `AMZ_DEMANDA_VENTAS_MES`, `AMZ_DEMANDA_RANK_CATEGORIA`, `AMZ_COMPETENCIA_OFERTAS`, `AMZ_COMPETENCIA_OFERTAS_FBA`, `AMZ_COMPETENCIA_AMAZON_VENDE`, `AMZ_COMPETENCIA_RESENAS`, `AMZ_COMPETENCIA_RATING`, `AMZ_TENDENCIA_BSR_30_VS_90`, `AMZ_TENDENCIA_VENTAS_DELTA90`, `AMZ_TENDENCIA_PRECIO_30_VS_90`, `AMZ_TENDENCIA_GTRENDS`, `AMZ_ESTADO` | Tabla del ranking, ordenada por la puntuación de SCORING (mayor primero); con sus insumos en columnas plegables (Demanda, Competencia, Tendencia) |
+| `SCORING` | columna de ID de la idea (❓ nombre exacto; **hipótesis:** `IDEA_ID`, valores `EC-004` a `EC-009`, V1.2 §1); columna de puntuación final (❓ nombre exacto, la definen las fórmulas actuales); `AMZ_SEMANA`, `AMZ_DEMANDA_BSR_AVG90`, `AMZ_DEMANDA_CAIDAS_BSR_30D`, `AMZ_DEMANDA_VENTAS_MES`, `AMZ_DEMANDA_RANK_CATEGORIA`, `AMZ_COMPETENCIA_OFERTAS`, `AMZ_COMPETENCIA_OFERTAS_FBA`, `AMZ_COMPETENCIA_AMAZON_VENDE`, `AMZ_COMPETENCIA_RESENAS`, `AMZ_COMPETENCIA_RATING`, `AMZ_TENDENCIA_BSR_30_VS_90`, `AMZ_TENDENCIA_VENTAS_DELTA90`, `AMZ_TENDENCIA_PRECIO_30_VS_90`, `AMZ_TENDENCIA_GTRENDS`, `AMZ_ESTADO` | Ranking ordenado por la puntuación de SCORING (mayor primero), un renglón por idea; sus insumos (Demanda, Competencia, Tendencia) en el detalle de cada idea (ORD-POS-151, abajo) |
 | `AMZ_RESUMEN` | `SEMANA`, `MARKETPLACE`, `IDEA_ID`, `ASINS_USADOS`, `ESTADO` | Por idea: estado de la última semana y cuántas semanas tiene historial (no recalcula nada; los valores ya están en SCORING) |
 | `PRODUCTS` (ORD-POS-113) | columna de ID (la primera de `IDEA_ID`, `ID` o `PRODUCT_ID`) y columna de nombre (la primera de `PRODUCTO_IDEA`, `NOMBRE`, `PRODUCTO`, `NOMBRE_PRODUCTO`, `IDEA`, `DESCRIPCION`), sin distinguir mayúsculas, acentos ni signos («Producto / Idea» ≡ `PRODUCTO_IDEA`). ✅ Libro real: `PRODUCT_ID` y «Producto / Idea» (PM, 2026-11-02, ORD-POS-135) | «ID · nombre» en el ranking, en las tablas de Demanda, Competencia y Tendencia y en Unit economics; sin pestaña, sin columnas reconocidas o sin nombre, solo el ID |
 
@@ -94,14 +94,29 @@ leídas por el PM con el conector el 2026-11-07; dentro del rango `A1:AZ` del le
 
 | Dónde | Qué muestra |
 | --- | --- |
-| Ranking, columna «Validación macro (K4)» | Etiqueta según el inicio de `K4_MACRO_STATUS`: `APROBADO` → «K4 aprobado»; `ESTACIONAL: pico en nov, dic` → «K4 estacional: pico en nov, dic»; `VETO: …` → «K4 veto: propuesta KILL: decide el propietario» (el motivo, en la ayuda); `SIN_DATOS: motivo` → «K4 sin datos: motivo»; otro valor, tal cual. Sin valor, sin etiqueta. Si `TREND_FECHA` tiene más de 30 días (días civiles en `America/Merida`), la etiqueta termina en «· consulta vencida». El orden del ranking no cambia |
-| Detalle, grupo plegable «Macro (Trends)» | Keyword, interanual, pendiente de 52 semanas (% al mes), CV de 52 semanas y fecha de la consulta; vacío (p. ej. con `SIN_DATOS`) = «—», nunca 0 |
+| Renglón de la idea, etiqueta K4 | Etiqueta según el inicio de `K4_MACRO_STATUS`: `APROBADO` → «K4 aprobado»; `ESTACIONAL: pico en nov, dic` → «K4 estacional: pico en nov, dic»; `VETO: …` → «K4 veto: propuesta KILL: decide el propietario» (el motivo, en la ayuda); `SIN_DATOS: motivo` → «K4 sin datos: motivo»; otro valor, tal cual. Sin valor, sin etiqueta. Si `TREND_FECHA` tiene más de 30 días (días civiles en `America/Merida`), la etiqueta termina en «· consulta vencida». El orden del ranking no cambia |
+| Detalle de la idea, pestaña «Macro (Trends)» | Keyword, interanual, pendiente de 52 semanas (% al mes), CV de 52 semanas y fecha de la consulta; vacío (p. ej. con `SIN_DATOS`) = «—», nunca 0 |
 
-Si `SCORING` no tiene ninguna de las 6 columnas, /eco se ve igual que antes: sin columna K4, sin grupo y sin aviso.
+Si `SCORING` no tiene ninguna de las 6 columnas, /eco se ve igual que antes: sin etiqueta K4, sin pestaña, sin filtro K4 y sin aviso.
 `TREND_FECHA` se entiende como AAAA-MM-DD (con o sin hora), número de serie de Sheets o D/M/AAAA (es-MX); una fecha
 ilegible no marca la consulta como vencida. /eco no consulta SerpApi ni escribe en `SCORING`: las consultas y la clave
 `SERPAPI_KEY` viven solo en RADAROS (Apps Script). La lógica de la etiqueta es `etiquetaK4` en
 [`eco-columnas.ts`](../web/src/lib/radaros/eco-columnas.ts); sus pruebas, `web/tests/eco-k4.test.ts`.
+
+Un renglón por idea (ORD-POS-151, POS-053). Solo presentación y navegación: no cambian el tabulador, el precio
+objetivo, el scoring, K4 ni Trends, ni las pestañas que se leen ni las rutas de escritura. Cada idea, en el orden del
+ranking, muestra en un renglón: nombre · ID y semana (`AMZ_SEMANA`; si falta, la última de `AMZ_RESUMEN`), puntaje,
+etiqueta K4, decisión y costo máximo contra la mejor cotización.
+
+| Dato | De dónde sale |
+| --- | --- |
+| Decisión | Columna «Decisión» de `SCORING` (VALIDATE / RESEARCH / KILL; ✅ existe, verificado por POS · Ideas), buscada por encabezado normalizado (`COLUMNA_DECISION`); vacía o sin la columna, «—». Junto, la etapa y los días del producto de `PIPE_PRODUCTOS` con el mismo `IDEA_ID` («VALIDATE · Cotizando, 9 días») y un enlace a su ficha en Compras; con varios productos, el primero no descartado; sin producto, «Sin producto en compras» |
+| Costo máximo y mejor cotización | `tabulador.comparar` y `mejorCotizacion`, los mismos de la ficha de Compras (docs/diseno-eco-pipeline.md §14 y §17), sin cálculo nuevo. Con `ECO_TABULADOR` apagada, «Tabulador apagado»; sin producto, «—» |
+| Detalle al abrir | Pares nombre–valor con `formatearValor` en pestañas Demanda, Competencia, Tendencia, Macro (Trends) y Unit economics (su fila de `UNIT_ECONOMICS`); sin JavaScript, las cinco secciones seguidas. Ya no hay tablas plegables con todas las ideas |
+
+Filtros al cambiar (`FiltroAuto`): `?k4=` (aprobado, estacional, veto, sin-datos = `SIN_DATOS` o sin valor) y
+`?compras=1` (solo con producto en compras); conservan el orden. Una idea abierta se enlaza con `#idea-<ID>`. La
+lógica pura está en [`eco-ideas.ts`](../web/src/lib/radaros/eco-ideas.ts); sus pruebas, `web/tests/eco-ideas.test.ts`.
 
 ### 3.3 Unit economics — `UNIT_ECONOMICS` (📄 V1.2 §2.2)
 

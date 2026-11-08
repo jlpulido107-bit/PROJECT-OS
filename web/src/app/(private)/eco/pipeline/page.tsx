@@ -6,6 +6,7 @@ import { FormularioEco } from '@/components/eco/formularios-pipeline'
 import { PegarTablaGemini } from '@/components/eco/pegar-gemini'
 import { PedirCotizacion } from '@/components/eco/bandeja-cotizaciones'
 import { TarjetaCotizacion, type ContextoTarjeta } from '@/components/eco/tarjeta-cotizacion'
+import { Veredicto } from '@/components/eco/veredicto'
 import { writeAccess } from '@/components/operations/write-access'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
@@ -24,7 +25,7 @@ import type { ContextoPegado } from '@/lib/radaros/pipeline-pegado'
 import type { Bloque, Fila } from '@/lib/radaros/tabla'
 import { FiltroAuto } from '@/components/filtro-auto'
 import {
-  ecoTabuladorHabilitado, ESTADOS_TABULADOR, formatoMxn, pistasCotizacion, POR_CONFIRMAR, precioObjetivo, TOPE_CAPITAL_MXN, UNIDAD_PLURAL, veredicto,
+  ecoTabuladorHabilitado, ESTADOS_TABULADOR, formatoMxn, pistasCotizacion, POR_CONFIRMAR, precioObjetivo, TOPE_CAPITAL_MXN, UNIDAD_PLURAL,
   type Comparacion, type Componente, type FilaComparada, type PrecioPor, type TabuladorVista,
 } from '@/lib/radaros/pipeline-tabulador'
 
@@ -180,12 +181,6 @@ function Tablero({ visibles, editable, ficha }: { visibles: Tarjeta[]; editable:
 }
 
 /* ---------------------------------------- Vista lista ---------------------------------------- */
-
-/** «Cumple / No cumple por X» o «Por confirmar» con su motivo en el título. */
-function Veredicto({ f, motivo }: { f: FilaComparada; motivo?: string }) {
-  if (f.diferenciaMxn === null) return <Badge tone="warn" title={motivo}>{POR_CONFIRMAR}</Badge>
-  return <Badge tone={f.diferenciaMxn <= 0 ? 'ok' : 'danger'}>{veredicto(f.diferenciaMxn)}</Badge>
-}
 
 /** Criterio 2: un renglón por producto con etapa y días, costo máximo, mejor cotización, conteo por paso y alerta. */
 function FilaProducto({ t, cmp, grupo, actual, ficha, tabulador }: {

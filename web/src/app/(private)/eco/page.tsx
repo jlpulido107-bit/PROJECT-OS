@@ -4,9 +4,21 @@ import { Badge, Empty, Section, StateBadge, Text } from '@/components/ui'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
 import {
-  COLUMNA_ID_IDEA, COLUMNAS_PUNTUACION, filtrarTendencias, GRUPO_MACRO_TRENDS, GRUPOS_SCORING, type Bloque, type Corridas, type Fila,
-  type Ranking, type Tendencias, type UnitEconomics,
+  COLUMNA_ID_IDEA, COLUMNAS_PUNTUACION, COLUMNAS_UNIT, filtrarTendencias, GRUPO_MACRO_TRENDS, GRUPOS_SCORING, type Bloque, type Corridas,
+  type Fila, type IdeaRanking, type Ranking, type Tendencias, type UnitEconomics,
 } from '@/lib/radaros/eco'
+import {
+  anclaIdea, enlaceFichaCompras, etapaDeProducto, filtrarIdeas, FILTROS_K4, hrefFiltros, parseFiltroK4, productosPorIdea, SIN_PRODUCTO,
+  type FiltroK4,
+} from '@/lib/radaros/eco-ideas'
+import { paraLector, type Tarjeta } from '@/lib/radaros/pipeline'
+import { mejorCotizacion } from '@/lib/radaros/pipeline-compras'
+import { ecoPipelineCanWrite } from '@/lib/radaros/pipeline-escritura-config'
+import { ecoTabuladorHabilitado, formatoMxn, POR_CONFIRMAR, type TabuladorVista } from '@/lib/radaros/pipeline-tabulador'
+import { AbrirIdeaPorHash } from '@/components/eco/abrir-idea'
+import { PestanasIdea, type Pestana } from '@/components/eco/pestanas-idea'
+import { Veredicto } from '@/components/eco/veredicto'
+import { writeAccess } from '@/components/operations/write-access'
 import {
   ayudaColumna, COLUMNAS_CORRIDAS_ECO, estadoCorrida, etiquetaIdea, formatearInstante, formatearValor, K4_VIGENCIA_DIAS, SIN_DATO,
   tituloColumna, type Columna, type EtiquetaK4,
@@ -15,7 +27,7 @@ import { FiltroAuto } from '@/components/filtro-auto'
 
 export const metadata: Metadata = { title: 'RADAROS (solo lectura)' }
 
-type Search = { estado?: string; etiqueta?: string }
+type Search = { estado?: string; etiqueta?: string; k4?: string; compras?: string }
 
 const TENDENCIAS_MAX = 200
 
@@ -163,7 +175,111 @@ function EtiquetaMacro({ k4 }: { k4: EtiquetaK4 | null }) {
 
 const AYUDA_K4 = `Validación macro de Google Trends que calcula RADAROS (K4_MACRO_STATUS); «consulta vencida» = más de ${K4_VIGENCIA_DIAS} días. Un veto lo decide el propietario.`
 
-function BloqueRanking({ datos }: { datos: Ranking }) {
+/** Pares nombre–valor del detalle de una idea (criterio 4): título en español, ayuda y formato de `formatearValor`. */
+function Pares({ fila, columnas, mapa }: { fila: Fila; columnas: readonly string[]; mapa?: Readonly<Record<string, Columna>> }) {
+  return (
+    <dl className="meta meta-wide idea-pares">
+      {columnas.map((c) => {
+        const titulo = tituloColumna(c, mapa)
+        const ayuda = ayudaColumna(c, mapa)
+        const valor = formatearValor(c, fila[c] ?? null)
+        return (
+          <div key={c}>
+            <dt>{titulo === c ? <code>{c}</code> : titulo}{ayuda ? <>{' '}<Ayuda texto={ayuda} /></> : null}</dt>
+            <dd>{valor === null ? <SinDato /> : valor}</dd>
+          </div>
+        )
+      })}
+    </dl>
+  )
+}
+
+/** Pestaña «Unit economics» de una idea: su fila de UNIT_ECONOMICS o el estado del bloque (diseño §4). */
+function UnitDeIdea({ unit, id }: { unit: Bloque<UnitEconomics>; id: string }) {
+  if (unit.estado === 'columnas-faltantes') return <p className="small muted"><code>{unit.tab}</code>: faltan columnas ({unit.faltan.join(', ')}).</p>
+  if (unit.estado !== 'ok') return <p className="small muted">{unit.mensaje}</p>
+  const fila = unit.datos.filas.find((f) => f[COLUMNA_ID_IDEA] === id)
+  if (!fila) return <p className="small muted">Sin fila en <code>UNIT_ECONOMICS</code> para esta idea.</p>
+  return (
+    <>
+      <p className="small"><strong>Las tarifas de SP-API son estimaciones no garantizadas.</strong></p>
+      <Pares fila={fila} columnas={COLUMNAS_UNIT} />
+    </>
+  )
+}
+
+/** Datos del ranking que no vienen de SCORING: productos de compras por idea y el tabulador (null si está apagado). */
+interface Compras {
+  productos: ReadonlyMap<string, Tarjeta>
+  /** Mensaje si PIPE_PRODUCTOS no se pudo leer; las ideas se muestran sin producto. */
+  avisoProductos: string | null
+  tabulador: TabuladorVista | null
+}
+
+/** Criterio 3: costo máximo contra la mejor cotización, del mismo `comparar` y `mejorCotizacion` que la ficha de Compras. */
+function CostoIdea({ t, tabulador }: { t: Tarjeta | undefined; tabulador: TabuladorVista | null }) {
+  if (!tabulador) return <span className="muted" title="ECO_TABULADOR apagada: la enciende el propietario.">Tabulador apagado</span>
+  if (!t) return <span className="muted" title={SIN_PRODUCTO}>—</span>
+  const cmp = tabulador.comparar(t.id, t.fila.IDEA_ID ?? null)
+  const max = cmp.costoMaximo
+  const mejor = mejorCotizacion(cmp)
+  return (
+    <>
+      Máx. {max.mxn == null ? <span title={max.porConfirmar.join('; ')}>{POR_CONFIRMAR}</span> : <span className="mono">{formatoMxn(max.mxn)} MXN</span>}
+      {' · '}Mejor {mejor
+        ? <><span className="mono">{formatoMxn(mejor.costo.porSetMxn)} MXN</span> <Veredicto f={mejor} motivo={max.porConfirmar.join('; ')} /></>
+        : <span className="muted" title="Ninguna cotización con costo por set">—</span>}
+    </>
+  )
+}
+
+/** Criterios 1 y 2: un renglón por idea; al abrirlo, su detalle en pestañas (criterio 4). */
+function FilaIdea({ idea, datos, unit, compras }: { idea: IdeaRanking; datos: Ranking; unit: Bloque<UnitEconomics>; compras: Compras }) {
+  const t = compras.productos.get(idea.id)
+  const semana = idea.campos.AMZ_SEMANA ?? idea.resumen?.ultimaSemana ?? null
+  const pestanas: Pestana[] = [
+    ...Object.entries(GRUPOS_SCORING).map(([grupo, columnas]) => ({ id: grupo.toLowerCase(), titulo: grupo, contenido: <Pares fila={idea.campos} columnas={columnas} /> })),
+    ...(datos.conColumnasTrends ? [{ id: 'macro', titulo: 'Macro (Trends)', contenido: <Pares fila={idea.campos} columnas={GRUPO_MACRO_TRENDS} /> }] : []),
+    { id: 'unit', titulo: 'Unit economics', contenido: <UnitDeIdea unit={unit} id={idea.id} /> },
+  ]
+  return (
+    <li className="card idea-fila">
+      <details id={anclaIdea(idea.id)}>
+        <summary>
+          <span className="idea-nombre">
+            <strong>{idea.nombre ?? idea.id}</strong>{idea.nombre ? <> · <span className="small mono">{idea.id}</span></> : null}
+            {' '}<span className="small muted">· Semana {semana ?? '—'}</span>
+          </span>
+          <span className="idea-dato"><span className="muted small">Puntaje</span> {idea.puntuacion ?? <SinDato />}</span>
+          {datos.conColumnasTrends ? <span className="idea-dato"><EtiquetaMacro k4={idea.k4} /></span> : null}
+          <span className="idea-dato">
+            <span className="muted small">Decisión</span> {idea.decision ?? <SinDato />}
+            {' · '}{t ? etapaDeProducto(t) : <span className="muted">{SIN_PRODUCTO}</span>}
+          </span>
+          <span className="idea-dato idea-costo"><CostoIdea t={t} tabulador={compras.tabulador} /></span>
+        </summary>
+        <div className="idea-detalle">
+          <dl className="meta meta-wide">
+            <div><dt>Estado en el motor (<code>AMZ_ESTADO</code>)</dt><dd><Text value={idea.campos.AMZ_ESTADO ?? null} empty="—" /></dd></div>
+            <div><dt>Última semana en AMZ_RESUMEN</dt><dd>{idea.resumen ? <>{idea.resumen.ultimaSemana} <StateBadge code={idea.resumen.estado} /></> : <span className="muted">—</span>}</dd></div>
+            <div><dt>Semanas con historial</dt><dd>{idea.resumen ? idea.resumen.semanas : <span className="muted">0</span>}</dd></div>
+          </dl>
+          <PestanasIdea pestanas={pestanas} etiqueta={`Insumos de ${etiquetaIdea(idea.id, idea.nombre)}`} />
+        </div>
+      </details>
+      {t ? <a className="small idea-compras" href={enlaceFichaCompras(t.id)} aria-label={`Ficha en Compras de ${etiquetaIdea(idea.id, idea.nombre)} (${t.id})`}>Ficha en Compras</a> : null}
+    </li>
+  )
+}
+
+type FiltroRanking = { k4: FiltroK4 | null; conProducto: boolean }
+
+function BloqueRanking({ datos, unit, compras, filtro, tendencias }: {
+  datos: Ranking; unit: Bloque<UnitEconomics>; compras: Compras; filtro: FiltroRanking; tendencias: Search
+}) {
+  const efectivo: FiltroRanking = { ...filtro, k4: datos.conColumnasTrends ? filtro.k4 : null }
+  const ideas = filtrarIdeas(datos.ideas, efectivo, compras.productos)
+  const filtrando = efectivo.k4 !== null || efectivo.conProducto
   return (
     <>
       {datos.columnaPuntuacion ? (
@@ -174,45 +290,34 @@ function BloqueRanking({ datos }: { datos: Ranking }) {
         </div>
       )}
       {datos.conColumnasAmz ? null : <p className="small muted">SCORING todavía no tiene columnas <code>AMZ_*</code>: se agregan en la activación de V1.2.</p>}
-      <div className="table-wrap">
-        <table aria-label="Ranking de ideas">
-          <thead>
-            <tr>
-              <th scope="col">Idea</th><th scope="col">Puntuación</th><Encabezado col="AMZ_SEMANA" /><Encabezado col="AMZ_ESTADO" />
-              <th scope="col">Última semana en AMZ_RESUMEN</th><th scope="col">Semanas con historial</th>
-              {datos.conColumnasTrends ? <th scope="col">Validación macro (K4) <Ayuda texto={AYUDA_K4} /></th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {datos.ideas.map((idea) => (
-              <tr key={idea.id}>
-                <th scope="row">{etiquetaIdea(idea.id, idea.nombre)}</th>
-                <td>{idea.puntuacion ?? <SinDato />}</td>
-                <Celda fila={idea.campos} col="AMZ_SEMANA" />
-                <Celda fila={idea.campos} col="AMZ_ESTADO" />
-                <td>{idea.resumen ? <>{idea.resumen.ultimaSemana} <StateBadge code={idea.resumen.estado} /></> : <span className="muted">—</span>}</td>
-                <td>{idea.resumen ? idea.resumen.semanas : <span className="muted">0</span>}</td>
-                {datos.conColumnasTrends ? <td><EtiquetaMacro k4={idea.k4} /></td> : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {datos.conColumnaDecision ? null : <p className="small muted">SCORING no tiene la columna «Decisión»: la decisión se muestra «—».</p>}
+      {compras.avisoProductos ? <p className="small muted">{compras.avisoProductos} Las ideas se muestran sin producto.</p> : null}
+      <form method="get" action="/eco#ranking" className="filters" aria-label="Filtrar ideas">
+        <FiltroAuto />
+        {tendencias.estado ? <input type="hidden" name="estado" value={tendencias.estado} /> : null}
+        {tendencias.etiqueta ? <input type="hidden" name="etiqueta" value={tendencias.etiqueta} /> : null}
+        {datos.conColumnasTrends ? (
+          <label>Validación macro (K4) <Ayuda texto={AYUDA_K4} />{' '}
+            <select name="k4" defaultValue={efectivo.k4 ?? ''}>
+              {FILTROS_K4.map(([v, texto]) => <option key={v} value={v}>{texto}</option>)}
+            </select>
+          </label>
+        ) : null}{' '}
+        <label><input type="checkbox" name="compras" value="1" defaultChecked={efectivo.conProducto} /> Solo con producto en compras</label>{' '}
+        <button type="submit">Filtrar</button>
+        {filtrando ? <>{' '}<a className="small" href={hrefFiltros({ k4: null, conProducto: false }, { estado: tendencias.estado, etiqueta: tendencias.etiqueta })}>Quitar filtros</a></> : null}
+      </form>
+      {filtrando ? <p className="small muted" role="status">Se muestran {ideas.length} de {datos.ideas.length} ideas.</p> : null}
+      <AbrirIdeaPorHash />
+      {ideas.length ? (
+        <ol className="list idea-lista" aria-label="Ranking de ideas">
+          {ideas.map((idea) => <FilaIdea key={idea.id} idea={idea} datos={datos} unit={unit} compras={compras} />)}
+        </ol>
+      ) : <Empty>Ninguna idea con esos filtros.</Empty>}
       {datos.resumen.estado === 'ok' ? null : (
         <EstadoBloque bloque={datos.resumen}>{() => null}</EstadoBloque>
       )}
-      {Object.entries(GRUPOS_SCORING).map(([grupo, columnas]) => (
-        <details key={grupo}>
-          <summary>{grupo}</summary>
-          <TablaColumnas filas={datos.ideas.map((i) => i.campos)} columnas={[COLUMNA_ID_IDEA, ...columnas]} label={`Insumos de ${grupo}`} clave={COLUMNA_ID_IDEA} nombres={datos.nombres} />
-        </details>
-      ))}
-      {datos.conColumnasTrends ? (
-        <details>
-          <summary>Macro (Trends)</summary>
-          <TablaColumnas filas={datos.ideas.map((i) => i.campos)} columnas={[COLUMNA_ID_IDEA, ...GRUPO_MACRO_TRENDS]} label="Insumos de Macro (Trends)" clave={COLUMNA_ID_IDEA} nombres={datos.nombres} />
-        </details>
-      ) : null}
+      <p className="small muted">Abre una idea para ver sus insumos; su enlace queda como <code>#idea-&lt;ID&gt;</code>. Costos del tabulador (DEC-ECO-008), los mismos de la ficha de Compras.</p>
       {LEYENDA_SIN_DATO}
     </>
   )
@@ -231,6 +336,7 @@ function BloqueUnit({ datos }: { datos: UnitEconomics }) {
 }
 
 function BloqueTendencias({ datos, filtro }: { datos: Tendencias; filtro: Search }) {
+  const k4 = parseFiltroK4(filtro.k4)
   const estado = filtro.estado && datos.estados.includes(filtro.estado) ? filtro.estado : undefined
   const etiqueta = filtro.etiqueta && datos.etiquetas.includes(filtro.etiqueta) ? filtro.etiqueta : undefined
   const filas = filtrarTendencias(datos.filas, { estado, etiqueta })
@@ -238,6 +344,8 @@ function BloqueTendencias({ datos, filtro }: { datos: Tendencias; filtro: Search
     <>
       <form method="get" action="/eco#tendencias" className="filters" aria-label="Filtrar tendencias">
         <FiltroAuto />
+        {k4 ? <input type="hidden" name="k4" value={k4} /> : null}
+        {filtro.compras === '1' ? <input type="hidden" name="compras" value="1" /> : null}
         <label>Estado{' '}
           <select name="estado" defaultValue={estado ?? ''}>
             <option value="">Todos</option>
@@ -261,7 +369,7 @@ function BloqueTendencias({ datos, filtro }: { datos: Tendencias; filtro: Search
 }
 
 export default async function EcoPage({ searchParams }: { searchParams: Promise<Search> }) {
-  const { result } = await privateEco('/eco')
+  const { user, result } = await privateEco('/eco')
   const params = await searchParams
 
   if (result.estado === 'no-configurado') {
@@ -290,6 +398,17 @@ export default async function EcoPage({ searchParams }: { searchParams: Promise<
   }
 
   const v = result.vista
+  // ORD-POS-151: el producto de compras de cada idea y el tabulador, de lo que ya se leyó (sin lecturas nuevas).
+  // paraLector como en /eco/pipeline: un lector nunca recibe CONTACTO ni NOTAS de proveedores (aquí no se pintan).
+  const pipeline = paraLector(v.pipeline, writeAccess(user.email).allowed || ecoPipelineCanWrite(user.email))
+  const compras: Compras = {
+    productos: productosPorIdea(pipeline.productos.estado === 'ok' ? pipeline.productos.datos.tarjetas : []),
+    avisoProductos: pipeline.productos.estado === 'ok' ? null
+      : pipeline.productos.estado === 'columnas-faltantes' ? `PIPE_PRODUCTOS: faltan columnas (${pipeline.productos.faltan.join(', ')}).`
+        : pipeline.productos.mensaje,
+    tabulador: ecoTabuladorHabilitado() ? v.tabulador : null,
+  }
+  const filtro: FiltroRanking = { k4: parseFiltroK4(params.k4), conProducto: params.compras === '1' }
   return (
     <>
       <h1>RADAROS</h1>
@@ -298,7 +417,7 @@ export default async function EcoPage({ searchParams }: { searchParams: Promise<
         no llama a Keepa ni a SP-API y no calcula puntuaciones: muestra lo que el motor dejó en la hoja.
       </p>
       <Section title="Estado del motor" id="motor"><EstadoBloque bloque={v.corridas}>{(d) => <BloqueCorridas datos={d} />}</EstadoBloque></Section>
-      <Section title="Ranking de ideas" id="ranking"><EstadoBloque bloque={v.ranking}>{(d) => <BloqueRanking datos={d} />}</EstadoBloque></Section>
+      <Section title="Ranking de ideas" id="ranking"><EstadoBloque bloque={v.ranking}>{(d) => <BloqueRanking datos={d} unit={v.unitEconomics} compras={compras} filtro={filtro} tendencias={params} />}</EstadoBloque></Section>
       <Section title="Unit economics" id="unit-economics"><EstadoBloque bloque={v.unitEconomics}>{(d) => <BloqueUnit datos={d} />}</EstadoBloque></Section>
       <Section title="Candidatos" id="candidatos"><Empty>{v.candidatos.mensaje}</Empty></Section>
       <Section title="Tendencias" id="tendencias"><EstadoBloque bloque={v.tendencias}>{(d) => <BloqueTendencias datos={d} filtro={params} />}</EstadoBloque></Section>

@@ -58,11 +58,11 @@ describe('ID · nombre en /eco y /eco/pipeline (criterio 2)', () => {
   const SCORING = [['IDEA_ID', 'PUNTUACION_FINAL', 'AMZ_DEMANDA_BSR_AVG90'], ['EC-006', '80', '100'], ['EC-099', '10', '']]
   const UNIT = [['IDEA_ID', 'AMZ_ASIN_REF'], ['EC-012', 'B000000001']]
 
-  it('/eco: ranking, insumos y unit economics con «ID · nombre»; sin nombre, solo el ID', async () => {
+  it('/eco: ranking con «nombre · ID» (ORD-POS-151) y unit economics con «ID · nombre»; sin nombre, solo el ID', async () => {
     const h = await render(EcoPage, { SCORING, UNIT_ECONOMICS: UNIT, PRODUCTS: PRODUCTS_REAL })
-    expect(h.match(/EC-006 · Idea sintética seis/g)?.length).toBe(4) // ranking + Demanda, Competencia y Tendencia
+    expect(h).toContain('<strong>Idea sintética seis</strong> · <span class="small mono">EC-006</span>')
     expect(h).toContain('EC-012 · Idea sintética doce')
-    expect(h).toContain('<th scope="row">EC-099</th>')
+    expect(h).toContain('<strong>EC-099</strong>')
     expect(h).not.toContain('EC-099 ·')
   })
 

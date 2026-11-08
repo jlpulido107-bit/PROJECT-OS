@@ -352,6 +352,28 @@ tbody th { font-weight: 500; }
 .ficha-bloque { margin-top: 1rem; }
 /* Las etiquetas largas («No cumple por 130.92 MXN») parten línea dentro de la lista y la ficha: nada se corta ni desborda. */
 .compras-layout .badge, .ficha .badge { white-space: normal; }
+/* ORD-POS-151: ranking de /eco, un renglón por idea; el enlace a Compras va fuera del <summary> (sin controles anidados). */
+.idea-lista { list-style: none; padding: 0; display: grid; gap: 8px; }
+.idea-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; }
+.idea-fila > details { min-width: 0; }
+.idea-fila > details > summary {
+  cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; min-height: 40px; padding: 4px 0;
+}
+.idea-fila > details > summary .badge { white-space: normal; }
+.idea-nombre { flex: 1 1 100%; overflow-wrap: anywhere; }
+.idea-dato { overflow-wrap: anywhere; }
+.idea-compras { display: inline-flex; align-items: center; min-height: 40px; white-space: nowrap; }
+.idea-detalle { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.idea-secciones h4 { margin: 0.75rem 0 0.25rem; font-size: 0.95rem; }
+.idea-tablist { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.5rem 0; }
+.idea-tablist [role="tab"] {
+  min-height: 40px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--text); cursor: pointer;
+}
+.idea-tablist [role="tab"][aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+@media (max-width: 480px) {
+  .idea-fila { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 900px) {
   .compras-layout { grid-template-columns: minmax(0, 1fr); }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }

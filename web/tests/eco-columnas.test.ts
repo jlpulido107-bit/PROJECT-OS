@@ -47,20 +47,20 @@ describe('nombre de la idea (criterio 1)', () => {
     expect(nombresIdeas([['ID', 'COLOR'], ['EC-004', 'rojo']]).size).toBe(0)
   })
 
-  it('Ranking y tablas de Demanda, Competencia y Tendencia con nombre; sin nombre, solo el ID', async () => {
+  it('Ranking con «nombre · ID» (ORD-POS-151); sin nombre, solo el ID; sin tablas de insumos de todas las ideas', async () => {
     const h = await html({ SCORING, PRODUCTS })
     const v = construirEco({ SCORING, PRODUCTS }, NOW)
     expect(v.ranking.estado === 'ok' && v.ranking.datos.ideas.map((i) => i.nombre)).toEqual(['Soporte vinilo acrílico translúcido', null])
-    // Ranking + 3 tablas de insumos.
-    expect(h.split('EC-006 · Soporte vinilo acrílico translúcido')).toHaveLength(1 + 1 + Object.keys(GRUPOS_SCORING).length)
+    expect(h).toContain('<strong>Soporte vinilo acrílico translúcido</strong> · <span class="small mono">EC-006</span>')
+    expect(h).toContain('<strong>EC-004</strong> <span class="small muted">')
     expect(h).not.toContain('EC-004 ·')
-    expect(h).toContain('>EC-004</th>')
+    for (const g of Object.keys(GRUPOS_SCORING)) expect(h).not.toContain(`Insumos de ${g}`)
   })
 
-  it('sin PRODUCTS: las tablas muestran solo el ID', async () => {
+  it('sin PRODUCTS: el renglón muestra solo el ID', async () => {
     const h = await html({ SCORING })
-    expect(h).not.toContain(' · Soporte')
-    expect(h).toContain('>EC-006</th>')
+    expect(h).not.toContain('Soporte')
+    expect(h).toContain('<strong>EC-006</strong> <span class="small muted">')
   })
 })
 
