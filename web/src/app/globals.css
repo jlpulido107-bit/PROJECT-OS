@@ -324,3 +324,35 @@ tbody th { font-weight: 500; }
 /* ORD-POS-149: bandeja de /eco/cotizaciones en 3 pasos; vencidas en rojo. */
 .board-3 { grid-template-columns: repeat(3, minmax(260px, 1fr)); }
 .card-vencida { border-left: 4px solid var(--danger-fg); }
+/* ORD-POS-150: compras por producto en /eco/pipeline (subpestañas, chips de la bandeja, lista y ficha lado a lado). */
+.subnav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 0.75rem; }
+.subnav a {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 6px 14px; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--surface); color: var(--text); text-decoration: none;
+}
+.subnav a[aria-current="page"] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+.bandeja-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 0.75rem; }
+.chip {
+  display: inline-flex; gap: 6px; align-items: center; min-height: 40px; padding: 6px 12px; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--surface); color: var(--text); text-decoration: none;
+}
+.chip strong { font-variant-numeric: tabular-nums; }
+.chip[aria-current="true"] { border-color: var(--accent); background: var(--info-bg); color: var(--info-fg); font-weight: 600; }
+.compras-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+.compras-layout > .section { min-width: 0; }
+.compras-fila p { margin: 0.2rem 0; }
+.compras-fila[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.compras-sin-ficha { border: 1px dashed var(--border); border-radius: var(--radius); padding: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0.75rem 0; }
+.kpis .stat-value { font-size: 1.15rem; overflow-wrap: anywhere; }
+.pasos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.pasos h4, .ficha h4 { margin: 0.5rem 0; font-size: 0.95rem; }
+.plegable { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 12px; }
+.plegable > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.ficha-bloque { margin-top: 1rem; }
+/* Las etiquetas largas («No cumple por 130.92 MXN») parten línea dentro de la lista y la ficha: nada se corta ni desborda. */
+.compras-layout .badge, .ficha .badge { white-space: normal; }
+@media (max-width: 900px) {
+  .compras-layout { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

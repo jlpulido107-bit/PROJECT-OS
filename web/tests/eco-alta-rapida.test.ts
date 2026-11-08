@@ -360,7 +360,7 @@ vi.mock('@/lib/page-data', () => ({ privateEco: async () => ({ user: { email: es
 vi.mock('@/components/operations/write-access', () => ({ writeAccess: () => ({ allowed: false }) }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }))
 
-describe('pantalla: «Alta rápida» solo para el escritor del pipeline', () => {
+describe('pantalla: «Pedir» y «Recibir» (antes «Alta rápida», ORD-POS-150) solo para el escritor del pipeline', () => {
   afterEach(() => vi.unstubAllEnvs())
 
   async function pagina(email: string, vars: Record<string, string>) {
@@ -373,7 +373,8 @@ describe('pantalla: «Alta rápida» solo para el escritor del pipeline', () => 
 
   it('el escritor ve proveedor, cotización con pistas de PIPE_PARAMETROS y «Pegar tabla de Gemini»', async () => {
     const h = await pagina(DUENO, ACTIVA)
-    expect(h).toContain('id="alta-rapida"')
+    expect(h).toContain('id="pedir"')
+    expect(h).toContain('id="recibir"')
     expect(h).toContain('aria-label="Nuevo proveedor"')
     expect(h).toContain('aria-label="Pegar tabla de Gemini"')
     const ini = h.indexOf('aria-label="Nueva cotización"')
@@ -382,10 +383,10 @@ describe('pantalla: «Alta rápida» solo para el escritor del pipeline', () => 
     expect(form).toContain('name="igiPct"')
   })
 
-  it('un lector, o el escritor con la escritura apagada, no ve el alta rápida', async () => {
+  it('un lector, o el escritor con la escritura apagada, no ve «Pedir» ni «Recibir»', async () => {
     for (const [email, vars] of [['lector@example.com', ACTIVA], [DUENO, { ...ACTIVA, ECO_PIPELINE_WRITE_MODE: '' }]] as const) {
       const h = await pagina(email, vars)
-      expect(h).not.toMatch(/alta-rapida|Pegar tabla de Gemini|aria-label="Nuevo proveedor"/)
+      expect(h).not.toMatch(/alta-rapida|id="pedir"|id="recibir"|Pegar tabla de Gemini|aria-label="Nuevo proveedor"/)
     }
   })
 })

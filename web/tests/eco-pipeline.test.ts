@@ -250,9 +250,9 @@ describe('/eco/pipeline: render', () => {
   })
 
   it('sin pestañas PIPE_*: estados «pestaña sin crear» en tablero y proveedores', async () => {
-    const h = await html(ok({}))
-    expect(h).toContain('PIPE_PRODUCTOS: pestaña sin crear')
-    expect(h).toContain('PIPE_PROVEEDORES: pestaña sin crear')
+    expect(await html(ok({}))).toContain('PIPE_PRODUCTOS: pestaña sin crear')
+    // ORD-POS-150: los proveedores viven en su subpestaña.
+    expect(await html(ok({}), { seccion: 'proveedores' })).toContain('PIPE_PROVEEDORES: pestaña sin crear')
   })
 
   it('columna obligatoria ausente', async () => {
@@ -261,7 +261,7 @@ describe('/eco/pipeline: render', () => {
   })
 
   it('tablero de 6 columnas, alertas, ASIN no válido y sin controles de escritura', async () => {
-    const h = await html(ok(TODO))
+    const h = await html(ok(TODO), { vista: 'tablero' })
     for (const e of ['Sugerido', 'Evaluando', 'Cotizando', 'Muestra', 'En venta', 'Descartado']) expect(h).toContain(`aria-label="${e}"`)
     expect(h).toContain('Seguimiento vencido (1)')
     expect(h).toContain('ASIN no válido')

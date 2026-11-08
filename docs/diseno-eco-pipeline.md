@@ -821,7 +821,7 @@ formulario, la escritura (§3.3) y el tabulador (§14.5), que deja de marcar `RE
 que digan `RECIBIDA (PARCIAL)` o `DESCARTADA` no se reescriben: el tabulador las muestra con «Estado no válido» y el
 propietario las corrige a mano si quiere.
 
-## 16. Bandeja de cotizaciones en 3 pasos (ORD-POS-149, POS-052)
+## 16. Bandeja de cotizaciones en 3 pasos (ORD-POS-149, POS-052; desde ORD-POS-150 dentro de /eco/pipeline, §17)
 
 Orden ORD-POS-149 ([issue #333](https://github.com/jlpulido107-bit/PROJECT-OS/issues/333); paquete PAQ-2026-11-07-01),
 riesgo MEDIO. Página `/eco/cotizaciones`, enlazada desde `/eco/pipeline` y en el menú RADAROS: el propietario pide,
@@ -898,3 +898,27 @@ TC 18.5, máximo 65 MXN): objetivo 65 ÷ 18.5 ≈ **3.51 USD por set**.
 **Seguimiento:** «Copiar seguimiento» copia un texto corto en inglés (proveedor, producto y fecha de la solicitud; pide
 precio por pieza o set, MOQ, incoterm y plazo). No envía nada, no conecta Gmail y no lleva correos ni teléfonos.
 
+
+## 17. Compras por producto: pipeline y cotizaciones en una vista (ORD-POS-150, POS-053)
+
+Solo presentación y navegación (`web/src/app/(private)/eco/pipeline/page.tsx`, funciones puras en
+`web/src/lib/radaros/pipeline-compras.ts`). No cambian el tabulador (§14), el precio objetivo (§16.4), las rutas de
+escritura, su guard, sus banderas, el esquema de `PIPE_*` ni las pestañas que se leen.
+
+- **Chips** con los conteos de `construirBandeja` (§16.4): Esperando respuesta (con las vencidas), Por completar y Listas
+  para decidir. Un chip (`?paso=`) deja en la lista solo los productos con cotizaciones en ese paso.
+- **Lista**, un renglón por producto: nombre · ID, etapa y días, costo máximo, mejor cotización con «Cumple / No cumple
+  por X», conteo por paso y alerta de seguimiento. Filtro de etapa (`?etapa=`): «Activas» (sin Descartado) por omisión,
+  «Todas» o una etapa. La mejor cotización es la primera con costo por set en el orden de «Comparar»; una RECHAZADA nunca
+  lo es. «Vista tablero» (`?vista=tablero`) es el tablero por etapas de §2.1, con arrastre y «Mover a…».
+- **Ficha** (`?producto=`; `?comparar=` abre la misma ficha): 4 indicadores (costo máximo, mejor cotización, precio
+  objetivo de esa cotización y capital del lote contra el tope), las cotizaciones del producto en 3 columnas con las
+  acciones de §16 («Completar» es «Recibir» en el paso 2), «Pedir a otro proveedor» con el producto elegido y «Comparar»
+  con 6 columnas; el resto en «Más columnas» y el desglose plegado. Identidad y Keepa, Seguimiento y embarques, y Notas
+  e historial van plegados.
+- **Proveedores**: subpestaña (`?seccion=proveedores`, `?proveedor=` o `?estado=`), con su lista y su ficha sin cambios.
+- **Alta rápida** (§15) deja de ser sección: el alta de proveedor queda en «Pedir cotización» y el pegado de la tabla de
+  Gemini en «Recibir varias». `/eco/cotizaciones` verifica la sesión, no lee datos y redirige a `/eco/pipeline`
+  conservando `?paso=`. En el menú, RADAROS queda con Ideas (`/eco`) y Compras (`/eco/pipeline`).
+- Sin `ECO_TABULADOR=true` no hay números ni «Comparar», y la ficha dice por qué. Los controles solo con
+  `ecoPipelineCanWrite(email)` (§4.2); el token del PM sigue recibiendo 401 en las rutas.

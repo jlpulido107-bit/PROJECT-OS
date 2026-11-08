@@ -13,7 +13,7 @@ const { NavLinks } = await import('@/components/nav-links')
 const TODAS = { showEco: true, showFinanzas: true, showOperations: true }
 const src = (...p: string[]) => readFileSync(path.join(__dirname, '..', 'src', ...p), 'utf8')
 
-// Las 16 rutas de hoy (ORD-POS-149: /eco/cotizaciones), con su grupo y su subpestaña esperados.
+// Las 15 rutas de hoy (ORD-POS-150: /eco/cotizaciones redirige a Compras y sale del menú), con su grupo y su subpestaña.
 const RUTAS: Array<[string, string, string]> = [
   ['/', 'inicio', '/'],
   ['/ordenes', 'ordenes', '/ordenes'],
@@ -26,7 +26,6 @@ const RUTAS: Array<[string, string, string]> = [
   ['/estado', 'proyectos', '/estado'],
   ['/eco', 'radaros', '/eco'],
   ['/eco/pipeline', 'radaros', '/eco/pipeline'],
-  ['/eco/cotizaciones', 'radaros', '/eco/cotizaciones'],
   ['/finanzas', 'finanzas', '/finanzas'],
   ['/agentes', 'agentes', '/agentes'],
   ['/actividad', 'agentes', '/actividad'],
@@ -34,11 +33,11 @@ const RUTAS: Array<[string, string, string]> = [
 ]
 
 describe('grupos y rutas (criterio 1)', () => {
-  it('9 grupos con las 16 rutas, sin duplicados y cada una con su página', () => {
+  it('9 grupos con las 15 rutas, sin duplicados y cada una con su página', () => {
     const g = gruposMenu(TODAS)
     expect(g.map((x) => x.id)).toEqual(['inicio', 'ordenes', 'tareas', 'planificacion', 'proyectos', 'radaros', 'finanzas', 'agentes', 'operaciones'])
     const hrefs = g.flatMap((x) => x.items.map((i) => i.href))
-    expect(hrefs).toHaveLength(16)
+    expect(hrefs).toHaveLength(15)
     expect(new Set(hrefs)).toEqual(new Set(RUTAS.map(([r]) => r)))
     for (const h of hrefs) {
       const page = h === '/' ? ['app', '(private)', 'page.tsx'] : ['app', '(private)', ...h.slice(1).split('/'), 'page.tsx']
@@ -88,7 +87,7 @@ describe('grupo y subpestaña activos (criterio 3)', () => {
     })
   }
 
-  it('subrutas heredan su pestaña y gana el más largo: en /eco/pipeline, Pipeline', () => {
+  it('subrutas heredan su pestaña y gana el más largo: en /eco/pipeline, Compras', () => {
     const g = gruposMenu(TODAS)
     expect(rutaActiva('/ordenes/ORD-POS-001', g)).toEqual({ grupo: 'ordenes', href: '/ordenes' })
     expect(rutaActiva('/eco/pipeline/PRD-0001', g)).toEqual({ grupo: 'radaros', href: '/eco/pipeline' })
@@ -96,13 +95,15 @@ describe('grupo y subpestaña activos (criterio 3)', () => {
     expect(rutaActiva('/login', g)).toEqual({ grupo: null, href: null })
   })
 
-  it('en /eco/pipeline el grupo RADAROS y la subpestaña Pipeline llevan aria-current="page"; RADAROS (/eco) no', () => {
+  it('en /eco/pipeline el grupo RADAROS y la subpestaña Compras llevan aria-current="page"; Ideas (/eco) no', () => {
     ruta = '/eco/pipeline'
     const h = renderToStaticMarkup(createElement(NavLinks, TODAS))
     expect(h).toMatch(/<a aria-current="page" href="\/eco">RADAROS<\/a><ul class="nav-subs"/)
-    expect(h).toMatch(/<a aria-current="page" href="\/eco\/pipeline">Pipeline<\/a>/)
-    expect(h).toContain('<li><a href="/eco">RADAROS</a></li>')
-    expect(h).not.toMatch(/<li><a aria-current="page" href="\/eco">RADAROS<\/a><\/li>/)
+    expect(h).toMatch(/<a aria-current="page" href="\/eco\/pipeline">Compras<\/a>/)
+    expect(h).toContain('<li><a href="/eco">Ideas</a></li>')
+    expect(h).not.toMatch(/<li><a aria-current="page" href="\/eco">Ideas<\/a><\/li>/)
+    // ORD-POS-150: RADAROS queda con Ideas y Compras; /eco/cotizaciones ya no está en el menú (redirige a Compras).
+    expect(h).not.toContain('href="/eco/cotizaciones"')
     expect(h).toContain('class="nav-mas nav-mas-activo"')
   })
 
