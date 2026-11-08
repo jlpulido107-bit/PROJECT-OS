@@ -282,3 +282,16 @@ export function formatearValor(col: string, raw: string | null): string | null {
   if (formato === 'fraccion_pct') return `${DECIMAL.format(porcentajeDeFraccion(raw, n))} %`
   return DECIMAL.format(n)
 }
+
+/** «Últimas corridas» (ORD-POS-152, criterio 1): 5 columnas a la vista; las demás, con «Más columnas». */
+export const CORRIDAS_VISIBLES = ['SEMANA', 'INICIO', 'ESTADO', 'IDEAS', 'MENSAJE'] as const
+export const CORRIDAS_EXTRAS = ['FIN', 'ASINS_OK', 'ASINS_FALTAN', 'KEEPA_TOKENS_CONSUMIDOS', 'SPAPI_LLAMADAS'] as const
+
+/** Unit economics (ORD-POS-152, criterio 2): idea, precio, comisión y FBA a la vista; el resto con «Más columnas». */
+export const UNIT_VISIBLES = ['IDEA_ID', 'AMZ_PRECIO_MXN', 'AMZ_COMISION_MXN', 'AMZ_FBA_MXN'] as const
+export const UNIT_EXTRAS = ['AMZ_ASIN_REF', 'AMZ_PRECIO_MXN_AVG90', 'AMZ_COMISION_PCT', 'AMZ_OTRAS_TARIFAS_MXN', 'AMZ_TARIFAS_FECHA'] as const
+
+/** Tendencias (ORD-POS-152, criterio 3): término, semanas, estado y etiqueta a la vista; el resto con «Más columnas». */
+export const TENDENCIAS_VISIBLES = ['KEYWORD', 'SEMANAS_DISTINTAS', 'ESTADO', 'ETIQUETA_PRELIMINAR'] as const
+export const TENDENCIAS_EXTRAS = ['PRIMERA_SEMANA', 'ULTIMA_SEMANA', 'POSICION_ULTIMA'] as const
+
