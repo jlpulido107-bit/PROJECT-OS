@@ -1,6 +1,6 @@
 import { parseCivilDate } from '../dates'
 import { OperationError } from '../operations/errors'
-import { cleanText } from '../operations/sanitize'
+import { cleanText, safeCellText } from '../operations/sanitize'
 import { COLUMNAS_MIGRACION_PROVEEDORES, ESTADOS_COTIZACION, ETAPAS, type Etapa } from './pipeline'
 import { pareceContacto } from './pipeline-formularios'
 import { COLUMNAS_MIGRACION_COTIZACIONES, PRECIOS_POR } from './pipeline-tabulador'
@@ -266,12 +266,16 @@ function version(body: Record<string, unknown>, fields: Fields): number {
   return n
 }
 
-/** Texto limpio de una línea (o multilínea en NOTAS), sin inicio de fórmula. */
+/**
+ * Texto limpio de una línea (o multilínea en NOTAS), sin inicio de fórmula. Un inicio de fórmula se sigue rechazando
+ * (sin cambio de política); lo que se escribe pasa además por safeCellText (SEC-01, ORD-POS-154), así un cambio futuro
+ * del rechazo no deja pasar una fórmula: se neutraliza como en la API de operaciones.
+ */
 function textoLimpio(raw: string, max: number, multilinea: boolean, fields: Fields, clave: string): string {
   const t = cleanText(raw, multilinea)
   if (t.length > max) fields[clave] = `Hasta ${max} caracteres.`
   else if (FORMULA_START.test(t)) fields[clave] = 'No puede empezar por =, +, - ni @.'
-  return t
+  return safeCellText(raw, multilinea)
 }
 
 /** Valor de un campo; `''` = vacío. Devuelve null y marca el error si no vale. */

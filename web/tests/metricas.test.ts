@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { CostoPendiente, SinDesplegar, TablaSemanas } from '@/components/metricas'
+import { SinDesplegar, TablaSemanas } from '@/components/metricas'
 import { lunesDe, metricas, percentil } from '@/lib/metricas'
 import { WRITE_HEADERS } from '@/lib/operations/constants'
 import { InMemoryTableStore, readView } from '@/lib/operations/table-store'
@@ -116,7 +116,7 @@ describe('metricas', () => {
 })
 
 describe('render', () => {
-  it('tabla semanal, «sin dato» de despliegue y costo «pendiente de fuente»', async () => {
+  it('tabla semanal y «sin dato» de despliegue', async () => {
     const m = metricas([orden('ORD-POS-001', 'CERRADA', 'MEDIO')], await vista([
       crear('ORD-POS-001', '2026-10-19T10:00:00-06:00'), cerrar('ORD-POS-001', '2026-10-21T10:00:00-06:00'),
     ]))
@@ -126,6 +126,5 @@ describe('render', () => {
     expect(tabla).toContain('MEDIO: 1')
     expect(renderToStaticMarkup(createElement(TablaSemanas, { m: { ...m, semanas: [] } }))).toContain('No hay órdenes cerradas')
     expect(renderToStaticMarkup(createElement(SinDesplegar, { fusionadas: 3 }))).toContain('Sin dato')
-    expect(renderToStaticMarkup(createElement(CostoPendiente))).toContain('Pendiente de fuente')
   })
 })

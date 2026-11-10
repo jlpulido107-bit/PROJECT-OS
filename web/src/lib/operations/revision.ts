@@ -7,6 +7,7 @@ import { rutinasSupervision, RoutineError, textoSupervision, type RutinasSupervi
 import { segundoGeminiSupervisado } from './config'
 import { githubClient } from './dispatch'
 import { OperationError } from './errors'
+import { mapaDeProceso } from './process-map'
 import { GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
 import type { OperationContext, OperationsService } from './service'
 import { payloadHash, type LanzarSupervisionCommand } from './validation'
@@ -31,7 +32,16 @@ export function claveLanzamiento(ordenId: string, plan: PlanLanzamiento): string
   return `${ordenId}|${plan.tipo === 'CORREGIR' ? 'corregir' : 'revisar'}|${plan.headSha}|${plan.n}`
 }
 
-const enCurso = new Map<string, Promise<SupervisionInfo>>()
+/**
+ * Operación real de «Lanzar revisión» o «Pedir corrección» según el cuerpo (DIS-05, ORD-POS-154), con la misma
+ * normalización que el parser; lo que no sea CORREGIR es revisar (el parser rechaza después cualquier otro valor).
+ */
+export function operacionSupervision(body: unknown): 'orden.revisar_lanzar' | 'orden.corregir_lanzar' {
+  const accion = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>).accion : undefined
+  return typeof accion === 'string' && accion.trim().toUpperCase() === 'CORREGIR' ? 'orden.corregir_lanzar' : 'orden.revisar_lanzar'
+}
+
+const enCurso = mapaDeProceso<string, Promise<SupervisionInfo>>('revision.supervisiones-en-curso')
 
 export function lanzarSupervision(
   service: OperationsService, cmd: LanzarSupervisionCommand, ctx: OperationContext,

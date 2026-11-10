@@ -1,7 +1,7 @@
 import { OperationError } from '@/lib/operations/errors'
 import { handleWrite } from '@/lib/operations/http'
 import { operationsService } from '@/lib/operations/runtime'
-import { parseUpdateTask } from '@/lib/operations/validation'
+import { decodeIdRuta, parseUpdateTask } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +11,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return handleWrite(request, (body, ctx) => {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
-    return service.updateTask(parseUpdateTask(decodeURIComponent(id), body), ctx)
+    return service.updateTask(parseUpdateTask(decodeIdRuta(id), body), ctx)
   }, 200, 'tarea.editar')
 }

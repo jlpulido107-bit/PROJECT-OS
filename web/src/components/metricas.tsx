@@ -55,13 +55,3 @@ export function SinDesplegar({ fusionadas }: { fusionadas: number }) {
     </p>
   )
 }
-
-/** Costo por orden: queda pendiente hasta que exista /finanzas (ORD-POS-070). */
-export function CostoPendiente() {
-  return (
-    <p>
-      <Badge>Pendiente de fuente</Badge> El costo por orden se mostrará cuando exista /finanzas (ORD-POS-070, diseño en
-      docs/diseno-finanzas.md). Hoy no hay fuente de costos que leer.
-    </p>
-  )
-}

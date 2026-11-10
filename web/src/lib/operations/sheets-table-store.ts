@@ -1,4 +1,4 @@
-import { MAX_DATA_ROWS } from '../schema'
+import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
 import { MIGRATION_TABS, type WriteTab } from './constants'
 import { OperationError } from './errors'
 import { pestanaFaltante, type TableStore } from './table-store'
@@ -67,7 +67,7 @@ export class SheetsTableStore implements TableStore {
   }
 
   async readTable(tab: WriteTab): Promise<string[][]> {
-    const range = encodeURIComponent(`${quoteTab(tab)}!A1:Z${MAX_DATA_ROWS + 2}`)
+    const range = encodeURIComponent(`${quoteTab(tab)}!A1:${ULTIMA_COLUMNA}${MAX_DATA_ROWS + 2}`)
     let data: { values?: unknown }
     try {
       data = (await this.call('GET', `${range}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`)) as { values?: unknown }

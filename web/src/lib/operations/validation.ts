@@ -231,6 +231,18 @@ export class Checker {
   }
 }
 
+/**
+ * ID del segmento `[id]` de una ruta de operaciones (SEC-07, ORD-POS-154): un `%` mal formado hace que
+ * decodeURIComponent lance URIError; aquí se vuelve OperationError('validacion') en lugar de un 500.
+ */
+export function decodeIdRuta(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    throw new OperationError('validacion', { fields: { id: 'ID mal codificado en la ruta' } })
+  }
+}
+
 export function asObject(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new OperationError('json-invalido')
   return body as Record<string, unknown>

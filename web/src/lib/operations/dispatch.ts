@@ -5,6 +5,7 @@ import { dictamenSuficiente, evaluarDictamen } from '../supervision/dictamen'
 import { ORDER_RISKS } from './constants'
 import { pmPuedeRegistrarPr, segundoGeminiSupervisado } from './config'
 import { OperationError } from './errors'
+import { mapaDeProceso } from './process-map'
 import { routineClient, RoutineError, type RoutineClient } from './claude-routine'
 import { createGitHubClient, GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
 import type { OperationContext, OperationResult, OperationsService } from './service'
@@ -46,7 +47,7 @@ export { derivedRequestId }
  * Un solo envío en curso por orden en este proceso (maxScale 1 ⇒ escritor único): un reintento o una segunda pestaña
  * esperan al envío en curso en vez de crear otro issue.
  */
-const enCurso = new Map<string, Promise<EnvioInfo>>()
+const enCurso = mapaDeProceso<string, Promise<EnvioInfo>>('dispatch.envios-en-curso')
 
 function enviar(
   service: OperationsService, client: GitHubClient, ordenId: string, requestId: string, ctx: OperationContext,
@@ -86,7 +87,7 @@ async function enviarUnaVez(
   }
 }
 
-const ejecutando = new Map<string, Promise<EjecucionInfo>>()
+const ejecutando = mapaDeProceso<string, Promise<EjecucionInfo>>('dispatch.ejecuciones-en-curso')
 
 /**
  * Lanza a Claude sobre una orden ENVIADA (F5a). Sin `forzar`, si el issue ya tiene una sesión lanzada por el dashboard,

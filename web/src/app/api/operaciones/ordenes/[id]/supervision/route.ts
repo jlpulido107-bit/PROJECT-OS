@@ -1,8 +1,8 @@
 import { OperationError } from '@/lib/operations/errors'
 import { handleWrite } from '@/lib/operations/http'
-import { lanzarSupervision } from '@/lib/operations/revision'
+import { lanzarSupervision, operacionSupervision } from '@/lib/operations/revision'
 import { operationsService } from '@/lib/operations/runtime'
-import { parseLanzarSupervision } from '@/lib/operations/validation'
+import { decodeIdRuta, parseLanzarSupervision } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,9 +15,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return handleWrite(request, async (body, ctx) => {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
-    const cmd = parseLanzarSupervision(decodeURIComponent(id), body)
+    const cmd = parseLanzarSupervision(decodeIdRuta(id), body)
     const supervision = await lanzarSupervision(service, cmd, ctx)
     const operacion = cmd.accion === 'corregir' ? 'orden.corregir_lanzar' : 'orden.revisar_lanzar'
     return { operacion, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: supervision.ok && supervision.nueva === false, supervision }
-  }, 200, 'orden.revisar_lanzar')
+  }, 200, 'orden.revisar_lanzar', operacionSupervision) // DIS-05: el guard recibe la operación real (revisar o corregir)
 }

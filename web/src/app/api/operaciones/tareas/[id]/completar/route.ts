@@ -1,7 +1,7 @@
 import { OperationError } from '@/lib/operations/errors'
 import { handleWrite } from '@/lib/operations/http'
 import { operationsService } from '@/lib/operations/runtime'
-import { parseCompleteTask } from '@/lib/operations/validation'
+import { decodeIdRuta, parseCompleteTask } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +14,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return handleWrite(request, (body, ctx) => {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
-    return service.completeTask(parseCompleteTask(decodeURIComponent(id), body), ctx)
+    return service.completeTask(parseCompleteTask(decodeIdRuta(id), body), ctx)
   }, 200, 'tarea.completar')
 }

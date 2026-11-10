@@ -79,3 +79,22 @@ export function resumenOrdenes(ds: Pick<Dataset, 'ordenes' | 'tareas'>, proyecto
     .filter(([, n]) => n > 0)
   return { grupos, porEstado }
 }
+
+/**
+ * Lecturas de GitHub de /ordenes (SEC-08, ORD-POS-154), como /agentes (agentes-data.ts): cada cliente tiene un tope de
+ * LLAMADAS_ORDENES llamadas por carga (`maxLlamadas`; al llegar, GitHubError('presupuesto') y la tarjeta queda sin datos
+ * de GitHub) y no hay más de PARALELO_ORDENES consultas a la vez, para no hacer ráfagas contra el límite compartido.
+ * atajo: el tope es por cliente y por carga, no global; si /ordenes se queda corta con muchas órdenes abiertas, leer lo
+ * pendiente en la carga siguiente como /agentes.
+ */
+export const LLAMADAS_ORDENES = 40
+export const PARALELO_ORDENES = 6
+
+/** `fn` sobre cada elemento con no más de `limite` en curso a la vez; termina cuando terminan todos. */
+export async function enParalelo<T>(items: readonly T[], fn: (item: T) => Promise<void>, limite = PARALELO_ORDENES): Promise<void> {
+  let i = 0
+  const trabajador = async () => {
+    while (i < items.length) await fn(items[i++]!)
+  }
+  await Promise.all(Array.from({ length: Math.min(limite, items.length) }, trabajador))
+}
