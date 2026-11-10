@@ -106,3 +106,19 @@ class TestSheetSync(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArchivoManualDocumentado(unittest.TestCase):
+    """ORD-POS-154 (DIS-09): el archivo manual de EVIDENCIAS y SYNC_RUNS está documentado y cuadra con el código."""
+
+    def test_documenta_archivo_manual(self):
+        doc = (Path(__file__).resolve().parents[1] / "docs" / "sheets-sync-setup.md").read_text(encoding="utf-8")
+        start = doc.index("## Archivar EVIDENCIAS y SYNC_RUNS")
+        end = doc.find("\n## ", start + 1)
+        seccion = doc[start:] if end == -1 else doc[start:end]
+        self.assertIn(f"hasta la fila {sync.MAX_ROWS}", seccion)
+        self.assertIn("`MAX_ROWS`", seccion)
+        for paso in ("**Pausa.**", "**Respaldo.**", "**Copiar.**", "**Borrar.**", "**Comprobar.**"):
+            self.assertIn(paso, seccion)
+        self.assertIn("ningún agente lo hace", seccion)
+        self.assertIn("se inserta de nuevo", seccion)

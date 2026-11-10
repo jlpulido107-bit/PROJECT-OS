@@ -1,4 +1,4 @@
-import { MAX_DATA_ROWS } from '../schema'
+import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
 
 /**
  * Almacén de ESCRITURA del libro FINANZAS (ORD-POS-077, docs/diseno-finanzas-v2.md §5). Es el único archivo de
@@ -70,7 +70,7 @@ export class FinanzasSheetsStore implements FinanzasStore {
   async read(tabs: readonly FinanzasWriteTab[]): Promise<Partial<Record<FinanzasWriteTab, unknown[][]>>> {
     if (!tabs.length) return {}
     const params = new URLSearchParams()
-    for (const tab of tabs) params.append('ranges', `${quoteTab(tab)}!A1:Z${MAX_DATA_ROWS + 2}`)
+    for (const tab of tabs) params.append('ranges', `${quoteTab(tab)}!A1:${ULTIMA_COLUMNA}${MAX_DATA_ROWS + 2}`)
     params.set('majorDimension', 'ROWS')
     params.set('valueRenderOption', 'UNFORMATTED_VALUE')
     params.set('dateTimeRenderOption', 'FORMATTED_STRING')

@@ -1,4 +1,4 @@
-import { MAX_DATA_ROWS } from '../schema'
+import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
 import { MIGRATION_TABS, type WriteTab } from './constants'
 import { esPestanaAuditoria, type PestanasAuditoria } from './auditoria-periodo'
 import { OperationError } from './errors'
@@ -82,7 +82,7 @@ export class SheetsTableStore implements TableStore, PestanasAuditoria {
   }
 
   private async readRange(tab: string, onError: (error: unknown) => OperationError): Promise<string[][]> {
-    const range = encodeURIComponent(`${quoteTab(tab)}!A1:Z${MAX_DATA_ROWS + 2}`)
+    const range = encodeURIComponent(`${quoteTab(tab)}!A1:${ULTIMA_COLUMNA}${MAX_DATA_ROWS + 2}`)
     let data: { values?: unknown }
     try {
       data = (await this.call('GET', `${range}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`)) as { values?: unknown }

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Freshness, LoadError, TabWarnings } from '@/components/data-state'
-import { CostoPendiente, SinDesplegar, TablaSemanas } from '@/components/metricas'
+import { SinDesplegar, TablaSemanas } from '@/components/metricas'
 import { Badge, Empty, Section } from '@/components/ui'
 import { leerAuditoria, MOTIVO_NO_ESCRITOR } from '@/lib/auditoria'
 import { metricas, riesgoDe, type Riesgo } from '@/lib/metricas'
@@ -62,10 +62,6 @@ export default async function MetricasPage() {
 
       <Section title="Fusionadas sin desplegar" id="despliegue">
         {m ? <SinDesplegar fusionadas={m.semanas.reduce((s, x) => s + x.fusionadas, 0)} /> : <Empty>{aviso}</Empty>}
-      </Section>
-
-      <Section title="Costo por orden" id="costo">
-        <CostoPendiente />
       </Section>
     </>
   )

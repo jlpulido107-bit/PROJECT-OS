@@ -41,6 +41,7 @@ export async function handleWrite(
   run: (body: unknown, ctx: OperationContext) => Promise<OperationResult>,
   successStatus: number,
   operation?: OperationName,
+  operationFromBody?: (body: unknown) => OperationName,
 ) {
   let requestId: string | undefined
   try {
@@ -51,6 +52,7 @@ export async function handleWrite(
       env: process.env,
       limiter: writeRateLimiter(),
       operation,
+      ...(operationFromBody ? { operationFromBody } : {}),
       agentLimiter: agentRateLimiter(),
     })
     requestId = requestIdOf(body)

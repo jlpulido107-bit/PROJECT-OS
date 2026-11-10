@@ -2,7 +2,7 @@ import { ejecutarConClaude } from '@/lib/operations/dispatch'
 import { OperationError } from '@/lib/operations/errors'
 import { handleWrite } from '@/lib/operations/http'
 import { operationsService } from '@/lib/operations/runtime'
-import { parseEjecutarOrden } from '@/lib/operations/validation'
+import { decodeIdRuta, parseEjecutarOrden } from '@/lib/operations/validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return handleWrite(request, async (body) => {
     const service = operationsService()
     if (!service) throw new OperationError('escritura-deshabilitada')
-    const { ordenId, forzar } = parseEjecutarOrden(decodeURIComponent(id), body)
+    const { ordenId, forzar } = parseEjecutarOrden(decodeIdRuta(id), body)
     const ejecucion = await ejecutarConClaude(service, ordenId, { forzar })
     return { operacion: 'orden.ejecutar', entidad: 'ORDENES_CODEX', id: ordenId, repetida: false, ejecucion }
   }, 200, 'orden.ejecutar')

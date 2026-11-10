@@ -18,6 +18,12 @@ export interface WriteRequestContext {
   limiter: RateLimiter
   /** Operación que la ruta va a ejecutar; el agente PM solo puede las de la lista blanca. */
   operation?: OperationName
+  /**
+   * Para las rutas cuya operación depende del cuerpo (DIS-05, ORD-POS-154: supervisión revisar o corregir): con el
+   * cuerpo ya leído, la operación real. Se exige junto con `operation` (la de antes de leer el cuerpo) y las
+   * comprobaciones por operación se repiten con la real, así una política futura distinta para una de ellas aplica.
+   */
+  operationFromBody?: (body: unknown) => OperationName
   /** Límite propio del agente PM (clave `agente-pm`). Sin él, el acceso del agente se rechaza. */
   agentLimiter?: RateLimiter
 }
@@ -73,6 +79,9 @@ async function evaluateAgentRequest(
   if (!ctx.agentLimiter.take(AGENT_ACTOR)) throw new OperationError('demasiadas-solicitudes')
 
   const body = await readJson(request)
+  const real = ctx.operationFromBody?.(body)
+  // DIS-05: con la operación real distinta de la declarada, la lista blanca se vuelve a aplicar a la real.
+  if (real !== undefined && real !== ctx.operation && !AGENT_OPERATIONS.includes(real)) throw new OperationError('operacion-no-permitida')
   if (ctx.operation === 'tarea.crear' && body && typeof body === 'object' && !Array.isArray(body)) {
     // DEC-POS-005: el PM no fija bloqueos de tareas, tampoco al crearlas.
     if (Object.keys(body).some((key) => key.toLowerCase() === 'bloqueo')) throw new OperationError('operacion-no-permitida')
@@ -140,5 +149,14 @@ export async function evaluateWriteRequest(
 
   if (!ctx.limiter.take(ctx.email.toLowerCase())) throw new OperationError('demasiadas-solicitudes')
 
-  return { actor: ctx.email.toLowerCase(), body: await readJson(request) }
+  const body = await readJson(request)
+  const real = ctx.operationFromBody?.(body)
+  if (real !== undefined && real !== ctx.operation) {
+    // Las mismas comprobaciones por operación de arriba, con la operación real (DIS-05).
+    if (real === AGENT_IDEAS_OPERATION) throw new OperationError('operacion-no-permitida')
+    if (real === 'tarea.completar' && !puedeCerrarTareas(ctx.email, ctx.env)) throw new OperationError('cierre-no-permitido')
+    // Las de planificación del propietario tienen ruta propia; resueltas desde el cuerpo, nunca (conservador).
+    if (OWNER_PLANNING_OPERATIONS.includes(real)) throw new OperationError('operacion-no-permitida')
+  }
+  return { actor: ctx.email.toLowerCase(), body }
 }

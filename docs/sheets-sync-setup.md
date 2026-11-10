@@ -57,3 +57,29 @@ compartir la hoja y pasar una prueba manual; sin `schedule`.
 - No modifica `PROYECTOS`, `TAREAS`, `HITOS`, `PLAN_DIARIO` ni `DECISIONES`.
 - Los informes siguen disponibles como artefactos 30 días.
 - No ejecuta en segundo plano hasta que se apruebe programación y monitoreo.
+
+## Archivar EVIDENCIAS y SYNC_RUNS (solo el propietario, a mano; ORD-POS-154, DIS-09)
+
+El colector (`src/sync_sheets.py`) lee `EVIDENCIAS` y `SYNC_RUNS` hasta la fila 5000 (`MAX_ROWS`, contando el
+encabezado) y **aborta sin escribir** si cualquiera de las dos llega a 5000 filas («Sheet exceeds configured scan limit»).
+El dashboard tampoco lee una pestaña de más de 5000 filas de datos (`MAX_DATA_ROWS` en `web/src/lib/schema.ts`). Ni el
+colector ni la API borran o archivan filas: el archivo es manual, del propietario, y ningún agente lo hace. El límite no
+se sube. Es el mismo procedimiento que el de `AUDITORIA` ([escritura §12](escritura-v1-8.md#12-límite-de-filas-y-archivo-de-auditoria-ord-pos-143)):
+
+1. **Pausa.** No lances el workflow de sincronización mientras archivas.
+2. **Respaldo.** Archivo → Historial de versiones → Nombrar la versión actual, por ejemplo «antes de archivar
+   EVIDENCIAS AAAA-MM-DD».
+3. **Copiar.** Copia las filas más antiguas a `EVIDENCIAS_ARCHIVO_AAAA` o `SYNC_RUNS_ARCHIVO_AAAA` (el año de las
+   filas) o a otro libro. Pega solo valores. Deja al menos las filas de los últimos 3 meses. Ni el colector ni el
+   dashboard leen esas pestañas.
+4. **Borrar.** Borra esas filas sin tocar el encabezado (fila 1). Borra filas completas: no dejes filas vacías en medio.
+5. **Comprobar.** Corre el workflow en modo de prueba (`sync_to_sheets=false`) y revisa que el informe no aborte.
+
+**Efectos sobre lo archivado** (el colector solo ve lo que queda en la pestaña):
+
+- `EVIDENCIAS`: la deduplicación compara `EVIDENCIA_ID`, `REFERENCIA_EXTERNA_ID` y URL solo con las filas que quedan.
+  Si se vuelve a sincronizar un evento de GitHub cuya fila se archivó, se inserta de nuevo. Por eso no se archivan
+  filas recientes.
+- `SYNC_RUNS`: un identificador de corrida archivado (`GH-SYNC-<run>-<fecha>`) ya no se reconoce como procesado; un
+  reintento de esa misma corrida vuelve a añadir sus evidencias que tampoco estén en `EVIDENCIAS`.
+- `TAREA_ID` y la conciliación humana de lo archivado se conservan en la copia, no en la pestaña viva.

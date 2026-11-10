@@ -14,7 +14,7 @@ import type { EstadoLanzamiento } from '@/lib/operations/service'
 import type { EvaluacionDictamen } from '@/lib/supervision/dictamen'
 import { ordenSensible } from '@/lib/supervision/politica'
 import { writeAccess } from '@/components/operations/write-access'
-import { resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
+import { enParalelo, LLAMADAS_ORDENES, resumenOrdenes, type GrupoOrden, type OrdenVista } from '@/lib/ordenes'
 import { privateData } from '@/lib/page-data'
 
 export const metadata: Metadata = { title: 'Órdenes' }
@@ -111,7 +111,7 @@ export default async function OrdenesPage() {
   const total = data.ordenes.length
   const canWrite = writeAccess(user.email).allowed
   // PRs de las órdenes ENVIADA (solo lectura en GitHub; si falla, simplemente no se muestran).
-  const client = canWrite ? githubClient() : null
+  const client = canWrite ? githubClient(process.env, { maxLlamadas: LLAMADAS_ORDENES }) : null
   const prs = new Map<string, { url: string; estado: string }>()
   // Ejecución automática con Claude (F5a): solo si la rutina está configurada; la sesión ya lanzada se lee del issue.
   const rutina = canWrite && routineClient() !== null
@@ -126,7 +126,7 @@ export default async function OrdenesPage() {
   // Cierre asistido (ORD-POS-046): órdenes cuyo PR (detectado o registrado) ya está fusionado y lleva su ID en el título.
   const cierres = new Set<string>()
   if (client) {
-    await Promise.all(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId).map(async (o) => {
+    await enParalelo(data.ordenes.filter((o) => o.estado === 'ENVIADA' && o.proyectoId), async (o) => {
       // Si falla la detección queda undefined (no null): no se lee el lanzamiento y la tarjeta dice cuál de las dos falló.
       const pr = await client.prDeOrden(o.proyectoId!, o.id).catch((e) => registrarFallo(fallos, o.id, 'detección de PR fallida', e))
       if (pr?.estado === 'fusionado') cierres.add(o.id)
@@ -134,22 +134,22 @@ export default async function OrdenesPage() {
       else if (pr === null && rutina && o.issueUrl) {
         await client.lanzamientoPrevio(o.proyectoId!, o.issueUrl).then((s) => { sesiones.set(o.id, s) }, (e) => registrarFallo(fallosLanzamiento, o.id, 'lectura de lanzamientos fallida', e))
       }
-    }))
-    await Promise.all(data.ordenes.filter((o) => o.proyectoId && o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
+    })
+    await enParalelo(data.ordenes.filter((o) => o.proyectoId && o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')), async (o) => {
       const pr = await client.prParaCierre(o.proyectoId!, o.id, o.prUrl!).catch(() => null)
       if (pr?.fusionado && pr.deLaOrden) cierres.add(o.id)
-    }))
+    })
   }
 
   // Dictamen vigente de las órdenes con PR (solo lectura en GitHub; null = «Sin datos de GitHub»).
   const dictamenes = new Map<string, EvaluacionDictamen | null>()
-  const lector = githubClient()
+  const lector = githubClient(process.env, { maxLlamadas: LLAMADAS_ORDENES })
   const rutinas: RutinasSupervision = canWrite ? rutinasSupervision() : { revisar: null, segundo: null, corregir: null }
-  await Promise.all(data.ordenes.filter((o) => o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')).map(async (o) => {
+  await enParalelo(data.ordenes.filter((o) => o.prUrl && (o.estado === 'PR_ABIERTO' || o.estado === 'REVISADA')), async (o) => {
     dictamenes.set(o.id, lector ? await dictamenDeOrden(lector, o) : null)
     const fallo = falloDictamen(o.prUrl!)
     if (fallo) fallos.set(o.id, fallo)
-  }))
+  })
   // Lanzamientos y reservas de la clave del plan actual (AUDITORIA, solo para escritores; si falla, se muestra el botón y el servidor decide).
   const lanzamientos = new Map<string, EstadoLanzamiento>()
   const claves = [...dictamenes].flatMap(([id, ev]) => ev?.plan ? [claveLanzamiento(id, ev.plan)] : [])
