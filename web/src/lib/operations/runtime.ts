@@ -74,11 +74,14 @@ export function operationsService(): OperationsService | null {
   return null
 }
 
-/** Filas de AUDITORIA del almacén de escritura activo (contienen correos de actores: solo para escritores). */
+/**
+ * Filas de AUDITORIA del almacén de escritura activo (contienen correos de actores: solo para escritores). Desde
+ * ORD-POS-153 es la AUDITORIA lógica: la pestaña vigente y la anterior (AUDITORIA_AAAA_MM tras rotar).
+ */
 export async function auditTable(): Promise<string[][] | null> {
   const mode = writeModeStatus().mode
-  if (mode === 'mock') return mockRuntime().store.snapshot().AUDITORIA ?? null
-  if (mode === 'sheets') return sheetsRuntime().store.readTable('AUDITORIA')
+  if (mode === 'mock') return mockRuntime().service.leerAuditoria()
+  if (mode === 'sheets') return sheetsRuntime().service.leerAuditoria()
   return null
 }
 
