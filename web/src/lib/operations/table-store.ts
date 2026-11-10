@@ -1,5 +1,6 @@
 import { MIGRATION_TABS, OPTIONAL_WRITE_COLUMNS, WRITE_HEADERS, type WriteTab } from './constants'
 import { OperationError } from './errors'
+import { esPestanaAuditoria, type PestanasAuditoria } from './auditoria-periodo'
 
 /**
  * Puerto de almacenamiento a nivel de tabla (pestaña de Sheets). El servicio de operaciones solo conoce este
@@ -26,7 +27,7 @@ function trimTrailing(row: string[]): string[] {
 }
 
 /** Repositorio en memoria del proceso (modo simulado). No persiste: se pierde al reiniciar. */
-export class InMemoryTableStore implements TableStore {
+export class InMemoryTableStore implements TableStore, PestanasAuditoria {
   readonly kind = 'mock' as const
   private readonly tabs = new Map<string, string[][]>()
 
@@ -53,6 +54,34 @@ export class InMemoryTableStore implements TableStore {
     const values = this.tabs.get(tab)
     if (!values || sheetRow < 2 || sheetRow > values.length) throw new OperationError('conflicto-concurrente')
     values[sheetRow - 1] = trimTrailing([...row])
+  }
+
+  /* Pestañas físicas de la auditoría por periodo (ORD-POS-153, auditoria-periodo.ts). */
+  async pestanasAuditoria(): Promise<string[]> {
+    return [...this.tabs.keys()].filter(esPestanaAuditoria)
+  }
+
+  async leerPestanaAuditoria(nombre: string): Promise<string[][]> {
+    const values = esPestanaAuditoria(nombre) ? this.tabs.get(nombre) : undefined
+    if (!values) throw new OperationError('lectura-fallida')
+    return values.map((row) => [...row])
+  }
+
+  async agregarAPestanaAuditoria(nombre: string, rows: string[][]): Promise<void> {
+    const values = esPestanaAuditoria(nombre) ? this.tabs.get(nombre) : undefined
+    if (!values) throw new OperationError('auditoria-fallida')
+    for (const row of rows) values.push(trimTrailing([...row]))
+  }
+
+  async crearPestanaAuditoria(nombre: string, encabezado: readonly string[]): Promise<void> {
+    if (!esPestanaAuditoria(nombre)) throw new OperationError('auditoria-fallida')
+    const values = this.tabs.get(nombre)
+    if (!values) {
+      this.tabs.set(nombre, [trimTrailing([...encabezado])])
+      return
+    }
+    if (values.length === 0) values.push(trimTrailing([...encabezado]))
+    else if (values[0]!.join('\u0000') !== trimTrailing([...encabezado]).join('\u0000')) throw new OperationError('auditoria-fallida')
   }
 
   /** Copia de todas las pestañas (para que el dashboard muestre el estado simulado). */
