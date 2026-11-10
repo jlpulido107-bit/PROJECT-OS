@@ -15,11 +15,16 @@ export const FILAS_AVISO = Math.ceil(MAX_DATA_ROWS * 0.8)
  *   pestaña leída ya está en el tope, y antes de cada alta si la pestaña lo pasaría;
  * - al terminar, `aviso()` nombra las pestañas escritas que quedaron en el 80 % o más, para la respuesta ok.
  * Las filas se archivan a mano, nunca por la API (docs/escritura-v1-8.md §12).
+ *
+ * AUDITORIA queda fuera de este tope desde ORD-POS-153: es una pestaña lógica (la vigente y la anterior) que, en el tope,
+ * sigue en una pestaña nueva AUDITORIA_AAAA_MM (auditoria-periodo.ts), así que llena nunca bloquea las escrituras.
  */
 export class ContadorFilas implements TableStore {
   readonly kind: TableStore['kind']
   private readonly filas = new Map<WriteTab, number>()
   private readonly escritas = new Set<WriteTab>()
+  /** Ya se escribió algo en la operación (AUDITORIA incluida). */
+  private escribio = false
 
   constructor(private readonly inner: TableStore) {
     this.kind = inner.kind
@@ -29,17 +34,20 @@ export class ContadorFilas implements TableStore {
   reiniciar() {
     this.filas.clear()
     this.escritas.clear()
+    this.escribio = false
   }
 
   async readTable(tab: WriteTab): Promise<string[][]> {
     const values = await this.inner.readTable(tab)
-    this.filas.set(tab, Math.max(values.length - 1, 0))
+    if (tab !== 'AUDITORIA') this.filas.set(tab, Math.max(values.length - 1, 0))
     return values
   }
 
   async appendRows(tab: WriteTab, rows: string[][]): Promise<void> {
     this.comprobarTope(tab, rows.length)
     await this.inner.appendRows(tab, rows)
+    this.escribio = true
+    if (tab === 'AUDITORIA') return
     this.escritas.add(tab)
     const antes = this.filas.get(tab)
     if (antes !== undefined) this.filas.set(tab, antes + rows.length)
@@ -48,6 +56,7 @@ export class ContadorFilas implements TableStore {
   async writeRow(tab: WriteTab, sheetRow: number, row: string[]): Promise<void> {
     this.comprobarTope(tab, 0)
     await this.inner.writeRow(tab, sheetRow, row)
+    this.escribio = true
     this.escritas.add(tab)
   }
 
@@ -59,9 +68,12 @@ export class ContadorFilas implements TableStore {
   }
 
   private comprobarTope(tab: WriteTab, nuevas: number) {
-    if (this.escritas.size === 0) {
+    // Antes de la primera escritura (la de AUDITORIA, casi siempre) ninguna otra pestaña leída puede estar en el tope.
+    if (!this.escribio) {
       for (const [leida, n] of this.filas) if (n >= MAX_DATA_ROWS) throw llena(leida)
     }
+    // AUDITORIA no tiene tope propio aquí: rota por periodo (auditoria-periodo.ts).
+    if (tab === 'AUDITORIA') return
     const actuales = this.filas.get(tab)
     if (actuales !== undefined && actuales + nuevas > MAX_DATA_ROWS) throw llena(tab)
   }

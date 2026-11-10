@@ -158,7 +158,7 @@ Reglas de estado:
 | CSRF / origen | Exige `Origin` igual al origen de `NEXTAUTH_URL` (o del propio host si no está definido); rechaza `Sec-Fetch-Site` distinto de `same-origin`; exige `Content-Type: application/json` y la cabecera `X-Project-OS-CSRF: 1`, que fuerza un preflight CORS que nunca se aprueba. La cookie de sesión es `SameSite=Lax` |
 | Frecuencia | Por actor: 10 escrituras inmediatas y 1 adicional cada 20 s (por instancia; ver §6) |
 | Tamaño | 16 KiB máximo (cabecera y cuerpo real) |
-| Respuestas | `{ ok, operacion, id, version?, aviso?, modo, requestId, repetida }` (`aviso`: una pestaña escrita pasó del 80 % del límite de filas, [escritura §12](escritura-v1-8.md#12-límite-de-filas-y-archivo-de-auditoria-ord-pos-143)) o `{ ok:false, error:{ codigo, mensaje, campos? } }`. Nunca devuelven filas, otros datos ni mensajes internos |
+| Respuestas | `{ ok, operacion, id, version?, aviso?, modo, requestId, repetida }` (`aviso`: una pestaña escrita pasó del 80 % del límite de filas, o en qué pestaña escribe AUDITORIA tras rotar, [escritura §12](escritura-v1-8.md#12-límite-de-filas-y-rotación-de-auditoria-ord-pos-143-ord-pos-153)) o `{ ok:false, error:{ codigo, mensaje, campos? } }`. Nunca devuelven filas, otros datos ni mensajes internos |
 | Logs | Solo `codigo` + `requestId`. Nunca correos, payloads, tokens ni valores |
 | Caché | `Cache-Control: no-store` |
 

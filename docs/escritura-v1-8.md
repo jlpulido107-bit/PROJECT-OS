@@ -617,42 +617,64 @@ Mérida (`America/Merida`, la zona del motor). Dos clases de evento, nada más:
 - **Respuesta:** `Content-Type: text/calendar`, `Cache-Control: no-store` y `X-Robots-Tag: noindex`; texto escapado según
   RFC 5545. Es solo lectura: no usa Google Tasks y no hay ida y vuelta; un cambio en el calendario no toca la hoja.
 
-## 12. Límite de filas y archivo de AUDITORIA (ORD-POS-143)
+## 12. Límite de filas y rotación de AUDITORIA (ORD-POS-143, ORD-POS-153)
 
 El dashboard lee cada pestaña de la hoja maestra hasta `MAX_DATA_ROWS` filas de datos (5000, `web/src/lib/schema.ts`).
 Si una pestaña pasa de ahí, la lectura falla (`503 lectura-fallida`, motivo `limite-filas`) y se bloquean todas las
-escrituras que la leen. Pasó con `AUDITORIA` el 2026-11-04. `AUDITORIA` es la que más crece: cada operación añade una
-fila por campo.
+escrituras que la leen. Pasó con `AUDITORIA` el 2026-11-04 (hallazgo DIS-01). `AUDITORIA` es la que más crece: cada
+operación añade una fila por campo. Desde ORD-POS-153, `AUDITORIA` llena ya no bloquea: rota por periodo (§12.1).
 
-- **Aviso al 80 %.** Si una escritura deja una pestaña escrita (casi siempre `AUDITORIA`) con 4000 filas de datos o
+- **Aviso al 80 %.** Si una escritura deja una pestaña escrita (que no sea la auditoría) con 4000 filas de datos o
   más, la respuesta ok trae `aviso`. El dashboard lo muestra junto a «Guardado», en los formularios, en la edición de
   /planificacion y en «Aplicar movimientos al plan». Las pestañas solo leídas no avisan.
 - **En el tope, 503 sin escribir.** Antes de la primera escritura, si una pestaña leída por la operación ya tiene 5000
   filas, o si la pestaña donde se escribe las pasaría con las filas nuevas, la API responde `503 pestana-llena` con
-  `detalle.pestana`. No se escribe nada, tampoco `AUDITORIA`. Lo mismo pasa antes de cada alta posterior.
+  `detalle.pestana`. No se escribe nada, tampoco `AUDITORIA`. Lo mismo pasa antes de cada alta posterior. Vale para
+  todas las pestañas menos la auditoría, que rota.
 - **Límite conocido.** Los lanzamientos de revisión y corrección (`orden.supervision_*`) respetan el tope, pero su
   respuesta no lleva `aviso`.
 
-### Archivar AUDITORIA (solo el propietario, a mano)
+### 12.1 AUDITORIA por periodo (ORD-POS-153)
 
-Hazlo al ver el aviso o el `503 pestana-llena`. **Nunca por la API:** no hay ruta que borre ni archive. Ningún agente
-lo hace. El límite no se sube.
+`AUDITORIA` es una pestaña lógica (`web/src/lib/operations/auditoria-periodo.ts`). Sus pestañas físicas son la base
+`AUDITORIA` y las de periodo `AUDITORIA_AAAA_MM` (mes de Mérida), con `_2`, `_3`… si rota más de una vez en el mismo mes.
+La vigente es la más nueva.
+
+- **Escritura.** El lote de la operación va a la vigente si cabe en 5000 filas. Si no, la API crea la siguiente
+  pestaña con una migración explícita: `addSheet` con el título y el encabezado de la vigente, copiado tal cual, en la
+  fila 1. La migración es idempotente: si la pestaña ya existe con ese encabezado no hace nada; si existe vacía le pone
+  el encabezado; con otro encabezado falla. Después relee la pestaña nueva y escribe ahí el lote completo, sin partirlo.
+  La pestaña anterior no se toca: ni se mueven ni se borran filas.
+- **Fallo cerrado.** La auditoría sigue yendo antes que la entidad. Si no se puede crear o leer la pestaña nueva, la
+  API responde `503 pestana-llena` (con `detalle.rotacion: "fallida"` y `detalle.pestanaNueva`) y no escribe nada. Si
+  no se puede saber qué pestañas hay, `503 lectura-fallida`. Una pestaña creada sin encabezado no bloquea: se ignora al
+  leer y la siguiente rotación la reusa.
+- **Lectura.** La idempotencia por `requestId`, el roll-forward, la conciliación, /agentes, Inicio y /metricas leen la
+  vigente y la anterior, con un solo encabezado. Si sus encabezados difieren, `esquema-invalido`. Un `requestId`
+  auditado justo antes del cambio de pestaña sigue reconociéndose. Lo de pestañas más viejas ya no se ve (abajo).
+- **Aviso.** La respuesta ok dice en qué pestaña escribe la auditoría cuando la operación rotó («sigue en la pestaña
+  nueva `AUDITORIA_AAAA_MM`») o cuando la vigente pasa del 80 % («`AUDITORIA` escribe en …»). No pide archivar.
+- **Permisos.** Crear la pestaña usa la misma cuenta de escritura (Editor del libro maestro); no hace falta otro permiso.
+  La API solo crea pestañas cuyo nombre es `AUDITORIA` o `AUDITORIA_AAAA_MM[_N]`.
+
+### Archivar AUDITORIA (opcional, solo el propietario, a mano)
+
+Ya no hace falta para seguir escribiendo. Sirve para ordenar pestañas viejas. **Nunca por la API:** no hay ruta que
+borre ni archive. Ningún agente lo hace. El límite no se sube.
 
 1. **Pausa.** No escribas desde el dashboard ni con el PM mientras archivas.
 2. **Respaldo.** En la hoja maestra: Archivo → Historial de versiones → Nombrar la versión actual, por ejemplo
    «antes de archivar AUDITORIA AAAA-MM-DD».
-3. **Copiar.** Copia las filas más antiguas de `AUDITORIA` a una pestaña `AUDITORIA_ARCHIVO_AAAA` (el año de las filas)
-   o a otro libro. Pega solo valores. Deja en `AUDITORIA` al menos las filas del último mes. La API nunca lee esa
-   pestaña.
-4. **Borrar.** Borra esas filas de `AUDITORIA` sin tocar el encabezado (fila 1). Borra filas completas: no dejes
-   filas vacías en medio.
-5. **Comprobar.** Recarga el dashboard. Las vistas que leen `AUDITORIA` (órdenes, operaciones) cargan sin error. Haz una
-   escritura de prueba pequeña y revisa que no salga el aviso.
+3. **Mover.** Mueve a otro libro solo las pestañas de auditoría que no son ni la vigente ni la anterior. Nunca borres
+   filas de la vigente ni de la anterior. No renombres las pestañas `AUDITORIA_AAAA_MM`: el orden sale de su nombre.
+4. **Comprobar.** Recarga el dashboard. Las vistas que leen `AUDITORIA` (órdenes, operaciones, Inicio) cargan sin
+   error.
 
-**Efectos sobre lo archivado** (la API solo ve lo que queda en `AUDITORIA`):
+**Efectos sobre lo que no es la vigente ni la anterior** (la API no lo lee, esté o no archivado):
 
-- Un `requestId` archivado ya no se reconoce como repetido. Si se reenvía, se aplica otra vez.
+- Un `requestId` de ahí ya no se reconoce como repetido. Si se reenvía, se aplica otra vez.
 - Una intención auditada sin efecto (`escritura-fallida` sin reintento) ya no se completa al reintentar. La
-  conciliación tampoco la lista. Antes de archivar, revisa que la conciliación no tenga pendientes.
+  conciliación tampoco la lista. Revisa que la conciliación no tenga pendientes cuando veas el aviso de rotación.
 - Una cita «sí» del propietario usada por el PM (DEC-POS-011) ya no cuenta como usada para otra orden.
-- Las reservas de lanzamiento caducan a las 2 horas. Archivar filas de más de un mes no les afecta.
+- Las reservas de lanzamiento caducan a las 2 horas: una rotación no les afecta.
+- Las métricas, Inicio y /agentes solo cuentan lo que hay en la vigente y la anterior.

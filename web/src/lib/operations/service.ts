@@ -4,13 +4,14 @@ import { parseNumber, parseFraction } from '../parse'
 import { isoMonday } from '../planning/calendar'
 import { parseCivilDate } from '../dates'
 import { PLAN_CANCELLED_STATES } from '../planning/rules'
-import { CLOSED_TASK_STATES, ORDENES_SENSIBLE, TAREAS_INSTRUCCIONES } from '../schema'
+import { CLOSED_TASK_STATES, MAX_DATA_ROWS, ORDENES_SENSIBLE, TAREAS_INSTRUCCIONES } from '../schema'
 import {
   AUDIT_NOTA_CIERRE, COMPLETED_TASK_STATE, INITIAL_DECISION_STATE, INITIAL_ORDER_STATE, INITIAL_TASK_STATE, ORDER_RISKS, ORDER_TERMINAL_STATES, ORIGIN_PREFIX,
   WRITE_HEADERS, type EntityTab, type OperationName,
 } from './constants'
 import { OperationError } from './errors'
-import { ContadorFilas } from './limite-filas'
+import { AuditoriaPorPeriodo, tienePestanasAuditoria } from './auditoria-periodo'
+import { ContadorFilas, FILAS_AVISO } from './limite-filas'
 import { esSesionClaude, REPOSITORIOS, repoDeUrl } from './github'
 import {
   cell, contractColumns, findById, readView, toRecord, toRow, type TableStore, type TableView,
@@ -138,12 +139,15 @@ export class OperationsService {
   private readonly randomHex: (bytes: number) => string
   /** Cuenta las filas de cada pestaña de la operación en curso: tope y aviso del 80 % (ORD-POS-143). */
   private readonly filas: ContadorFilas
+  /** AUDITORIA por periodo (ORD-POS-153): la vigente y la anterior; rota al tope. Null si el almacén no la soporta. */
+  private readonly auditoria: AuditoriaPorPeriodo | null
   private readonly store: TableStore
 
   constructor(store: TableStore, private readonly options: ServiceOptions) {
-    this.filas = new ContadorFilas(store)
-    this.store = this.filas
     this.clock = options.clock ?? (() => new Date())
+    this.auditoria = store instanceof AuditoriaPorPeriodo ? store : tienePestanasAuditoria(store) ? new AuditoriaPorPeriodo(store, this.clock) : null
+    this.filas = new ContadorFilas(this.auditoria ?? store)
+    this.store = this.filas
     this.randomHex = options.randomHex ?? ((n) => randomBytes(n).toString('hex'))
   }
 
@@ -151,13 +155,31 @@ export class OperationsService {
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
     const op = async (): Promise<T> => {
       this.filas.reiniciar()
+      this.auditoria?.reiniciar()
       const result = await fn()
-      const aviso = this.filas.aviso()
+      const aviso = [this.filas.aviso(), this.avisoAuditoria()].filter(Boolean).join(' ')
       return aviso && esResultado(result) ? { ...result, aviso } : result
     }
     const run = this.queue.then(op, op)
     this.queue = run.catch(() => undefined)
     return run
+  }
+
+  /**
+   * AUDITORIA dice en qué pestaña escribe (ORD-POS-153) cuando la operación la rotó o la vigente pasa del 80 %; nunca
+   * pide archivar: en el tope sigue sola en la pestaña nueva.
+   */
+  private avisoAuditoria(): string | undefined {
+    const e = this.auditoria?.ultimaEscritura()
+    if (!e) return undefined
+    if (e.rotada) return `AUDITORIA llegó al límite de ${MAX_DATA_ROWS} filas: la auditoría sigue en la pestaña nueva ${e.pestana}; la anterior no se tocó.`
+    if (e.filas >= FILAS_AVISO) return `AUDITORIA escribe en ${e.pestana} (${e.filas} de ${MAX_DATA_ROWS} filas): al llegar al límite sigue en una pestaña nueva AUDITORIA_AAAA_MM, sin bloquear la escritura.`
+    return undefined
+  }
+
+  /** Filas de la AUDITORIA lógica (la vigente y la anterior) para Inicio, /metricas y /agentes, fuera de la cola. */
+  leerAuditoria(): Promise<string[][]> {
+    return (this.auditoria ?? this.store).readTable('AUDITORIA')
   }
 
   /* --------------------------------- Operaciones --------------------------------- */
