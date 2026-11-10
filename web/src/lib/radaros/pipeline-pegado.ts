@@ -25,6 +25,8 @@ const DESTINO: Record<string, string> = {
   CERTIFICADO_ORIGEN: 'certificadoOrigen', UNIDADES_POR_SET: 'unidadesPorSet', FLETE_INTERNACIONAL: 'fleteInternacional',
   IGI_PCT: 'igiPct', COSTO_ATERRIZADO_MXN: 'costoAterrizadoMxn', MUESTRA_COSTO: 'muestraCosto', MUESTRA_MONEDA: 'muestraMoneda',
   NOTAS: 'notas',
+  // ORD-POS-155: la bandeja de Gemini trae la liga de la evidencia (el pegado no la envía: no es campo del alta).
+  EVIDENCIA_URL: 'evidenciaUrl',
   // ORD-POS-147 (criterios 1 y 2): columnas opcionales que la tabla B puede traer; sin ellas, el borrador las pide.
   PRECIO_POR: 'precioPor', 'PRECIO POR': 'precioPor', 'EL PRECIO ES POR': 'precioPor',
   CANTIDAD_COTIZADA: 'cantidadCotizada', FLETE_CEDIS: 'fleteCedis',
@@ -179,7 +181,22 @@ export function parsearTablaGemini(texto: string, ctx: ContextoPegado): Resultad
   if (inicio < 0) {
     return { error: `No se encontró la tabla B: la primera fila debe traer los encabezados del Gem 3 (${COLUMNAS_TABLA_B.slice(0, 4).join(', ')}…).`, columnas: [], borradores: [] }
   }
-  const encabezado = celdas(tabla[inicio]!.l)
+  const filas = tabla.slice(inicio + 1).filter(({ l }) => !SEPARADOR.test(l.trim())).map(({ l, n }) => ({ linea: n, crudo: l.slice(0, 400), celdas: celdas(l) }))
+  return parsearFilasGemini(celdas(tabla[inicio]!.l), filas, ctx)
+}
+
+/** Una fila ya separada en celdas: la del pegado (línea del texto) o la de PIPE_BANDEJA_GEMINI (fila de la hoja). */
+export interface FilaCruda {
+  linea: number
+  crudo: string
+  celdas: string[]
+}
+
+/**
+ * ORD-POS-155: el mismo intérprete de la tabla B sobre filas ya separadas en celdas. Lo usan «Recibir varias» (texto
+ * pegado) y la bandeja de Gemini (filas de PIPE_BANDEJA_GEMINI), así las dos hacen los mismos chequeos.
+ */
+export function parsearFilasGemini(encabezado: readonly string[], filasCrudas: readonly FilaCruda[], ctx: ContextoPegado): ResultadoPegado {
   const columnas: ColumnaPegada[] = encabezado.map((t) => ({ texto: limpiar(t), destino: DESTINO[normalEncabezado(t)] ?? null }))
   const usadas = new Set<string>()
   for (const c of columnas) {
@@ -193,10 +210,8 @@ export function parsearTablaGemini(texto: string, ctx: ContextoPegado): Resultad
   const previas = new Map<string, string>()
   const borradores: Borrador[] = []
 
-  for (const { l, n } of tabla.slice(inicio + 1)) {
-    if (SEPARADOR.test(l.trim())) continue
-    const fila = celdas(l)
-    const base: Borrador = { linea: n, crudo: l.slice(0, 400), reconocida: false, motivo: null, idGemini: null, valores: {}, errores: {}, notas: [], duplicada: null }
+  for (const { linea: n, crudo, celdas: fila } of filasCrudas) {
+    const base: Borrador = { linea: n, crudo, reconocida: false, motivo: null, idGemini: null, valores: {}, errores: {}, notas: [], duplicada: null }
     if (fila.length !== encabezado.length) {
       borradores.push({ ...base, motivo: `Tiene ${fila.length} celdas y el encabezado ${encabezado.length}.` })
       continue

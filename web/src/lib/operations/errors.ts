@@ -68,6 +68,9 @@ export type OperationErrorCode =
   | 'elegida-duplicada'
   | 'proveedor-duplicado'
   | 'eco-migracion-pendiente'
+  | 'bandeja-no-pendiente'
+  | 'bandeja-bloqueada'
+  | 'cotizacion-duplicada'
   | 'instrucciones-sin-columna'
   | 'idea-encabezados-distintos'
   | 'idea-fila-ocupada'
@@ -152,6 +155,9 @@ const STATUS: Record<OperationErrorCode, number> = {
   'elegida-duplicada': 409,
   'proveedor-duplicado': 409,
   'eco-migracion-pendiente': 409,
+  'bandeja-no-pendiente': 409,
+  'bandeja-bloqueada': 422,
+  'cotizacion-duplicada': 409,
   'instrucciones-sin-columna': 422,
   'idea-encabezados-distintos': 409,
   'idea-fila-ocupada': 409,
@@ -225,7 +231,7 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'suscripcion-sin-confirmar': 'La suscripción de Claude cae en este corte y su recurrente no está confirmado; no se escribió nada.',
   'moneda-no-permitida': 'La moneda del total debe ser USD o MXN; no se escribió nada.',
   'tipo-cambio-sin-dato': 'Falta un TIPO_CAMBIO_DEFECTO válido en PARAMETROS para revisar el tope; no se escribió nada.',
-  'eco-esquema-invalido': 'RADAROS no tiene las pestañas PIPE_* o las columnas que exige el pipeline (o hay una repetida); no se escribió nada.',
+  'eco-esquema-invalido': 'RADAROS no tiene las pestañas PIPE_* o las columnas que exige el pipeline (o hay una repetida; detalle: pestana y columnas); no se escribió nada.',
   'eco-pestana-llena': 'Una pestaña PIPE_* llegó al límite de filas; archívala (diseño /eco pipeline §7.2) y vuelve a intentarlo. No se escribió nada.',
   'pestana-llena': 'Una pestaña de la hoja llegó al límite de filas (detalle: pestana); el propietario la archiva a mano (docs/escritura-v1-8.md §12) y se vuelve a intentar. En AUDITORIA solo pasa si no se pudo crear la pestaña nueva del periodo (§12.1). No se escribió nada.',
   'campo-no-permitido': 'La solicitud trae campos que esta operación no admite; no se escribió nada.',
@@ -237,6 +243,9 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'elegida-duplicada': 'El producto ya tiene una cotización ELEGIDA; no se escribió nada.',
   'proveedor-duplicado': 'Ya existe un proveedor con ese nombre (detalle: id); no se duplica. No se escribió nada.',
   'eco-migracion-pendiente': 'La pestaña aún no tiene las columnas de la migración (detalle: pestana y columnas; la agrega el propietario, diseño /eco pipeline §14.1 y §15.1). No se escribió nada.',
+  'bandeja-no-pendiente': 'Esa fila de la bandeja de Gemini ya no está PENDIENTE (o ya se escribió algo desde ella); recarga la bandeja. No se escribió nada.',
+  'bandeja-bloqueada': 'La fila de la bandeja de Gemini tiene una fórmula o un correo o teléfono (detalle: columnas); corrígela en la hoja. No se escribió nada.',
+  'cotizacion-duplicada': 'Ya hay una cotización igual en PIPE_COTIZACIONES (producto, proveedor, incoterm, precio y moneda; detalle: id). No se escribió nada.',
   'instrucciones-sin-columna': 'La pestaña TAREAS aún no tiene la columna INSTRUCCIONES (la añade el propietario con la migración); quita las instrucciones o espera la migración. No se escribió nada.',
   'idea-encabezados-distintos': 'Los encabezados de PRODUCTS (A a P) o de SCORING (A a L) del libro de RADAROS no son los esperados (detalle: columnas); no se escribió nada.',
   'idea-fila-ocupada': 'La primera fila con PRODUCT_ID vacío en PRODUCTS tiene otros datos; no se editan filas existentes. No se escribió nada.',

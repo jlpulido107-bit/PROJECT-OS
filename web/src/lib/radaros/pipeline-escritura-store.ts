@@ -15,11 +15,24 @@ import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
 
 export const ECO_WRITE_TABS = ['PIPE_PRODUCTOS', 'PIPE_PROVEEDORES', 'PIPE_COTIZACIONES', 'PIPE_EMBARQUES', 'PIPE_AUDITORIA'] as const
 export type EcoWriteTab = (typeof ECO_WRITE_TABS)[number]
+/**
+ * ORD-POS-155 (§18): la bandeja de Gemini. Está en la lista cerrada, pero no en ECO_WRITE_TABS: las demás escrituras no
+ * la leen ni la exigen. En ella solo se editan celdas de filas existentes (ESTADO_BANDEJA, RESULTADO_ID y NOTAS, lo
+ * revisa el servicio): `append` la rechaza y no hay borrado.
+ */
+export const ECO_BANDEJA_TAB = 'PIPE_BANDEJA_GEMINI' as const
+export const ECO_STORE_TABS = [...ECO_WRITE_TABS, ECO_BANDEJA_TAB] as const
+export type EcoStoreTab = (typeof ECO_STORE_TABS)[number]
 export type Celda = string | number
 
 /** Error de programación (no de usuario): una pestaña fuera de la lista cerrada nunca llega a Google. */
-export function assertEcoTab(tab: string): asserts tab is EcoWriteTab {
-  if (!(ECO_WRITE_TABS as readonly string[]).includes(tab)) throw new Error('pestaña fuera de la lista cerrada del pipeline')
+export function assertEcoTab(tab: string): asserts tab is EcoStoreTab {
+  if (!(ECO_STORE_TABS as readonly string[]).includes(tab)) throw new Error('pestaña fuera de la lista cerrada del pipeline')
+}
+
+/** Error de programación: la bandeja nunca recibe filas nuevas del dashboard (criterio 3). */
+function assertAppendable(tab: EcoStoreTab): asserts tab is EcoWriteTab {
+  if (tab === ECO_BANDEJA_TAB) throw new Error('la bandeja de Gemini no admite filas nuevas del dashboard')
 }
 
 export interface CeldaCambio {
@@ -34,12 +47,12 @@ export interface EcoPipelineStore {
   /** Títulos de las pestañas del libro. */
   tabs(): Promise<string[]>
   /** Valores de las pestañas pedidas, con encabezado; una pestaña ausente no aparece. */
-  read(tabs: readonly EcoWriteTab[]): Promise<Partial<Record<EcoWriteTab, unknown[][]>>>
+  read(tabs: readonly EcoStoreTab[]): Promise<Partial<Record<EcoStoreTab, unknown[][]>>>
   /** Una fila con `valueRenderOption=FORMULA` (para no pisar una fórmula de la hoja). `fila` es 1-based. */
-  formulas(tab: EcoWriteTab, fila: number): Promise<unknown[]>
+  formulas(tab: EcoStoreTab, fila: number): Promise<unknown[]>
   append(tab: EcoWriteTab, rows: Celda[][]): Promise<void>
   /** Celdas de UNA fila existente (1-based). */
-  update(tab: EcoWriteTab, fila: number, celdas: CeldaCambio[]): Promise<void>
+  update(tab: EcoStoreTab, fila: number, celdas: CeldaCambio[]): Promise<void>
 }
 
 export interface EcoSheetsStoreOptions {
@@ -102,7 +115,7 @@ export class EcoSheetsStore implements EcoPipelineStore {
     return (data.sheets ?? []).map((s) => s.properties?.title).filter((t): t is string => typeof t === 'string')
   }
 
-  async read(tabs: readonly EcoWriteTab[]): Promise<Partial<Record<EcoWriteTab, unknown[][]>>> {
+  async read(tabs: readonly EcoStoreTab[]): Promise<Partial<Record<EcoStoreTab, unknown[][]>>> {
     tabs.forEach(assertEcoTab)
     if (!tabs.length) return {}
     const params = new URLSearchParams()
@@ -112,7 +125,7 @@ export class EcoSheetsStore implements EcoPipelineStore {
     params.set('dateTimeRenderOption', 'FORMATTED_STRING')
     const data = (await this.call('GET', `/values:batchGet?${params.toString()}`)) as { valueRanges?: Array<{ values?: unknown }> }
     const ranges = data.valueRanges ?? []
-    const out: Partial<Record<EcoWriteTab, unknown[][]>> = {}
+    const out: Partial<Record<EcoStoreTab, unknown[][]>> = {}
     tabs.forEach((tab, i) => {
       const values = ranges[i]?.values
       out[tab] = Array.isArray(values) ? (values as unknown[][]).map((row) => (Array.isArray(row) ? row : [])) : []
@@ -120,7 +133,7 @@ export class EcoSheetsStore implements EcoPipelineStore {
     return out
   }
 
-  async formulas(tab: EcoWriteTab, fila: number): Promise<unknown[]> {
+  async formulas(tab: EcoStoreTab, fila: number): Promise<unknown[]> {
     assertEcoTab(tab)
     filaValida(fila)
     const range = encodeURIComponent(`${quoteTab(tab)}!A${fila}:${ULTIMA}${fila}`)
@@ -131,11 +144,12 @@ export class EcoSheetsStore implements EcoPipelineStore {
 
   async append(tab: EcoWriteTab, rows: Celda[][]): Promise<void> {
     assertEcoTab(tab)
+    assertAppendable(tab)
     const range = encodeURIComponent(`${quoteTab(tab)}!A1`)
     await this.call('POST', `/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { majorDimension: 'ROWS', values: rows })
   }
 
-  async update(tab: EcoWriteTab, fila: number, celdas: CeldaCambio[]): Promise<void> {
+  async update(tab: EcoStoreTab, fila: number, celdas: CeldaCambio[]): Promise<void> {
     assertEcoTab(tab)
     filaValida(fila)
     if (!celdas.length) return
@@ -161,9 +175,9 @@ export class InMemoryEcoStore implements EcoPipelineStore {
     return [...this.data.keys()]
   }
 
-  async read(tabs: readonly EcoWriteTab[]): Promise<Partial<Record<EcoWriteTab, unknown[][]>>> {
+  async read(tabs: readonly EcoStoreTab[]): Promise<Partial<Record<EcoStoreTab, unknown[][]>>> {
     tabs.forEach(assertEcoTab)
-    const out: Partial<Record<EcoWriteTab, unknown[][]>> = {}
+    const out: Partial<Record<EcoStoreTab, unknown[][]>> = {}
     for (const tab of tabs) {
       const values = this.data.get(tab)
       if (values) out[tab] = values.map((row) => [...row])
@@ -171,7 +185,7 @@ export class InMemoryEcoStore implements EcoPipelineStore {
     return out
   }
 
-  async formulas(tab: EcoWriteTab, fila: number): Promise<unknown[]> {
+  async formulas(tab: EcoStoreTab, fila: number): Promise<unknown[]> {
     assertEcoTab(tab)
     filaValida(fila)
     const row = [...(this.data.get(tab)?.[fila - 1] ?? [])]
@@ -184,6 +198,7 @@ export class InMemoryEcoStore implements EcoPipelineStore {
 
   async append(tab: EcoWriteTab, rows: Celda[][]): Promise<void> {
     assertEcoTab(tab)
+    assertAppendable(tab)
     const values = this.data.get(tab)
     if (!values) throw new Error('HTTP 400')
     for (const row of rows) {
@@ -193,7 +208,7 @@ export class InMemoryEcoStore implements EcoPipelineStore {
     }
   }
 
-  async update(tab: EcoWriteTab, fila: number, celdas: CeldaCambio[]): Promise<void> {
+  async update(tab: EcoStoreTab, fila: number, celdas: CeldaCambio[]): Promise<void> {
     assertEcoTab(tab)
     filaValida(fila)
     const values = this.data.get(tab)

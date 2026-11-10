@@ -4,6 +4,7 @@ import { Badge, Empty, Section, StateBadge, Stat, Text } from '@/components/ui'
 import { ColumnaSoltable, TableroEditable, TarjetaMovible } from '@/components/eco/tablero-escritura'
 import { FormularioEco } from '@/components/eco/formularios-pipeline'
 import { PegarTablaGemini } from '@/components/eco/pegar-gemini'
+import { BandejaGemini } from '@/components/eco/bandeja-gemini'
 import { PedirCotizacion } from '@/components/eco/bandeja-cotizaciones'
 import { TarjetaCotizacion, type ContextoTarjeta } from '@/components/eco/tarjeta-cotizacion'
 import { Veredicto } from '@/components/eco/veredicto'
@@ -14,6 +15,7 @@ import {
   ETAPAS, ETIQUETAS_ETAPA, enEtapa, filtrarTarjetas, paraLector, type PipelineVista, type Tarjeta,
 } from '@/lib/radaros/pipeline'
 import { construirBandeja } from '@/lib/radaros/pipeline-bandeja'
+import { ecoBandejaGeminiHabilitada, propuestasBandeja, type BandejaVista } from '@/lib/radaros/pipeline-bandeja-gemini'
 import {
   conParams, filtrarPorEtapa, filtrarPorPaso, mejorCotizacion, parseEtapa, parsePaso, PASOS, porProducto, type FiltroEtapa, type PorPaso,
 } from '@/lib/radaros/pipeline-compras'
@@ -574,6 +576,41 @@ function FichaProveedor({ v, p, tarjetas, verContacto, editable, ficha }: { v: P
 
 /* ------------------------------------------ Página ------------------------------------------ */
 
+/**
+ * Compras > Bandeja (ORD-POS-155, §18): solo con ECO_BANDEJA_GEMINI=true y para el escritor del pipeline. Las filas
+ * PENDIENTE con los chequeos de «Recibir varias»; las columnas que faltan se nombran.
+ */
+function SeccionBandeja({ b, contexto, pistas }: { b: BandejaVista; contexto: ContextoPegado; pistas: Record<string, string> }) {
+  let contenido: ReactNode
+  if (b.estado === 'apagada') contenido = null
+  else if (b.estado === 'ausente') contenido = <Empty>{b.mensaje}</Empty>
+  else if (b.estado === 'error') contenido = <div className="alert alert-danger" role="alert"><p>No se pudo leer la bandeja: {b.mensaje}</p></div>
+  else if (b.estado === 'columnas-faltantes') {
+    contenido = (
+      <div className="alert alert-warn" role="alert">
+        <p>
+          <code>PIPE_BANDEJA_GEMINI</code>:{b.faltan.length ? <> falta la columna {b.faltan.join(', ')}.</> : null}
+          {b.repetidas.length ? <> Encabezado repetido: {b.repetidas.join(', ')}.</> : null} La corrige el propietario (diseño /eco pipeline §18.1); no se muestran sus filas.
+        </p>
+      </div>
+    )
+  } else {
+    const r = propuestasBandeja(b, { ...contexto, campos: CAMPOS['eco.bandeja.cotizacion'] })
+    contenido = (
+      <>
+        <p className="small muted">
+          Propuestas de Gemini en <code>PIPE_BANDEJA_GEMINI</code>: {r.pendientes.length} pendientes · {r.confirmadas} confirmadas · {r.rechazadas} rechazadas
+          {r.otras ? ` · ${r.otras} con ESTADO_BANDEJA vacío o no válido (no se muestran)` : ''}. Confirmar escribe con el servicio del pipeline;
+          en la bandeja solo se escriben ESTADO_BANDEJA, RESULTADO_ID y NOTAS, y nunca se borra una fila.
+        </p>
+        {b.truncado ? <div className="alert alert-warn" role="alert"><p><code>PIPE_BANDEJA_GEMINI</code>: truncado; faltan filas.</p></div> : null}
+        <BandejaGemini propuestas={r.pendientes} contexto={{ ...contexto, campos: CAMPOS['eco.bandeja.cotizacion'] }} camposProveedor={CAMPOS['eco.bandeja.proveedor']} pistas={pistas} />
+      </>
+    )
+  }
+  return <Section title="Bandeja de Gemini" id="bandeja">{contenido}</Section>
+}
+
 /** ORD-POS-146 (criterio 1): proveedores existentes, para avisar de un nombre repetido antes de enviar. */
 function proveedoresExistentes(v: PipelineVista): Array<{ id: string; nombre: string }> {
   return v.proveedores.estado === 'ok'
@@ -646,6 +683,10 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
   const producto = productoId ? tarjetas.find((t) => t.id === productoId) : undefined
   const proveedor = params.proveedor && v.proveedores.estado === 'ok' ? v.proveedores.datos.filas.find((p) => p.PROVEEDOR_ID === params.proveedor) : undefined
   const enProveedores = params.seccion === 'proveedores' || params.proveedor !== undefined || params.estado !== undefined
+  // ORD-POS-155: sin ECO_BANDEJA_GEMINI=true (o sin ser el escritor) no hay enlace, ni sección, ni lectura de la pestaña.
+  const conBandeja = editable && ecoBandejaGeminiHabilitada() && result.vista.bandejaGemini.estado !== 'apagada'
+  const enBandeja = conBandeja && params.seccion === 'bandeja' && !enProveedores
+  const pendientesBandeja = result.vista.bandejaGemini.estado === 'ok' ? result.vista.bandejaGemini.filas.filter((f) => f.estado === 'PENDIENTE').length : null
 
   const paso = parsePaso(params.paso)
   const etapa = parseEtapa(params.etapa)
@@ -716,11 +757,18 @@ export default async function EcoPipelinePage({ searchParams }: { searchParams: 
       ) : null}
 
       <nav className="subnav" aria-label="Secciones de compras">
-        <a href="/eco/pipeline#productos" aria-current={enProveedores ? undefined : 'page'}>Productos</a>
+        <a href="/eco/pipeline#productos" aria-current={enProveedores || enBandeja ? undefined : 'page'}>Productos</a>
         <a href="/eco/pipeline?seccion=proveedores#proveedores" aria-current={enProveedores ? 'page' : undefined}>Proveedores</a>
+        {conBandeja ? (
+          <a href="/eco/pipeline?seccion=bandeja#bandeja" aria-current={enBandeja ? 'page' : undefined}>
+            Bandeja{pendientesBandeja ? <> <Badge tone="warn">{pendientesBandeja}</Badge></> : null}
+          </a>
+        ) : null}
       </nav>
 
-      {enProveedores ? (
+      {enBandeja ? (
+        <SeccionBandeja b={result.vista.bandejaGemini} contexto={pegado} pistas={pistas} />
+      ) : enProveedores ? (
         <>
           <Section title="Proveedores" id="proveedores">
             {editable ? <p className="small"><a href="/eco/pipeline#pedir">Proveedor nuevo: en «Pedir cotización»</a></p> : null}

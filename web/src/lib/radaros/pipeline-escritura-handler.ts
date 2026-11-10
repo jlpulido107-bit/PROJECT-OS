@@ -16,6 +16,11 @@ export interface EcoHandlerDeps {
   env: NodeJS.ProcessEnv
   limiter: RateLimiter
   service: () => EcoPipelineWriteService | null
+  /**
+   * ORD-POS-155: bandera propia de la ruta (la bandeja de Gemini, `ECO_BANDEJA_GEMINI`). Apagada: 403
+   * `operacion-no-permitida` antes de leer la sesión o el cuerpo y sin pedir el servicio.
+   */
+  habilitada?: (env: NodeJS.ProcessEnv) => boolean
 }
 
 export interface EcoRespuesta {
@@ -37,6 +42,19 @@ function mensajeDe(error: OperationError): string {
   // ORD-POS-146: el ID del proveedor existente y las columnas de la migración pendiente (nombres fijos del esquema).
   const { id, columnas } = error.detail ?? {}
   if (error.code === 'proveedor-duplicado' && id) return `Ya existe el proveedor ${id} con ese nombre; no se duplica. No se escribió nada.`
+  // ORD-POS-155 (criterio 5): la columna requerida que falta o la repetida (nombres del esquema, nunca valores).
+  if (error.code === 'eco-esquema-invalido' && pestana && columnas) {
+    return `La pestaña ${pestana} no tiene la columna ${String(columnas).split(',').join(', ')} que exige el pipeline: la agrega el propietario (diseño /eco pipeline §8 y §18.1). No se escribió nada.`
+  }
+  const { repetida, estado } = error.detail ?? {}
+  if (error.code === 'eco-esquema-invalido' && pestana && repetida) return `La pestaña ${pestana} tiene repetido el encabezado ${repetida}: deja uno solo. No se escribió nada.`
+  if (error.code === 'eco-esquema-invalido' && pestana) return `RADAROS no tiene la pestaña ${pestana}: la crea el propietario con la migración (diseño /eco pipeline §8 y §18.1). No se escribió nada.`
+  if (error.code === 'bandeja-bloqueada' && columnas) {
+    return `No se confirma: la fila tiene una fórmula o un correo o teléfono en ${String(columnas).split(',').join(', ')}. Corrígela en la hoja (solo valores, sin datos personales). No se escribió nada.`
+  }
+  if (error.code === 'bandeja-no-pendiente' && id) return `Desde esta fila ya se escribió ${id}: termina de confirmarla (no se rechaza). No se escribió nada.`
+  if (error.code === 'bandeja-no-pendiente' && estado) return `La fila ya no está PENDIENTE (está ${estado}); recarga la bandeja. No se escribió nada.`
+  if (error.code === 'cotizacion-duplicada' && id) return `Ya hay una cotización igual: ${id} (producto, proveedor, incoterm, precio y moneda). Rechaza la fila o corrígela. No se escribió nada.`
   if (error.code === 'eco-migracion-pendiente' && pestana && columnas) {
     return `${pestana} aún no tiene ${String(columnas).split(',').join(', ')}: la migración la aplica el propietario (diseño /eco pipeline §14.1 y §15.1). Deja esos campos vacíos o espera la migración. No se escribió nada.`
   }
@@ -75,6 +93,7 @@ export async function ecoPipelineWrite(
   try {
     // Antes de leer la sesión o el cuerpo: cualquier Authorization (el token del PM o el del agente) es 401.
     rejectAuthorization(request)
+    if (deps.habilitada && !deps.habilitada(deps.env)) throw new OperationError('operacion-no-permitida')
     const { actor, body } = await evaluateEcoWriteRequest(request, { email: await deps.sessionEmail(), env: deps.env, limiter: deps.limiter })
     requestId = requestIdOf(body)
     const service = ecoPipelineWriteMode(deps.env) === 'sheets' ? deps.service() : null

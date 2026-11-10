@@ -678,3 +678,43 @@ borre ni archive. Ningún agente lo hace. El límite no se sube.
 - Una cita «sí» del propietario usada por el PM (DEC-POS-011) ya no cuenta como usada para otra orden.
 - Las reservas de lanzamiento caducan a las 2 horas: una rotación no les afecta.
 - Las métricas, Inicio y /agentes solo cuentan lo que hay en la vigente y la anterior.
+
+## 13. Bandeja de Gemini de /eco/pipeline (ORD-POS-155, DEC-POS-031)
+
+DEC-POS-031 (enmienda de DEC-POS-030) deja que Gemini **proponga** proveedores y cotizaciones en una pestaña aparte del
+libro de RADAROS, `PIPE_BANDEJA_GEMINI`, y que **solo el propietario** las confirme desde Compras > Bandeja. No cambia
+quién escribe en `PIPE_*` ni las transiciones de estado. Diseño: [`diseno-eco-pipeline.md` §18](diseno-eco-pipeline.md#18-bandeja-de-gemini-ord-pos-155-pos-056).
+
+- **Quién escribe.** La sesión del propietario (`ECO_PIPELINE_WRITER_EMAIL`), por las rutas de la escritura del pipeline:
+  `POST /api/eco/pipeline/bandeja/<BAN-NNNN>/confirmar` (`eco.bandeja.confirmar`) y `…/rechazar`
+  (`eco.bandeja.rechazar`). Mismo guard sin agente (§4.1 y §4.2 del diseño): con el token del PM o cualquier
+  `Authorization`, 401 antes de leer sesión o cuerpo. Gemini no recibe ninguna credencial y el dashboard no lee Gmail.
+- **Qué escribe.** Confirmar crea o actualiza el proveedor o la cotización con las operaciones de siempre (validación,
+  `safeCellText`, rechazo de fórmulas, idempotencia por `requestId` y auditoría en `PIPE_AUDITORIA`) y luego marca la fila
+  `CONFIRMADA` con el ID resultante. Rechazar la marca `RECHAZADA` y agrega el motivo al final de `NOTAS`. En la bandeja
+  solo escribe `ESTADO_BANDEJA`, `RESULTADO_ID` y `NOTAS`; nunca agrega ni borra filas.
+- **Apagada (por defecto).** Sin `ECO_BANDEJA_GEMINI=true` exacto: no hay enlace ni sección en Compras, el lector no pide
+  la pestaña y las dos rutas responden 403 `operacion-no-permitida` sin leer sesión ni cuerpo.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+Requisitos: la imagen que trae ORD-POS-155 desplegada, la escritura del pipeline activa (`ECO_PIPELINE_WRITE_MODE=sheets`)
+y la migración de la pestaña aplicada a mano (diseño §18.1). `render.mjs` rechaza la bandera sin la escritura del
+pipeline. Ningún agente exporta la variable ni despliega.
+
+```bash
+export ECO_BANDEJA_GEMINI=true
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ ECO_BANDEJA_GEMINI»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+Comprobar: en `/eco/pipeline` aparece «Bandeja» junto a Productos y Proveedores (solo para el propietario).
+
+### Revertir
+
+```bash
+web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_BANDEJA_GEMINI
+```
+
+Quitar `ECO_PIPELINE_WRITE_MODE` sin quitar también `ECO_BANDEJA_GEMINI` hace fallar el render: no se aplica nada. La
+pestaña y sus filas se quedan como están.

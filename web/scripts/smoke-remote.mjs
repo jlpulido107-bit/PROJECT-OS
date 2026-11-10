@@ -48,6 +48,7 @@ const PRIVATE_APIS = [
   '/api/eco/pipeline/productos', '/api/eco/pipeline/productos/PRD-0001', '/api/eco/pipeline/productos/PRD-0001/etapa',
   '/api/eco/pipeline/proveedores', '/api/eco/pipeline/proveedores/PRV-0001', '/api/eco/pipeline/cotizaciones', '/api/eco/pipeline/cotizaciones/pedir',
   '/api/eco/pipeline/cotizaciones/COT-0001', '/api/eco/pipeline/embarques', '/api/eco/pipeline/embarques/EMB-0001',
+  '/api/eco/pipeline/bandeja/BAN-0001/confirmar', '/api/eco/pipeline/bandeja/BAN-0001/rechazar',
 ]
 
 for (const path of PRIVATE_PAGES) {

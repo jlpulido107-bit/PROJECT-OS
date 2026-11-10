@@ -922,3 +922,95 @@ escritura, su guard, sus banderas, el esquema de `PIPE_*` ni las pestañas que s
   conservando `?paso=`. En el menú, RADAROS queda con Ideas (`/eco`) y Compras (`/eco/pipeline`).
 - Sin `ECO_TABULADOR=true` no hay números ni «Comparar», y la ficha dice por qué. Los controles solo con
   `ecoPipelineCanWrite(email)` (§4.2); el token del PM sigue recibiendo 401 en las rutas.
+
+## 18. Bandeja de Gemini (ORD-POS-155, POS-056)
+
+Orden ORD-POS-155 ([issue #345](https://github.com/jlpulido107-bit/PROJECT-OS/issues/345); paquete PAQ-2026-11-10-03),
+riesgo MEDIO, sensible: cambia el camino por el que llegan datos a `PIPE_*`. Aplica DEC-POS-031 (enmienda de DEC-POS-030).
+Gemini propone proveedores y cotizaciones en una pestaña aparte; **solo el propietario** los confirma en Compras > Bandeja
+(`/eco/pipeline?seccion=bandeja`). Nada llega a `PIPE_PROVEEDORES` ni a `PIPE_COTIZACIONES` por otra vía: confirmar usa las
+mismas operaciones de §4 y §15. Gemini no recibe ninguna credencial y el dashboard no lee Gmail. Quién llena la pestaña
+queda fuera de esta orden: el dashboard nunca le agrega filas.
+
+Código: `web/src/lib/radaros/pipeline-bandeja-gemini.ts` (migración, lectura, bloqueos y borradores),
+`pipeline-escritura-service.ts` (`confirmarBandeja`, `rechazarBandeja`), `pipeline-escritura-validacion.ts`
+(`parseBandejaConfirmar`, `parseBandejaRechazar`), las rutas `web/src/app/api/eco/pipeline/bandeja/[id]/confirmar` y
+`…/rechazar`, y la pantalla `web/src/components/eco/bandeja-gemini.tsx`. Activación: [escritura §13](escritura-v1-8.md#13-bandeja-de-gemini-de-ecopipeline-ord-pos-155-dec-pos-031).
+
+### 18.1 Migración explícita de `PIPE_BANDEJA_GEMINI`
+
+La aplica **solo el propietario, a mano en la hoja de RADAROS**, después de fusionar y desplegar. Ningún agente ni el
+dashboard crean la pestaña ni sus columnas.
+
+1. Crear la pestaña `PIPE_BANDEJA_GEMINI` (si no existe) y escribir en la fila 1, en este orden, exactos y sin repetir:
+
+| Grupo | Columnas |
+| --- | --- |
+| Control | `BANDEJA_ID`, `FECHA_CAPTURA`, `TIPO` (`PROVEEDOR` o `COTIZACION`), `PRODUCTO_ID`, `PROVEEDOR` (empresa) |
+| Tabla B del Gem 3, en el orden de `PIPE_COTIZACIONES` | `ESTADO`, `FECHA_RECIBIDA`, `PRECIO_UNIT`, `MONEDA`, `MOQ`, `PLAZO_PRODUCCION_DIAS`, `INCOTERM`, `COSTO_ATERRIZADO_MXN`, `MUESTRA_COSTO`, `MUESTRA_MONEDA`, `PAIS_ORIGEN`, `CERTIFICADO_ORIGEN`, `UNIDADES_POR_SET`, `FLETE_INTERNACIONAL`, `IGI_PCT` |
+| Trazabilidad | `VERSION` (versión del Gem que produjo la fila; texto), `EVIDENCIA_URL` (liga de Drive) |
+| Estado | `ESTADO_BANDEJA` (`PENDIENTE`, `CONFIRMADA` o `RECHAZADA`), `RESULTADO_ID`, `NOTAS` |
+
+2. Idempotente (`migracionBandeja`, probada): si la pestaña ya tiene algunas, se agregan solo las que faltan, al final;
+   nunca se reordena, renombra ni borra. Columnas propias del propietario al final se aceptan.
+3. Cada fila nueva: `BANDEJA_ID` único con formato `BAN-NNNN` y `ESTADO_BANDEJA` = `PENDIENTE`. `COTIZACION_ID` de Gemini no
+   va: el ID lo pone la hoja al confirmar. Solo valores escritos, sin fórmulas ni datos personales (§18.4).
+4. Comprobar: con `ECO_BANDEJA_GEMINI=true`, Compras > Bandeja lista las filas `PENDIENTE` sin «falta la columna».
+5. Revertir: apagar la bandera; la pestaña puede quedarse (el dashboard no la lee apagada) o borrarse a mano.
+
+### 18.2 Lectura
+
+Solo con `ECO_BANDEJA_GEMINI=true`, el lector de /eco pide la pestaña en su propio GET con `valueRenderOption=FORMULA`
+(sigue siendo la cuenta de solo lectura) para ver las fórmulas. Columnas por nombre; una que falta o un encabezado repetido
+se nombran en pantalla y no se muestran filas. Se muestran solo las `PENDIENTE`, con el conteo de confirmadas, rechazadas y
+las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(email)`.
+
+### 18.3 Confirmar y rechazar
+
+- **Revisión en pantalla.** Cada fila `COTIZACION` pasa por el mismo intérprete y los mismos chequeos de «Recibir varias»
+  (§15.3, `parsearFilasGemini`): producto por `PRD-NNNN` o por idea, proveedor por nombre o `PRV-NNNN`, listas y formatos,
+  requisitos de `RECIBIDA`, correos o teléfonos y duplicados contra la hoja y contra las filas anteriores de la bandeja.
+  Como en el pegado, `PRECIO_POR` se elige antes de confirmar. Una fila `PROVEEDOR` pide los campos del alta de proveedor
+  (§15.1) y avisa si ya existe uno con ese nombre.
+- **Confirmar** (`eco.bandeja.confirmar`). El servidor relee la fila: debe estar `PENDIENTE`, ser del `TIPO` enviado y no
+  tener bloqueos (§18.4). Después:
+  - `PROVEEDOR`: si ya existe uno con ese nombre (comparación de §15.1), se liga sin escribir en `PIPE_PROVEEDORES`; si no,
+    alta con `eco.proveedor.crear`.
+  - `COTIZACION`: con un proveedor que ya existe (una fila `PROVEEDOR` se confirma antes). Si el producto tiene **una
+    sola** cotización `SOLICITADA` a ese proveedor, la actualiza como «Recibir» (§16.3, con `expectedVersion`, sin vaciar
+    celdas); si no (ninguna o más de una), alta con `eco.cotizacion.crear` más `EVIDENCIA_URL`. Una igual a una de la hoja
+    (producto, proveedor, incoterm, precio y moneda) es 409 `cotizacion-duplicada`.
+  - Luego marca la fila: `ESTADO_BANDEJA` = `CONFIRMADA` y `RESULTADO_ID` = el `PRV-NNNN` o `COT-NNNN`.
+- **Rechazar** (`eco.bandeja.rechazar`). Motivo de una línea (1 a 300 caracteres, sin correos ni teléfonos): `ESTADO_BANDEJA`
+  = `RECHAZADA` y «Rechazada: <motivo>» al final de `NOTAS`, sin borrar lo anterior. No se rechaza una fila desde la que ya
+  se escribió un proveedor o una cotización (confirmación a medias): se termina de confirmar.
+- **Lo único que se escribe en la bandeja:** `ESTADO_BANDEJA`, `RESULTADO_ID` y `NOTAS`, celda por celda en `RAW`. El
+  almacén rechaza `append` en esta pestaña y no hay borrado; el servicio rechaza cualquier otra columna.
+- **Auditoría e idempotencia.** La entidad, como siempre (§6.1). La marca de la bandeja también va primero a
+  `PIPE_AUDITORIA` (`ENTIDAD` = `PIPE_BANDEJA_GEMINI`, `REGISTRO_ID` = `BAN-NNNN`, una fila por celda con antes y después),
+  y luego se escribe solo si la fila sigue `PENDIENTE`, con verificación. El mismo `requestId` responde `repetida`. La
+  escritura de la entidad usa un `requestId` derivado del `BANDEJA_ID`: un reintento, con el mismo `requestId` o con otro,
+  sigue el camino ya auditado y nunca crea un segundo proveedor o cotización desde la misma fila. Una fila ya `CONFIRMADA`
+  responde `repetida` con su `RESULTADO_ID`.
+
+### 18.4 Datos personales y fórmulas (criterio 4)
+
+Una fila con un correo o un teléfono (10 dígitos o más; `pareceContacto`) en **cualquier** celda, o con una fórmula, se
+marca en pantalla con la columna (sin mostrar el valor) y no tiene «Confirmar». El servidor lo repite con la fila releída
+(valores y `valueRenderOption=FORMULA`): 422 `bandeja-bloqueada` con las columnas, sin escribir nada. Las fechas y las ligas
+de Drive no cuentan como teléfono por sus dígitos. Rechazar sí se permite, salvo que `ESTADO_BANDEJA`, `RESULTADO_ID` o
+`NOTAS` tengan fórmula o datos personales (no se copian a la auditoría): esa fila se corrige a mano.
+
+### 18.5 Columnas por nombre en `PIPE_COTIZACIONES` y `PIPE_PROVEEDORES` (criterio 5)
+
+La lectura (§3, `leerTabla`) y la escritura (`tabla` del servicio) buscan las columnas por nombre y aceptan columnas
+extra al final, que nunca se escriben (en un alta quedan vacías). Si falta una requerida, la vista dice «columna obligatoria
+ausente (X)» y la escritura responde 400 `eco-esquema-invalido` con la pestaña y la columna en el mensaje («La pestaña
+PIPE_PROVEEDORES no tiene la columna ESTADO…»); un encabezado repetido también se nombra.
+
+### 18.6 Bandera `ECO_BANDEJA_GEMINI`
+
+Apagada por defecto: sin `ECO_BANDEJA_GEMINI=true` exacto no hay enlace ni sección, el lector no pide la pestaña y las rutas
+responden 403 `operacion-no-permitida` antes de leer sesión o cuerpo. La pone **solo el propietario** con `deploy.sh`
+([escritura §13](escritura-v1-8.md#13-bandeja-de-gemini-de-ecopipeline-ord-pos-155-dec-pos-031)); `render.mjs` la rechaza
+sin `ECO_PIPELINE_WRITE_MODE=sheets`. Ningún agente la enciende.

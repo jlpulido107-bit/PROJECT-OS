@@ -28,7 +28,8 @@ const MESSAGES: Record<SheetsErrorCode, string> = {
   'invalid-response': 'Google Sheets devolvió una respuesta inesperada.',
 }
 
-export type ValueRenderOption = 'FORMATTED_VALUE' | 'UNFORMATTED_VALUE'
+/** ORD-POS-155: `FORMULA` solo para la bandeja de Gemini de /eco/pipeline (ver las fórmulas sin evaluarlas; sigue siendo GET). */
+export type ValueRenderOption = 'FORMATTED_VALUE' | 'UNFORMATTED_VALUE' | 'FORMULA'
 
 export class SheetsReadError extends Error {
   readonly code: SheetsErrorCode
