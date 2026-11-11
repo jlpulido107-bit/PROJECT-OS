@@ -54,6 +54,10 @@ function mensajeDe(error: OperationError): string {
   }
   if (error.code === 'bandeja-no-pendiente' && id) return `Desde esta fila ya se escribió ${id}: termina de confirmarla (no se rechaza). No se escribió nada.`
   if (error.code === 'bandeja-no-pendiente' && estado) return `La fila ya no está PENDIENTE (está ${estado}); recarga la bandeja. No se escribió nada.`
+  // ORD-POS-157 (SEGUNDO H1 de #348): la edición auditada desde la bandeja nunca llegó (el ID ya se validó con su patrón).
+  if (error.code === 'estado-divergente' && id) {
+    return `La cotización ${id} no recibió los datos de la bandeja: recíbela en /eco/pipeline o reintenta Confirmar. La fila sigue PENDIENTE; no se marcó CONFIRMADA.`
+  }
   if (error.code === 'cotizacion-duplicada' && id) return `Ya hay una cotización igual: ${id} (producto, proveedor, incoterm, precio y moneda). Rechaza la fila o corrígela. No se escribió nada.`
   if (error.code === 'eco-migracion-pendiente' && pestana && columnas) {
     return `${pestana} aún no tiene ${String(columnas).split(',').join(', ')}: la migración la aplica el propietario (diseño /eco pipeline §14.1 y §15.1). Deja esos campos vacíos o espera la migración. No se escribió nada.`

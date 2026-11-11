@@ -993,7 +993,11 @@ las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(e
   celda si es de la lista cerrada (`PENDIENTE`, `CONFIRMADA`, `RECHAZADA`; `PROVEEDOR`, `COTIZACION`); si no, solo el
   código o «un tipo no válido». El ID de la entidad ya escrita que nombra el 409 (`PRV-NNNN` o `COT-NNNN`, leído de
   `PIPE_AUDITORIA`) solo se usa si tiene el patrón de su entidad; si no, el 409 va sin ID y «Confirmar» responde
-  `auditoria-inconsistente` sin marcar la fila (ORD-POS-156).
+  `auditoria-inconsistente` sin marcar la fila (ORD-POS-156). Lo mismo vale para los IDs que se leen de las pestañas de
+  entidades: el `PROVEEDOR_ID` del proveedor ligado por nombre y el `COTIZACION_ID` de la `SOLICITADA` que se editaría
+  deben cumplir `^PRV-\d{4,}$` o `^COT-\d{4,}$` antes de devolverse o escribirse en `RESULTADO_ID`; si no, 422 `validacion`
+  sin repetir el valor y sin escribir nada. Una `cotizacion-duplicada` cuyo ID no tiene el patrón responde sin ID
+  (ORD-POS-157).
 - **Lo único que se escribe en la bandeja:** `ESTADO_BANDEJA`, `RESULTADO_ID` y `NOTAS`, celda por celda en `RAW`. El
   almacén rechaza `append` en esta pestaña y no hay borrado; el servicio rechaza cualquier otra columna.
 - **Auditoría e idempotencia.** La entidad, como siempre (§6.1). La marca de la bandeja también va primero a
@@ -1009,6 +1013,14 @@ las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(e
   basta que exista una sola fila con el ID auditado: la marca termina `CONFIRMADA` sin tocar la entidad. El roll-forward
   queda para lo que nunca llegó a la hoja: el alta cuyo append falló (no hay fila con ese ID) o la edición cuyas celdas
   siguen como antes (ORD-POS-156).
+- **Edición que nunca llegó (ORD-POS-157).** Si lo auditado era una edición (la `SOLICITADA` que se actualiza como
+  «Recibir») cuyo update falló, y después otra edición cambió la `VERSION` (por ejemplo, el propietario editó `NOTAS`), el
+  reintento ya no puede hacer roll-forward. Si ninguno de los datos auditados (salvo `VERSION` y `ACTUALIZADO`) está en
+  la fila, es decir, la fila sigue como «antes» en lo que la bandeja quería cambiar, la edición nunca llegó: la fila
+  **no** se marca `CONFIRMADA` y se responde 409 `estado-divergente` con el ID: «La cotización COT-NNNN no recibió los datos
+  de la bandeja: recíbela en /eco/pipeline o reintenta Confirmar». La fila sigue `PENDIENTE` (y no se puede rechazar,
+  porque desde ella ya se auditó una escritura). Una vez recibida en /eco/pipeline, el siguiente «Confirmar» termina la
+  marca con ese ID.
 
 ### 18.4 Datos personales y fórmulas (criterio 4)
 

@@ -446,6 +446,60 @@ describe('criterios 2, 3 y 7: confirmar y rechazar con el servicio de escritura'
     expect(auditoria(s).filter((a) => a.ENTIDAD === 'PIPE_BANDEJA_GEMINI' && a.VALOR_DESPUES === 'RECHAZADA')).toEqual([])
   })
 
+  /* ------------------------------ ORD-POS-157: SEGUNDO H1 y H3 de #348 ------------------------------ */
+
+  // Criterio 1 (SEGUNDO H1 de #348): «Recibir» auditado cuyo update falló + edición del propietario + reintento.
+  it('update de la SOLICITADA fallido → edición de NOTAS (VERSION 2) → reintento: la fila sigue PENDIENTE con estado-divergente', async () => {
+    class FallaCotizacion extends InMemoryEcoStore {
+      fallar = true
+      async update(tab: EcoStoreTab, n: number, celdas: CeldaCambio[]) {
+        if (this.fallar && tab === 'PIPE_COTIZACIONES') throw new Error('HTTP 500')
+        return super.update(tab, n, celdas)
+      }
+    }
+    const s = new FallaCotizacion(RADAROS, libro({ PIPE_COTIZACIONES: [COT_HDR, cot('COT-0007', { ESTADO: 'SOLICITADA', FECHA_SOLICITUD: '2026-11-01' })] }))
+    const svc = servicio(s)
+    expect((await codigo(confirmar(svc, 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    expect(registro(s, 'PIPE_COTIZACIONES', 'COT-0007')).toMatchObject({ ESTADO: 'SOLICITADA', PRECIO_UNIT: '', VERSION: 1 })
+    s.fallar = false
+    await svc.editarCotizacion('COT-0007', { requestId: rid(), expectedVersion: 1, valores: { NOTAS: 'Llamar al proveedor' } }, CTX)
+    expect(registro(s, 'PIPE_COTIZACIONES', 'COT-0007')).toMatchObject({ VERSION: 2 })
+    const e = await codigo(confirmar(svc, 'BAN-0001', COTIZACION))
+    expect([e.code, e.detail]).toEqual(['estado-divergente', { id: 'COT-0007' }])
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'PENDIENTE', RESULTADO_ID: '' })
+    expect(registro(s, 'PIPE_COTIZACIONES', 'COT-0007')).toMatchObject({ ESTADO: 'SOLICITADA', PRECIO_UNIT: '', NOTAS: 'Llamar al proveedor', VERSION: 2 })
+    expect(auditoria(s).filter((a) => a.ENTIDAD === 'PIPE_BANDEJA_GEMINI')).toEqual([])
+    // El mensaje de la ruta dice qué cotización no recibió los datos y qué hacer.
+    const run = (sv: EcoPipelineWriteService, body: unknown, ctx: { actor: string }) => sv.confirmarBandeja('BAN-0001', parseBandejaConfirmar(body), ctx)
+    const res = await ecoPipelineWrite(peticion({ requestId: rid(), ...COTIZACION }), deps(CON_BANDEJA, s, { habilitada: ecoBandejaGeminiHabilitada }), 'eco.bandeja.confirmar', run, 200)
+    expect(res.status).toBe(409)
+    expect((res.body.error as { mensaje: string }).mensaje).toMatch(/^La cotización COT-0007 no recibió los datos de la bandeja: recíbela en \/eco\/pipeline o reintenta/)
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001').ESTADO_BANDEJA).toBe('PENDIENTE')
+  })
+
+  // Criterio 2 (SEGUNDO H3 de #348): IDs leídos de la hoja sin su patrón no se escriben en RESULTADO_ID ni se responden.
+  it('PROVEEDOR_ID o COTIZACION_ID de la hoja sin su patrón: error sin el valor y RESULTADO_ID vacío', async () => {
+    const PRV_MALO = fila(PRV_HDR, { PROVEEDOR_ID: 'a@b.mx', NOMBRE: 'Taller Dos', CANAL: 'ALIBABA', PAIS: 'VN', ESTADO: 'ACTIVO', VERSION: 1 })
+    const p = new InMemoryEcoStore(RADAROS, libro({ PIPE_PROVEEDORES: [PRV_HDR, prv('PRV-0001', 'Fábrica Uno'), PRV_MALO] }))
+    const e = await codigo(confirmar(servicio(p), 'BAN-0002', { tipo: 'PROVEEDOR', nombre: 'Taller Dos', canal: 'ALIBABA', pais: 'VN' }))
+    expect(e.code).toBe('validacion')
+    expect(JSON.stringify([e.message, e.detail, e.fields])).not.toMatch(/a@b\.mx/)
+    expect(registro(p, 'PIPE_BANDEJA_GEMINI', 'BAN-0002')).toMatchObject({ ESTADO_BANDEJA: 'PENDIENTE', RESULTADO_ID: '' })
+    expect(auditoria(p)).toEqual([])
+
+    // La SOLICITADA que se editaría tiene un COTIZACION_ID que no es COT-NNNN: no se edita ni se marca.
+    const c = new InMemoryEcoStore(RADAROS, libro({ PIPE_COTIZACIONES: [COT_HDR, cot('a@b.mx', { ESTADO: 'SOLICITADA' })] }))
+    const ec = await codigo(confirmar(servicio(c), 'BAN-0001', COTIZACION))
+    expect(ec.code).toBe('validacion')
+    expect(JSON.stringify([ec.message, ec.detail, ec.fields])).not.toMatch(/a@b\.mx/)
+    expect(registro(c, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'PENDIENTE', RESULTADO_ID: '' })
+    expect(auditoria(c)).toEqual([])
+    // Una igual con ese ID: cotizacion-duplicada sin nombrarlo.
+    const d = new InMemoryEcoStore(RADAROS, libro({ PIPE_COTIZACIONES: [COT_HDR, cot('a@b.mx', { ESTADO: 'RECIBIDA', PRECIO_UNIT: 2.5, MONEDA: 'USD', INCOTERM: 'FOB' })] }))
+    const ed = await codigo(confirmar(servicio(d), 'BAN-0001', COTIZACION))
+    expect([ed.code, ed.detail]).toEqual(['cotizacion-duplicada', undefined])
+  })
+
   // CORRECCIÓN 1 (PRIMERO H1, SEGUNDO H3): los errores no repiten celdas de la hoja fuera de la lista cerrada.
   it('bandeja-no-pendiente y TIPO: sin valores de la hoja que no sean de la lista cerrada', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro({

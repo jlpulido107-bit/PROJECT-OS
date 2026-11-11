@@ -10,7 +10,7 @@ import {
   COLUMNAS_BANDEJA, COLUMNAS_BANDEJA_ESCRIBIBLES, ESTADOS_BANDEJA, TIPOS_BANDEJA, celdaConContacto, esFormula, notasRechazo, RESULTADO,
 } from './pipeline-bandeja-gemini'
 import { ECO_BANDEJA_TAB, ECO_WRITE_TABS, type Celda, type EcoPipelineStore, type EcoStoreTab, type EcoWriteTab } from './pipeline-escritura-store'
-import { COLUMNAS_NUMERICAS, COLUMNAS_OPCIONALES, type BandejaConfirmar, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
+import { COLUMNAS_NUMERICAS, COLUMNAS_OPCIONALES, idValido, type BandejaConfirmar, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
 import { requiereMotivo, transicionPermitida } from './pipeline-transiciones'
 
 /**
@@ -222,6 +222,21 @@ function idDeBandeja(o: { entidad: string; id: string }): string | null {
 /** 409 «desde esta fila ya se escribió X»; sin `id` si el auditado no tenía el patrón de su entidad. */
 const escritaError = (e: { id?: string }) =>
   new OperationError('bandeja-no-pendiente', { detail: e.id ? { estado: 'PENDIENTE', id: e.id } : {} })
+
+/**
+ * ORD-POS-157 (SEGUNDO H3 de #348): un PROVEEDOR_ID o COTIZACION_ID leído de la hoja (el proveedor ligado por nombre o
+ * la SOLICITADA que se edita) solo se usa con su patrón; si no, 422 sin repetir el valor de la celda.
+ */
+function idDeHoja(prefijo: 'PRV' | 'COT', valor: string): string {
+  if (idValido(prefijo, valor)) return valor
+  const [campo, columna] = prefijo === 'PRV' ? ['proveedor', 'PROVEEDOR_ID'] : ['cotizacion', 'COTIZACION_ID']
+  throw new OperationError('validacion', {
+    fields: { [campo]: `El ${columna} de la fila que se usaría en ${prefijo === 'PRV' ? 'PIPE_PROVEEDORES' : 'PIPE_COTIZACIONES'} no tiene el patrón ${prefijo}-NNNN: corrígelo en la hoja. No se escribió nada.` },
+  })
+}
+
+/** Campos de una edición auditada que no son de control (VERSION y ACTUALIZADO los pone el servidor). */
+const CONTROL_EDICION = new Set(['VERSION', 'ACTUALIZADO'])
 
 const celdaDeTexto = (columna: string, v: string): Celda => (COLUMNAS_NUMERICAS.has(columna) && v !== '' ? Number(v) : v)
 
@@ -551,6 +566,9 @@ export class EcoPipelineWriteService {
    * auditado para terminar la marca; no se vuelve atrás ni se pisa la edición. El roll-forward queda para lo que nunca
    * llegó a la hoja (el alta cuyo append falló, o la edición que sigue igual que antes). El ID auditado se valida con el
    * patrón de su entidad antes de usarlo (SEGUNDO H3).
+   * ORD-POS-157 (SEGUNDO H1 de #348): si lo auditado era una edición y ninguno de sus datos (salvo VERSION y
+   * ACTUALIZADO) está en la fila, la edición nunca llegó aunque la VERSION haya cambiado después (p. ej. el propietario
+   * editó NOTAS): no se marca CONFIRMADA y se responde estado-divergente con el ID, para recibirla o reintentar.
    */
   private completarAuditada(requestId: string): Promise<string> {
     return this.exclusive(async () => {
@@ -566,7 +584,13 @@ export class EcoPipelineWriteService {
         if (!(e instanceof OperationError) || e.code !== 'estado-divergente') throw e
         const t = libro[a.entidad as EcoWriteTab]
         const idCol = ENTIDADES[a.entidad === 'PIPE_PROVEEDORES' ? 'proveedor' : 'cotizacion'].idCol
-        if (t.filas.filter((f) => texto(t, f, idCol) === id).length !== 1) throw e
+        const filas = t.filas.filter((f) => texto(t, f, idCol) === id)
+        if (filas.length !== 1) throw e
+        const edicion = (a.campos.get('VERSION')?.antes ?? '') !== ''
+        const datos = [...a.campos].filter(([c, x]) => !CONTROL_EDICION.has(c) && x.antes !== x.despues && t.indice.has(c))
+        if (edicion && !datos.some(([c, x]) => iguales(valor(t, filas[0]!, c), celdaDeTexto(c, x.despues)))) {
+          throw new OperationError('estado-divergente', { detail: { id } })
+        }
         return id
       }
     })
@@ -577,7 +601,7 @@ export class EcoPipelineWriteService {
     const t = (await this.leer()).PIPE_PROVEEDORES
     const clave = nombreClave(celdaTexto(cmd.valores.NOMBRE))
     const otro = t.filas.find((f) => clave !== '' && nombreClave(texto(t, f, 'NOMBRE')) === clave)
-    if (otro) return texto(t, otro, 'PROVEEDOR_ID')
+    if (otro) return idDeHoja('PRV', texto(t, otro, 'PROVEEDOR_ID'))
     return (await this.crearProveedor({ ...cmd, requestId }, ctx, guarda)).id
   }
 
@@ -597,11 +621,15 @@ export class EcoPipelineWriteService {
     const precio = (x: unknown) => (celdaTexto(x) === '' ? '' : String(Number(celdaTexto(x))))
     const igual = mismas.find((f) => texto(c, f, 'INCOTERM').toUpperCase() === celdaTexto(v.INCOTERM).toUpperCase()
       && precio(valor(c, f, 'PRECIO_UNIT')) === precio(v.PRECIO_UNIT) && texto(c, f, 'MONEDA').toUpperCase() === celdaTexto(v.MONEDA).toUpperCase())
-    if (igual) throw new OperationError('cotizacion-duplicada', { detail: { id: texto(c, igual, 'COTIZACION_ID') } })
+    if (igual) {
+      // ORD-POS-157 (SEGUNDO H3): el ID de la igual solo se nombra si tiene su patrón.
+      const dup = texto(c, igual, 'COTIZACION_ID')
+      throw new OperationError('cotizacion-duplicada', idValido('COT', dup) ? { detail: { id: dup } } : {})
+    }
     const solicitadas = mismas.filter((f) => texto(c, f, 'ESTADO') === 'SOLICITADA')
     if (solicitadas.length === 1) {
       const f = solicitadas[0]!
-      return (await this.editarCotizacion(texto(c, f, 'COTIZACION_ID'), edicion(Number(texto(c, f, 'VERSION'))), ctx, guarda)).id
+      return (await this.editarCotizacion(idDeHoja('COT', texto(c, f, 'COTIZACION_ID')), edicion(Number(texto(c, f, 'VERSION'))), ctx, guarda)).id
     }
     // Ninguna (o más de una: no se adivina cuál) → alta.
     return (await this.crearCotizacion({ ...cmd, requestId }, ctx, guarda)).id
