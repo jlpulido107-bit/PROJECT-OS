@@ -983,7 +983,13 @@ las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(e
   - Luego marca la fila: `ESTADO_BANDEJA` = `CONFIRMADA` y `RESULTADO_ID` = el `PRV-NNNN` o `COT-NNNN`.
 - **Rechazar** (`eco.bandeja.rechazar`). Motivo de una línea (1 a 300 caracteres, sin correos ni teléfonos): `ESTADO_BANDEJA`
   = `RECHAZADA` y «Rechazada: <motivo>» al final de `NOTAS`, sin borrar lo anterior. No se rechaza una fila desde la que ya
-  se escribió un proveedor o una cotización (confirmación a medias): se termina de confirmar.
+  se escribió un proveedor o una cotización (confirmación a medias): se termina de confirmar. La comprobación se repite
+  dentro de la sección exclusiva de la marca, y la entidad solo se escribe si la fila sigue `PENDIENTE` dentro de la suya:
+  un «Rechazar» y un «Confirmar» simultáneos nunca dejan `RECHAZADA` una fila desde la que se escribió (uno de los dos
+  responde 409 `bandeja-no-pendiente`).
+- **Errores sin datos de la hoja.** `bandeja-no-pendiente` y el error de `TIPO` solo nombran el estado o el tipo de la
+  celda si es de la lista cerrada (`PENDIENTE`, `CONFIRMADA`, `RECHAZADA`; `PROVEEDOR`, `COTIZACION`); si no, solo el
+  código o «un tipo no válido».
 - **Lo único que se escribe en la bandeja:** `ESTADO_BANDEJA`, `RESULTADO_ID` y `NOTAS`, celda por celda en `RAW`. El
   almacén rechaza `append` en esta pestaña y no hay borrado; el servicio rechaza cualquier otra columna.
 - **Auditoría e idempotencia.** La entidad, como siempre (§6.1). La marca de la bandeja también va primero a
@@ -992,6 +998,10 @@ las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(e
   escritura de la entidad usa un `requestId` derivado del `BANDEJA_ID`: un reintento, con el mismo `requestId` o con otro,
   sigue el camino ya auditado y nunca crea un segundo proveedor o cotización desde la misma fila. Una fila ya `CONFIRMADA`
   responde `repetida` con su `RESULTADO_ID`.
+- **Reintento tras una marca fallida.** Si la entidad ya está auditada con el `requestId` derivado y la marca falló, un
+  nuevo «Confirmar», aunque traiga otro cuerpo (por ejemplo, otras `NOTAS` tras recargar), no vuelve a crear ni a editar:
+  completa la entidad con lo auditado (repetida o roll-forward, §6.1), ignora el cuerpo y termina la marca `CONFIRMADA`
+  con el ID auditado.
 
 ### 18.4 Datos personales y fórmulas (criterio 4)
 

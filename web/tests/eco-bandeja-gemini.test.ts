@@ -253,6 +253,85 @@ describe('criterios 2, 3 y 7: confirmar y rechazar con el servicio de escritura'
     expect(registro(f, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'COT-0001' })
   })
 
+  // CORRECCIÓN 1 (SEGUNDO H1): tras la marca fallida, el reintento con otro cuerpo termina la marca con el ID auditado.
+  it('marca fallida y reintento con NOTAS distinto: CONFIRMADA con el ID original, una sola cotización y sin crear ni editar otra vez', async () => {
+    class FallaMarca extends InMemoryEcoStore {
+      fallar = true
+      async update(tab: EcoStoreTab, n: number, celdas: CeldaCambio[]) {
+        if (this.fallar && tab === 'PIPE_BANDEJA_GEMINI') throw new Error('HTTP 500')
+        return super.update(tab, n, celdas)
+      }
+    }
+    const f = new FallaMarca(RADAROS, libro())
+    const sf = servicio(f)
+    expect((await codigo(confirmar(sf, 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    f.fallar = false
+    const crear = vi.spyOn(sf, 'crearCotizacion')
+    const editar = vi.spyOn(sf, 'editarCotizacion')
+    const r = await confirmar(sf, 'BAN-0001', { ...COTIZACION, notas: 'Corregido en pantalla', precioUnit: '2.4' })
+    expect(r).toMatchObject({ operacion: 'eco.bandeja.confirmar', id: 'COT-0001' })
+    expect(crear).not.toHaveBeenCalled()
+    expect(editar).not.toHaveBeenCalled()
+    expect(tabla(f, 'PIPE_COTIZACIONES')).toHaveLength(2)
+    expect(registro(f, 'PIPE_COTIZACIONES', 'COT-0001')).toMatchObject({ PRECIO_UNIT: 2.5, NOTAS: 'Gemini: precio de la tabla B', VERSION: 1 })
+    expect(registro(f, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'COT-0001' })
+    expect(auditoria(f).filter((a) => a.ENTIDAD === 'PIPE_COTIZACIONES' && a.CAMPO === 'VERSION')).toHaveLength(1)
+
+    // Lo mismo para un PROVEEDOR: un solo PRV-0002 y la fila CONFIRMADA con él.
+    const p = new FallaMarca(RADAROS, libro())
+    const sp = servicio(p)
+    const PROVEEDOR = { tipo: 'PROVEEDOR', nombre: 'Taller Dos', canal: 'ALIBABA', pais: 'VN' }
+    expect((await codigo(confirmar(sp, 'BAN-0002', PROVEEDOR))).code).toBe('escritura-fallida')
+    p.fallar = false
+    const crearPrv = vi.spyOn(sp, 'crearProveedor')
+    expect(await confirmar(sp, 'BAN-0002', { ...PROVEEDOR, notas: 'Otra nota' })).toMatchObject({ id: 'PRV-0002' })
+    expect(crearPrv).not.toHaveBeenCalled()
+    expect(tabla(p, 'PIPE_PROVEEDORES')).toHaveLength(3)
+    expect(registro(p, 'PIPE_BANDEJA_GEMINI', 'BAN-0002')).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'PRV-0002' })
+  })
+
+  // CORRECCIÓN 1 (SEGUNDO H2): rechazar y confirmar a la vez nunca deja RECHAZADA una fila desde la que se escribió.
+  it('carrera rechazar + confirmar: el estado final es coherente en los dos órdenes', async () => {
+    for (const orden of ['rechazar-primero', 'confirmar-primero'] as const) {
+      const s = new InMemoryEcoStore(RADAROS, libro())
+      const svc = servicio(s)
+      const ops = orden === 'rechazar-primero'
+        ? [rechazar(svc, 'BAN-0001', 'precio fuera de mercado'), confirmar(svc, 'BAN-0001', COTIZACION)]
+        : [confirmar(svc, 'BAN-0001', COTIZACION), rechazar(svc, 'BAN-0001', 'precio fuera de mercado')]
+      const res = await Promise.allSettled(ops)
+      expect(res.filter((x) => x.status === 'fulfilled')).toHaveLength(1)
+      const fallida = res.find((x) => x.status === 'rejected') as PromiseRejectedResult
+      expect((fallida.reason as OperationError).code).toBe('bandeja-no-pendiente')
+      const fila = registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')
+      const cotizaciones = tabla(s, 'PIPE_COTIZACIONES').length - 1
+      if (fila.ESTADO_BANDEJA === 'RECHAZADA') {
+        expect(cotizaciones).toBe(0)
+        expect(auditoria(s).filter((a) => a.ENTIDAD === 'PIPE_COTIZACIONES')).toEqual([])
+      } else {
+        expect(fila).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'COT-0001' })
+        expect(cotizaciones).toBe(1)
+      }
+    }
+  })
+
+  // CORRECCIÓN 1 (PRIMERO H1, SEGUNDO H3): los errores no repiten celdas de la hoja fuera de la lista cerrada.
+  it('bandeja-no-pendiente y TIPO: sin valores de la hoja que no sean de la lista cerrada', async () => {
+    const s = new InMemoryEcoStore(RADAROS, libro({
+      PIPE_BANDEJA_GEMINI: [[...COLUMNAS_BANDEJA],
+        ban('BAN-0001', { ESTADO_BANDEJA: 'a@b.mx' }), ban('BAN-0003', { TIPO: '9991234567' }),
+        ban('BAN-0004', { ESTADO_BANDEJA: 'RECHAZADA' }), ban('BAN-0006', { TIPO: 'PROVEEDOR' })],
+    }))
+    const svc = servicio(s)
+    const estado = await codigo(confirmar(svc, 'BAN-0001', COTIZACION))
+    expect([estado.code, estado.detail]).toEqual(['bandeja-no-pendiente', {}])
+    const tipo = await codigo(confirmar(svc, 'BAN-0003', COTIZACION))
+    expect(tipo.fields).toEqual({ tipo: 'La fila BAN-0003 es de un tipo no válido.' })
+    for (const e of [estado, tipo]) expect(JSON.stringify([e.message, e.detail, e.fields])).not.toMatch(/a@b\.mx|9991234567/)
+    // Los valores de la lista cerrada sí se nombran.
+    expect((await codigo(confirmar(svc, 'BAN-0004', COTIZACION))).detail).toEqual({ estado: 'RECHAZADA' })
+    expect((await codigo(confirmar(svc, 'BAN-0006', COTIZACION))).fields).toEqual({ tipo: 'La fila BAN-0006 es de tipo PROVEEDOR.' })
+  })
+
   it('actualiza la única SOLICITADA del mismo producto y proveedor (como «Recibir»); una igual es cotizacion-duplicada', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro({ PIPE_COTIZACIONES: [COT_HDR, cot('COT-0007', { ESTADO: 'SOLICITADA', FECHA_SOLICITUD: '2026-11-01', VERSION: 3 })] }))
     expect(await confirmar(servicio(s), 'BAN-0001', COTIZACION)).toMatchObject({ id: 'COT-0007' })

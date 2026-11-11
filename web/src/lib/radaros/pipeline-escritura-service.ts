@@ -7,7 +7,7 @@ import { safeCellText } from '../operations/sanitize'
 import { derivedRequestId, payloadHash } from '../operations/validation'
 import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES, ETAPAS, nombreClave, type Etapa } from './pipeline'
 import {
-  COLUMNAS_BANDEJA, COLUMNAS_BANDEJA_ESCRIBIBLES, celdaConContacto, esFormula, notasRechazo, RESULTADO,
+  COLUMNAS_BANDEJA, COLUMNAS_BANDEJA_ESCRIBIBLES, ESTADOS_BANDEJA, TIPOS_BANDEJA, celdaConContacto, esFormula, notasRechazo, RESULTADO,
 } from './pipeline-bandeja-gemini'
 import { ECO_BANDEJA_TAB, ECO_WRITE_TABS, type Celda, type EcoPipelineStore, type EcoStoreTab, type EcoWriteTab } from './pipeline-escritura-store'
 import { COLUMNAS_NUMERICAS, COLUMNAS_OPCIONALES, type BandejaConfirmar, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
@@ -80,6 +80,8 @@ export interface EcoServiceOptions {
 }
 
 type Registro = Record<string, Celda>
+/** Comprobación extra dentro de `exclusive`, tras el replay y antes de auditar (la bandeja: fila aún PENDIENTE). */
+type Guarda = () => Promise<void>
 
 interface Tabla {
   header: string[]
@@ -304,11 +306,11 @@ export class EcoPipelineWriteService {
 
   /* --------------------------------------- Proveedores --------------------------------------- */
 
-  crearProveedor(cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+  crearProveedor(cmd: EcoComando, ctx: EcoContext, guarda?: Guarda): Promise<EcoResultado> {
     return this.crear('eco.proveedor.crear', 'proveedor', cmd, ctx, (libro, r) => {
       this.nombreLibre(libro, celdaTexto(r.NOMBRE), null)
       return { ...r, ESTADO: 'ACTIVO' }
-    })
+    }, guarda)
   }
 
   editarProveedor(id: string, cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
@@ -328,7 +330,7 @@ export class EcoPipelineWriteService {
 
   /* -------------------------------------- Cotizaciones -------------------------------------- */
 
-  crearCotizacion(cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+  crearCotizacion(cmd: EcoComando, ctx: EcoContext, guarda?: Guarda): Promise<EcoResultado> {
     return this.crear('eco.cotizacion.crear', 'cotizacion', cmd, ctx, (libro, r) => {
       this.productoAbierto(libro, String(r.PRODUCTO_ID))
       if (!this.filas(libro, 'proveedor').some((f) => texto(libro.PIPE_PROVEEDORES, f, 'PROVEEDOR_ID') === r.PROVEEDOR_ID)) {
@@ -344,7 +346,7 @@ export class EcoPipelineWriteService {
       const registro = { ...r, ESTADO: estado, MUESTRA_ESTADO: r.MUESTRA_ESTADO || 'NO_PEDIDA' }
       this.fechas('cotizacion', registro)
       return registro
-    })
+    }, guarda)
   }
 
   /**
@@ -360,7 +362,7 @@ export class EcoPipelineWriteService {
     })
   }
 
-  editarCotizacion(id: string, cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+  editarCotizacion(id: string, cmd: EcoComando, ctx: EcoContext, guarda?: Guarda): Promise<EcoResultado> {
     return this.editar('eco.cotizacion.editar', 'cotizacion', id, cmd, ctx, (libro, merged, actual) => {
       this.productoAbierto(libro, celdaTexto(actual.PRODUCTO_ID))
       const desde = celdaTexto(actual.ESTADO)
@@ -391,7 +393,7 @@ export class EcoPipelineWriteService {
       }
       this.fechas('cotizacion', { ...merged, ...extra })
       return extra
-    })
+    }, guarda)
   }
 
   /* --------------------------------------- Embarques --------------------------------------- */
@@ -427,7 +429,9 @@ export class EcoPipelineWriteService {
    * §18.3 «Confirmar»: crea o actualiza con las operaciones de siempre (mismo guard, misma validación, safeCellText,
    * rechazo de fórmulas, auditoría en PIPE_AUDITORIA) y luego marca la fila CONFIRMADA con el ID resultante. La escritura
    * de la entidad usa un requestId derivado del BANDEJA_ID: reintentar (con el mismo requestId o con otro) nunca crea dos
-   * proveedores ni dos cotizaciones desde la misma fila.
+   * proveedores ni dos cotizaciones desde la misma fila. Si esa escritura ya está auditada (la marca falló antes), se
+   * completa desde la auditoría, sin volver a crear ni editar y sin mirar el cuerpo, y se termina la marca CONFIRMADA
+   * con el ID auditado (CORRECCIÓN 1, SEGUNDO H1).
    */
   async confirmarBandeja(id: string, b: BandejaConfirmar, ctx: EcoContext): Promise<EcoResultado> {
     const op: EcoOperationName = 'eco.bandeja.confirmar'
@@ -435,12 +439,24 @@ export class EcoPipelineWriteService {
     const estado = texto(t, fila, 'ESTADO_BANDEJA').toUpperCase()
     const previo = texto(t, fila, 'RESULTADO_ID')
     if (estado === 'CONFIRMADA' && RESULTADO.test(previo)) return { operacion: op, id: previo, version: 0, repetida: true }
-    if (estado !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente', { detail: { estado: estado.slice(0, 20) } })
+    // CORRECCIÓN 1 (PRIMERO H1, SEGUNDO H3): el valor de la celda solo se devuelve si es de la lista cerrada.
+    if (estado !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente', { detail: (ESTADOS_BANDEJA as readonly string[]).includes(estado) ? { estado } : {} })
     const tipo = texto(t, fila, 'TIPO').toUpperCase()
-    if (tipo !== b.tipo) throw new OperationError('validacion', { fields: { tipo: `La fila ${id} es de tipo ${tipo.slice(0, 20) || '(vacío)'}.` } })
+    if (tipo !== b.tipo) {
+      const deTipo = (TIPOS_BANDEJA as readonly string[]).includes(tipo) ? `de tipo ${tipo}` : 'de un tipo no válido'
+      throw new OperationError('validacion', { fields: { tipo: `La fila ${id} es ${deTipo}.` } })
+    }
     // Criterio 4: ninguna celda de la fila con fórmula, correo o teléfono.
     await this.sinBloqueos(t, n, fila, null)
-    const resultadoId = b.tipo === 'PROVEEDOR' ? await this.proveedorDesdeBandeja(id, b.cmd, ctx) : await this.cotizacionDesdeBandeja(id, b.cmd, ctx)
+    const requestId = derivedRequestId(id, b.tipo === 'PROVEEDOR' ? 'bandeja-proveedor' : 'bandeja-cotizacion')
+    // La entidad solo se escribe si la fila sigue PENDIENTE dentro del mismo `exclusive` (CORRECCIÓN 1, SEGUNDO H2).
+    const guarda: Guarda = async () => {
+      const { t: tb, fila: f } = await this.filaBandeja(id)
+      if (texto(tb, f, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente')
+    }
+    const resultadoId = (await this.auditada(requestId))
+      ? await this.completarAuditada(requestId)
+      : b.tipo === 'PROVEEDOR' ? await this.proveedorDesdeBandeja(requestId, b.cmd, ctx, guarda) : await this.cotizacionDesdeBandeja(requestId, b.cmd, ctx, guarda)
     const r = await this.marcarBandeja(op, id, b.cmd.requestId, { resultadoId }, { ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: resultadoId }, ctx)
     return { ...r, id: resultadoId }
   }
@@ -452,11 +468,9 @@ export class EcoPipelineWriteService {
     const estado = texto(t, fila, 'ESTADO_BANDEJA').toUpperCase()
     if (estado === 'PENDIENTE') {
       // Si ya se escribió un proveedor o una cotización desde esta fila (confirmación a medias), no se rechaza: se termina
-      // de confirmar.
-      for (const sal of ['bandeja-proveedor', 'bandeja-cotizacion']) {
-        const previa = await this.auditada(derivedRequestId(id, sal))
-        if (previa) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: previa.id } })
-      }
+      // de confirmar. `marcarBandeja` lo repite dentro de `exclusive` (SEGUNDO H2).
+      const previa = this.escritaDesde(id, auditoriaEco(await this.releer('PIPE_AUDITORIA', 'lectura-fallida')))
+      if (previa) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: previa } })
       // Las celdas que se escriben no pueden tener fórmula ni datos personales (no se copian a la auditoría).
       await this.sinBloqueos(t, n, fila, COLUMNAS_BANDEJA_ESCRIBIBLES)
     }
@@ -497,24 +511,40 @@ export class EcoPipelineWriteService {
     if (malas.length) throw new OperationError('bandeja-bloqueada', { detail: { columnas: malas.join(',') } })
   }
 
-  /** Solicitud ya auditada con ese requestId: el registro y si fue alta (sin VERSION antes) o edición. */
-  private async auditada(requestId: string): Promise<{ id: string; alta: boolean; versionAntes: number } | null> {
+  /** Solicitud ya auditada con ese requestId (su registro), o null. */
+  private async auditada(requestId: string): Promise<{ id: string } | null> {
     const a = auditoriaEco(await this.releer('PIPE_AUDITORIA', 'lectura-fallida')).find((o) => o.requestId === requestId)
-    if (!a) return null
-    const antes = a.campos.get('VERSION')?.antes ?? ''
-    return { id: a.id, alta: antes === '', versionAntes: Number(antes) }
+    return a ? { id: a.id } : null
+  }
+
+  /** ID del proveedor o la cotización ya escritos desde la fila `id` (requestId derivado del BANDEJA_ID), o null. */
+  private escritaDesde(id: string, auditoria: ReturnType<typeof auditoriaEco>): string | null {
+    const derivados = [derivedRequestId(id, 'bandeja-proveedor'), derivedRequestId(id, 'bandeja-cotizacion')]
+    return auditoria.find((o) => derivados.includes(o.requestId))?.id ?? null
+  }
+
+  /**
+   * CORRECCIÓN 1 (SEGUNDO H1): la escritura de la entidad ya está auditada con el requestId derivado. Se completa con lo
+   * auditado (como un reintento con el mismo cuerpo: repetida o roll-forward, sin crear ni editar de nuevo) y se devuelve
+   * el ID auditado, aunque el cuerpo de este «Confirmar» sea otro.
+   */
+  private completarAuditada(requestId: string): Promise<string> {
+    return this.exclusive(async () => {
+      const libro = await this.leer()
+      const a = auditoriaEco(libro.PIPE_AUDITORIA).find((o) => o.requestId === requestId)
+      const r = a ? await this.replay('eco.bandeja.confirmar', a.hash, requestId, libro) : null
+      if (!r) throw new OperationError('auditoria-inconsistente')
+      return r.id
+    })
   }
 
   /** Fila PROVEEDOR: uno que ya existe con ese nombre (§15.1) se liga sin escribir; si no, alta con `crearProveedor`. */
-  private async proveedorDesdeBandeja(id: string, cmd: EcoComando, ctx: EcoContext): Promise<string> {
-    const requestId = derivedRequestId(id, 'bandeja-proveedor')
-    if (!(await this.auditada(requestId))) {
-      const t = (await this.leer()).PIPE_PROVEEDORES
-      const clave = nombreClave(celdaTexto(cmd.valores.NOMBRE))
-      const otro = t.filas.find((f) => clave !== '' && nombreClave(texto(t, f, 'NOMBRE')) === clave)
-      if (otro) return texto(t, otro, 'PROVEEDOR_ID')
-    }
-    return (await this.crearProveedor({ ...cmd, requestId }, ctx)).id
+  private async proveedorDesdeBandeja(requestId: string, cmd: EcoComando, ctx: EcoContext, guarda: Guarda): Promise<string> {
+    const t = (await this.leer()).PIPE_PROVEEDORES
+    const clave = nombreClave(celdaTexto(cmd.valores.NOMBRE))
+    const otro = t.filas.find((f) => clave !== '' && nombreClave(texto(t, f, 'NOMBRE')) === clave)
+    if (otro) return texto(t, otro, 'PROVEEDOR_ID')
+    return (await this.crearProveedor({ ...cmd, requestId }, ctx, guarda)).id
   }
 
   /**
@@ -522,15 +552,11 @@ export class EcoPipelineWriteService {
    * «Recibir», con `expectedVersion`, sin vaciar celdas); si no, la da de alta. Una igual (producto, proveedor, incoterm,
    * precio y moneda) es 409 `cotizacion-duplicada`. Un reintento sigue el camino que ya quedó auditado.
    */
-  private async cotizacionDesdeBandeja(id: string, cmd: EcoComando, ctx: EcoContext): Promise<string> {
-    const requestId = derivedRequestId(id, 'bandeja-cotizacion')
+  private async cotizacionDesdeBandeja(requestId: string, cmd: EcoComando, ctx: EcoContext, guarda: Guarda): Promise<string> {
     const edicion = (version: number): EcoComando => ({
       requestId, expectedVersion: version,
       valores: Object.fromEntries(Object.entries(cmd.valores).filter(([c, v]) => v !== '' && c !== 'PRODUCTO_ID' && c !== 'PROVEEDOR_ID')),
     })
-    const previa = await this.auditada(requestId)
-    if (previa?.alta) return (await this.crearCotizacion({ ...cmd, requestId }, ctx)).id
-    if (previa) return (await this.editarCotizacion(previa.id, edicion(previa.versionAntes), ctx)).id
     const c = (await this.leer()).PIPE_COTIZACIONES
     const v = cmd.valores
     const mismas = c.filas.filter((f) => texto(c, f, 'PRODUCTO_ID') === celdaTexto(v.PRODUCTO_ID) && texto(c, f, 'PROVEEDOR_ID') === celdaTexto(v.PROVEEDOR_ID))
@@ -541,10 +567,10 @@ export class EcoPipelineWriteService {
     const solicitadas = mismas.filter((f) => texto(c, f, 'ESTADO') === 'SOLICITADA')
     if (solicitadas.length === 1) {
       const f = solicitadas[0]!
-      return (await this.editarCotizacion(texto(c, f, 'COTIZACION_ID'), edicion(Number(texto(c, f, 'VERSION'))), ctx)).id
+      return (await this.editarCotizacion(texto(c, f, 'COTIZACION_ID'), edicion(Number(texto(c, f, 'VERSION'))), ctx, guarda)).id
     }
     // Ninguna (o más de una: no se adivina cuál) → alta.
-    return (await this.crearCotizacion({ ...cmd, requestId }, ctx)).id
+    return (await this.crearCotizacion({ ...cmd, requestId }, ctx, guarda)).id
   }
 
   /**
@@ -572,6 +598,11 @@ export class EcoPipelineWriteService {
         return conAviso(libro, { operacion: op, id, version: 0, repetida: true })
       }
       if (texto(t, fila, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente')
+      // CORRECCIÓN 1 (SEGUNDO H2): ya en `exclusive`, no se rechaza una fila desde la que ya se escribió una entidad.
+      if (op === 'eco.bandeja.rechazar') {
+        const escrita = this.escritaDesde(id, auditoriaEco(libro.PIPE_AUDITORIA))
+        if (escrita) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: escrita } })
+      }
       conCupo(libro)
       const campos = Object.entries(cambios).map(([c, x]): [string, string, string] => [c, texto(t, fila, c), x])
       await this.escribirAuditoria(hash, requestId, ctx, ECO_BANDEJA_TAB, id, campos, libro)
@@ -688,12 +719,14 @@ export class EcoPipelineWriteService {
 
   private crear(
     op: EcoOperationName, e: Entidad, cmd: EcoComando, ctx: EcoContext, validar: (libro: Libro, r: Registro) => Registro,
+    guarda?: Guarda,
   ): Promise<EcoResultado> {
     return this.exclusive(async () => {
       const hash = payloadHash(op, cmd)
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      if (guarda) await guarda()
       conCupo(libro)
       conMigracion(libro, e, cmd.valores)
       const registro = validar(libro, { ...cmd.valores })
@@ -710,13 +743,14 @@ export class EcoPipelineWriteService {
 
   private editar(
     op: EcoOperationName, e: Entidad, id: string, cmd: EcoComando, ctx: EcoContext,
-    validar: (libro: Libro, merged: Registro, actual: Registro) => Registro | void,
+    validar: (libro: Libro, merged: Registro, actual: Registro) => Registro | void, guarda?: Guarda,
   ): Promise<EcoResultado> {
     return this.exclusive(async () => {
       const hash = payloadHash(op, { ...cmd, id })
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      if (guarda) await guarda()
       conCupo(libro)
       conMigracion(libro, e, cmd.valores)
       const { actual } = this.unica(libro, e, id)
