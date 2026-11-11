@@ -986,10 +986,14 @@ las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(e
   se escribió un proveedor o una cotización (confirmación a medias): se termina de confirmar. La comprobación se repite
   dentro de la sección exclusiva de la marca, y la entidad solo se escribe si la fila sigue `PENDIENTE` dentro de la suya:
   un «Rechazar» y un «Confirmar» simultáneos nunca dejan `RECHAZADA` una fila desde la que se escribió (uno de los dos
-  responde 409 `bandeja-no-pendiente`).
+  responde 409 `bandeja-no-pendiente`). Lo mismo vale para el reintento de un «Rechazar» ya auditado cuya celda no se
+  escribió (roll-forward): dentro de la sección exclusiva, si desde la fila ya se escribió una entidad, responde 409
+  `bandeja-no-pendiente` en lugar de marcar `RECHAZADA` (ORD-POS-156).
 - **Errores sin datos de la hoja.** `bandeja-no-pendiente` y el error de `TIPO` solo nombran el estado o el tipo de la
   celda si es de la lista cerrada (`PENDIENTE`, `CONFIRMADA`, `RECHAZADA`; `PROVEEDOR`, `COTIZACION`); si no, solo el
-  código o «un tipo no válido».
+  código o «un tipo no válido». El ID de la entidad ya escrita que nombra el 409 (`PRV-NNNN` o `COT-NNNN`, leído de
+  `PIPE_AUDITORIA`) solo se usa si tiene el patrón de su entidad; si no, el 409 va sin ID y «Confirmar» responde
+  `auditoria-inconsistente` sin marcar la fila (ORD-POS-156).
 - **Lo único que se escribe en la bandeja:** `ESTADO_BANDEJA`, `RESULTADO_ID` y `NOTAS`, celda por celda en `RAW`. El
   almacén rechaza `append` en esta pestaña y no hay borrado; el servicio rechaza cualquier otra columna.
 - **Auditoría e idempotencia.** La entidad, como siempre (§6.1). La marca de la bandeja también va primero a
@@ -1001,7 +1005,10 @@ las de estado vacío o no válido. La sección solo la ve `ecoPipelineCanWrite(e
 - **Reintento tras una marca fallida.** Si la entidad ya está auditada con el `requestId` derivado y la marca falló, un
   nuevo «Confirmar», aunque traiga otro cuerpo (por ejemplo, otras `NOTAS` tras recargar), no vuelve a crear ni a editar:
   completa la entidad con lo auditado (repetida o roll-forward, §6.1), ignora el cuerpo y termina la marca `CONFIRMADA`
-  con el ID auditado.
+  con el ID auditado. Si la entidad cambió después (por ejemplo, se editó en /eco/pipeline y pasó de `VERSION` 1 a 2),
+  basta que exista una sola fila con el ID auditado: la marca termina `CONFIRMADA` sin tocar la entidad. El roll-forward
+  queda para lo que nunca llegó a la hoja: el alta cuyo append falló (no hay fila con ese ID) o la edición cuyas celdas
+  siguen como antes (ORD-POS-156).
 
 ### 18.4 Datos personales y fórmulas (criterio 4)
 

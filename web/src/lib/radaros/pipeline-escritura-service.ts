@@ -210,6 +210,19 @@ function auditoriaEco(t: Tabla): Auditada[] {
   })
 }
 
+/**
+ * ORD-POS-156 (SEGUNDO H3): el REGISTRO_ID de una escritura auditada desde la bandeja, solo si la entidad es un proveedor
+ * o una cotización y el ID tiene su patrón (PRV-NNNN o COT-NNNN); si no, null y nunca llega a un mensaje.
+ */
+function idDeBandeja(o: { entidad: string; id: string }): string | null {
+  const e = o.entidad === 'PIPE_PROVEEDORES' ? 'proveedor' : o.entidad === 'PIPE_COTIZACIONES' ? 'cotizacion' : null
+  return e && new RegExp(`^${ENTIDADES[e].prefijo}-\\d{4,}$`).test(o.id) ? o.id : null
+}
+
+/** 409 «desde esta fila ya se escribió X»; sin `id` si el auditado no tenía el patrón de su entidad. */
+const escritaError = (e: { id?: string }) =>
+  new OperationError('bandeja-no-pendiente', { detail: e.id ? { estado: 'PENDIENTE', id: e.id } : {} })
+
 const celdaDeTexto = (columna: string, v: string): Celda => (COLUMNAS_NUMERICAS.has(columna) && v !== '' ? Number(v) : v)
 
 export class EcoPipelineWriteService {
@@ -470,7 +483,7 @@ export class EcoPipelineWriteService {
       // Si ya se escribió un proveedor o una cotización desde esta fila (confirmación a medias), no se rechaza: se termina
       // de confirmar. `marcarBandeja` lo repite dentro de `exclusive` (SEGUNDO H2).
       const previa = this.escritaDesde(id, auditoriaEco(await this.releer('PIPE_AUDITORIA', 'lectura-fallida')))
-      if (previa) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: previa } })
+      if (previa) throw escritaError(previa)
       // Las celdas que se escriben no pueden tener fórmula ni datos personales (no se copian a la auditoría).
       await this.sinBloqueos(t, n, fila, COLUMNAS_BANDEJA_ESCRIBIBLES)
     }
@@ -517,24 +530,45 @@ export class EcoPipelineWriteService {
     return a ? { id: a.id } : null
   }
 
-  /** ID del proveedor o la cotización ya escritos desde la fila `id` (requestId derivado del BANDEJA_ID), o null. */
-  private escritaDesde(id: string, auditoria: ReturnType<typeof auditoriaEco>): string | null {
+  /**
+   * Escritura de un proveedor o una cotización ya auditada desde la fila `id` (requestId derivado del BANDEJA_ID), o
+   * null. Su `id` solo viene si tiene el patrón de su entidad (ORD-POS-156, SEGUNDO H3): si no, se bloquea igual, pero
+   * el mensaje no repite el REGISTRO_ID.
+   */
+  private escritaDesde(id: string, auditoria: ReturnType<typeof auditoriaEco>): { id?: string } | null {
     const derivados = [derivedRequestId(id, 'bandeja-proveedor'), derivedRequestId(id, 'bandeja-cotizacion')]
-    return auditoria.find((o) => derivados.includes(o.requestId))?.id ?? null
+    const o = auditoria.find((x) => derivados.includes(x.requestId))
+    if (!o) return null
+    const valido = idDeBandeja(o)
+    return valido ? { id: valido } : {}
   }
 
   /**
    * CORRECCIÓN 1 (SEGUNDO H1): la escritura de la entidad ya está auditada con el requestId derivado. Se completa con lo
    * auditado (como un reintento con el mismo cuerpo: repetida o roll-forward, sin crear ni editar de nuevo) y se devuelve
    * el ID auditado, aunque el cuerpo de este «Confirmar» sea otro.
+   * ORD-POS-156 (SEGUNDO H2): si la entidad cambió después (otra VERSION), basta que exista una sola fila con el ID
+   * auditado para terminar la marca; no se vuelve atrás ni se pisa la edición. El roll-forward queda para lo que nunca
+   * llegó a la hoja (el alta cuyo append falló, o la edición que sigue igual que antes). El ID auditado se valida con el
+   * patrón de su entidad antes de usarlo (SEGUNDO H3).
    */
   private completarAuditada(requestId: string): Promise<string> {
     return this.exclusive(async () => {
       const libro = await this.leer()
       const a = auditoriaEco(libro.PIPE_AUDITORIA).find((o) => o.requestId === requestId)
-      const r = a ? await this.replay('eco.bandeja.confirmar', a.hash, requestId, libro) : null
-      if (!r) throw new OperationError('auditoria-inconsistente')
-      return r.id
+      const id = a ? idDeBandeja(a) : null
+      if (!a || !id) throw new OperationError('auditoria-inconsistente')
+      try {
+        const r = await this.replay('eco.bandeja.confirmar', a.hash, requestId, libro)
+        if (!r) throw new OperationError('auditoria-inconsistente')
+        return id
+      } catch (e) {
+        if (!(e instanceof OperationError) || e.code !== 'estado-divergente') throw e
+        const t = libro[a.entidad as EcoWriteTab]
+        const idCol = ENTIDADES[a.entidad === 'PIPE_PROVEEDORES' ? 'proveedor' : 'cotizacion'].idCol
+        if (t.filas.filter((f) => texto(t, f, idCol) === id).length !== 1) throw e
+        return id
+      }
     })
   }
 
@@ -594,6 +628,12 @@ export class EcoPipelineWriteService {
         const auditado = Object.fromEntries([...a.campos].map(([c, x]) => [c, x.despues]))
         if (Object.entries(auditado).every(([c, x]) => texto(t, fila, c) === x)) return conAviso(libro, { operacion: op, id, version: 0, repetida: true })
         if (texto(t, fila, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('estado-divergente')
+        // ORD-POS-156 (SEGUNDO H1, DELTA H-B): el roll-forward de un rechazo tampoco marca RECHAZADA una fila desde la
+        // que ya se escribió una entidad (la auditoría recién leída, dentro de `exclusive`).
+        if (op === 'eco.bandeja.rechazar') {
+          const escrita = this.escritaDesde(id, auditoriaEco(libro.PIPE_AUDITORIA))
+          if (escrita) throw escritaError(escrita)
+        }
         await this.aplicarBandeja(id, auditado)
         return conAviso(libro, { operacion: op, id, version: 0, repetida: true })
       }
@@ -601,7 +641,7 @@ export class EcoPipelineWriteService {
       // CORRECCIÓN 1 (SEGUNDO H2): ya en `exclusive`, no se rechaza una fila desde la que ya se escribió una entidad.
       if (op === 'eco.bandeja.rechazar') {
         const escrita = this.escritaDesde(id, auditoriaEco(libro.PIPE_AUDITORIA))
-        if (escrita) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: escrita } })
+        if (escrita) throw escritaError(escrita)
       }
       conCupo(libro)
       const campos = Object.entries(cambios).map(([c, x]): [string, string, string] => [c, texto(t, fila, c), x])
