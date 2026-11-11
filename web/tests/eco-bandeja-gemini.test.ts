@@ -314,6 +314,138 @@ describe('criterios 2, 3 y 7: confirmar y rechazar con el servicio de escritura'
     }
   })
 
+  /* ------------------------- ORD-POS-156: casos límite de rechazo y reintento ------------------------- */
+
+  /**
+   * Almacén con dos dobles: `fallarMarca` hace fallar el update de la bandeja (la marca), y `retener()` detiene la
+   * siguiente lectura de solo PIPE_AUDITORIA DESPUÉS de leerla (Rechazar se queda con su lectura previa) hasta `soltar()`.
+   */
+  class Compuerta extends InMemoryEcoStore {
+    fallarMarca = false
+    private espera: Promise<void> | null = null
+    private avisar: (() => void) | null = null
+    soltar: () => void = () => undefined
+    retener(): Promise<void> {
+      this.espera = new Promise<void>((r) => { this.soltar = r })
+      return new Promise<void>((r) => { this.avisar = r })
+    }
+    async read(tabs: readonly EcoStoreTab[]) {
+      const out = await super.read(tabs)
+      if (this.espera && tabs.length === 1 && tabs[0] === 'PIPE_AUDITORIA') {
+        const e = this.espera
+        this.espera = null
+        this.avisar?.()
+        await e
+      }
+      return out
+    }
+    async update(tab: EcoStoreTab, n: number, celdas: CeldaCambio[]) {
+      if (this.fallarMarca && tab === 'PIPE_BANDEJA_GEMINI') throw new Error('HTTP 500')
+      return super.update(tab, n, celdas)
+    }
+  }
+
+  // Criterio 1 (SEGUNDO H1 + DELTA H-B de #346): el roll-forward de un Rechazar ya auditado no marca RECHAZADA una fila
+  // desde la que ya se escribió una entidad.
+  it('reintento de un Rechazar con marca fallida + Confirmar concurrente: bandeja-no-pendiente, nunca RECHAZADA con cotización', async () => {
+    const s = new Compuerta(RADAROS, libro())
+    const svc = servicio(s)
+    const R = rid()
+    // 1) El rechazo se audita, pero la celda no se escribe: la fila sigue PENDIENTE.
+    s.fallarMarca = true
+    expect((await codigo(rechazar(svc, 'BAN-0001', 'precio fuera de mercado', R))).code).toBe('escritura-fallida')
+    s.fallarMarca = false
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001').ESTADO_BANDEJA).toBe('PENDIENTE')
+    // 2) El reintento del rechazo (mismo requestId) hace su chequeo previo con la auditoría sin cotización...
+    const leida = s.retener()
+    const reintento = rechazar(svc, 'BAN-0001', 'precio fuera de mercado', R).catch((e: unknown) => e)
+    await leida
+    // 3) ...mientras un Confirmar escribe COT-0001 y su marca falla (la fila sigue PENDIENTE).
+    s.fallarMarca = true
+    expect((await codigo(confirmar(svc, 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    s.fallarMarca = false
+    expect(tabla(s, 'PIPE_COTIZACIONES')).toHaveLength(2)
+    s.soltar()
+    const e = await reintento
+    expect(e).toBeInstanceOf(OperationError)
+    expect([(e as OperationError).code, (e as OperationError).detail]).toEqual(['bandeja-no-pendiente', { estado: 'PENDIENTE', id: 'COT-0001' }])
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001').ESTADO_BANDEJA).toBe('PENDIENTE')
+    // La salida es terminar de confirmar: CONFIRMADA con COT-0001 y una sola cotización.
+    expect(await confirmar(svc, 'BAN-0001', COTIZACION)).toMatchObject({ id: 'COT-0001' })
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'COT-0001' })
+    expect(tabla(s, 'PIPE_COTIZACIONES')).toHaveLength(2)
+  })
+
+  // Criterio 2 (SEGUNDO H2 de #346): la entidad auditada cambió de versión antes del reintento.
+  it('marca fallida → edición de la cotización (VERSION 1→2) → el reintento de Confirmar termina CONFIRMADA sin tocar la cotización', async () => {
+    const s = new Compuerta(RADAROS, libro())
+    const svc = servicio(s)
+    s.fallarMarca = true
+    expect((await codigo(confirmar(svc, 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    s.fallarMarca = false
+    await svc.editarCotizacion('COT-0001', { requestId: rid(), expectedVersion: 1, valores: { NOTAS: 'Editada en /eco/pipeline' } }, CTX)
+    expect(registro(s, 'PIPE_COTIZACIONES', 'COT-0001')).toMatchObject({ VERSION: 2 })
+    expect(await confirmar(svc, 'BAN-0001', COTIZACION)).toMatchObject({ operacion: 'eco.bandeja.confirmar', id: 'COT-0001' })
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'COT-0001' })
+    // La edición del propietario se conserva: no hay roll-forward ni vuelta atrás.
+    expect(registro(s, 'PIPE_COTIZACIONES', 'COT-0001')).toMatchObject({ VERSION: 2, NOTAS: 'Editada en /eco/pipeline', PRECIO_UNIT: 2.5 })
+    expect(tabla(s, 'PIPE_COTIZACIONES')).toHaveLength(2)
+
+    // El alta cuyo append falló sí se completa (roll-forward): la fila no existe y se escribe la auditada.
+    class FallaAlta extends Compuerta {
+      fallarAlta = true
+      async append(tab: Parameters<InMemoryEcoStore['append']>[0], rows: Celda[][]) {
+        if (this.fallarAlta && tab === 'PIPE_COTIZACIONES') throw new Error('HTTP 500')
+        return super.append(tab, rows)
+      }
+    }
+    const a = new FallaAlta(RADAROS, libro())
+    const sa = servicio(a)
+    expect((await codigo(confirmar(sa, 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    expect(tabla(a, 'PIPE_COTIZACIONES')).toHaveLength(1)
+    a.fallarAlta = false
+    expect(await confirmar(sa, 'BAN-0001', { ...COTIZACION, notas: 'otra' })).toMatchObject({ id: 'COT-0001' })
+    expect(registro(a, 'PIPE_COTIZACIONES', 'COT-0001')).toMatchObject({ VERSION: 1, NOTAS: 'Gemini: precio de la tabla B' })
+    expect(registro(a, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: 'COT-0001' })
+  })
+
+  // Criterio 3 (SEGUNDO H3 de #346): un REGISTRO_ID de PIPE_AUDITORIA sin el patrón de su entidad no llega a un mensaje.
+  it('ID auditado sin el patrón de su entidad: no aparece en el mensaje ni en el detalle, ni se usa como RESULTADO_ID', async () => {
+    const s = new Compuerta(RADAROS, libro())
+    s.fallarMarca = true
+    expect((await codigo(confirmar(servicio(s), 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    // La pestaña de auditoría editada a mano: el ID de la cotización cambia por un correo.
+    const datos = s.snapshot()
+    const cambiar = (rows: unknown[][]) => rows.map((r) => r.map((c) => (c === 'COT-0001' ? 'a@b.mx' : c)))
+    const m = new InMemoryEcoStore(RADAROS, { ...datos, PIPE_AUDITORIA: cambiar(datos.PIPE_AUDITORIA!), PIPE_COTIZACIONES: cambiar(datos.PIPE_COTIZACIONES!) })
+    const svc = servicio(m)
+    const r = await codigo(rechazar(svc, 'BAN-0001', 'otra idea'))
+    expect(r.code).toBe('bandeja-no-pendiente')
+    expect(JSON.stringify([r.message, r.detail, r.fields])).not.toMatch(/a@b\.mx/)
+    const c = await codigo(confirmar(svc, 'BAN-0001', COTIZACION))
+    expect(JSON.stringify([c.message, c.detail, c.fields])).not.toMatch(/a@b\.mx/)
+    expect(registro(m, 'PIPE_BANDEJA_GEMINI', 'BAN-0001')).toMatchObject({ ESTADO_BANDEJA: 'PENDIENTE', RESULTADO_ID: '' })
+  })
+
+  // Criterio 4 (DELTA H-A de #346): el chequeo de Rechazar dentro de `exclusive` (marcarBandeja), no solo el previo.
+  it('Rechazar con la lectura previa retenida: el chequeo dentro de exclusive ve la cotización escrita y no marca RECHAZADA', async () => {
+    const s = new Compuerta(RADAROS, libro())
+    const svc = servicio(s)
+    const leida = s.retener()
+    const rechazo = rechazar(svc, 'BAN-0001', 'precio fuera de mercado').catch((e: unknown) => e)
+    await leida
+    // Con la lectura de Rechazar retenida (auditoría sin cotización), Confirmar escribe COT-0001 y su marca falla.
+    s.fallarMarca = true
+    expect((await codigo(confirmar(svc, 'BAN-0001', COTIZACION))).code).toBe('escritura-fallida')
+    s.fallarMarca = false
+    s.soltar()
+    const e = await rechazo
+    expect(e).toBeInstanceOf(OperationError)
+    expect([(e as OperationError).code, (e as OperationError).detail]).toEqual(['bandeja-no-pendiente', { estado: 'PENDIENTE', id: 'COT-0001' }])
+    expect(registro(s, 'PIPE_BANDEJA_GEMINI', 'BAN-0001').ESTADO_BANDEJA).toBe('PENDIENTE')
+    expect(auditoria(s).filter((a) => a.ENTIDAD === 'PIPE_BANDEJA_GEMINI' && a.VALOR_DESPUES === 'RECHAZADA')).toEqual([])
+  })
+
   // CORRECCIÓN 1 (PRIMERO H1, SEGUNDO H3): los errores no repiten celdas de la hoja fuera de la lista cerrada.
   it('bandeja-no-pendiente y TIPO: sin valores de la hoja que no sean de la lista cerrada', async () => {
     const s = new InMemoryEcoStore(RADAROS, libro({
