@@ -3,10 +3,14 @@ import { addDays, civilDateInZone, parseCivilDate } from '../dates'
 import { MAX_DATA_ROWS } from '../schema'
 import { OperationError } from '../operations/errors'
 import { meridaIsoTimestamp } from '../operations/time'
-import { payloadHash } from '../operations/validation'
+import { safeCellText } from '../operations/sanitize'
+import { derivedRequestId, payloadHash } from '../operations/validation'
 import { COLUMNAS_COTIZACIONES, COLUMNAS_EMBARQUES, COLUMNAS_PRODUCTOS, COLUMNAS_PROVEEDORES, ETAPAS, nombreClave, type Etapa } from './pipeline'
-import { ECO_WRITE_TABS, type Celda, type EcoPipelineStore, type EcoWriteTab } from './pipeline-escritura-store'
-import { COLUMNAS_NUMERICAS, COLUMNAS_OPCIONALES, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
+import {
+  COLUMNAS_BANDEJA, COLUMNAS_BANDEJA_ESCRIBIBLES, ESTADOS_BANDEJA, TIPOS_BANDEJA, celdaConContacto, esFormula, notasRechazo, RESULTADO,
+} from './pipeline-bandeja-gemini'
+import { ECO_BANDEJA_TAB, ECO_WRITE_TABS, type Celda, type EcoPipelineStore, type EcoStoreTab, type EcoWriteTab } from './pipeline-escritura-store'
+import { COLUMNAS_NUMERICAS, COLUMNAS_OPCIONALES, type BandejaConfirmar, type EcoComando, type MoverComando } from './pipeline-escritura-validacion'
 import { requiereMotivo, transicionPermitida } from './pipeline-transiciones'
 
 /**
@@ -20,6 +24,8 @@ import { requiereMotivo, transicionPermitida } from './pipeline-transiciones'
 export const ECO_OPERATIONS = [
   'eco.producto.crear', 'eco.producto.editar', 'eco.producto.mover', 'eco.proveedor.crear', 'eco.proveedor.editar',
   'eco.cotizacion.crear', 'eco.cotizacion.editar', 'eco.cotizacion.pedir', 'eco.embarque.crear', 'eco.embarque.editar',
+  // ORD-POS-155 (§18.3): bandeja de Gemini; en PIPE_BANDEJA_GEMINI solo escriben ESTADO_BANDEJA, RESULTADO_ID y NOTAS.
+  'eco.bandeja.confirmar', 'eco.bandeja.rechazar',
 ] as const
 export type EcoOperationName = (typeof ECO_OPERATIONS)[number]
 
@@ -74,6 +80,8 @@ export interface EcoServiceOptions {
 }
 
 type Registro = Record<string, Celda>
+/** Comprobación extra dentro de `exclusive`, tras el replay y antes de auditar (la bandeja: fila aún PENDIENTE). */
+type Guarda = () => Promise<void>
 
 interface Tabla {
   header: string[]
@@ -122,15 +130,21 @@ function iguales(guardado: unknown, esperado: Celda): boolean {
   return celdaTexto(guardado) === esperado
 }
 
+/**
+ * Encabezados por nombre (fila 1): las columnas que el propietario agregue al final se aceptan y nunca se escriben. Una
+ * requerida que falta o un encabezado repetido es 400 `eco-esquema-invalido` y el detalle los nombra (ORD-POS-155,
+ * criterio 5).
+ */
 function tabla(rows: unknown[][], columnas: readonly string[], pestana: string): Tabla {
   const header = (rows[0] ?? []).map(celdaTexto)
   const indice = new Map<string, number>()
   for (const [i, name] of header.entries()) {
     if (!name) continue
-    if (indice.has(name)) throw new OperationError('eco-esquema-invalido', { detail: { pestana } })
+    if (indice.has(name)) throw new OperationError('eco-esquema-invalido', { detail: { pestana, repetida: name.slice(0, 60) } })
     indice.set(name, i)
   }
-  if (columnas.some((c) => !indice.has(c))) throw new OperationError('eco-esquema-invalido', { detail: { pestana } })
+  const faltan = columnas.filter((c) => !indice.has(c))
+  if (faltan.length) throw new OperationError('eco-esquema-invalido', { detail: { pestana, columnas: faltan.join(',') } })
   if (rows.length > MAX_DATA_ROWS + 1) throw llena(pestana)
   return { header, indice, filas: rows.slice(1) }
 }
@@ -154,8 +168,10 @@ function conAviso(libro: Libro, r: EcoResultado): EcoResultado {
 const valor = (t: Tabla, fila: unknown[], columna: string): unknown => fila[t.indice.get(columna) ?? -1]
 const texto = (t: Tabla, fila: unknown[], columna: string): string => celdaTexto(valor(t, fila, columna))
 
-function columnasDe(tab: EcoWriteTab): readonly string[] {
-  return tab === 'PIPE_AUDITORIA' ? COLUMNAS_AUDITORIA : Object.values(ENTIDADES).find((e) => e.tab === tab)!.columnas
+function columnasDe(tab: EcoStoreTab): readonly string[] {
+  if (tab === 'PIPE_AUDITORIA') return COLUMNAS_AUDITORIA
+  if (tab === ECO_BANDEJA_TAB) return COLUMNAS_BANDEJA
+  return Object.values(ENTIDADES).find((e) => e.tab === tab)!.columnas
 }
 
 /** Agrupa PIPE_AUDITORIA por solicitud y revisa su integridad (lote, índices, una sola entidad y un solo ID). */
@@ -290,11 +306,11 @@ export class EcoPipelineWriteService {
 
   /* --------------------------------------- Proveedores --------------------------------------- */
 
-  crearProveedor(cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+  crearProveedor(cmd: EcoComando, ctx: EcoContext, guarda?: Guarda): Promise<EcoResultado> {
     return this.crear('eco.proveedor.crear', 'proveedor', cmd, ctx, (libro, r) => {
       this.nombreLibre(libro, celdaTexto(r.NOMBRE), null)
       return { ...r, ESTADO: 'ACTIVO' }
-    })
+    }, guarda)
   }
 
   editarProveedor(id: string, cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
@@ -314,7 +330,7 @@ export class EcoPipelineWriteService {
 
   /* -------------------------------------- Cotizaciones -------------------------------------- */
 
-  crearCotizacion(cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+  crearCotizacion(cmd: EcoComando, ctx: EcoContext, guarda?: Guarda): Promise<EcoResultado> {
     return this.crear('eco.cotizacion.crear', 'cotizacion', cmd, ctx, (libro, r) => {
       this.productoAbierto(libro, String(r.PRODUCTO_ID))
       if (!this.filas(libro, 'proveedor').some((f) => texto(libro.PIPE_PROVEEDORES, f, 'PROVEEDOR_ID') === r.PROVEEDOR_ID)) {
@@ -330,7 +346,7 @@ export class EcoPipelineWriteService {
       const registro = { ...r, ESTADO: estado, MUESTRA_ESTADO: r.MUESTRA_ESTADO || 'NO_PEDIDA' }
       this.fechas('cotizacion', registro)
       return registro
-    })
+    }, guarda)
   }
 
   /**
@@ -346,7 +362,7 @@ export class EcoPipelineWriteService {
     })
   }
 
-  editarCotizacion(id: string, cmd: EcoComando, ctx: EcoContext): Promise<EcoResultado> {
+  editarCotizacion(id: string, cmd: EcoComando, ctx: EcoContext, guarda?: Guarda): Promise<EcoResultado> {
     return this.editar('eco.cotizacion.editar', 'cotizacion', id, cmd, ctx, (libro, merged, actual) => {
       this.productoAbierto(libro, celdaTexto(actual.PRODUCTO_ID))
       const desde = celdaTexto(actual.ESTADO)
@@ -377,7 +393,7 @@ export class EcoPipelineWriteService {
       }
       this.fechas('cotizacion', { ...merged, ...extra })
       return extra
-    })
+    }, guarda)
   }
 
   /* --------------------------------------- Embarques --------------------------------------- */
@@ -405,6 +421,209 @@ export class EcoPipelineWriteService {
       if (a !== desde && !(TRANSICIONES_EMBARQUE[desde] ?? []).includes(a)) throw new OperationError('transicion-no-permitida', { detail: { desde, a } })
       this.fechas('embarque', merged)
     })
+  }
+
+  /* --------------------------------- Bandeja de Gemini (ORD-POS-155) --------------------------------- */
+
+  /**
+   * §18.3 «Confirmar»: crea o actualiza con las operaciones de siempre (mismo guard, misma validación, safeCellText,
+   * rechazo de fórmulas, auditoría en PIPE_AUDITORIA) y luego marca la fila CONFIRMADA con el ID resultante. La escritura
+   * de la entidad usa un requestId derivado del BANDEJA_ID: reintentar (con el mismo requestId o con otro) nunca crea dos
+   * proveedores ni dos cotizaciones desde la misma fila. Si esa escritura ya está auditada (la marca falló antes), se
+   * completa desde la auditoría, sin volver a crear ni editar y sin mirar el cuerpo, y se termina la marca CONFIRMADA
+   * con el ID auditado (CORRECCIÓN 1, SEGUNDO H1).
+   */
+  async confirmarBandeja(id: string, b: BandejaConfirmar, ctx: EcoContext): Promise<EcoResultado> {
+    const op: EcoOperationName = 'eco.bandeja.confirmar'
+    const { t, n, fila } = await this.filaBandeja(id)
+    const estado = texto(t, fila, 'ESTADO_BANDEJA').toUpperCase()
+    const previo = texto(t, fila, 'RESULTADO_ID')
+    if (estado === 'CONFIRMADA' && RESULTADO.test(previo)) return { operacion: op, id: previo, version: 0, repetida: true }
+    // CORRECCIÓN 1 (PRIMERO H1, SEGUNDO H3): el valor de la celda solo se devuelve si es de la lista cerrada.
+    if (estado !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente', { detail: (ESTADOS_BANDEJA as readonly string[]).includes(estado) ? { estado } : {} })
+    const tipo = texto(t, fila, 'TIPO').toUpperCase()
+    if (tipo !== b.tipo) {
+      const deTipo = (TIPOS_BANDEJA as readonly string[]).includes(tipo) ? `de tipo ${tipo}` : 'de un tipo no válido'
+      throw new OperationError('validacion', { fields: { tipo: `La fila ${id} es ${deTipo}.` } })
+    }
+    // Criterio 4: ninguna celda de la fila con fórmula, correo o teléfono.
+    await this.sinBloqueos(t, n, fila, null)
+    const requestId = derivedRequestId(id, b.tipo === 'PROVEEDOR' ? 'bandeja-proveedor' : 'bandeja-cotizacion')
+    // La entidad solo se escribe si la fila sigue PENDIENTE dentro del mismo `exclusive` (CORRECCIÓN 1, SEGUNDO H2).
+    const guarda: Guarda = async () => {
+      const { t: tb, fila: f } = await this.filaBandeja(id)
+      if (texto(tb, f, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente')
+    }
+    const resultadoId = (await this.auditada(requestId))
+      ? await this.completarAuditada(requestId)
+      : b.tipo === 'PROVEEDOR' ? await this.proveedorDesdeBandeja(requestId, b.cmd, ctx, guarda) : await this.cotizacionDesdeBandeja(requestId, b.cmd, ctx, guarda)
+    const r = await this.marcarBandeja(op, id, b.cmd.requestId, { resultadoId }, { ESTADO_BANDEJA: 'CONFIRMADA', RESULTADO_ID: resultadoId }, ctx)
+    return { ...r, id: resultadoId }
+  }
+
+  /** §18.3 «Rechazar»: marca RECHAZADA y agrega «Rechazada: <motivo>» al final de NOTAS, sin borrar lo que había. */
+  async rechazarBandeja(id: string, cmd: { requestId: string; motivo: string }, ctx: EcoContext): Promise<EcoResultado> {
+    const op: EcoOperationName = 'eco.bandeja.rechazar'
+    const { t, n, fila } = await this.filaBandeja(id)
+    const estado = texto(t, fila, 'ESTADO_BANDEJA').toUpperCase()
+    if (estado === 'PENDIENTE') {
+      // Si ya se escribió un proveedor o una cotización desde esta fila (confirmación a medias), no se rechaza: se termina
+      // de confirmar. `marcarBandeja` lo repite dentro de `exclusive` (SEGUNDO H2).
+      const previa = this.escritaDesde(id, auditoriaEco(await this.releer('PIPE_AUDITORIA', 'lectura-fallida')))
+      if (previa) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: previa } })
+      // Las celdas que se escriben no pueden tener fórmula ni datos personales (no se copian a la auditoría).
+      await this.sinBloqueos(t, n, fila, COLUMNAS_BANDEJA_ESCRIBIBLES)
+    }
+    const notas = safeCellText(notasRechazo(texto(t, fila, 'NOTAS'), cmd.motivo), true)
+    return this.marcarBandeja(op, id, cmd.requestId, { motivo: cmd.motivo }, { ESTADO_BANDEJA: 'RECHAZADA', NOTAS: notas }, ctx)
+  }
+
+  /** La fila de la bandeja con ese BANDEJA_ID, releída: ninguna es 404 y dos o más, 409 (como `unica`). */
+  private async filaBandeja(id: string): Promise<{ t: Tabla; n: number; fila: unknown[] }> {
+    let titulos: string[]
+    try {
+      titulos = await this.store.tabs()
+    } catch {
+      throw new OperationError('lectura-fallida')
+    }
+    if (!titulos.includes(ECO_BANDEJA_TAB)) throw new OperationError('eco-esquema-invalido', { detail: { pestana: ECO_BANDEJA_TAB } })
+    const t = await this.releer(ECO_BANDEJA_TAB, 'lectura-fallida')
+    const indices = t.filas.flatMap((f, i) => (texto(t, f, 'BANDEJA_ID') === id ? [i] : []))
+    if (indices.length === 0) throw new OperationError('registro-inexistente')
+    if (indices.length > 1) throw new OperationError('conflicto-concurrente')
+    return { t, n: indices[0]! + 2, fila: t.filas[indices[0]!]! }
+  }
+
+  /** Criterio 4: fórmula (leída con FORMULA) o correo o teléfono en las celdas de la fila (todas, o solo `columnas`). */
+  private async sinBloqueos(t: Tabla, n: number, fila: unknown[], columnas: readonly string[] | null) {
+    let formulas: unknown[]
+    try {
+      formulas = await this.store.formulas(ECO_BANDEJA_TAB, n)
+    } catch {
+      throw new OperationError('lectura-fallida')
+    }
+    const malas: string[] = []
+    for (let j = 0; j < Math.max(fila.length, formulas.length, t.header.length); j++) {
+      const col = t.header[j] || `columna ${j + 1}`
+      if (columnas && !columnas.includes(col)) continue
+      if (esFormula(formulas[j]) || celdaConContacto(fila[j])) malas.push(col.slice(0, 60))
+    }
+    if (malas.length) throw new OperationError('bandeja-bloqueada', { detail: { columnas: malas.join(',') } })
+  }
+
+  /** Solicitud ya auditada con ese requestId (su registro), o null. */
+  private async auditada(requestId: string): Promise<{ id: string } | null> {
+    const a = auditoriaEco(await this.releer('PIPE_AUDITORIA', 'lectura-fallida')).find((o) => o.requestId === requestId)
+    return a ? { id: a.id } : null
+  }
+
+  /** ID del proveedor o la cotización ya escritos desde la fila `id` (requestId derivado del BANDEJA_ID), o null. */
+  private escritaDesde(id: string, auditoria: ReturnType<typeof auditoriaEco>): string | null {
+    const derivados = [derivedRequestId(id, 'bandeja-proveedor'), derivedRequestId(id, 'bandeja-cotizacion')]
+    return auditoria.find((o) => derivados.includes(o.requestId))?.id ?? null
+  }
+
+  /**
+   * CORRECCIÓN 1 (SEGUNDO H1): la escritura de la entidad ya está auditada con el requestId derivado. Se completa con lo
+   * auditado (como un reintento con el mismo cuerpo: repetida o roll-forward, sin crear ni editar de nuevo) y se devuelve
+   * el ID auditado, aunque el cuerpo de este «Confirmar» sea otro.
+   */
+  private completarAuditada(requestId: string): Promise<string> {
+    return this.exclusive(async () => {
+      const libro = await this.leer()
+      const a = auditoriaEco(libro.PIPE_AUDITORIA).find((o) => o.requestId === requestId)
+      const r = a ? await this.replay('eco.bandeja.confirmar', a.hash, requestId, libro) : null
+      if (!r) throw new OperationError('auditoria-inconsistente')
+      return r.id
+    })
+  }
+
+  /** Fila PROVEEDOR: uno que ya existe con ese nombre (§15.1) se liga sin escribir; si no, alta con `crearProveedor`. */
+  private async proveedorDesdeBandeja(requestId: string, cmd: EcoComando, ctx: EcoContext, guarda: Guarda): Promise<string> {
+    const t = (await this.leer()).PIPE_PROVEEDORES
+    const clave = nombreClave(celdaTexto(cmd.valores.NOMBRE))
+    const otro = t.filas.find((f) => clave !== '' && nombreClave(texto(t, f, 'NOMBRE')) === clave)
+    if (otro) return texto(t, otro, 'PROVEEDOR_ID')
+    return (await this.crearProveedor({ ...cmd, requestId }, ctx, guarda)).id
+  }
+
+  /**
+   * Fila COTIZACION: si el producto ya tiene una sola cotización SOLICITADA a ese proveedor, la actualiza (como
+   * «Recibir», con `expectedVersion`, sin vaciar celdas); si no, la da de alta. Una igual (producto, proveedor, incoterm,
+   * precio y moneda) es 409 `cotizacion-duplicada`. Un reintento sigue el camino que ya quedó auditado.
+   */
+  private async cotizacionDesdeBandeja(requestId: string, cmd: EcoComando, ctx: EcoContext, guarda: Guarda): Promise<string> {
+    const edicion = (version: number): EcoComando => ({
+      requestId, expectedVersion: version,
+      valores: Object.fromEntries(Object.entries(cmd.valores).filter(([c, v]) => v !== '' && c !== 'PRODUCTO_ID' && c !== 'PROVEEDOR_ID')),
+    })
+    const c = (await this.leer()).PIPE_COTIZACIONES
+    const v = cmd.valores
+    const mismas = c.filas.filter((f) => texto(c, f, 'PRODUCTO_ID') === celdaTexto(v.PRODUCTO_ID) && texto(c, f, 'PROVEEDOR_ID') === celdaTexto(v.PROVEEDOR_ID))
+    const precio = (x: unknown) => (celdaTexto(x) === '' ? '' : String(Number(celdaTexto(x))))
+    const igual = mismas.find((f) => texto(c, f, 'INCOTERM').toUpperCase() === celdaTexto(v.INCOTERM).toUpperCase()
+      && precio(valor(c, f, 'PRECIO_UNIT')) === precio(v.PRECIO_UNIT) && texto(c, f, 'MONEDA').toUpperCase() === celdaTexto(v.MONEDA).toUpperCase())
+    if (igual) throw new OperationError('cotizacion-duplicada', { detail: { id: texto(c, igual, 'COTIZACION_ID') } })
+    const solicitadas = mismas.filter((f) => texto(c, f, 'ESTADO') === 'SOLICITADA')
+    if (solicitadas.length === 1) {
+      const f = solicitadas[0]!
+      return (await this.editarCotizacion(texto(c, f, 'COTIZACION_ID'), edicion(Number(texto(c, f, 'VERSION'))), ctx, guarda)).id
+    }
+    // Ninguna (o más de una: no se adivina cuál) → alta.
+    return (await this.crearCotizacion({ ...cmd, requestId }, ctx, guarda)).id
+  }
+
+  /**
+   * Escribe en la fila de la bandeja solo ESTADO_BANDEJA, RESULTADO_ID y NOTAS, con el mismo orden que las entidades
+   * (§6.1): idempotencia por requestId → auditoría → celdas de esa fila, si sigue PENDIENTE → verificación. `firma` es lo
+   * que identifica la solicitud (el ID resultante o el motivo): con ella se calcula el hash de la idempotencia.
+   */
+  private marcarBandeja(
+    op: EcoOperationName, id: string, requestId: string, firma: Record<string, string>, cambios: Record<string, string>, ctx: EcoContext,
+  ): Promise<EcoResultado> {
+    // Criterio 3: error de programación si se intenta otra columna.
+    if (Object.keys(cambios).some((c) => !COLUMNAS_BANDEJA_ESCRIBIBLES.includes(c))) throw new Error('columna fuera de las que el dashboard escribe en la bandeja')
+    return this.exclusive(async () => {
+      const hash = payloadHash(op, { id, ...firma })
+      const libro = await this.leer()
+      const { t, fila } = await this.filaBandeja(id)
+      const a = auditoriaEco(libro.PIPE_AUDITORIA).find((o) => o.requestId === requestId)
+      if (a) {
+        if (a.integridad !== 'completa') throw new OperationError('auditoria-inconsistente')
+        if (a.hash !== hash || a.entidad !== ECO_BANDEJA_TAB || a.id !== id) throw new OperationError('conflicto-idempotencia')
+        const auditado = Object.fromEntries([...a.campos].map(([c, x]) => [c, x.despues]))
+        if (Object.entries(auditado).every(([c, x]) => texto(t, fila, c) === x)) return conAviso(libro, { operacion: op, id, version: 0, repetida: true })
+        if (texto(t, fila, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('estado-divergente')
+        await this.aplicarBandeja(id, auditado)
+        return conAviso(libro, { operacion: op, id, version: 0, repetida: true })
+      }
+      if (texto(t, fila, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('bandeja-no-pendiente')
+      // CORRECCIÓN 1 (SEGUNDO H2): ya en `exclusive`, no se rechaza una fila desde la que ya se escribió una entidad.
+      if (op === 'eco.bandeja.rechazar') {
+        const escrita = this.escritaDesde(id, auditoriaEco(libro.PIPE_AUDITORIA))
+        if (escrita) throw new OperationError('bandeja-no-pendiente', { detail: { estado: 'PENDIENTE', id: escrita } })
+      }
+      conCupo(libro)
+      const campos = Object.entries(cambios).map(([c, x]): [string, string, string] => [c, texto(t, fila, c), x])
+      await this.escribirAuditoria(hash, requestId, ctx, ECO_BANDEJA_TAB, id, campos, libro)
+      await this.aplicarBandeja(id, cambios)
+      return conAviso(libro, { operacion: op, id, version: 0, repetida: false })
+    })
+  }
+
+  /** Relee la fila por BANDEJA_ID; solo escribe si sigue PENDIENTE (si no, 409 sin escribir) y verifica lo escrito. */
+  private async aplicarBandeja(id: string, cambios: Record<string, string>) {
+    const t = await this.releer(ECO_BANDEJA_TAB, 'escritura-fallida')
+    const indices = t.filas.flatMap((f, i) => (texto(t, f, 'BANDEJA_ID') === id ? [i] : []))
+    if (indices.length !== 1 || texto(t, t.filas[indices[0]!]!, 'ESTADO_BANDEJA').toUpperCase() !== 'PENDIENTE') throw new OperationError('conflicto-concurrente')
+    try {
+      await this.store.update(ECO_BANDEJA_TAB, indices[0]! + 2, Object.entries(cambios).map(([c, v]) => ({ columna: t.indice.get(c)!, valor: v })))
+    } catch {
+      throw new OperationError('escritura-fallida')
+    }
+    const v = await this.releer(ECO_BANDEJA_TAB, 'verificacion-fallida')
+    const filas = v.filas.filter((f) => texto(v, f, 'BANDEJA_ID') === id)
+    if (filas.length !== 1 || !Object.entries(cambios).every(([c, x]) => texto(v, filas[0]!, c) === x)) throw new OperationError('verificacion-fallida')
   }
 
   /* ------------------------------------- Reglas comunes ------------------------------------- */
@@ -500,12 +719,14 @@ export class EcoPipelineWriteService {
 
   private crear(
     op: EcoOperationName, e: Entidad, cmd: EcoComando, ctx: EcoContext, validar: (libro: Libro, r: Registro) => Registro,
+    guarda?: Guarda,
   ): Promise<EcoResultado> {
     return this.exclusive(async () => {
       const hash = payloadHash(op, cmd)
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      if (guarda) await guarda()
       conCupo(libro)
       conMigracion(libro, e, cmd.valores)
       const registro = validar(libro, { ...cmd.valores })
@@ -522,13 +743,14 @@ export class EcoPipelineWriteService {
 
   private editar(
     op: EcoOperationName, e: Entidad, id: string, cmd: EcoComando, ctx: EcoContext,
-    validar: (libro: Libro, merged: Registro, actual: Registro) => Registro | void,
+    validar: (libro: Libro, merged: Registro, actual: Registro) => Registro | void, guarda?: Guarda,
   ): Promise<EcoResultado> {
     return this.exclusive(async () => {
       const hash = payloadHash(op, { ...cmd, id })
       const libro = await this.leer()
       const repetida = await this.replay(op, hash, cmd.requestId, libro)
       if (repetida) return repetida
+      if (guarda) await guarda()
       conCupo(libro)
       conMigracion(libro, e, cmd.valores)
       const { actual } = this.unica(libro, e, id)
@@ -598,7 +820,7 @@ export class EcoPipelineWriteService {
     return Object.fromEntries(ECO_WRITE_TABS.map((tab) => [tab, tabla(datos[tab] ?? [], columnasDe(tab), tab)])) as Libro
   }
 
-  private async releer(tab: EcoWriteTab, error: 'lectura-fallida' | 'escritura-fallida' | 'verificacion-fallida'): Promise<Tabla> {
+  private async releer(tab: EcoStoreTab, error: 'lectura-fallida' | 'escritura-fallida' | 'verificacion-fallida'): Promise<Tabla> {
     try {
       return tabla((await this.store.read([tab]))[tab] ?? [], columnasDe(tab), tab)
     } catch {
@@ -642,9 +864,6 @@ export class EcoPipelineWriteService {
 
   /** PIPE_AUDITORIA primero, una fila por campo con antes y después: si falla, no se toca la entidad (§6.1). */
   private async auditar(hash: string, requestId: string, ctx: EcoContext, cambio: Cambio, libro: Libro) {
-    const stamp = this.stamp()
-    const compact = stamp.slice(0, 19).replace(/[-:T]/g, '')
-    const lote = this.randomHex(4).toUpperCase()
     const alta = Object.keys(cambio.antes).length === 0
     const campos: Array<[string, string, string]> = [
       ...Object.entries(cambio.despues)
@@ -652,14 +871,24 @@ export class EcoPipelineWriteService {
         .map(([c, v]): [string, string, string] => [c, celdaTexto(cambio.antes[c] ?? ''), String(v)]),
       ...cambio.extra.map(([c, v]): [string, string, string] => [c, '', v]),
     ]
+    await this.escribirAuditoria(hash, requestId, ctx, ENTIDADES[cambio.entidad].tab, cambio.id, campos, libro)
+  }
+
+  /** Filas de PIPE_AUDITORIA de una solicitud (una por campo, con antes y después); la usan las entidades y la bandeja. */
+  private async escribirAuditoria(
+    hash: string, requestId: string, ctx: EcoContext, entidad: EcoStoreTab, id: string, campos: Array<[string, string, string]>, libro: Libro,
+  ) {
+    const stamp = this.stamp()
+    const compact = stamp.slice(0, 19).replace(/[-:T]/g, '')
+    const lote = this.randomHex(4).toUpperCase()
     const total = String(campos.length).padStart(2, '0')
     const origen = `${ORIGIN_PREFIX};req=${requestId};hash=${hash}`
     const rows = campos.map(([campo, antes, despues], i) => libro.PIPE_AUDITORIA.header.map((h) => ({
       AUDIT_ID: `AUD-${compact}-${lote}-${String(i + 1).padStart(2, '0')}-${total}`,
       FECHA_HORA: stamp,
       ACTOR: ctx.actor,
-      ENTIDAD: ENTIDADES[cambio.entidad].tab,
-      REGISTRO_ID: cambio.id,
+      ENTIDAD: entidad,
+      REGISTRO_ID: id,
       CAMPO: campo,
       VALOR_ANTES: antes,
       VALOR_DESPUES: despues,

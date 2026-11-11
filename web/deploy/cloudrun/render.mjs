@@ -33,14 +33,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + commitDesplegado(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + ecoBandejaGemini(env, problems) + commitDesplegado(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR ni DEPLOY_COMMIT_SHA')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR, ECO_BANDEJA_GEMINI ni DEPLOY_COMMIT_SHA')
   return output.replace(marker, writeBlock)
 }
 
@@ -299,6 +299,23 @@ function ecoTabulador(env, problems) {
     return ''
   }
   return ['            - name: ECO_TABULADOR', "              value: 'true'", ''].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-155, DEC-POS-031; docs/diseno-eco-pipeline.md §18.4): bandeja de Gemini de /eco/pipeline, apagada por
+ * defecto. Solo la exporta el propietario:
+ * - ECO_BANDEJA_GEMINI: solo `true`. Exige ECO_PIPELINE_WRITE_MODE=sheets: confirmar y rechazar escriben con la cuenta,
+ *   el guard y la auditoría del pipeline.
+ * Sin ella, el YAML no cambia.
+ */
+function ecoBandejaGemini(env, problems) {
+  const flag = (env.ECO_BANDEJA_GEMINI ?? '').trim()
+  if (!flag) return ''
+  const antes = problems.length
+  if (flag !== 'true') problems.push('ECO_BANDEJA_GEMINI solo admite true')
+  if ((env.ECO_PIPELINE_WRITE_MODE ?? '').trim() !== 'sheets') problems.push('ECO_BANDEJA_GEMINI exige ECO_PIPELINE_WRITE_MODE=sheets (escribe con la escritura del pipeline)')
+  if (problems.length > antes) return ''
+  return ['            - name: ECO_BANDEJA_GEMINI', "              value: 'true'", ''].join('\n')
 }
 
 /**

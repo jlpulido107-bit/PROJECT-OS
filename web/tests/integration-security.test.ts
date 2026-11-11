@@ -37,6 +37,7 @@ describe('árbol integrado V1.3–V1.6', () => {
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts')).map((f) => path.relative(apiDir, f).split(path.sep).join('/')).sort()
     expect(routes).toEqual([
       'auth/[...nextauth]/route.ts', 'control/route.ts',
+      'eco/pipeline/bandeja/[id]/confirmar/route.ts', 'eco/pipeline/bandeja/[id]/rechazar/route.ts',
       'eco/pipeline/cotizaciones/[id]/route.ts', 'eco/pipeline/cotizaciones/pedir/route.ts', 'eco/pipeline/cotizaciones/route.ts', 'eco/pipeline/embarques/[id]/route.ts', 'eco/pipeline/embarques/route.ts',
       'eco/pipeline/productos/[id]/etapa/route.ts', 'eco/pipeline/productos/[id]/route.ts', 'eco/pipeline/productos/route.ts', 'eco/pipeline/proveedores/[id]/route.ts', 'eco/pipeline/proveedores/route.ts',
       'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'operaciones/capacidad/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/escenarios/archivar/route.ts', 'operaciones/escenarios/route.ts', 'operaciones/ideas/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts', 'operaciones/plan-dia/route.ts',

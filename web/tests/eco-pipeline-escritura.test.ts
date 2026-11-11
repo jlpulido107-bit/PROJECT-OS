@@ -323,12 +323,12 @@ describe('criterio 2: guard propio sin rama de agente (§4.1 y §4.2)', () => {
     expect(authz).not.toMatch(/\/api\/eco|api\\\/eco|ECO_PIPELINE/)
   })
 
-  it('las 10 operaciones son de su propio tipo, disjunto de OperationName (prueba de tipos)', () => {
+  it('las 12 operaciones son de su propio tipo, disjunto de OperationName (prueba de tipos)', () => {
     // Si alguna eco.* entrara en OperationName, `Comun` dejaría de ser never y esta línea no compilaría (npm run typecheck).
     type Comun = Extract<EcoOperationName, OperationName>
     const disjuntos: [Comun] extends [never] ? true : false = true
     expect(disjuntos).toBe(true)
-    expect(ECO_OPERATIONS).toHaveLength(10) // ORD-POS-149: eco.cotizacion.pedir
+    expect(ECO_OPERATIONS).toHaveLength(12) // ORD-POS-149: eco.cotizacion.pedir; ORD-POS-155: eco.bandeja.confirmar y .rechazar
   })
 
   it('el guard no reutiliza el de operaciones ni el de finanzas', () => {
@@ -365,11 +365,11 @@ describe('criterio 2: guard propio sin rama de agente (§4.1 y §4.2)', () => {
 /* ------------------------------------------ Criterio 3 ------------------------------------------ */
 
 describe('criterio 3: las 10 operaciones, IDs de §3, expectedVersion e idempotencia', () => {
-  it('diez rutas (ORD-POS-149: «pedir»), ninguna DELETE ni GET, y cada una por handleEcoWrite con su operación', () => {
+  it('doce rutas (ORD-POS-149: «pedir»; ORD-POS-155: confirmar y rechazar de la bandeja), ninguna DELETE ni GET, y cada una por handleEcoWrite con su operación', () => {
     const dir = path.join(__dirname, '..', 'src', 'app', 'api', 'eco')
     const archivos = (d: string): string[] => readdirSync(d).flatMap((n) => (statSync(path.join(d, n)).isDirectory() ? archivos(path.join(d, n)) : [path.join(d, n)]))
     const rutas = archivos(dir).map((f) => readFileSync(f, 'utf8'))
-    expect(rutas).toHaveLength(10)
+    expect(rutas).toHaveLength(12)
     const ops = new Set<string>()
     for (const text of rutas) {
       expect(text).toMatch(/handleEcoWrite\(request, 'eco\.[a-z]+\.[a-z]+'/)

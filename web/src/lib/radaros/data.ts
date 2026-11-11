@@ -4,6 +4,7 @@ import { cacheSeconds, ConfigError, radarosConfig } from '../config'
 import { createTokenProvider, type TokenProvider } from '../credentials'
 import { createSheetsReader, SheetsReadError, type SheetsErrorCode } from '../sheets-client'
 import { construirEco, ECO_LECTURA, type EcoVista } from './eco'
+import { ecoBandejaGeminiHabilitada, leerBandeja, PESTANA_BANDEJA, type BandejaVista } from './pipeline-bandeja-gemini'
 import { generacionEco } from './pipeline-generacion'
 
 /**
@@ -48,7 +49,7 @@ export function createEcoLoader(deps: EcoLoaderDeps = {}) {
       const reader = createSheetsReader({ spreadsheetId: id, getAccessToken, fetchImpl: deps.fetchImpl, sleep: deps.sleep })
       // Metadatos + un batchGet solo con las pestañas de §3 y las PIPE_* que existen: como máximo 2 lecturas.
       const raw = await reader.readTabs(ECO_LECTURA)
-      return { estado: 'ok', vista: construirEco(raw, fetchedAt), fetchedAt }
+      return { estado: 'ok', vista: construirEco(raw, fetchedAt, await bandeja(reader)), fetchedAt }
     } catch (error) {
       if (error instanceof SheetsReadError) {
         return { estado: 'error', code: error.code, message: error.message, reintentar: TRANSITORIOS.includes(error.code), at: fetchedAt }
@@ -59,6 +60,22 @@ export function createEcoLoader(deps: EcoLoaderDeps = {}) {
       }
       console.error('[project-os] /eco: error inesperado:', error instanceof Error ? error.name : 'desconocido')
       return { estado: 'error', code: 'unavailable', message: 'No se pudieron leer los datos de RADAROS.', reintentar: true, at: fetchedAt }
+    }
+  }
+
+  /**
+   * ORD-POS-155 (§18.2): la bandeja de Gemini solo se lee con ECO_BANDEJA_GEMINI=true, en su propio GET con
+   * valueRenderOption=FORMULA para ver las fórmulas (criterio 4). Un fallo de esta lectura no tumba /eco: queda en la
+   * bandeja, con su mensaje.
+   */
+  async function bandeja(reader: ReturnType<typeof createSheetsReader>): Promise<BandejaVista> {
+    if (!ecoBandejaGeminiHabilitada(env)) return { estado: 'apagada' }
+    try {
+      const r = await reader.readTabs([PESTANA_BANDEJA], { valueRenderOption: 'FORMULA' })
+      return leerBandeja(r[PESTANA_BANDEJA])
+    } catch (error) {
+      const mensaje = error instanceof SheetsReadError ? error.message : 'No se pudo leer la bandeja de Gemini.'
+      return { estado: 'error', mensaje }
     }
   }
 

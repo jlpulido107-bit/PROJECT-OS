@@ -4,6 +4,7 @@ import { etiquetaK4, type EtiquetaK4 } from './eco-columnas'
 import { MAX_DATA_ROWS } from '../schema'
 import { construirPipeline, PIPE_TABS, type PipelineVista, type PipeTab } from './pipeline'
 import { construirTabulador, type TabuladorVista } from './pipeline-tabulador'
+import type { BandejaVista } from './pipeline-bandeja-gemini'
 import { leerTabla, mapear, type Bloque, type Fila } from './tabla'
 
 export type { Bloque, Fila } from './tabla'
@@ -290,10 +291,12 @@ export interface EcoVista {
   tabulador: TabuladorVista
   /** Nombre de PRODUCTS por ID de idea, para «ID · nombre» en /eco y /eco/pipeline (ORD-POS-135). */
   nombres: Map<string, string>
+  /** Bandeja de Gemini (ORD-POS-155): `apagada` sin ECO_BANDEJA_GEMINI=true (entonces ni se lee la pestaña). */
+  bandejaGemini: BandejaVista
 }
 
 /** Cada bloque resuelve su propio estado (diseño §4): un bloque con problema no impide pintar los demás. */
-export function construirEco(raw: EcoRaw, now: number): EcoVista {
+export function construirEco(raw: EcoRaw, now: number, bandejaGemini: BandejaVista = { estado: 'apagada' }): EcoVista {
   const nombres = nombresIdeas(raw.PRODUCTS)
   return {
     corridas: corridas(raw.AMZ_CORRIDAS, now),
@@ -304,5 +307,6 @@ export function construirEco(raw: EcoRaw, now: number): EcoVista {
     pipeline: construirPipeline(raw, now),
     tabulador: construirTabulador(raw),
     nombres,
+    bandejaGemini,
   }
 }

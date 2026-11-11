@@ -15,12 +15,14 @@ export async function handleEcoWrite(
   operacion: string,
   run: (service: EcoPipelineWriteService, body: unknown, ctx: EcoContext) => Promise<EcoResultado>,
   creado = 201,
+  habilitada?: (env: NodeJS.ProcessEnv) => boolean,
 ) {
   const { status, body } = await ecoPipelineWrite(request, {
     sessionEmail: async () => (await getServerSession(authOptions))?.user?.email ?? null,
     env: process.env,
     limiter: ecoPipelineRateLimiter(),
     service: () => ecoPipelineWriteService(),
+    habilitada,
   }, operacion, run, creado)
   return NextResponse.json(body, { status, headers: HEADERS })
 }

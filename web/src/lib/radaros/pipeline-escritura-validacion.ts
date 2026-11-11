@@ -187,6 +187,16 @@ export const CAMPOS = {
   'eco.cotizacion.pedir': [id('productoId', 'PRODUCTO_ID', 'PRD', true), id('proveedorId', 'PROVEEDOR_ID', 'PRV', true)],
   'eco.embarque.crear': [id('productoId', 'PRODUCTO_ID', 'PRD', true), id('cotizacionId', 'COTIZACION_ID', 'COT', true), ...EMBARQUE_COMUNES],
   'eco.embarque.editar': [lista('estado', 'ESTADO', ESTADOS_EMBARQUE, true), fecha('fechaLlegada', 'FECHA_LLEGADA'), ...EMBARQUE_COMUNES],
+  /**
+   * ORD-POS-155 (§18.3): «Confirmar» de la bandeja de Gemini. Una fila COTIZACION lleva los campos del alta de cotización
+   * más la evidencia; una fila PROVEEDOR, los del alta de proveedor. El servicio escribe con las mismas operaciones.
+   */
+  'eco.bandeja.cotizacion': [
+    id('productoId', 'PRODUCTO_ID', 'PRD', true), id('proveedorId', 'PROVEEDOR_ID', 'PRV', true),
+    lista('estado', 'ESTADO', ESTADOS_ALTA_COTIZACION), fecha('fechaRecibida', 'FECHA_RECIBIDA'),
+    PRECIO_POR_CAMPO, ...COTIZACION_COMUNES.slice(0, -1), ...COTIZACION_TABULADOR, EVIDENCIA_URL, notas,
+  ],
+  'eco.bandeja.proveedor': PROVEEDOR_ALTA,
 } as const satisfies Record<string, readonly Campo[]>
 
 export type EcoCampoOperacion = keyof typeof CAMPOS
@@ -397,8 +407,47 @@ export function parseMover(input: unknown): MoverComando {
   return { requestId: rid, expectedVersion, expectedEtapa, etapa: destino, motivo }
 }
 
+/** ORD-POS-155 (§18.3): cuerpo de «Confirmar» de la bandeja; `tipo` dice con qué campos se lee el resto. */
+export interface BandejaConfirmar {
+  tipo: 'PROVEEDOR' | 'COTIZACION'
+  cmd: EcoComando
+}
+
+export function parseBandejaConfirmar(input: unknown): BandejaConfirmar {
+  const body = asObject(input)
+  const tipo = body.tipo
+  if (tipo !== 'PROVEEDOR' && tipo !== 'COTIZACION') throw new OperationError('validacion', { fields: { tipo: 'Uno de: PROVEEDOR, COTIZACION.' } })
+  const resto = { ...body }
+  delete resto.tipo
+  const cmd = parseEco(tipo === 'PROVEEDOR' ? 'eco.bandeja.proveedor' : 'eco.bandeja.cotizacion', resto)
+  // Criterio 4: ningún texto confirmado lleva correos ni teléfonos (NOTAS de la cotización incluida).
+  const fields: Fields = {}
+  for (const c of CAMPOS[tipo === 'PROVEEDOR' ? 'eco.bandeja.proveedor' : 'eco.bandeja.cotizacion']) {
+    const v = cmd.valores[c.columna]
+    if (c.tipo.k === 'texto' && typeof v === 'string' && pareceContacto(v)) fields[c.clave] = 'Sin correos ni teléfonos de personas.'
+  }
+  if (Object.keys(fields).length) throw new OperationError('validacion', { fields })
+  return { tipo, cmd }
+}
+
+/** ORD-POS-155 (§18.3): «Rechazar» pide un motivo de una línea (1 a 300 caracteres, sin correos ni teléfonos). */
+export function parseBandejaRechazar(input: unknown): { requestId: string; motivo: string } {
+  const body = asObject(input)
+  permitidos(body, ['requestId', 'motivo'])
+  const fields: Fields = {}
+  const rid = requestId(body, fields)
+  let motivo = ''
+  if (typeof body.motivo !== 'string' || cleanText(body.motivo, false) === '') fields.motivo = 'Obligatorio: una línea con el motivo.'
+  else {
+    motivo = textoLimpio(body.motivo, 300, false, fields, 'motivo')
+    if (!fields.motivo && pareceContacto(motivo)) fields.motivo = 'Sin correos ni teléfonos de personas.'
+  }
+  if (Object.keys(fields).length) throw new OperationError('validacion', { fields })
+  return { requestId: rid, motivo }
+}
+
 /** ID de la ruta (`/productos/<PRODUCTO_ID>`); uno mal formado es 404, como uno inexistente. */
-export function parseIdRuta(prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB', raw: string): string {
+export function parseIdRuta(prefijo: 'PRD' | 'PRV' | 'COT' | 'EMB' | 'BAN', raw: string): string {
   let v: string
   try {
     v = decodeURIComponent(raw)
