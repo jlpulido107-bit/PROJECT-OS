@@ -217,7 +217,7 @@ Para registrar como BORRADOR cuando se fusione la ORD-ECO-008; no se crea desde 
 
 - **Título:** «/eco: vista de solo lectura de RADAROS, inerte sin `RADAROS_SHEET_ID`».
 - **Riesgo:** MEDIO (DEC-POS-014): toca la lectura de una hoja más, pero sin escritura ni cambios de permisos en
-  tiempo de ejecución. Revisión completa a ciegas, delta tras corrección y segundo revisor Fable 5.1 (DEC-POS-008).
+  tiempo de ejecución. Revisión completa a ciegas, delta tras corrección y segundo revisor (DEC-POS-008).
 - **Objetivo:** construir /eco según este documento, apagada mientras el propietario no ponga la variable.
 - **Criterios:**
   1. `radarosSheetId(env)` en `web/src/lib/config.ts`: devuelve `null` sin variable, vacía, con formato no válido o

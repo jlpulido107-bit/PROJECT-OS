@@ -81,7 +81,7 @@ DEC-POS-008 retiró el muestreo de 1 de cada 5 y toda auditoría externa.
 | --- | --- | --- |
 | BAJO | Revisor Claude a ciegas, con modelo distinto al que implementó | Sí, hasta 2 rondas |
 | BAJO solo documentación | Sin revisor automático | — |
-| MEDIO | Revisión completa a ciegas (Sonnet); tras cada corrección, re-revisión del delta; si la orden es sensible, segundo revisor (Fable 5.1, o gemini-supervisado) antes de fusionar | Hasta 2 rondas y luego escala |
+| MEDIO | Revisión completa a ciegas (Sonnet); tras cada corrección, re-revisión del delta; si la orden es sensible, segundo revisor (de otra familia que el implementador y el primer revisor, o gemini-supervisado) antes de fusionar | Hasta 2 rondas y luego escala |
 | ALTO | No se delega tal cual (DEC-POS-014): se descompone en una orden MEDIO de código inerte por defecto más la activación del propietario; si no se puede, va en vivo con el propietario y se registra en DECISIONES | — (la orden MEDIO sigue su fila) |
 
 **Carril ALTO (DEC-POS-014).** ALTO es el código que cambia en tiempo de ejecución la autorización o los permisos de
@@ -108,14 +108,15 @@ DEC-POS-019 y DEC-POS-022 (ORD-POS-100 en el código, ORD-POS-099 en la skill y 
 ORDENES_CODEX ([migración](migracion-ordenes-codex.md#columna-sensible-dec-pos-019)) decide si un MEDIO necesita
 segundo revisor: con `NO`, un CONFORME de `PRIMERO` o `DELTA` basta para «Listo para tu decisión»; vacía, ausente o
 `SI` = sensible, y sigue exigiendo un `SEGUNDO` CONFORME de otro modelo sobre el mismo head. El `SEGUNDO` puede ser:
-- de origen `claude` (o sin origen): su modelo, de otra familia que la del `PRIMERO` o `DELTA`;
+- de origen `claude` (o sin origen): su modelo, de otra familia que la del `PRIMERO` o `DELTA` y que la del
+  implementador;
 - de origen `gemini-supervisado`: los hallazgos los produce Gemini (`modeloHallazgos`, de otra familia que la del
   `PRIMERO` o `DELTA`) y una sesión de Claude los confirma o descarta uno por uno con evidencia (`hallazgosGemini`) y
-  firma; el firmante no es de la familia del implementador (`FAMILIA_IMPLEMENTADOR` de
+  firma; el firmante tampoco es de la familia del implementador (`FAMILIA_IMPLEMENTADOR` de
   [`politica.ts`](../web/src/lib/supervision/politica.ts), fuente única; [operación](operacion.md#roles-y-modelos)).
 
-«Otro modelo» se compara por familia (Opus, Sonnet, Haiku, Fable, Gemini), nunca por el texto libre de `modelo`: un
-sufijo distinto del mismo modelo o un nombre inventado no cuentan, y el `PRIMERO` o `DELTA` tiene que ser de Claude.
+«Otro modelo» se compara por familia (la que da `familiaModelo` de `politica.ts`), nunca por el texto libre de `modelo`: un
+sufijo distinto del mismo modelo (incluido `[1m]`) o un nombre inventado no cuentan, y el `PRIMERO` o `DELTA` tiene que ser de Claude.
 La vía `gemini-supervisado` está **apagada por defecto** (DEC-POS-014): cuenta solo con `SEGUNDO_GEMINI_SUPERVISADO=on`,
 que activa el propietario ([escritura §6](escritura-v1-8.md)); sin ella, /ordenes y REVISAR la tratan como si no hubiera
 `SEGUNDO`. Formato:
@@ -123,20 +124,22 @@ que activa el propietario ([escritura §6](escritura-v1-8.md)); sin ella, /orden
 skill [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md): lee la revisión de Gemini en un PR sombra
 del mismo head, verifica cada hallazgo, agrega los bloqueantes que Gemini no vio y firma; si Gemini no dejó hallazgos,
 no hay `SEGUNDO` gemini-supervisado y va el de origen `claude`. «Otro modelo» no se aplica a ciegas: el `SEGUNDO`, de
-cualquier origen, nunca es de la familia del implementador (`FAMILIA_IMPLEMENTADOR`) ni de la del `PRIMERO` o `DELTA`.
+cualquier origen, nunca es de la familia del implementador (`FAMILIA_IMPLEMENTADOR`) ni de la del `PRIMERO` o `DELTA`,
+y el código lo hace cumplir en las dos vías (DEC-POS-035, ORD-POS-161).
 
 **Fechas de transición (ORD-POS-099; [prueba Gemini §5 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)).**
 
 | Periodo | `SEGUNDO` que cuenta en MEDIO sensible | Supervisor gemini-supervisado |
 | --- | --- | --- |
-| Hasta el 2026-10-26 | Fable 5.1 | — |
-| 2026-10-27 a 2026-11-02 (medición, 1 semana) | Fable 5.1 | En paralelo, modo medición: publica en el PR sombra y no cuenta |
+| Hasta el 2026-10-26 | `SEGUNDO` de origen `claude` | — |
+| 2026-10-27 a 2026-11-02 (medición, 1 semana) | `SEGUNDO` de origen `claude` | En paralelo, modo medición: publica en el PR sombra y no cuenta |
 | Desde el 2026-11-03, **solo si** el propietario encendió `SEGUNDO_GEMINI_SUPERVISADO` y la tabla de la prueba no muestra bloqueantes reales que Gemini y el supervisor no vieron | gemini-supervisado (rutina `PROJECT-OS · supervisar Gemini`, Sonnet) | Modo operación: publica en el PR de la orden |
-| Si falla cualquiera de esas condiciones, o al volver | Fable 5.1 (la rutina no se borra) | Se apaga la bandera |
+| Si falla cualquiera de esas condiciones, o al volver | `SEGUNDO` de origen `claude` (la rutina no se borra) | Se apaga la bandera |
 
-Retirar a Fable lo decide el propietario; esta tabla es la recomendación del PM. La tabla es de cuando implementaba
-Opus: donde dice «Fable 5.1» vale hoy el `SEGUNDO` de origen `claude` de la [tabla de modelos](operacion.md#roles-y-modelos)
-(ORD-POS-158).
+Esta tabla es histórica: la recomendación del PM durante la prueba, con el implementador y el `SEGUNDO` de entonces.
+Donde nombra un modelo como `SEGUNDO` vale hoy el `SEGUNDO` de origen `claude` de la
+[tabla de modelos](operacion.md#roles-y-modelos): cualquier familia de Claude que no sea la del implementador
+(`FAMILIA_IMPLEMENTADOR`) ni la del `PRIMERO` o `DELTA` (ORD-POS-158, ORD-POS-161).
 
 ## Qué se puede delegar
 

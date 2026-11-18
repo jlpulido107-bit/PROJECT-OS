@@ -18,7 +18,7 @@ Todo dato lleva su fuente; lo no verificado va como **hipótesis**. Historial (f
 - **DEC-POS-016**: escritura en NOTAS ([`notas.md`](notas.md)).
 - **DEC-POS-017**: cuándo se despliega ([operación](operacion.md#cuándo-se-despliega-dec-pos-017-aprobada)).
 - **DEC-POS-018**: agente de finanzas por cortes, días 15 y fin de mes ([`diseno-finanzas-v3.md`](diseno-finanzas-v3.md), [#219](https://github.com/jlpulido107-bit/PROJECT-OS/pull/219), [#220](https://github.com/jlpulido107-bit/PROJECT-OS/pull/220)).
-- **DEC-POS-019**: Fable como SEGUNDO solo en MEDIO sensible; SENSIBLE vacía = sensible ([#234](https://github.com/jlpulido107-bit/PROJECT-OS/pull/234)).
+- **DEC-POS-019**: SEGUNDO solo en MEDIO sensible; SENSIBLE vacía = sensible ([#234](https://github.com/jlpulido107-bit/PROJECT-OS/pull/234)).
 - **DEC-POS-020**: prueba de Gemini hasta el 2026-11-02 ([`prueba-gemini.md`](prueba-gemini.md), [#230](https://github.com/jlpulido107-bit/PROJECT-OS/pull/230)).
 - **DEC-POS-021**: Gemini supervisado como SEGUNDO desde el 2026-11-03 ([§8](prueba-gemini.md)).
 - **DEC-POS-022**: origen gemini-supervisado en el código, apagado sin `SEGUNDO_GEMINI_SUPERVISADO` ([escritura §6](escritura-v1-8.md), [#237](https://github.com/jlpulido107-bit/PROJECT-OS/pull/237)).
@@ -38,7 +38,8 @@ Todo dato lleva su fuente; lo no verificado va como **hipótesis**. Historial (f
   ORD-ECO-018 (Descubrir) y ORD-ECO-019 (camino B) (PM, orden ORD-POS-119, 2026-10-30). **Hipótesis:** sin issue en RADAROS hoy.
 - Hitos POS-H1, POS-H2, SIG-H1 y SIG-H2: COMPLETADO (PM, orden ORD-POS-119, 2026-10-30).
 - Pipeline real (PM, hoja, 2026-10-29): PRD-0003 (EC-006) en COTIZANDO con 3 cotizaciones SOLICITADA.
-- Modelos: implementa y corrige Opus, revisa Sonnet, SEGUNDO Fable 5.1 o gemini-supervisado ([operación](operacion.md)).
+- Modelos: implementa y corrige la familia de `FAMILIA_IMPLEMENTADOR` (`politica.ts`), revisa Sonnet, SEGUNDO de otra
+  familia que ambos o gemini-supervisado ([operación](operacion.md#roles-y-modelos)).
 - Riesgo conocido: la reserva supone una sola instancia (`maxScale: 1`) ([migración](migracion-supervision.md)).
 
 ## Siguiente

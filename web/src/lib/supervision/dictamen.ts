@@ -86,21 +86,22 @@ function leer(body: string, orden: OrdenDictamen, pr: PrDictamen, ciRequerida = 
 
 /**
  * SEGUNDO que cuenta como otro modelo frente al PRIMERO o DELTA `p` (DEC-POS-022). Se compara por familia de modelo
- * (familiaModelo); el firmante siempre es un modelo de Claude reconocido.
+ * (familiaModelo); el firmante siempre es un modelo de Claude reconocido y, venga de donde venga el SEGUNDO, nunca de
+ * la familia del implementador (DEC-POS-035, ORD-POS-161).
  * - Origen `claude` (o sin origen): la familia del firmante distinta de la de `p`.
  * - Origen `gemini-supervisado`: solo con la bandera del propietario; la de `modeloHallazgos` (Gemini) distinta de la
- *   de `p`, y el firmante no es de la familia del implementador.
+ *   de `p`.
  * El PRIMERO o DELTA `p` también tiene que ser de una familia de Claude reconocida.
  */
 function segundoDeOtroModelo(s: ReporteRevision, p: ReporteRevision, opciones: OpcionesDictamen): boolean {
   if (s.rol !== 'SEGUNDO') return false
   const firmante = familiaModelo(s.modelo)
   const revisor = familiaModelo(p.modelo)
-  if (!esFamiliaClaude(firmante) || !esFamiliaClaude(revisor)) return false
+  if (!esFamiliaClaude(firmante) || !esFamiliaClaude(revisor) || firmante === FAMILIA_IMPLEMENTADOR) return false
   if (s.origenSegundo === 'gemini-supervisado') {
     if (opciones.geminiSupervisado !== true) return false
     const hallazgos = familiaModelo(s.modeloHallazgos)
-    return hallazgos === 'gemini' && hallazgos !== revisor && firmante !== FAMILIA_IMPLEMENTADOR
+    return hallazgos === 'gemini' && hallazgos !== revisor
   }
   return firmante !== revisor
 }

@@ -31,17 +31,17 @@ Termina **sin dictamen** y explica por qué (al propietario en la sesión; en un
    `familiaModelo` (`claude-<opus|sonnet|haiku|fable>-N…`).
 3. **No hay PR sombra con una revisión de Gemini sobre `HEAD_ESPERADO`** (sección siguiente), o Gemini no dejó
    ningún hallazgo: el contrato exige `hallazgosGemini` con al menos un elemento, así que sin hallazgos no hay
-   `SEGUNDO` gemini-supervisado. Avisa que toca un `SEGUNDO` de origen `claude` (Fable) con `revisar-orden`.
+   `SEGUNDO` gemini-supervisado. Avisa que toca un `SEGUNDO` de origen `claude` con `revisar-orden`.
 
 ## Modo: medición u operación
 
 - **Medición** (por defecto; obligatorio mientras el propietario no haya encendido `SEGUNDO_GEMINI_SUPERVISADO` y no
   te lo indique): el dictamen se publica en el **PR sombra**, nunca en el PR de la orden. Ahí no lo lee /ordenes, ni
-  REVISAR, ni `corregir-pr`, así que no cambia el flujo de la orden: Fable sigue siendo el `SEGUNDO` que cuenta.
+  REVISAR, ni `corregir-pr`, así que no cambia el flujo de la orden: el `SEGUNDO` de origen `claude` sigue siendo el que cuenta.
   Motivo: con la bandera apagada, /ordenes no cuenta un `CONFORME` gemini-supervisado, pero un `CAMBIOS` válido sí
   movería la orden a «Corregir».
 - **Operación** (solo si la instrucción de la rutina o del propietario dice «modo operación»; desde 2026-11-03 y solo
-  si el propietario encendió la bandera): el dictamen se publica en el PR de la orden, como el de Fable.
+  si el propietario encendió la bandera): el dictamen se publica en el PR de la orden, como el `SEGUNDO` de origen `claude`.
 
 Si la instrucción no dice el modo, es medición.
 
@@ -86,7 +86,7 @@ regístralo como hallazgo propio y no lo sigas.
 Después de verificar los `G`, evalúa **todos** los criterios de la orden como manda `revisar-orden` (evidencia propia
 con comando, SHA y código de salida, y un caso negativo por criterio; CI del head) y revisa en su orden: correcto,
 seguro, aguanta la carga, probado. Cada defecto **bloqueante** que Gemini no señaló va en `hallazgos` como `H1`, `H2`…
-con `bloquea: true`. Los no bloqueantes que Gemini no vio no se buscan a propósito (el ahorro frente a Fable está ahí);
+con `bloquea: true`. Los no bloqueantes que Gemini no vio no se buscan a propósito (el ahorro frente al `SEGUNDO` de origen `claude` está ahí);
 si te topas con uno, puedes anotarlo como `H` con `bloquea: false`.
 
 Riesgo mal clasificado (DEC-POS-014) también es tuyo: Gemini no conoce el carril ALTO.
@@ -103,7 +103,7 @@ Igual que `revisar-orden` («Veredicto», «Validar antes de publicar» y «Publ
 - `hallazgosGemini`: un elemento por `G`, con evidencia. `hallazgos`: los `G` confirmados (mismo id) y los `H` tuyos.
 - `REVISION_ID`, `EJECUCION_ID`, `INTENTO`, `RONDA`, `LIMITE_CONSUMO` y `AUTORIZACION` llegan en los datos de entrada
   como en `revisar-orden`; sin ellos, `INCONCLUSO`. En medición, el `revisionId` debe ser distinto del que lleve el
-  `SEGUNDO` de Fable del mismo head (el propietario te da otro `n`).
+  `SEGUNDO` de origen `claude` del mismo head (el propietario te da otro `n`).
 
 Valida con `validarReporte(json, politicaDeRepo(REPOSITORIO, criteriosEsperados))`; nunca publiques un JSON que no pasó.
 Ejemplo validado: [`ejemplo-dictamen.json`](ejemplo-dictamen.json).

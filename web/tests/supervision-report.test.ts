@@ -68,7 +68,9 @@ describe('rechazos de forma (criterio 1)', () => {
     expect(errores(v2((r) => { delete r.rol })).some((e) => e.startsWith('rol:'))).toBe(true)
     expect(errores(v2((r) => { delete r.modelo })).some((e) => e.startsWith('modelo:'))).toBe(true)
     expect(errores(v2((r) => { r.rol = 'TERCERO' })).some((e) => e.startsWith('rol:'))).toBe(true)
-    for (const m of ['', 'Claude Sonnet', 'a', 42]) expect(errores(v2((r) => { r.modelo = m })).some((e) => e.startsWith('modelo:'))).toBe(true)
+    for (const m of ['', 'Claude Sonnet', 'a', 42, 'claude-opus-5-5[2m]', 'claude-opus-5-5[1m][1m]', '[1m]']) expect(errores(v2((r) => { r.modelo = m })).some((e) => e.startsWith('modelo:'))).toBe(true)
+    // ORD-POS-161: el sufijo [1m] del identificador de la sesión es válido.
+    expect(validarReporte(v2((r) => { r.modelo = 'claude-opus-5-5[1m]' }), POL).ok).toBe(true)
   })
   it.each(['versionContrato', 'versionPolitica', 'ordenId', 'tareaId', 'proyectoId', 'repo', 'issue', 'pr', 'headSha', 'baseSha',
     'hashCriterios', 'revisionId', 'ejecucionId', 'intento', 'ronda', 'autorizacion', 'limiteConsumo', 'criterios', 'evidencia', 'hallazgos', 'veredicto',
