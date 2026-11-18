@@ -29,6 +29,7 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   citado y su fecha puede aprobar y enviar órdenes (nunca de riesgo ALTO) y marcar REVISADA con un dictamen válido del
   head actual; CERRADA y CANCELADA siguen siendo del propietario. Nadie escribe en Sheets con el conector. Un solo escritor.
   DEC-ECO-007 amplía 005 y 011 al libro de RADAROS solo para `idea.alta` con «sí PAQ» verificado: filas nuevas de PRODUCTS (A a P) y SCORING (A a L), nunca filas existentes, fórmulas de SCORING (M en adelante) ni otras pestañas, y apagada sin `ECO_IDEAS_ALTA=true`, que pone solo el propietario.
+  DEC-ECO-017 (APROBADA, 2026-11-18; ORD-POS-160) añade a `idea.alta`, con la misma bandera y el mismo «sí PAQ», una fila nueva en AMZ_IDEA_ASIN y otra en AMZ_NICHO ([escritura §9.1](docs/escritura-v1-8.md)).
   REVISADA exige CONFORME según DEC-POS-011: de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el
   mismo head. MEDIO no sensible (columna SENSIBLE = NO) basta con PRIMERO o DELTA; vacía = sensible (DEC-POS-019). Un
   SEGUNDO gemini-supervisado (DEC-POS-022) mide «otro modelo» con el de los hallazgos (Gemini) y lo firma una sesión de

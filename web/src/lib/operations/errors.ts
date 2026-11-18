@@ -76,6 +76,7 @@ export type OperationErrorCode =
   | 'idea-fila-ocupada'
   | 'scoring-sin-formulas'
   | 'idea-sin-calculo'
+  | 'idea-asin-en-otra-idea'
   | 'migracion-pendiente'
   | 'version-faltante'
   | 'semana-inexistente'
@@ -163,6 +164,7 @@ const STATUS: Record<OperationErrorCode, number> = {
   'idea-fila-ocupada': 409,
   'scoring-sin-formulas': 409,
   'idea-sin-calculo': 409,
+  'idea-asin-en-otra-idea': 409,
   'migracion-pendiente': 422,
   'version-faltante': 409,
   'semana-inexistente': 422,
@@ -247,10 +249,11 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'bandeja-bloqueada': 'La fila de la bandeja de Gemini tiene una fórmula o un correo o teléfono (detalle: columnas); corrígela en la hoja. No se escribió nada.',
   'cotizacion-duplicada': 'Ya hay una cotización igual en PIPE_COTIZACIONES (producto, proveedor, incoterm, precio y moneda; detalle: id). No se escribió nada.',
   'instrucciones-sin-columna': 'La pestaña TAREAS aún no tiene la columna INSTRUCCIONES (la añade el propietario con la migración); quita las instrucciones o espera la migración. No se escribió nada.',
-  'idea-encabezados-distintos': 'Los encabezados de PRODUCTS (A a P) o de SCORING (A a L) del libro de RADAROS no son los esperados (detalle: columnas); no se escribió nada.',
+  'idea-encabezados-distintos': 'Los encabezados de PRODUCTS (A a P) o de SCORING (A a L) del libro de RADAROS no son los esperados, o a AMZ_IDEA_ASIN o AMZ_NICHO les falta (o tienen repetida) una columna requerida (detalle: columnas); no se escribió nada.',
   'idea-fila-ocupada': 'La primera fila con PRODUCT_ID vacío en PRODUCTS tiene otros datos; no se editan filas existentes. No se escribió nada.',
   'scoring-sin-formulas': 'La fila nueva de SCORING no tiene las fórmulas M a P copiadas (las prepara el propietario a mano); no se escribió nada, tampoco en PRODUCTS.',
   'idea-sin-calculo': 'La idea se escribió, pero la columna M de su fila de SCORING quedó sin valor; revisa las fórmulas de SCORING.',
+  'idea-asin-en-otra-idea': 'Ese ASIN ya está en AMZ_IDEA_ASIN con otra idea (detalle: fila); no se editan filas existentes. No se escribió nada.',
   'migracion-pendiente': 'La hoja aún no tiene la migración que pide esta operación (la aplica el propietario, docs/escritura-v1-8.md §11.2). No se escribió nada.',
   'version-faltante': 'La fila no tiene VERSION (o no es un entero): escribe 1 en la hoja, según la migración, antes de editarla. No se escribió nada.',
   'semana-inexistente': 'Esa semana no tiene fila en CAPACIDAD_SEMANAL: no hay nada que editar. Recarga la vista.',

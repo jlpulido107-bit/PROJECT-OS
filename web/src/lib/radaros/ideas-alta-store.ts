@@ -1,5 +1,5 @@
 import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
-import { ANCHO, assertFila, assertIdeasTab, type Celda, type IdeasAltaStore, type IdeasTab } from './ideas-alta'
+import { assertFila, assertIdeasTab, type Celda, type IdeasAltaStore, type IdeasTab } from './ideas-alta'
 import { letraColumna } from './pipeline-escritura-store'
 
 /**
@@ -7,10 +7,12 @@ import { letraColumna } from './pipeline-escritura-store'
  * un endpoint de escritura de Sheets. Recibe un `spreadsheetId` fijo al construirse (ideas-alta-runtime.ts, siempre
  * RADAROS_SHEET_ID) y nunca uno por petición.
  *
- * - Lista CERRADA de pestañas: PRODUCTS y SCORING; cualquier otra lanza un error de programación antes de pedir el token.
+ * - Lista CERRADA de pestañas: PRODUCTS, SCORING y, por DEC-ECO-017 (ORD-POS-160), AMZ_IDEA_ASIN y AMZ_NICHO; cualquier
+ *   otra lanza un error de programación antes de pedir el token.
  * - Una sola forma de escribir: batchUpdate de valores con UN rango `A<n>:P<n>` (PRODUCTS) o `A<n>:L<n>` (SCORING), con
- *   exactamente ese ancho. Así nunca se escribe en las fórmulas de SCORING (M en adelante). Sin append: la fila nueva
- *   de SCORING ya existe con sus fórmulas.
+ *   exactamente ese ancho (`assertFila`). Así nunca se escribe en las fórmulas de SCORING (M en adelante). Sin append:
+ *   la fila nueva de SCORING ya existe con sus fórmulas. En AMZ_*, UN rango de UNA fila desde A con el ancho del
+ *   encabezado (3 a 52 celdas); que esa fila sea nueva y esté al final lo decide ideas-alta.ts antes de llamar.
  * - Solo valueInputOption=RAW (nunca evalúa fórmulas). Nunca lee ni propaga el cuerpo de un error.
  */
 
@@ -69,7 +71,7 @@ export class IdeasSheetsStore implements IdeasAltaStore {
   async writeRow(tab: IdeasTab, fila: number, celdas: Celda[]): Promise<void> {
     assertIdeasTab(tab)
     assertFila(tab, fila, celdas)
-    const range = `${quoteTab(tab)}!A${fila}:${letraColumna(ANCHO[tab] - 1)}${fila}`
+    const range = `${quoteTab(tab)}!A${fila}:${letraColumna(celdas.length - 1)}${fila}`
     await this.call('POST', '/values:batchUpdate', { valueInputOption: 'RAW', data: [{ range, majorDimension: 'ROWS', values: [celdas] }] })
   }
 }

@@ -347,6 +347,45 @@ El código es inerte por defecto y solo el propietario lo activa.
 - **Apagada (por defecto).** Sin `ECO_IDEAS_ALTA=true` exacto, 403 `operacion-no-permitida` sin leer el cuerpo. Con la
   bandera pero sin la escritura del pipeline activa o sin la de PROJECT-OS en `sheets`, 403 `escritura-deshabilitada`.
 
+### 9.1 Enlace de Amazon y palabra de búsqueda (ORD-POS-160, DEC-ECO-017)
+
+DEC-ECO-017 (APROBADA en DECISIONES, leída por el PM el 2026-11-18): con un «sí PAQ» verificado, `idea.alta` puede
+agregar además una fila nueva en `AMZ_IDEA_ASIN` y otra en `AMZ_NICHO`, para que la idea sea medible desde el alta.
+Misma ruta, mismo token, misma bandera: sin `ECO_IDEAS_ALTA=true` exacto sigue apagada (403 sin leer el cuerpo).
+
+- **Cuerpo (opcional).** `enlaceAmazon` **o** `asin` (uno solo), siempre con `palabraClave` (200, una línea). Van juntos
+  o no va ninguno; sin ellos el alta es exactamente la de arriba y no lee ni escribe `AMZ_*`.
+- **ASIN.** Sale del enlace solo si es `https://` (o `http://`) con host `amazon.com.mx` o `www.amazon.com.mx`, sin
+  puerto ni usuario, y la ruta trae `/dp/<ASIN>` o `/gp/product/<ASIN>` con 10 caracteres en mayúsculas o dígitos (la
+  regla `esAsin` de RADAROS). Otro dominio (`amazon.com`, `a.co`, `amzn.to`), una búsqueda, dos ASIN distintos en la
+  ruta u otra forma: 422 con el error en `enlaceAmazon` y cero lecturas y escrituras
+  (`web/src/lib/radaros/idea-amazon.ts`).
+- **Filas.** Las columnas se ubican por su encabezado (fila 1), cada una exactamente una vez; las demás columnas de la
+  fila nueva quedan vacías (`NOTA`, `ALTA_FECHA` u otras):
+  - `AMZ_IDEA_ASIN`: `IDEA_ID` = el `EC-NNN` nuevo, `ASIN`, `ACTIVO` = `SI`, `PRINCIPAL` = `SI`, `ORIGEN` = `POS`;
+  - `AMZ_NICHO`: `ID` = el `EC-NNN` nuevo, `PALABRA_CLAVE`, `ACTIVO` = `SI`.
+- **Antes de escribir** (si algo falla no se escribe nada, tampoco `PRODUCTS`, `SCORING` ni la auditoría):
+  - falta una columna requerida, está repetida o la pestaña está vacía: 409 `idea-encabezados-distintos` (detalle: la
+    pestaña y los nombres de columna);
+  - el ASIN ya está en `AMZ_IDEA_ASIN` con otra idea, activo o no: 409 `idea-asin-en-otra-idea` (detalle: fila);
+  - la fila nueva es la siguiente a la última con contenido (también cuenta una fórmula); nunca una intermedia. Con
+    5000 filas de datos o más: 503 `pestana-llena`.
+- **Escritura.** Después de `PRODUCTS` y `SCORING`: un rango de una fila desde A con el ancho del encabezado, en `RAW`,
+  en `AMZ_IDEA_ASIN` y luego en `AMZ_NICHO`. La lista de pestañas del almacén sigue cerrada (`PRODUCTS`, `SCORING`,
+  `AMZ_IDEA_ASIN`, `AMZ_NICHO`): ninguna `PIPE_*` ni otra `AMZ_*`, y `SCORING` nunca más allá de A:L.
+- **Verificación.** Relee las dos pestañas: cada fila está una sola vez y como se planeó; si no, 409
+  `verificacion-fallida`. Riesgo conocido: si el motor de RADAROS (Apps Script) anexa una fila en la misma posición
+  entre la relectura y la escritura, la verificación lo detecta pero no lo evita.
+- **Auditoría e idempotencia.** La misma operación auditada (`ENTIDAD=PRODUCTS`, `REGISTRO_ID=EC-NNN`), con una fila
+  más por celda: `AMZ_IDEA_ASIN!<columna>` y `AMZ_NICHO!<columna>`. El mismo `requestId` no duplica ninguna fila y, si
+  quedó a medias, completa solo lo que falta; una fila de la idea que ya exista distinta de lo auditado no se corrige
+  (409 `estado-divergente`): nunca se editan filas existentes. El mismo `requestId` con otro enlace, ASIN o palabra:
+  409 `conflicto-idempotencia`.
+- **Formulario «Idea rápida».** `web/src/components/eco/idea-rapida.tsx` (`<IdeaRapida />`, sin props): nombre, enlace
+  y palabra de búsqueda. **No escribe** ni llama a ninguna ruta: valida en el navegador con la misma regla del enlace
+  y genera una tarjeta de texto para pegar en POS · Ideas, que la pasa al PM en un paquete. Se monta con esa sola línea
+  en la página de ORD-POS-159; mientras esa página no esté en `main`, el componente no está montado en ninguna página.
+
 ### Activar (solo el propietario, en Cloud Shell)
 
 Requisitos: la imagen que trae ORD-POS-131 desplegada, `WRITE_MODE=sheets` con el token del PM (§6) y la escritura del
