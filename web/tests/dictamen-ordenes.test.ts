@@ -3,6 +3,7 @@ import { dictamenDeOrden, limpiarCacheDictamenes, urlComentario } from '@/lib/op
 import { createGitHubClient } from '@/lib/operations/github'
 import { extraerCriterios } from '@/lib/supervision/criterios'
 import { MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
+import { FAMILIA_IMPLEMENTADOR, familiaModelo } from '@/lib/supervision/politica'
 
 /** Dictamen vigente en /ordenes (ORD-POS-035) con un GitHub simulado: sin red. */
 
@@ -95,13 +96,32 @@ describe('dictamen vigente por orden', () => {
     ['SEGUNDO firmado con un modelo que no es de Claude', [sonnet, v2('SEGUNDO', 'gemini-2.5-pro', 'R2')], 'Falta segundo revisor'],
     ['PRIMERO con modelo inventado', [v2('PRIMERO', 'revisor-falso', 'R1'), v2('SEGUNDO', 'claude-fable-5-1', 'R2')], 'Falta segundo revisor'],
     ['gemini-supervisado firmado por Sonnet (distinto del implementador)', [sonnet, gemini('claude-sonnet-5-5')], 'Listo para tu decisión'],
-    ['gemini-supervisado firmado por Fable', [sonnet, gemini('claude-fable-5-1')], 'Listo para tu decisión'],
-    ['gemini-supervisado firmado por el implementador (Opus)', [sonnet, gemini('claude-opus-5-5')], 'Falta segundo revisor'],
-    ['gemini-supervisado con modeloHallazgos de Claude', [sonnet, gemini('claude-fable-5-1', 'claude-haiku-5-5')], 'Falta segundo revisor'],
-    ['gemini-supervisado con modeloHallazgos inventado', [sonnet, gemini('claude-fable-5-1', 'gemini-supervisado')], 'Falta segundo revisor'],
+    ['gemini-supervisado firmado por Opus (otra familia de Claude)', [sonnet, gemini('claude-opus-5-5')], 'Listo para tu decisión'],
+    ['gemini-supervisado firmado por Haiku (otra familia de Claude)', [sonnet, gemini('claude-haiku-5-5')], 'Listo para tu decisión'],
+    ['gemini-supervisado firmado por el implementador (Fable 5.2)', [sonnet, gemini('claude-fable-5-2')], 'Falta segundo revisor'],
+    ['gemini-supervisado firmado por otra versión de la familia del implementador', [sonnet, gemini('claude-fable-5-1')], 'Falta segundo revisor'],
+    ['gemini-supervisado firmado por FAMILIA_IMPLEMENTADOR', [sonnet, gemini(`claude-${FAMILIA_IMPLEMENTADOR}-9`)], 'Falta segundo revisor'],
+    ['gemini-supervisado con modeloHallazgos de Claude', [sonnet, gemini('claude-opus-5-5', 'claude-haiku-5-5')], 'Falta segundo revisor'],
+    ['gemini-supervisado con modeloHallazgos inventado', [sonnet, gemini('claude-opus-5-5', 'gemini-supervisado')], 'Falta segundo revisor'],
     ['PRIMERO de Gemini y SEGUNDO de Claude', [v2('PRIMERO', 'gemini-2.5-pro', 'R1'), v2('SEGUNDO', 'claude-sonnet-5-5', 'R2')], 'Falta segundo revisor'],
-    ['gemini-supervisado sobre un PRIMERO de Gemini', [v2('PRIMERO', 'gemini-2.5-pro', 'R1'), gemini('claude-fable-5-1', 'gemini-3-pro')], 'Falta segundo revisor'],
+    ['gemini-supervisado sobre un PRIMERO de Gemini', [v2('PRIMERO', 'gemini-2.5-pro', 'R1'), gemini('claude-opus-5-5', 'gemini-3-pro')], 'Falta segundo revisor'],
   ])('MEDIO sensible con %s: %s (criterios 2 y 5, bandera encendida)', async (_, reportes, paso) => {
+    vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', 'on')
+    expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
+  })
+
+  // ORD-POS-158: la familia del implementador es la de hoy (Fable) y la vía claude sigue comparando solo con el PRIMERO.
+  it('FAMILIA_IMPLEMENTADOR es fable y familiaModelo la reconoce (criterio 1)', () => {
+    expect(FAMILIA_IMPLEMENTADOR).toBe('fable')
+    expect(familiaModelo('claude-fable-5-2')).toBe(FAMILIA_IMPLEMENTADOR)
+  })
+  it.each([
+    ['Fable (familia del implementador)', [sonnet, v2('SEGUNDO', 'claude-fable-5-2', 'R2')], 'Listo para tu decisión'],
+    ['Opus', [sonnet, v2('SEGUNDO', 'claude-opus-5-5', 'R2')], 'Listo para tu decisión'],
+    ['Opus y origen claude explícito', [sonnet, reporte({ versionContrato: '2', rol: 'SEGUNDO', modelo: 'claude-opus-5-5', revisionId: 'R2', origenSegundo: 'claude' })], 'Listo para tu decisión'],
+    ['la familia del PRIMERO', [v2('PRIMERO', 'claude-opus-5-5', 'R1'), v2('SEGUNDO', 'claude-opus-5-1', 'R2')], 'Falta segundo revisor'],
+  ])('vía claude con SEGUNDO de %s: %s, con la bandera apagada o encendida (criterio 4)', async (_, reportes, paso) => {
+    expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
     vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', 'on')
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })

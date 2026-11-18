@@ -26,9 +26,12 @@ Si te llama una rutina o el propietario, no hay nadie a quien preguntar: si algo
 - **Segundo revisor** (solo órdenes MEDIO sensibles, antes de fusionar): revisión completa e independiente. No leas el
   dictamen del primer revisor antes de fijar el tuyo; tu dictamen no lo sustituye ni lo hereda. Tiene dos orígenes
   (DEC-POS-022, `origenSegundo`):
-  - `claude` (Fable 5.1, esta skill): tu modelo, de otra familia que la del `PRIMERO` o `DELTA` y que la del
-    implementador (Opus). Si tu sesión corre en Opus, termina sin dictaminar: aunque /ordenes hoy solo compara con el
-    `PRIMERO` o `DELTA`, la familia que implementa y corrige no firma el `SEGUNDO` de ningún origen.
+  - `claude` (esta skill): tu modelo nunca es de la familia del implementador ni de la del `PRIMERO` o `DELTA`. La
+    familia del implementador es la constante `FAMILIA_IMPLEMENTADOR` de
+    [`politica.ts`](../../../web/src/lib/supervision/politica.ts) (fuente única; léela en el checkout, no la supongas).
+    Si la familia de tu sesión es esa, termina sin dictaminar: aunque /ordenes hoy solo compara con el `PRIMERO` o
+    `DELTA`, la familia del implementador no firma el `SEGUNDO` de ningún origen. Cualquier otra familia de Claude
+    distinta de la del `PRIMERO` o `DELTA` sí dictamina.
   - `gemini-supervisado`: sigue [`supervisar-gemini`](../supervisar-gemini/SKILL.md), que parte de los hallazgos de
     Gemini en un PR sombra y aplica todo lo de esta skill. Solo cuenta si el propietario encendió
     `SEGUNDO_GEMINI_SUPERVISADO`; ningún agente la enciende.
@@ -205,7 +208,8 @@ sesión (p. ej. `claude-sonnet-5-5`), tal como te lo da el entorno: nunca un nom
 inventado (`gemini-supervisado`, `revisor-x`). `/ordenes` compara «otro modelo» **por familia** (`familiaModelo` de
 `politica.ts`: Opus, Sonnet, Haiku, Fable o Gemini), y un modelo no reconocido nunca cuenta: la doble revisión del MEDIO
 sensible solo se cumple si el `SEGUNDO` es de otra familia que el `PRIMERO` o `DELTA` (o, con origen
-`gemini-supervisado`, si `modeloHallazgos` es de familia Gemini y el firmante no es Opus). El `SEGUNDO` de Fable lleva
+`gemini-supervisado`, si `modeloHallazgos` es de familia Gemini y el firmante no es de la familia del implementador,
+`FAMILIA_IMPLEMENTADOR`). El `SEGUNDO` de origen `claude` lleva
 `origenSegundo` `"claude"` (o lo omite); `modeloHallazgos` y `hallazgosGemini` solo van con `gemini-supervisado`.
 
 Campos comunes del JSON (contrato §3.1): versiones, identidad (`ordenId`, `tareaId`, `proyectoId`, `repo`, `issue`,

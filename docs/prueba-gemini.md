@@ -118,7 +118,7 @@ Fable, corrector) lo ve, ni antes ni después de su dictamen. Solo lo lee el sup
    - comenta `/gemini review` y espera la revisión.
 3. Con la revisión de Gemini publicada, el propietario lanza **en paralelo** al supervisor y a Fable sobre el mismo `H`:
    - Fable, con **Lanzar segundo revisor** en /ordenes, como siempre;
-   - el supervisor, en una sesión de POS · Ingeniería con un modelo que no sea Opus (Sonnet), pegando los datos de
+   - el supervisor, en una sesión de POS · Ingeniería con un modelo que no sea de la familia del implementador (Sonnet), pegando los datos de
      entrada del `SEGUNDO` (`ORDEN_ID`, `REPOSITORIO`, `PR`, `HEAD_ESPERADO`, `ROL` `SEGUNDO`, `REVISION_ID` y
      `EJECUCION_ID` con un `n` distinto del de Fable, `INTENTO`, `RONDA`, `LIMITE_CONSUMO`, `AUTORIZACION`) y «supervisa
      Gemini, modo medición». El supervisor publica su dictamen en el **PR sombra**, nunca en el de la orden.
@@ -229,7 +229,7 @@ DECISIONES antes de retirar a Fable.
 
 **Activación (solo el propietario).**
 1. Crear en claude.ai/code → Routines la rutina `PROJECT-OS · supervisar Gemini` (disparador de API, sin horario,
-   modelo Sonnet, nunca Opus) con estas instrucciones: «sigue `.claude/skills/supervisar-gemini/SKILL.md` en modo
+   modelo Sonnet, nunca la familia del implementador) con estas instrucciones: «sigue `.claude/skills/supervisar-gemini/SKILL.md` en modo
    operación».
 2. Apuntar el botón **Lanzar segundo revisor** a esa rutina: exportar `CLAUDE_ROUTINE_SEGUNDO_ID` y
    `SECRET_VERSION_CLAUDE_ROUTINE_SEGUNDO` con los de la rutina nueva y desplegar con `deploy.sh --desde-activa`

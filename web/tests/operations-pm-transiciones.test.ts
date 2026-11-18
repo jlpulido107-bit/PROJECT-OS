@@ -157,7 +157,7 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
   it.each([
     ['SENSIBLE vacía, solo con PRIMERO', {}, [primero]],
     ['SENSIBLE = SI, solo con PRIMERO', { 'ORD-POS-902': 'SI' }, [primero]],
-    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por el implementador', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-opus-5-5')]],
+    ['SENSIBLE = SI, con SEGUNDO gemini-supervisado firmado por el implementador', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-fable-5-2')]],
     ['SENSIBLE = SI, con Sonnet + Sonnet sin origen', { 'ORD-POS-902': 'SI' }, [primero, segundo('claude-sonnet-5-5')]],
     ['SENSIBLE = SI, con SEGUNDO gemini-supervisado y la bandera apagada', { 'ORD-POS-902': 'SI' }, [primero, gemini('claude-sonnet-5-5')], null],
   ])('MEDIO con %s responde dictamen-insuficiente sin escribir', async (_n, sensible, comentarios, bandera: string | null = 'on') => {
