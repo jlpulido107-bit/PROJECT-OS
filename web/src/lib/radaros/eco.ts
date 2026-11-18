@@ -5,6 +5,7 @@ import { MAX_DATA_ROWS } from '../schema'
 import { construirPipeline, PIPE_TABS, type PipelineVista, type PipeTab } from './pipeline'
 import { construirTabulador, type TabuladorVista } from './pipeline-tabulador'
 import type { BandejaVista } from './pipeline-bandeja-gemini'
+import { construirSemana, SEMANA_TABS, type SemanaTab, type SemanaVista } from './eco-semana'
 import { leerTabla, mapear, type Bloque, type Fila } from './tabla'
 
 export type { Bloque, Fila } from './tabla'
@@ -21,9 +22,12 @@ export type { Bloque, Fila } from './tabla'
  */
 export const ECO_TABS = ['AMZ_CORRIDAS', 'SCORING', 'AMZ_RESUMEN', 'UNIT_ECONOMICS', 'ML_TRENDS_ANALISIS_AUTO', 'PRODUCTS'] as const
 export type EcoTab = (typeof ECO_TABS)[number]
-export type EcoRaw = Partial<Record<EcoTab | PipeTab, unknown[][]>>
-/** Lo que pide el lector en un solo batchGet: /eco y las pestañas PIPE_* del pipeline (ORD-POS-097). */
-export const ECO_LECTURA = [...ECO_TABS, ...PIPE_TABS] as const
+export type EcoRaw = Partial<Record<EcoTab | PipeTab | SemanaTab, unknown[][]>>
+/**
+ * Lo que pide el lector en un solo batchGet: /eco, las pestañas PIPE_* del pipeline (ORD-POS-097) y las de «ECO esta
+ * semana» (ORD-POS-159). Solo se piden las que existen, así que siguen siendo como máximo 2 lecturas.
+ */
+export const ECO_LECTURA = [...ECO_TABS, ...PIPE_TABS, ...SEMANA_TABS] as const
 
 /**
  * ❓ Por confirmar en la activación (diseño §3.2 y §9): nombre de la columna de ID de idea en SCORING y
@@ -293,6 +297,8 @@ export interface EcoVista {
   nombres: Map<string, string>
   /** Bandeja de Gemini (ORD-POS-155): `apagada` sin ECO_BANDEJA_GEMINI=true (entonces ni se lee la pestaña). */
   bandejaGemini: BandejaVista
+  /** «ECO esta semana» (/eco/semana, ORD-POS-159): solo lectura; cada bloque resuelve su estado y no afecta a /eco. */
+  semana: SemanaVista
 }
 
 /** Cada bloque resuelve su propio estado (diseño §4): un bloque con problema no impide pintar los demás. */
@@ -308,5 +314,6 @@ export function construirEco(raw: EcoRaw, now: number, bandejaGemini: BandejaVis
     tabulador: construirTabulador(raw),
     nombres,
     bandejaGemini,
+    semana: construirSemana(raw, raw.PIPE_PRODUCTOS, now),
   }
 }

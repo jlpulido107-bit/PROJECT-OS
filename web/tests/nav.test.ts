@@ -13,7 +13,7 @@ const { NavLinks } = await import('@/components/nav-links')
 const TODAS = { showEco: true, showFinanzas: true, showOperations: true }
 const src = (...p: string[]) => readFileSync(path.join(__dirname, '..', 'src', ...p), 'utf8')
 
-// Las 15 rutas de hoy (ORD-POS-150: /eco/cotizaciones redirige a Compras y sale del menú), con su grupo y su subpestaña.
+// Las 16 rutas de hoy (ORD-POS-159: /eco/semana; ORD-POS-150: /eco/cotizaciones redirige a Compras y sale del menú), con su grupo y su subpestaña.
 const RUTAS: Array<[string, string, string]> = [
   ['/', 'inicio', '/'],
   ['/ordenes', 'ordenes', '/ordenes'],
@@ -25,6 +25,7 @@ const RUTAS: Array<[string, string, string]> = [
   ['/proyectos', 'proyectos', '/proyectos'],
   ['/estado', 'proyectos', '/estado'],
   ['/eco', 'radaros', '/eco'],
+  ['/eco/semana', 'radaros', '/eco/semana'],
   ['/eco/pipeline', 'radaros', '/eco/pipeline'],
   ['/finanzas', 'finanzas', '/finanzas'],
   ['/agentes', 'agentes', '/agentes'],
@@ -33,11 +34,11 @@ const RUTAS: Array<[string, string, string]> = [
 ]
 
 describe('grupos y rutas (criterio 1)', () => {
-  it('9 grupos con las 15 rutas, sin duplicados y cada una con su página', () => {
+  it('9 grupos con las 16 rutas, sin duplicados y cada una con su página', () => {
     const g = gruposMenu(TODAS)
     expect(g.map((x) => x.id)).toEqual(['inicio', 'ordenes', 'tareas', 'planificacion', 'proyectos', 'radaros', 'finanzas', 'agentes', 'operaciones'])
     const hrefs = g.flatMap((x) => x.items.map((i) => i.href))
-    expect(hrefs).toHaveLength(15)
+    expect(hrefs).toHaveLength(16)
     expect(new Set(hrefs)).toEqual(new Set(RUTAS.map(([r]) => r)))
     for (const h of hrefs) {
       const page = h === '/' ? ['app', '(private)', 'page.tsx'] : ['app', '(private)', ...h.slice(1).split('/'), 'page.tsx']
