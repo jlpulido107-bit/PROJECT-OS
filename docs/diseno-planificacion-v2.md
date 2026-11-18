@@ -102,7 +102,7 @@ Diseño de Planificación amigable · ORD-POS-118   BAJO · solo docs
 /eco: comisión de Amazon · ORD-ECO-020                MEDIO · sensible
  Borrador ─ Enviada ─ PR ─ PRIMERO ─ SEGUNDO ─ Revisada ─ Fusionada ─ Desplegada ─ Activada
     ●─────────●───────●──────●─────────◉         ○          ○           ○           ○
-                                       └ espera: segundo revisor (Fable o Gemini supervisado)
+                                       └ espera: segundo revisor (origen claude o Gemini supervisado)
 
 ● hecho   ◉ paso actual   ○ pendiente   · no aplica
 ```

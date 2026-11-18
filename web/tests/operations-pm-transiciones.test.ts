@@ -9,6 +9,7 @@ import { findById, InMemoryTableStore, readView } from '@/lib/operations/table-s
 import { parseOrderTransition } from '@/lib/operations/validation'
 import { extraerCriterios } from '@/lib/supervision/criterios'
 import { MARCA_DICTAMEN } from '@/lib/supervision/dictamen'
+import { FAMILIA_IMPLEMENTADOR } from '@/lib/supervision/politica'
 
 /** DEC-POS-011 (ORD-POS-055): el agente PM aprueba y envía con el «sí» citado y marca REVISADA con dictamen válido. */
 
@@ -126,6 +127,7 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
     ['INCONCLUSO', conPr, [comentario(JSON.stringify({ ...reporte(), veredicto: 'INCONCLUSO', criterios: [{ id: '1', resultado: 'NO_VERIFICADO', evidencia: 'x' }, { id: '2', resultado: 'CUMPLE', evidencia: 'ok' }] }))]],
     ['MEDIO sin SEGUNDO', medio, [primero]],
     ['MEDIO con SEGUNDO del mismo modelo', medio, [primero, segundo('claude-sonnet-5-5')]],
+    ['MEDIO con SEGUNDO de la familia del implementador por la vía claude (ORD-POS-161)', medio, [primero, segundo(`claude-${FAMILIA_IMPLEMENTADOR}-5-2`)]],
     ['ALTO', { 'ORD-POS-902': { ...conPr['ORD-POS-902'], RIESGO: 'ALTO' } }, [primero]],
   ])('con %s responde dictamen-insuficiente sin escribir', async (_n, cambios, comentarios) => {
     const e = await setup(cambios, comentarios)
@@ -134,7 +136,7 @@ describe('agente PM: REVISADA solo con CONFORME suficiente (ORD-POS-057, DEC-POS
   })
 
   it('MEDIO con PRIMERO y SEGUNDO CONFORME de otro modelo pasa a REVISADA', async () => {
-    const e = await setup(medio, [primero, segundo('claude-fable-5-1')])
+    const e = await setup(medio, [primero, segundo('claude-opus-5-5')])
     await e.run('ORD-POS-902', { requestId: uuid(), accion: 'REVISAR', expectedEstado: 'PR_ABIERTO' })
     expect(await e.estado('ORD-POS-902')).toBe('REVISADA')
   })

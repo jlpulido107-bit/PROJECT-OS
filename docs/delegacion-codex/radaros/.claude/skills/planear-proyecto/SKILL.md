@@ -99,8 +99,8 @@ https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/migracion-ordenes-c
   y di qué revisión requiere:
   - `BAJO`: revisor Claude a ciegas con modelo distinto al que implementó. Si es solo documentación, no hay revisor
     automático.
-  - `MEDIO`: revisión completa a ciegas, re-revisión del delta tras cada corrección y segundo revisor (Fable 5.1)
-    antes de fusionar.
+  - `MEDIO`: revisión completa a ciegas, re-revisión del delta tras cada corrección y, si es sensible, segundo revisor de otra
+    familia que el implementador y el primer revisor, antes de fusionar.
   - `ALTO` (DEC-POS-014): código que cambie en tiempo de ejecución la autorización o los permisos de agentes, la
     escritura en la hoja o datos clínicos. Los cambios solo de documentación o skills sobre esos temas son `MEDIO`
     con doble revisor. Nunca reclasifiques un ALTO como `MEDIO`: propón la descomposición
@@ -128,9 +128,11 @@ no aprueba, no envía ni escribe nada. Una tabla, en el orden de envío:
   (columna «Depende de», con su `ORD-` o `PRJ-`).
 - **Máximo 4 órdenes abiertas a la vez** (enviadas y aún sin fusionar ni cancelar, contadas en ORDENES_CODEX y en los
   PRs abiertos). La siguiente se envía cuando se libera un lugar.
-- **Quién.** Ejecuta: rutina de ejecución (Opus). Revisa según el riesgo: `BAJO`, un revisor Claude con otro modelo
-  (Sonnet); `BAJO` solo docs, nadie (decide el propietario); `MEDIO`, Sonnet y luego Fable 5.1. Corrige: rutina de
-  corrección (Opus), máximo 2 rondas. Fuente:
+- **Quién.** Ejecuta: rutina de ejecución (la familia del implementador, constante `FAMILIA_IMPLEMENTADOR` de
+  `web/src/lib/supervision/politica.ts` en PROJECT-OS). Revisa según el riesgo: `BAJO`, un revisor Claude con otro
+  modelo; `BAJO` solo docs, nadie (decide el propietario); `MEDIO`, ese revisor y, si es sensible, un segundo de otra
+  familia que el implementador y el primer revisor. Corrige: rutina de corrección (la del implementador), máximo 2
+  rondas. Fuente:
   [operación](https://github.com/jlpulido107-bit/PROJECT-OS/blob/main/docs/operacion.md#roles-y-modelos).
 - **Calendario.** Solo con campos que ya existen: el orden de envío de la tabla y la `fechaPlan` de la tarea de cada
   orden. Si hay que cambiarla, propón la edición `tarea.editar` con `fechaPlan` para `pm-escribir-api`, que necesita el

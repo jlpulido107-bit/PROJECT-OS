@@ -214,7 +214,7 @@ cambia la rutina inicial; tampoco conecta el dashboard con esta rutina (eso es o
 
 Crear las rutinas de API, sus tokens y los secretos es tarea del propietario; el dashboard solo los usa. Sin ellos, los botones no aparecen.
 
-1. En claude.ai/code → Routines crea tres rutinas con disparador de API (sin horario): revisión (Sonnet, instrucciones: seguir `.claude/skills/revisar-orden/SKILL.md`), segundo revisor (Fable 5.1, la misma skill) y `PROJECT-OS · corregir PR` (arriba). Guarda el token de cada una.
+1. En claude.ai/code → Routines crea tres rutinas con disparador de API (sin horario): revisión (Sonnet, instrucciones: seguir `.claude/skills/revisar-orden/SKILL.md`), segundo revisor (un modelo de otra familia que el implementador, `FAMILIA_IMPLEMENTADOR` de `web/src/lib/supervision/politica.ts`, y que el primer revisor; la misma skill) y `PROJECT-OS · corregir PR` (arriba). Guarda el token de cada una.
 2. Crea los secretos `project-os-claude-routine-revisar-token`, `…-segundo-token` y `…-corregir-token` (como en el paso 2 de arriba) y da acceso a la cuenta runtime.
 3. Exporta, por rutina, `CLAUDE_ROUTINE_<REVISAR|SEGUNDO|CORREGIR>_ID` y `SECRET_VERSION_CLAUDE_ROUTINE_<REVISAR|SEGUNDO|CORREGIR>`; van por parejas y exigen `SECRET_VERSION_GITHUB`. Después renderiza y despliega (`deploy.sh --desde-activa` conserva las tres).
 4. En `/ordenes` aparece un solo botón según el dictamen del PR: «Lanzar revisión» (primero o delta), «Lanzar segundo revisor» (MEDIO) o «Pedir corrección» (CAMBIOS con ronda menor que 2). Nunca con riesgo ALTO ni si el head cambió desde que cargó la página.

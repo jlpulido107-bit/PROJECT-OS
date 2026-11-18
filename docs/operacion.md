@@ -9,25 +9,23 @@ decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-23. Si algo a
 | --- | --- | --- | --- |
 | Propietario | Aprueba órdenes; fusiona, despliega y cierra | — | [`AGENTS.md`](../AGENTS.md), DEC-POS-002 |
 | PM | Planea, redacta borradores y delega; único escritor de la hoja, por la API | Claude | DEC-POS-005, DEC-POS-007; [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
-| Implementador | Ejecuta la orden aprobada: rama → PR con la CI en verde | Fable (familia `fable`; fuente única: `FAMILIA_IMPLEMENTADOR` de [`politica.ts`](../web/src/lib/supervision/politica.ts)) | ORD-POS-158; [estado actual](estado-actual.md) |
+| Implementador | Ejecuta la orden aprobada: rama → PR con la CI en verde | La familia de `FAMILIA_IMPLEMENTADOR` ([`politica.ts`](../web/src/lib/supervision/politica.ts), fuente única) | ORD-POS-158, ORD-POS-161 |
 | Primer revisor | Revisa a ciegas (orden, diff y contrato, sin la descripción del PR) | Sonnet | DEC-POS-008; [delegación](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003) |
-| Segundo revisor | Solo en MEDIO sensible, a ciegas y sin el dictamen del primero | Nunca de la familia del implementador ni de la del primer revisor (hoy, Opus); desde el 2026-11-03, si el propietario lo activa, Sonnet supervisando a Gemini (nunca la familia del implementador) | DEC-POS-008, DEC-POS-019, DEC-POS-022; [delegación](delegacion-codex.md#medio-sensible-y-segundo-gemini-supervisado); [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md) |
-| Corrector | Corrige en el mismo PR, máximo 2 rondas por orden | Opus | DEC-POS-003, DEC-POS-008; [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
+| Segundo revisor | Solo en MEDIO sensible, a ciegas y sin el dictamen del primero | Otra familia de Claude: nunca la del implementador (`FAMILIA_IMPLEMENTADOR`) ni la del primer revisor; si el propietario lo activa, Gemini supervisado por un firmante que cumple lo mismo | DEC-POS-008, DEC-POS-019, DEC-POS-022, DEC-POS-035; [delegación](delegacion-codex.md#medio-sensible-y-segundo-gemini-supervisado); [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md) |
+| Corrector | Corrige en el mismo PR, máximo 2 rondas por orden | La del implementador (`FAMILIA_IMPLEMENTADOR`) | DEC-POS-003, DEC-POS-008; [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
 | Tiempos | **DEC-POS-024 APROBADA** (2026-10-28). Lunes: propone `HORAS_ESTIMADAS`, `FECHA_PLAN` e `HITO_ID`, cierres probables con evidencia, vencidas por reprogramar y altas de tareas que falten, en un paquete sin ID a POS · Ideas, que le pone el `PAQ` (solo esos tres campos y altas de tareas, escritos por el PM con el «sí PAQ» verificado; nunca cierra ni cancela); media semana: lo mismo con los días que quedan; diario: plan del día de `/planificacion` y minutos reales de ayer; viernes: lo planeado contra `TIEMPOS`. Nunca escribe en Sheets ni cambia `ESTADO` o `BLOQUEO`; `CAPACIDAD_SEMANAL` e hitos son del propietario; sin rutina programada | Claude | DEC-POS-024 (APROBADA); ORD-POS-107, ORD-POS-111; [`planear-tiempo`](../.claude/skills/planear-tiempo/SKILL.md) |
 | Agente de finanzas | Por corte (días 15 y fin de mes): rendimiento de `reporte-consumo` y, con el total de factura que da el propietario, el cargo extra o el cierre «sin cargo», solo por `POST /api/finanzas/agente/…` con su token. Nunca estima, edita, borra ni registra la suscripción; inerte hasta que el propietario lo active ([/finanzas v3 §8.2](diseno-finanzas-v3.md#82-activación-solo-el-propietario-tras-aprobar-dec-pos-018-fusionar-y-desplegar-f-3)) | Claude | DEC-POS-018 (PENDIENTE); ORD-POS-092; [diseño v3](diseno-finanzas-v3.md) |
 
 Cada función corre en una sesión separada; el revisor nunca es la sesión que implementó y usa otro modelo (DEC-POS-002,
 [`AGENTS.md`](../AGENTS.md)). Sin auditor externo: ChatGPT ya no participa (DEC-POS-008).
 
-**Familia del implementador (ORD-POS-158).** Vive en un solo lugar: la constante `FAMILIA_IMPLEMENTADOR` de
-[`politica.ts`](../web/src/lib/supervision/politica.ts) (hoy `fable`). Las skills y los demás documentos no nombran un
-modelo: dicen «la familia del implementador» y remiten a esa constante. La regla: el `SEGUNDO` nunca es de la familia
-del implementador ni de la del `PRIMERO` o `DELTA`. El código (`segundoDeOtroModelo`) compara el `SEGUNDO` de origen
-`claude` solo con el `PRIMERO` o `DELTA`, y usa `FAMILIA_IMPLEMENTADOR` solo para el firmante del `gemini-supervisado`;
-en la vía `claude`, la parte del implementador la cumple la sesión revisora
-([`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md#modos)). Si cambia quien implementa, se cambian la constante
-y la fila «Implementador» en un PR. Si una corrección la hace otra familia, el código no lo distingue: solo conoce
-`FAMILIA_IMPLEMENTADOR`.
+**Familia del implementador (ORD-POS-158, ORD-POS-161).** Vive en un solo lugar: la constante `FAMILIA_IMPLEMENTADOR`
+de [`politica.ts`](../web/src/lib/supervision/politica.ts). Los documentos y las skills no nombran un modelo como
+implementador ni como `SEGUNDO`: dicen «la familia del implementador» y remiten a esa constante. La regla (DEC-POS-035):
+el `SEGUNDO`, venga de donde venga, nunca es de la familia del implementador ni de la del `PRIMERO` o `DELTA`. El código
+(`segundoDeOtroModelo`) la hace cumplir en las dos vías, `claude` y `gemini-supervisado`: un `SEGUNDO` firmado por la
+familia del implementador deja la orden en «Falta segundo revisor». Si cambia quien implementa, se cambia la constante
+en un PR. Si una corrección la hace otra familia, el código no lo distingue: solo conoce `FAMILIA_IMPLEMENTADOR`.
 
 ## Entornos
 
@@ -55,14 +53,14 @@ nunca texto libre. Fuente: [rutina de Claude](rutina-claude.md).
 | --- | --- | --- | --- |
 | Ejecutar orden | Al pulsar **Aprobar y crear el issue** en `/ordenes` (una sola vez) | Valida el issue y abre el PR | [`ejecutar-orden`](../.claude/skills/ejecutar-orden/SKILL.md) |
 | Revisar (Sonnet) | Botón **Lanzar revisión** (primera revisión o delta tras corrección) | Dictamen a ciegas | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
-| Segundo revisor (Fable 5.1) | Botón **Lanzar segundo revisor** (solo MEDIO sensible) | Dictamen a ciegas, sin el del primero | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
+| Segundo revisor (otra familia que el implementador y el primer revisor) | Botón **Lanzar segundo revisor** (solo MEDIO sensible) | Dictamen a ciegas, sin el del primero | [`revisar-orden`](../.claude/skills/revisar-orden/SKILL.md) |
 | Corregir PR | Botón **Pedir corrección** (dictamen `CAMBIOS`, ronda menor que 2) | Commit nuevo en la misma rama del PR | [`corregir-pr`](../.claude/skills/corregir-pr/SKILL.md) |
 
 **Supervisor de Gemini (ORD-POS-099).** Del 2026-10-27 al 2026-11-02 no es rutina: el propietario abre el PR sombra,
 comenta `/gemini review` y lanza una sesión de POS · Ingeniería (Sonnet) con los datos del `SEGUNDO` y «supervisa Gemini,
 modo medición»; publica en el PR sombra y no cuenta. Desde el 2026-11-03, solo si el propietario lo activa, **Lanzar
-segundo revisor** apunta a la rutina nueva `PROJECT-OS · supervisar Gemini` (modo operación) y la de Fable queda
-configurada para volver ([prueba Gemini §3 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)). Comentar
+segundo revisor** apunta a la rutina nueva `PROJECT-OS · supervisar Gemini` (modo operación) y la del `SEGUNDO` de
+origen `claude` queda configurada para volver ([prueba Gemini §3 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)). Comentar
 `/gemini review` es del propietario; pasarlo al PM exige una decisión que amplíe DEC-POS-005 y DEC-POS-011.
 
 En `/ordenes` aparece un solo botón según el dictamen del PR; nunca con riesgo ALTO ni si el head cambió desde que cargó
@@ -81,7 +79,7 @@ propietario decide. Fuente: [delegación](delegacion-codex.md#ciclo) y la
 | --- | --- | --- |
 | BAJO | Un revisor Claude a ciegas, con modelo distinto al que implementó | **Lanzar revisión** → si `CAMBIOS`, **Pedir corrección** → **Lanzar revisión** (delta); hasta 2 rondas |
 | BAJO solo docs | Sin revisor automático | Ninguno: decide el propietario con el PR |
-| MEDIO | Sonnet completo; re-revisión del delta tras cada corrección; si es sensible (`SENSIBLE` vacía o `SI`), Fable 5.1 o un SEGUNDO gemini-supervisado antes de fusionar (DEC-POS-019, DEC-POS-022) | **Lanzar revisión** → **Pedir corrección** ↔ **Lanzar revisión** (delta), máx. 2 rondas → si es sensible, **Lanzar segundo revisor**; luego escala al propietario |
+| MEDIO | Sonnet completo; re-revisión del delta tras cada corrección; si es sensible (`SENSIBLE` vacía o `SI`), un SEGUNDO de otra familia que el implementador (`FAMILIA_IMPLEMENTADOR`) y el primer revisor, de origen `claude` o gemini-supervisado, antes de fusionar (DEC-POS-019, DEC-POS-022, DEC-POS-035) | **Lanzar revisión** → **Pedir corrección** ↔ **Lanzar revisión** (delta), máx. 2 rondas → si es sensible, **Lanzar segundo revisor**; luego escala al propietario |
 | ALTO | No se delega tal cual: se descompone en una orden MEDIO de código inerte por defecto (sigue la fila MEDIO) más la activación del propietario; si no se puede, en vivo con el propietario y registrado en DECISIONES ([carril ALTO](delegacion-codex.md#política-de-revisión-por-riesgo-dec-pos-003), DEC-POS-014) | Ninguno para la fila ALTO |
 
 Ningún dictamen autoriza fusión, despliegue ni cierre, y un PR fusionado no cierra la tarea por sí solo

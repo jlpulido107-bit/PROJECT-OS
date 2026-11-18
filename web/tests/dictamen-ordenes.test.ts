@@ -75,10 +75,10 @@ describe('dictamen vigente por orden', () => {
     ['un CONFORME', [reporte()], 'Falta segundo revisor'], ['el mismo revisionId dos veces', [reporte(), reporte()], 'Falta segundo revisor'],
     ['dos de v1 (sin rol ni modelo)', [reporte(), reporte({ revisionId: 'REV-2' })], 'Falta segundo revisor'],
     ['PRIMERO y SEGUNDO del mismo modelo', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-sonnet-5-5', 'R2')], 'Falta segundo revisor'],
-    ['PRIMERO y SEGUNDO de otro modelo', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-fable-5-1', 'R2')], 'Listo para tu decisión'],
-    ['DELTA y SEGUNDO de otro modelo', [v2('DELTA', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-fable-5-1', 'R2')], 'Listo para tu decisión'],
+    ['PRIMERO y SEGUNDO de otro modelo', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-opus-5-5', 'R2')], 'Listo para tu decisión'],
+    ['DELTA y SEGUNDO de otro modelo', [v2('DELTA', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', 'claude-opus-5-5', 'R2')], 'Listo para tu decisión'],
     ['PRIMERO v2 y segundo de v1', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), reporte({ revisionId: 'R2' })], 'Falta segundo revisor'],
-    ['dos PRIMERO de modelos distintos', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('PRIMERO', 'claude-fable-5-1', 'R2')], 'Falta segundo revisor'],
+    ['dos PRIMERO de modelos distintos', [v2('PRIMERO', 'claude-sonnet-5-5', 'R1'), v2('PRIMERO', 'claude-opus-5-5', 'R2')], 'Falta segundo revisor'],
   ])('MEDIO con %s: %s', async (_, reportes, paso) => {
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })
@@ -94,7 +94,7 @@ describe('dictamen vigente por orden', () => {
     ['Sonnet + Sonnet con otro sufijo (mismo modelo)', [sonnet, v2('SEGUNDO', 'claude-sonnet-5-5-20261001', 'R2')], 'Falta segundo revisor'],
     ['SEGUNDO con modelo inventado', [sonnet, v2('SEGUNDO', 'gemini-supervisado', 'R2')], 'Falta segundo revisor'],
     ['SEGUNDO firmado con un modelo que no es de Claude', [sonnet, v2('SEGUNDO', 'gemini-2.5-pro', 'R2')], 'Falta segundo revisor'],
-    ['PRIMERO con modelo inventado', [v2('PRIMERO', 'revisor-falso', 'R1'), v2('SEGUNDO', 'claude-fable-5-1', 'R2')], 'Falta segundo revisor'],
+    ['PRIMERO con modelo inventado', [v2('PRIMERO', 'revisor-falso', 'R1'), v2('SEGUNDO', 'claude-opus-5-5', 'R2')], 'Falta segundo revisor'],
     ['gemini-supervisado firmado por Sonnet (distinto del implementador)', [sonnet, gemini('claude-sonnet-5-5')], 'Listo para tu decisión'],
     ['gemini-supervisado firmado por Opus (otra familia de Claude)', [sonnet, gemini('claude-opus-5-5')], 'Listo para tu decisión'],
     ['gemini-supervisado firmado por Haiku (otra familia de Claude)', [sonnet, gemini('claude-haiku-5-5')], 'Listo para tu decisión'],
@@ -110,31 +110,54 @@ describe('dictamen vigente por orden', () => {
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })
 
-  // ORD-POS-158: la familia del implementador es la de hoy (Fable) y la vía claude sigue comparando solo con el PRIMERO.
-  it('FAMILIA_IMPLEMENTADOR es fable y familiaModelo la reconoce (criterio 1)', () => {
-    expect(FAMILIA_IMPLEMENTADOR).toBe('fable')
-    expect(familiaModelo('claude-fable-5-2')).toBe(FAMILIA_IMPLEMENTADOR)
+  // ORD-POS-158 y ORD-POS-161 (DEC-POS-035): la familia del implementador vive en FAMILIA_IMPLEMENTADOR y no firma el
+  // SEGUNDO de ningún origen.
+  it('FAMILIA_IMPLEMENTADOR es una familia de Claude que familiaModelo reconoce', () => {
+    expect(familiaModelo(`claude-${FAMILIA_IMPLEMENTADOR}-5-2`)).toBe(FAMILIA_IMPLEMENTADOR)
   })
+  const implementador = `claude-${FAMILIA_IMPLEMENTADOR}-5-2`
+  const claude = (modelo: string) => reporte({ versionContrato: '2', rol: 'SEGUNDO', modelo, revisionId: 'R2', origenSegundo: 'claude' })
   it.each([
-    ['Fable (familia del implementador)', [sonnet, v2('SEGUNDO', 'claude-fable-5-2', 'R2')], 'Listo para tu decisión'],
+    ['la familia del implementador', [sonnet, v2('SEGUNDO', implementador, 'R2')], 'Falta segundo revisor'],
+    ['otra versión de la familia del implementador', [sonnet, v2('SEGUNDO', `claude-${FAMILIA_IMPLEMENTADOR}-5-1`, 'R2')], 'Falta segundo revisor'],
+    ['la familia del implementador y origen claude explícito', [sonnet, claude(implementador)], 'Falta segundo revisor'],
+    ['la familia del implementador con sufijo [1m]', [sonnet, v2('SEGUNDO', `${implementador}[1m]`, 'R2')], 'Falta segundo revisor'],
+    ['la familia del implementador sobre un DELTA', [v2('DELTA', 'claude-sonnet-5-5', 'R1'), v2('SEGUNDO', implementador, 'R2')], 'Falta segundo revisor'],
     ['Opus', [sonnet, v2('SEGUNDO', 'claude-opus-5-5', 'R2')], 'Listo para tu decisión'],
-    ['Opus y origen claude explícito', [sonnet, reporte({ versionContrato: '2', rol: 'SEGUNDO', modelo: 'claude-opus-5-5', revisionId: 'R2', origenSegundo: 'claude' })], 'Listo para tu decisión'],
+    ['Haiku', [sonnet, v2('SEGUNDO', 'claude-haiku-5-5', 'R2')], 'Listo para tu decisión'],
+    ['Opus y origen claude explícito', [sonnet, claude('claude-opus-5-5')], 'Listo para tu decisión'],
+    ['Opus con sufijo [1m]', [sonnet, v2('SEGUNDO', 'claude-opus-5-5[1m]', 'R2')], 'Listo para tu decisión'],
     ['la familia del PRIMERO', [v2('PRIMERO', 'claude-opus-5-5', 'R1'), v2('SEGUNDO', 'claude-opus-5-1', 'R2')], 'Falta segundo revisor'],
-  ])('vía claude con SEGUNDO de %s: %s, con la bandera apagada o encendida (criterio 4)', async (_, reportes, paso) => {
+    ['la familia del PRIMERO con sufijo [1m]', [sonnet, v2('SEGUNDO', 'claude-sonnet-5-5[1m]', 'R2')], 'Falta segundo revisor'],
+  ])('vía claude con SEGUNDO de %s: %s, con la bandera apagada o encendida (criterios 1 y 2)', async (_, reportes, paso) => {
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
     vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', 'on')
     expect((await evaluar(reportes.map((r) => comentario(r)), 'MEDIO'))?.siguiente).toBe(paso)
   })
 
+  // ORD-POS-161, criterio 3: el sufijo [1m] es el mismo modelo; cualquier otro texto raro falla cerrado.
+  it.each([
+    ['claude-opus-5-5[1m]', 'opus'], ['claude-opus-5[1m]', 'opus'], ['claude-fable-5-2[1m]', 'fable'], ['Claude-Sonnet-5-5[1M]', 'sonnet'],
+    ['claude-haiku-5-5-20261001[1m]', 'haiku'],
+  ])('familiaModelo(%j) = %s', (modelo, familia) => { expect(familiaModelo(modelo)).toBe(familia) })
+  it.each([
+    'claude-opus-5-5[2m]', 'claude-opus-5-5[1m][1m]', 'claude-opus-5-5[1m]x', 'claude-opus-5-5 [1m]', 'claude-opus-5-5[1m', 'claude-opus-5-5[]',
+    'claude-opus[1m]', '[1m]', 'claude-opus-5-5(1m)', 'claude-opus-[1m]5-5', 'gemini-2.5-pro[1m]', 'gemini-supervisado', 'Fable 5.2', 'opus', '', undefined,
+  ])('familiaModelo(%j) = null', (modelo) => { expect(familiaModelo(modelo)).toBeNull() })
+  it.each(['claude-opus-5-5[2m]', 'claude-opus-5-5[1m][1m]', 'claude-opus-5-5 [1m]', 'Claude-Opus-5-5[1m]'])(
+    'un SEGUNDO firmado con %j no es un dictamen válido', async (modelo) => {
+      expect((await evaluar([comentario(sonnet), comentario(v2('SEGUNDO', modelo, 'R2'))], 'MEDIO'))?.siguiente).toBe('Falta segundo revisor')
+    })
+
   // Hallazgo H1 del PRIMERO (DEC-POS-014): sin SEGUNDO_GEMINI_SUPERVISADO=on, un SEGUNDO gemini-supervisado no cuenta.
   it.each([undefined, '', 'true', 'ON', '1', ' on'])('con SEGUNDO_GEMINI_SUPERVISADO=%j el gemini-supervisado no cuenta', async (valor) => {
     if (valor !== undefined) vi.stubEnv('SEGUNDO_GEMINI_SUPERVISADO', valor)
-    const ev = await evaluar([comentario(sonnet), comentario(gemini('claude-fable-5-1'))], 'MEDIO')
+    const ev = await evaluar([comentario(sonnet), comentario(gemini('claude-sonnet-5-5'))], 'MEDIO')
     expect(ev?.siguiente).toBe('Falta segundo revisor')
     expect(ev?.plan?.tipo).toBe('SEGUNDO')
   })
   it('apagada no afecta al SEGUNDO de origen claude', async () => {
-    expect((await evaluar([comentario(sonnet), comentario(v2('SEGUNDO', 'claude-fable-5-1', 'R2'))], 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
+    expect((await evaluar([comentario(sonnet), comentario(v2('SEGUNDO', 'claude-opus-5-5', 'R2'))], 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
   })
   afterEach(() => { vi.unstubAllEnvs() })
 

@@ -18,10 +18,12 @@ export const politicaDeRepo = (repo: string, criteriosEsperados: readonly string
  * Familia de un modelo declarado en el dictamen (DEC-POS-022). «Otro modelo» se compara por familia, nunca por el texto
  * libre de `modelo`: un sufijo distinto del mismo modelo, o un nombre inventado (p. ej. `gemini-supervisado`), no cuenta.
  * null = no reconocido, y un modelo no reconocido nunca cuenta como revisor distinto.
+ * Un modelo de Claude puede llevar el sufijo `[1m]` (ventana de contexto de la sesión, p. ej. `claude-opus-5-5[1m]`):
+ * es el mismo modelo y la misma familia (ORD-POS-161). Solo ese sufijo, una vez y al final; cualquier otro da null.
  */
 export function familiaModelo(modelo: string | undefined): string | null {
   const m = modelo?.toLowerCase() ?? ''
-  const claude = /^claude-(opus|sonnet|haiku|fable)-\d[a-z0-9._-]*$/.exec(m)
+  const claude = /^claude-(opus|sonnet|haiku|fable)-\d[a-z0-9._-]*(?:\[1m\])?$/.exec(m)
   if (claude) return claude[1]!
   return /^gemini-(?:\d[a-z0-9._-]*|code-assist)$/.test(m) ? 'gemini' : null
 }
@@ -30,10 +32,9 @@ export const esFamiliaClaude = (familia: string | null): boolean => familia !== 
 
 /**
  * Familia del modelo que implementa las órdenes: fuente única (ORD-POS-158). Los documentos y las skills remiten a
- * esta constante en vez de nombrar un modelo; la tabla de docs/operacion.md dice a qué modelo corresponde hoy. El
- * firmante de un SEGUNDO gemini-supervisado no puede ser de esta familia (DEC-POS-022).
- * Para cambiar de implementador: cambiar este valor (uno de los que devuelve familiaModelo) y la fila «Implementador»
- * de docs/operacion.md, en un PR.
+ * esta constante en vez de nombrar un modelo. El firmante de un SEGUNDO, de cualquier origen, no puede ser de esta
+ * familia (DEC-POS-035, ORD-POS-161; antes solo el gemini-supervisado, DEC-POS-022).
+ * Para cambiar de implementador: cambiar este valor (uno de los que devuelve familiaModelo), en un PR.
  * atajo: es la asignación operativa, no se lee del PR ni distingue a un corrector de otra familia; mejorarlo si la
  * orden llega a registrar quién la implementó y quién la corrigió.
  */
