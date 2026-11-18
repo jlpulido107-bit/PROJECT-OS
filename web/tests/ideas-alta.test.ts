@@ -17,7 +17,7 @@ import { InMemoryTableStore, readView } from '@/lib/operations/table-store'
 import { IdeaRapida } from '@/components/eco/idea-rapida'
 import { asinDeEnlaceAmazon, tarjetaIdeaRapida } from '@/lib/radaros/idea-amazon'
 import {
-  ecoIdeasAltaHabilitada, IDEAS_TABS, parseAltaIdea, PRODUCTS_HEADERS, SCORING_HEADERS, type IdeasTab,
+  ecoIdeasAltaHabilitada, IDEAS_TABS, parseAltaIdea, PRODUCTS_HEADERS, SCORING_HEADERS, type AmzTab, type IdeasTab,
 } from '@/lib/radaros/ideas-alta'
 import { IdeasSheetsStore, InMemoryIdeasStore } from '@/lib/radaros/ideas-alta-store'
 
@@ -339,18 +339,18 @@ describe('idea.alta con enlace de Amazon y palabra de búsqueda (ORD-POS-160, DE
 
   it('escritura a medias (falla AMZ_NICHO): el mismo requestId completa solo lo que falta, aunque el motor haya anexado filas', async () => {
     const ideas = libroAmz()
-    const write = ideas.writeRow.bind(ideas)
+    const anexar = ideas.appendRow.bind(ideas)
     let falla = true
-    ideas.writeRow = async (tab, fila, celdas) => {
+    ideas.appendRow = async (tab, celdas) => {
       if (tab === 'AMZ_NICHO' && falla) { falla = false; throw new Error('HTTP 503') }
-      return write(tab, fila, celdas)
+      return anexar(tab, celdas)
     }
     const { service } = servicio()
     const cmd = parseAltaIdea(amz())
     expect(await codeOf(service.altaIdea(cmd, PM_CTX, ideas))).toBe('escritura-fallida')
     // Entre el fallo y el reintento el motor propone otro ASIN para la misma idea y alguien agrega otro nicho.
-    await write('AMZ_IDEA_ASIN', 5, ['EC-009', 'B0PROPUEST', '', '', 'PROPUESTO_KEEPA', '', ''])
-    await write('AMZ_NICHO', 3, ['B0CANDIDAT', 'otro nicho', 'SI'])
+    ideas.anexarDelMotor('AMZ_IDEA_ASIN', ['EC-009', 'B0PROPUEST', '', '', 'PROPUESTO_KEEPA', '', ''])
+    ideas.anexarDelMotor('AMZ_NICHO', ['B0CANDIDAT', 'otro nicho', 'SI'])
     const previas = ideas.escrituras.length
     expect(await service.altaIdea(cmd, PM_CTX, ideas)).toMatchObject({ id: 'EC-009', repetida: true })
     expect(ideas.escrituras.slice(previas).map((e) => [e.tab, e.fila, e.celdas])).toEqual([['AMZ_NICHO', 4, ['EC-009', 'organizador de cables', 'SI']]])
@@ -361,14 +361,14 @@ describe('idea.alta con enlace de Amazon y palabra de búsqueda (ORD-POS-160, DE
     const ideas = libroAmz()
     const { service } = servicio()
     const cmd = parseAltaIdea(amz())
-    const write = ideas.writeRow.bind(ideas)
-    ideas.writeRow = async (tab, fila, celdas) => {
+    const anexar = ideas.appendRow.bind(ideas)
+    ideas.appendRow = async (tab, celdas) => {
       if (tab === 'AMZ_IDEA_ASIN') throw new Error('HTTP 503')
-      return write(tab, fila, celdas)
+      return anexar(tab, celdas)
     }
     expect(await codeOf(service.altaIdea(cmd, PM_CTX, ideas))).toBe('escritura-fallida')
-    ideas.writeRow = write
-    await write('AMZ_IDEA_ASIN', 4, ['EC-009', 'B0ABCD1234', '', '', 'PROPUESTO_KEEPA', '', ''])
+    ideas.appendRow = anexar
+    ideas.anexarDelMotor('AMZ_IDEA_ASIN', ['EC-009', 'B0ABCD1234', '', '', 'PROPUESTO_KEEPA', '', ''])
     const previas = ideas.escrituras.length
     expect(await codeOf(service.altaIdea(cmd, PM_CTX, ideas))).toBe('estado-divergente')
     expect(ideas.escrituras.length).toBe(previas)
@@ -377,12 +377,45 @@ describe('idea.alta con enlace de Amazon y palabra de búsqueda (ORD-POS-160, DE
 
   it('si otra escritura pisa la fila nueva entre escribir y verificar, se reporta (verificacion-fallida)', async () => {
     const ideas = libroAmz()
-    const write = ideas.writeRow.bind(ideas)
-    ideas.writeRow = async (tab, fila, celdas) => {
-      await write(tab, fila, celdas)
-      if (tab === 'AMZ_NICHO') await write(tab, fila, ['B0CANDIDAT', 'del motor', 'SI'])
+    const anexar = ideas.appendRow.bind(ideas)
+    const interno = ideas as unknown as { data: Map<string, unknown[][]> }
+    ideas.appendRow = async (tab, celdas) => {
+      await anexar(tab, celdas)
+      // Otra mano sobrescribe la fila recién anexada (p. ej. una edición manual): la verificación por clave no la encuentra.
+      if (tab === 'AMZ_NICHO') interno.data.get(tab)![2] = ['B0CANDIDAT', 'del motor', 'SI']
     }
     expect(await codeOf(servicio().service.altaIdea(parseAltaIdea(amz()), PM_CTX, ideas))).toBe('verificacion-fallida')
+  })
+
+  it('carrera con el motor (SEGUNDO H1): una fila anexada por el motor justo antes de escribir queda intacta y la de la idea va después', async () => {
+    const ideas = libroAmz()
+    const anexar = ideas.appendRow.bind(ideas)
+    const motor = { AMZ_IDEA_ASIN: ['EC-003', 'B0MOTOR001', '', '', 'PROPUESTO_KEEPA', '', '2026-11-18'], AMZ_NICHO: ['EC-003', 'nicho del motor', 'SI'] }
+    ideas.appendRow = async (tab, celdas) => {
+      // El motor de RADAROS anexa en la fila que el alta calculó al releer, entre la relectura y la escritura.
+      ideas.anexarDelMotor(tab, motor[tab])
+      return anexar(tab, celdas)
+    }
+    const r = await servicio().service.altaIdea(parseAltaIdea(amz()), PM_CTX, ideas)
+    expect(r).toMatchObject({ id: 'EC-009', repetida: false })
+    const despues = ideas.snapshot()
+    expect(despues.AMZ_IDEA_ASIN!.slice(3)).toEqual([motor.AMZ_IDEA_ASIN, ['EC-009', 'B0ABCD1234', 'SI', 'SI', 'POS', '', '']])
+    expect(despues.AMZ_NICHO!.slice(2)).toEqual([motor.AMZ_NICHO, ['EC-009', 'organizador de cables', 'SI']])
+    expect(ideas.escrituras.slice(2).map((e) => [e.tab, e.fila, e.anexo])).toEqual([['AMZ_IDEA_ASIN', 5, true], ['AMZ_NICHO', 4, true]])
+  })
+
+  it('AMZ_NICHO por ID+PALABRA_CLAVE (SEGUNDO H2): un segundo nicho legítimo de la idea no hace fallar un reintento tardío', async () => {
+    const ideas = libroAmz()
+    const { service } = servicio()
+    const cmd = parseAltaIdea(amz())
+    await service.altaIdea(cmd, PM_CTX, ideas)
+    ideas.anexarDelMotor('AMZ_NICHO', ['EC-009', 'cable organizer', 'SI'])
+    const previas = ideas.escrituras.length
+    expect(await service.altaIdea(cmd, PM_CTX, ideas)).toMatchObject({ id: 'EC-009', repetida: true })
+    expect(ideas.escrituras.length).toBe(previas)
+    // Dos filas con la misma clave (ID+PALABRA_CLAVE) sí son un conflicto.
+    ideas.anexarDelMotor('AMZ_NICHO', ['EC-009', 'organizador de cables', 'SI'])
+    expect(await codeOf(service.altaIdea(cmd, PM_CTX, ideas))).toBe('conflicto-concurrente')
   })
 
   it('criterio 5: la lista de pestañas es cerrada (sin PIPE_* ni otra AMZ_*) y SCORING nunca pasa de A:L', async () => {
@@ -397,23 +430,25 @@ describe('idea.alta con enlace de Amazon y palabra de búsqueda (ORD-POS-160, DE
     }
   })
 
-  it('adaptador de Sheets: en AMZ_* un solo rango de una fila desde A, en RAW, con el ancho del encabezado', async () => {
+  it('adaptador de Sheets: AMZ_* solo con values:append INSERT_ROWS de una fila desde A, en RAW, con el ancho del encabezado', async () => {
     const calls: Array<{ url: string; body: unknown }> = []
     const fetchImpl = (async (url: string, init: RequestInit) => {
       calls.push({ url, body: init.body ? JSON.parse(String(init.body)) : null })
       return new Response('{}', { status: 200 })
     }) as unknown as typeof fetch
     const store = new IdeasSheetsStore({ spreadsheetId: 'LIBRO', getWriteToken: async () => 't', fetchImpl })
-    await store.writeRow('AMZ_IDEA_ASIN', 40, ['EC-009', 'B0ABCD1234', 'SI', 'SI', 'POS', '', ''])
-    await store.writeRow('AMZ_NICHO', 12, ['EC-009', 'organizador', 'SI'])
-    expect(calls.map((c) => (c.body as { data: Array<{ range: string; values: unknown[][] }> }).data.map((d) => [d.range, d.values.length]))).toEqual([
-      [["'AMZ_IDEA_ASIN'!A40:G40", 1]], [["'AMZ_NICHO'!A12:C12", 1]],
+    await store.appendRow('AMZ_IDEA_ASIN', ['EC-009', 'B0ABCD1234', 'SI', 'SI', 'POS', '', ''])
+    await store.appendRow('AMZ_NICHO', ['EC-009', 'organizador', 'SI'])
+    expect(calls.map((c) => [decodeURIComponent(c.url.slice(c.url.indexOf('/values/'))), (c.body as { values: unknown[][] }).values])).toEqual([
+      ["/values/'AMZ_IDEA_ASIN'!A1:G1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS", [['EC-009', 'B0ABCD1234', 'SI', 'SI', 'POS', '', '']]],
+      ["/values/'AMZ_NICHO'!A1:C1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS", [['EC-009', 'organizador', 'SI']]],
     ])
-    expect(calls.every((c) => c.url.endsWith('/values:batchUpdate') && (c.body as { valueInputOption: string }).valueInputOption === 'RAW')).toBe(true)
-    await expect(store.writeRow('AMZ_NICHO', 12, ['EC-009', 'x'])).rejects.toThrow('ancho')
-    await expect(store.writeRow('AMZ_IDEA_ASIN', 12, Array.from({ length: 53 }, () => ''))).rejects.toThrow('ancho')
-    await expect(store.writeRow('AMZ_NICHO', 1, ['ID', 'PALABRA_CLAVE', 'ACTIVO'])).rejects.toThrow('fila')
-    await expect(store.writeRow('AMZ_NICHO_TOP' as IdeasTab, 12, ['a', 'b', 'c'])).rejects.toThrow('lista cerrada')
+    await expect(store.appendRow('AMZ_NICHO', ['EC-009', 'x'])).rejects.toThrow('ancho')
+    await expect(store.appendRow('AMZ_IDEA_ASIN', Array.from({ length: 53 }, () => ''))).rejects.toThrow('ancho')
+    await expect(store.appendRow('AMZ_NICHO_TOP' as AmzTab, ['a', 'b', 'c'])).rejects.toThrow('lista cerrada')
+    await expect(store.appendRow('PRODUCTS' as AmzTab, Array.from({ length: 16 }, () => ''))).rejects.toThrow('anexado fuera')
+    // Por número de fila (batchUpdate) AMZ_* nunca se escribe.
+    await expect(store.writeRow('AMZ_NICHO', 12, ['EC-009', 'organizador', 'SI'])).rejects.toThrow('solo se anexa')
     expect(calls.length).toBe(2)
   })
 

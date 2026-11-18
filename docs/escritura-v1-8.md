@@ -332,8 +332,8 @@ El código es inerte por defecto y solo el propietario lo activa.
     ARRAYFORMULA); si no, 409 `scoring-sin-formulas` y tampoco se escribe `PRODUCTS`. Preparar filas con fórmulas lo
     hace el propietario a mano.
 - **Escritura.** Un solo rango por pestaña, `A<n>:P<n>` y `A<n>:L<n>`, con `values:batchUpdate` en `RAW`; nunca
-  `append`, nunca otra pestaña ni las columnas M en adelante de `SCORING` (`web/src/lib/radaros/ideas-alta-store.ts`,
-  lista cerrada `PRODUCTS` y `SCORING`).
+  `append` en estas dos, nunca otra pestaña ni las columnas M en adelante de `SCORING`
+  (`web/src/lib/radaros/ideas-alta-store.ts`; `AMZ_IDEA_ASIN` y `AMZ_NICHO` solo se anexan, §9.1).
 - **Después de escribir.** Relee las dos filas: deben coincidir y M de `SCORING` debe tener valor; si M queda vacía,
   409 `idea-sin-calculo` (la fila queda escrita y se reporta).
 - **Auditoría e idempotencia.** `AUDITORIA` de PROJECT-OS antes de escribir en RADAROS: `ACTOR=agente-pm`,
@@ -368,14 +368,18 @@ Misma ruta, mismo token, misma bandera: sin `ECO_IDEAS_ALTA=true` exacto sigue a
   - falta una columna requerida, está repetida o la pestaña está vacía: 409 `idea-encabezados-distintos` (detalle: la
     pestaña y los nombres de columna);
   - el ASIN ya está en `AMZ_IDEA_ASIN` con otra idea, activo o no: 409 `idea-asin-en-otra-idea` (detalle: fila);
-  - la fila nueva es la siguiente a la última con contenido (también cuenta una fórmula); nunca una intermedia. Con
-    5000 filas de datos o más: 503 `pestana-llena`.
-- **Escritura.** Después de `PRODUCTS` y `SCORING`: un rango de una fila desde A con el ancho del encabezado, en `RAW`,
-  en `AMZ_IDEA_ASIN` y luego en `AMZ_NICHO`. La lista de pestañas del almacén sigue cerrada (`PRODUCTS`, `SCORING`,
-  `AMZ_IDEA_ASIN`, `AMZ_NICHO`): ninguna `PIPE_*` ni otra `AMZ_*`, y `SCORING` nunca más allá de A:L.
-- **Verificación.** Relee las dos pestañas: cada fila está una sola vez y como se planeó; si no, 409
-  `verificacion-fallida`. Riesgo conocido: si el motor de RADAROS (Apps Script) anexa una fila en la misma posición
-  entre la relectura y la escritura, la verificación lo detecta pero no lo evita.
+  - la fila de la idea se busca por su clave: `IDEA_ID`+`ASIN` en `AMZ_IDEA_ASIN` e `ID`+`PALABRA_CLAVE` en `AMZ_NICHO`
+    (otro nicho de la misma idea no cuenta); dos filas con la misma clave: 409 `conflicto-concurrente`. Con 5000 filas
+    de datos o más: 503 `pestana-llena`.
+- **Escritura.** Después de `PRODUCTS` y `SCORING`, en `AMZ_IDEA_ASIN` y luego en `AMZ_NICHO`: `values:append` con
+  `insertDataOption=INSERT_ROWS` y `valueInputOption=RAW`, una fila desde A con el ancho del encabezado. Inserta la fila
+  al final de la tabla y **nunca sobrescribe**: si el motor de RADAROS (Apps Script) anexa una fila entre la relectura y
+  la escritura, la suya queda intacta y la de la idea va después. `AMZ_*` nunca se escribe por número de fila
+  (`batchUpdate`). La lista de pestañas del almacén sigue cerrada (`PRODUCTS`, `SCORING`, `AMZ_IDEA_ASIN`,
+  `AMZ_NICHO`): ninguna `PIPE_*` ni otra `AMZ_*`, y `SCORING` nunca más allá de A:L.
+- **Verificación.** Relee las dos pestañas y cuenta por clave (`IDEA_ID`+`ASIN`, `ID`+`PALABRA_CLAVE`): exactamente
+  una fila de la idea en cada una y como se planeó; si no (falta, está repetida o alguien la cambió), 409
+  `verificacion-fallida`.
 - **Auditoría e idempotencia.** La misma operación auditada (`ENTIDAD=PRODUCTS`, `REGISTRO_ID=EC-NNN`), con una fila
   más por celda: `AMZ_IDEA_ASIN!<columna>` y `AMZ_NICHO!<columna>`. El mismo `requestId` no duplica ninguna fila y, si
   quedó a medias, completa solo lo que falta; una fila de la idea que ya exista distinta de lo auditado no se corrige

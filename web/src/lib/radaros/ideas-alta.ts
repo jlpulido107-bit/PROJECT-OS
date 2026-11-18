@@ -83,19 +83,30 @@ export interface IdeasAltaStore {
   values(tab: IdeasTab): Promise<unknown[][]>
   /** Contenido tal cual (FORMULA): una celda con fórmula empieza por `=`. */
   formulas(tab: IdeasTab): Promise<unknown[][]>
-  /** Escribe `A{fila}:{última}{fila}` en RAW: exactamente ANCHO[tab] celdas, o el ancho del encabezado en AMZ_*. */
+  /** Escribe `A{fila}:{última}{fila}` en RAW: exactamente ANCHO[tab] celdas. Solo PRODUCTS y SCORING. */
   writeRow(tab: IdeasTab, fila: number, celdas: Celda[]): Promise<void>
+  /**
+   * AMZ_IDEA_ASIN y AMZ_NICHO: anexa UNA fila al final, desde A y con el ancho del encabezado, en RAW, insertando filas
+   * (anexado de Sheets con insertDataOption=INSERT_ROWS, en ideas-alta-store.ts): nunca sobrescribe una fila, aunque otro la haya anexado antes.
+   */
+  appendRow(tab: AmzTab, celdas: Celda[]): Promise<void>
 }
 
 export function assertIdeasTab(tab: string): asserts tab is IdeasTab {
   if (!(IDEAS_TABS as readonly string[]).includes(tab)) throw new Error('pestaña fuera de la lista cerrada del alta de ideas')
 }
 
+/** Escritura por número de fila: solo PRODUCTS y SCORING, con su ancho exacto. AMZ_* solo se anexa (`assertAnexo`). */
 export function assertFila(tab: IdeasTab, fila: number, celdas: readonly Celda[]) {
+  if (esAmzTab(tab)) throw new Error('AMZ_* solo se anexa: nunca se escribe por número de fila')
   if (!Number.isInteger(fila) || fila < 2 || fila > MAX_DATA_ROWS + 1) throw new Error('fila fuera de rango')
-  if (esAmzTab(tab) ? celdas.length < AMZ_COLUMNAS[tab].length || celdas.length > AMZ_ANCHO_MAX : celdas.length !== ANCHO[tab]) {
-    throw new Error('ancho de fila distinto del permitido')
-  }
+  if (celdas.length !== ANCHO[tab]) throw new Error('ancho de fila distinto del permitido')
+}
+
+/** Anexado de AMZ_*: solo esas dos pestañas, de 3/5 a 52 celdas (el ancho del encabezado). */
+export function assertAnexo(tab: string, celdas: readonly Celda[]): asserts tab is AmzTab {
+  if (!(AMZ_TABS as readonly string[]).includes(tab)) throw new Error('anexado fuera de AMZ_IDEA_ASIN y AMZ_NICHO')
+  if (celdas.length < AMZ_COLUMNAS[tab as AmzTab].length || celdas.length > AMZ_ANCHO_MAX) throw new Error('ancho de fila distinto del permitido')
 }
 
 /* ------------------------------------ Comando ------------------------------------ */
@@ -342,11 +353,12 @@ export function valoresAmz(id: string, amazon: AmazonIdea): Record<AmzTab, Recor
 }
 
 /**
- * Qué falta escribir en una pestaña AMZ_* (null = la fila ya está y coincide). Solo filas nuevas al final: la fila es
- * la siguiente a la última con contenido (también cuenta una fórmula). Una fila de la idea que no coincide con lo
- * planeado no se corrige (`estado-divergente`): nunca se editan filas existentes.
+ * Qué falta anexar en una pestaña AMZ_* (null = la fila de la idea ya está, una sola vez, y coincide). La fila de la idea
+ * se identifica por su clave (IDEA_ID+ASIN o ID+PALABRA_CLAVE); dos con la misma clave son `conflicto-concurrente` y una
+ * que no coincide con lo planeado no se corrige (`estado-divergente`): nunca se editan filas existentes. La fila nueva no
+ * lleva número: la anexa el almacén al final (`appendRow`), así nunca pisa una fila que otro haya anexado después.
  */
-function comprobarAmz(tab: AmzTab, values: unknown[][], valores: Record<string, string>, clave: readonly string[]): { fila: number; celdas: Celda[] } | null {
+function comprobarAmz(tab: AmzTab, values: unknown[][], valores: Record<string, string>, clave: readonly string[]): { celdas: Celda[] } | null {
   const { pos, ancho } = columnasAmzOk(tab, values)
   const mismas = values.filter((row, n) => n > 0 && clave.every((c) => texto(row?.[pos[c]!]) === valores[c]))
   if (mismas.length > 1) throw new OperationError('conflicto-concurrente')
@@ -354,18 +366,17 @@ function comprobarAmz(tab: AmzTab, values: unknown[][], valores: Record<string, 
     if (!Object.entries(valores).every(([c, v]) => igual(mismas[0]![pos[c]!], v))) throw new OperationError('estado-divergente')
     return null
   }
-  const fila = Math.max(values.length, 1) + 1
-  if (fila > MAX_DATA_ROWS + 1) throw new OperationError('pestana-llena', { detail: { pestana: tab } })
+  if (Math.max(values.length, 1) + 1 > MAX_DATA_ROWS + 1) throw new OperationError('pestana-llena', { detail: { pestana: tab } })
   const celdas: Celda[] = Array.from({ length: ancho }, () => '')
   for (const [c, v] of Object.entries(valores)) celdas[pos[c]!] = v
-  return { fila, celdas }
+  return { celdas }
 }
 
 /**
  * Comprobaciones de AMZ_IDEA_ASIN y AMZ_NICHO antes de escribir nada (DEC-ECO-017): columnas por encabezado, el ASIN no
- * está en otra idea (activo o no: `idea-asin-en-otra-idea`) y las filas nuevas van al final.
+ * está en otra idea (activo o no: `idea-asin-en-otra-idea`) y qué filas de la idea faltan (por IDEA_ID+ASIN e ID+PALABRA_CLAVE).
  */
-export function comprobarAmazon(plan: PlanIdea, libro: LibroIdeas): Record<AmzTab, { fila: number; celdas: Celda[] } | null> | null {
+export function comprobarAmazon(plan: PlanIdea, libro: LibroIdeas): Record<AmzTab, { celdas: Celda[] } | null> | null {
   if (!plan.amazon) return null
   if (!libro.amz) throw new Error('alta con Amazon sin leer AMZ_*')
   const ideaAsin = libro.amz.AMZ_IDEA_ASIN
@@ -375,7 +386,7 @@ export function comprobarAmazon(plan: PlanIdea, libro: LibroIdeas): Record<AmzTa
   const v = valoresAmz(plan.id, plan.amazon)
   return {
     AMZ_IDEA_ASIN: comprobarAmz('AMZ_IDEA_ASIN', ideaAsin, v.AMZ_IDEA_ASIN, ['IDEA_ID', 'ASIN']),
-    AMZ_NICHO: comprobarAmz('AMZ_NICHO', libro.amz.AMZ_NICHO, v.AMZ_NICHO, ['ID']),
+    AMZ_NICHO: comprobarAmz('AMZ_NICHO', libro.amz.AMZ_NICHO, v.AMZ_NICHO, ['ID', 'PALABRA_CLAVE']),
   }
 }
 
@@ -419,9 +430,9 @@ export async function escribirIdea(store: IdeasAltaStore, plan: PlanIdea): Promi
   try {
     if (filaP !== null) await store.writeRow('PRODUCTS', filaP, plan.products)
     if (filaS !== null) await store.writeRow('SCORING', filaS, plan.scoring)
-    // atajo: entre la relectura y esta escritura el motor de RADAROS (Apps Script) podría anexar una fila en la misma
-    // posición; la verificación de abajo lo detecta (`verificacion-fallida`), no lo evita. Mejorar si llega a pasar.
-    for (const tab of AMZ_TABS) if (amz?.[tab]) await store.writeRow(tab, amz[tab].fila, amz[tab].celdas)
+    // AMZ_*: anexado que inserta filas (nunca sobrescribe), así una fila que el motor de RADAROS anexe entre la relectura
+    // y esta escritura queda intacta y la de la idea va después. La verificación de abajo la busca por su clave.
+    for (const tab of AMZ_TABS) if (amz?.[tab]) await store.appendRow(tab, amz[tab].celdas)
   } catch (error) {
     if (error instanceof OperationError) throw error
     throw new OperationError('escritura-fallida')
@@ -438,7 +449,8 @@ export async function escribirIdea(store: IdeasAltaStore, plan: PlanIdea): Promi
   if (!p || !s || filasConId(products, plan.id) !== 1 || filasConId(scoring, plan.id) !== 1) throw new OperationError('verificacion-fallida')
   if (!filaCoincide(p.row, plan.products) || !filaCoincide(s.row, plan.scoring)) throw new OperationError('verificacion-fallida')
   if (plan.amazon) {
-    // Las dos filas de AMZ_* están, una sola vez y como se planearon (comprobarAmazon devuelve null en las dos).
+    // Las dos filas de AMZ_* están, una sola vez por su clave (IDEA_ID+ASIN e ID+PALABRA_CLAVE) y como se planearon
+    // (comprobarAmazon devuelve null en las dos).
     let pendientes: ReturnType<typeof comprobarAmazon>
     try {
       const [ideaAsin, nicho] = await Promise.all([store.formulas('AMZ_IDEA_ASIN'), store.formulas('AMZ_NICHO')])
