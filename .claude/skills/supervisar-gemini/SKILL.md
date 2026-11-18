@@ -22,8 +22,9 @@ criterio, riesgo mal clasificado, veredicto, validar, límites). Si te llama una
 
 Termina **sin dictamen** y explica por qué (al propietario en la sesión; en una rutina, sin comentar) si:
 
-1. **Tu modelo es de la familia del implementador (Opus).** `FAMILIA_IMPLEMENTADOR` de
-   [`politica.ts`](../../../web/src/lib/supervision/politica.ts) rechaza ese firmante.
+1. **Tu modelo es de la familia del implementador.** Es la constante `FAMILIA_IMPLEMENTADOR` de
+   [`politica.ts`](../../../web/src/lib/supervision/politica.ts) (fuente única; léela en el checkout), y /ordenes
+   rechaza ese firmante.
 2. **No sabes con certeza tu identificador de modelo.** `modelo` es el identificador con el que corre tu sesión
    (p. ej. `claude-sonnet-5-5`), tal como te lo da el entorno; nunca lo deduzcas de un nombre comercial ni escribas
    `gemini-supervisado`, `gemini-…` u otro texto inventado. Debe ser de una familia de Claude que reconozca

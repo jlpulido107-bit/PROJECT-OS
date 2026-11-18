@@ -111,7 +111,8 @@ segundo revisor: con `NO`, un CONFORME de `PRIMERO` o `DELTA` basta para «Listo
 - de origen `claude` (o sin origen): su modelo, de otra familia que la del `PRIMERO` o `DELTA`;
 - de origen `gemini-supervisado`: los hallazgos los produce Gemini (`modeloHallazgos`, de otra familia que la del
   `PRIMERO` o `DELTA`) y una sesión de Claude los confirma o descarta uno por uno con evidencia (`hallazgosGemini`) y
-  firma; el modelo del firmante no es el del implementador (Opus).
+  firma; el firmante no es de la familia del implementador (`FAMILIA_IMPLEMENTADOR` de
+  [`politica.ts`](../web/src/lib/supervision/politica.ts), fuente única; [operación](operacion.md#roles-y-modelos)).
 
 «Otro modelo» se compara por familia (Opus, Sonnet, Haiku, Fable, Gemini), nunca por el texto libre de `modelo`: un
 sufijo distinto del mismo modelo o un nombre inventado no cuentan, y el `PRIMERO` o `DELTA` tiene que ser de Claude.
@@ -121,8 +122,8 @@ que activa el propietario ([escritura §6](escritura-v1-8.md)); sin ella, /orden
 [contrato §3.1](contrato-supervision-automatica.md#contrato-versión-2-rol-y-modelo-del-revisor). El supervisor sigue la
 skill [`supervisar-gemini`](../.claude/skills/supervisar-gemini/SKILL.md): lee la revisión de Gemini en un PR sombra
 del mismo head, verifica cada hallazgo, agrega los bloqueantes que Gemini no vio y firma; si Gemini no dejó hallazgos,
-no hay `SEGUNDO` gemini-supervisado y va el de Fable. «Otro modelo» no se aplica a ciegas: ningún `SEGUNDO`, de ningún
-origen, lo firma la familia del implementador (Opus).
+no hay `SEGUNDO` gemini-supervisado y va el de origen `claude`. «Otro modelo» no se aplica a ciegas: el `SEGUNDO`, de
+cualquier origen, nunca es de la familia del implementador (`FAMILIA_IMPLEMENTADOR`) ni de la del `PRIMERO` o `DELTA`.
 
 **Fechas de transición (ORD-POS-099; [prueba Gemini §5 y §8](prueba-gemini.md#8-transición-y-retiro-de-fable-2026-11-03)).**
 
@@ -133,7 +134,9 @@ origen, lo firma la familia del implementador (Opus).
 | Desde el 2026-11-03, **solo si** el propietario encendió `SEGUNDO_GEMINI_SUPERVISADO` y la tabla de la prueba no muestra bloqueantes reales que Gemini y el supervisor no vieron | gemini-supervisado (rutina `PROJECT-OS · supervisar Gemini`, Sonnet) | Modo operación: publica en el PR de la orden |
 | Si falla cualquiera de esas condiciones, o al volver | Fable 5.1 (la rutina no se borra) | Se apaga la bandera |
 
-Retirar a Fable lo decide el propietario; esta tabla es la recomendación del PM.
+Retirar a Fable lo decide el propietario; esta tabla es la recomendación del PM. La tabla es de cuando implementaba
+Opus: donde dice «Fable 5.1» vale hoy el `SEGUNDO` de origen `claude` de la [tabla de modelos](operacion.md#roles-y-modelos)
+(ORD-POS-158).
 
 ## Qué se puede delegar
 

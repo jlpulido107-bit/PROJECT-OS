@@ -123,7 +123,7 @@ pero no cuenta como segundo revisor. BAJO no cambia.
 «Otro modelo» se compara por familia (`opus`, `sonnet`, `haiku`, `fable` en `claude-<familia>-<versión>`; `gemini` en
 `gemini-<versión>` o `gemini-code-assist`); un modelo que no la tiene no cuenta como distinto. El firmante (`modelo`) de un
 `SEGUNDO` es siempre de Claude. Con `gemini-supervisado`, la familia de `modeloHallazgos` se compara con la del `PRIMERO`
-o `DELTA` y el firmante no puede ser de la familia del implementador (Opus). En MEDIO no sensible (`SENSIBLE` = `NO`,
+o `DELTA` y el firmante no puede ser de la familia del implementador (`FAMILIA_IMPLEMENTADOR` de `politica.ts`). En MEDIO no sensible (`SENSIBLE` = `NO`,
 DEC-POS-019) el `SEGUNDO` no hace falta. El `PRIMERO` o `DELTA` también tiene que ser de una familia de Claude. Un
 `SEGUNDO` `gemini-supervisado` solo cuenta con `SEGUNDO_GEMINI_SUPERVISADO=on` en Cloud Run, que pone el propietario
 ([escritura §6](escritura-v1-8.md)); sin ella se trata como si no hubiera `SEGUNDO`.

@@ -29,11 +29,15 @@ export function familiaModelo(modelo: string | undefined): string | null {
 export const esFamiliaClaude = (familia: string | null): boolean => familia !== null && familia !== 'gemini'
 
 /**
- * Familia del modelo que implementa y corrige las órdenes (docs/operacion.md: Opus). El firmante de un SEGUNDO
- * gemini-supervisado no puede ser de esta familia (DEC-POS-022).
- * atajo: es la asignación operativa, no se lee del PR; mejorarlo si la orden llega a registrar su implementador.
+ * Familia del modelo que implementa las órdenes: fuente única (ORD-POS-158). Los documentos y las skills remiten a
+ * esta constante en vez de nombrar un modelo; la tabla de docs/operacion.md dice a qué modelo corresponde hoy. El
+ * firmante de un SEGUNDO gemini-supervisado no puede ser de esta familia (DEC-POS-022).
+ * Para cambiar de implementador: cambiar este valor (uno de los que devuelve familiaModelo) y la fila «Implementador»
+ * de docs/operacion.md, en un PR.
+ * atajo: es la asignación operativa, no se lee del PR ni distingue a un corrector de otra familia; mejorarlo si la
+ * orden llega a registrar quién la implementó y quién la corrigió.
  */
-export const FAMILIA_IMPLEMENTADOR = 'opus'
+export const FAMILIA_IMPLEMENTADOR = 'fable'
 
 /**
  * Columna SENSIBLE de ORDENES_CODEX (DEC-POS-019, docs/migracion-ordenes-codex.md): solo `NO` marca una orden no
