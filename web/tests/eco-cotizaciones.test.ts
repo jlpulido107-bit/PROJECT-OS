@@ -509,7 +509,7 @@ describe('ORD-POS-150: pipeline y cotizaciones en una vista', () => {
     const recibir = h.slice(h.indexOf('id="recibir"'))
     expect(recibir).toContain('aria-label="Pegar tabla de Gemini"')
     const nav = readFileSync(path.join(__dirname, '..', 'src', 'lib', 'nav.ts'), 'utf8')
-    expect(nav).toContain("items: [{ href: '/eco', label: 'Ideas' }, { href: '/eco/pipeline', label: 'Compras' }]")
+    expect(nav).toContain("items: [{ href: '/eco', label: 'Ideas' }, { href: '/eco/semana', label: 'Esta semana' }, { href: '/eco/pipeline', label: 'Compras' }]")
     expect(nav).not.toContain("href: '/eco/cotizaciones'")
   })
 
