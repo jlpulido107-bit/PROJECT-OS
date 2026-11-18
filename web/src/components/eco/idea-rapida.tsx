@@ -8,8 +8,8 @@ import { NOMBRE_MAX, PALABRA_MAX, tarjetaIdeaRapida, type IdeaRapida, type Tarje
  * búsqueda) que generan una tarjeta de texto para pegar en POS · Ideas. Este formulario NO escribe: no llama a ninguna
  * ruta ni a Sheets; todo ocurre en el navegador. El alta real la hace el PM con `idea.alta` tras el «sí PAQ».
  *
- * Montaje: componente aislado, sin props ni datos del servidor. Va en la página de ORD-POS-159 con una sola línea,
- * `<IdeaRapida />` (docs/escritura-v1-8.md §9.1); mientras esa página no esté en main, no se monta en ninguna.
+ * Montaje: componente aislado, sin props ni datos del servidor. Está montado solo al final de «ECO esta semana»
+ * (/eco/semana, ORD-POS-159), dentro de `.semana-idea-rapida` para sus áreas táctiles de 44 px (docs/escritura-v1-8.md §9.1).
  * ------------------------------------------------------------------------------------------ */
 
 const VACIA: IdeaRapida = { nombre: '', enlace: '', palabra: '' }

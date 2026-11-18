@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
+import { IdeaRapida } from '@/components/eco/idea-rapida'
 import { Empty } from '@/components/ui'
 import { formatInstant } from '@/lib/dates'
 import { privateEco } from '@/lib/page-data'
@@ -10,8 +11,9 @@ import type { Bloque } from '@/lib/radaros/tabla'
 export const metadata: Metadata = { title: 'ECO esta semana (solo lectura)' }
 
 /**
- * «ECO esta semana» (ORD-POS-159, POS-061): solo lectura, con palabras. No tiene formularios, botones ni rutas de
- * escritura; los textos salen de `eco-semana-textos.ts` y los ID van solo en gris pequeño (`eco-id`).
+ * «ECO esta semana» (ORD-POS-159, POS-061): solo lectura, con palabras. No tiene rutas de escritura; los textos salen de
+ * `eco-semana-textos.ts` y los ID van solo en gris pequeño (`eco-id`). Su único formulario es «Idea rápida»
+ * (ORD-POS-160, `<IdeaRapida />`), que no escribe: solo arma en el navegador una tarjeta para pegar en POS · Ideas.
  */
 
 const pesos = (v: number | null) => (v === null ? 'Sin dato' : `$${v.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`)
@@ -225,6 +227,7 @@ export default async function EcoSemanaPage() {
         <EstadoBloque bloque={v.buscador} nombre="La lista del buscador">{(b) => <Hallazgos b={b} />}</EstadoBloque>
       </Seccion>
       <SaludBuscador s={v.salud} />
+      <div className="semana-idea-rapida"><IdeaRapida /></div>
     </>
   )
 }

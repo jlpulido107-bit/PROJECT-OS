@@ -387,8 +387,9 @@ Misma ruta, mismo token, misma bandera: sin `ECO_IDEAS_ALTA=true` exacto sigue a
   409 `conflicto-idempotencia`.
 - **Formulario «Idea rápida».** `web/src/components/eco/idea-rapida.tsx` (`<IdeaRapida />`, sin props): nombre, enlace
   y palabra de búsqueda. **No escribe** ni llama a ninguna ruta: valida en el navegador con la misma regla del enlace
-  y genera una tarjeta de texto para pegar en POS · Ideas, que la pasa al PM en un paquete. Se monta con esa sola línea
-  en la página de ORD-POS-159; mientras esa página no esté en `main`, el componente no está montado en ninguna página.
+  y genera una tarjeta de texto para pegar en POS · Ideas, que la pasa al PM en un paquete. Está montado solo al final
+  de «ECO esta semana» (`/eco/semana`, ORD-POS-159), dentro de `.semana-idea-rapida`, que lleva sus controles a 44 px;
+  es el único formulario de esa página y no cambia que la página solo lea.
 
 ### Activar (solo el propietario, en Cloud Shell)
 

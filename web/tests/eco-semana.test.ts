@@ -314,7 +314,12 @@ describe('criterio 6: accesibilidad como W1', () => {
   it('áreas táctiles de 44 px: lo único que se toca son enlaces y el plegado', async () => {
     expect(css).toMatch(/\.semana-enlace \{[^}]*min-height: 44px; min-width: 44px/)
     expect(css).toMatch(/\.semana-plegado > summary \{[^}]*min-height: 44px/)
-    const h = await pagina()
+    // ORD-POS-160: el único formulario es «Idea rápida» (no escribe, ver ideas-alta.test.ts); sus controles también a 44 px.
+    expect(css).toMatch(/\.semana-idea-rapida \.button, \.semana-idea-rapida input \{ min-height: 44px; \}/)
+    const completa = await pagina()
+    const formulario = /<div class="semana-idea-rapida"><section class="card stack" aria-labelledby="idea-rapida-titulo">[\s\S]*?<\/section><\/div>/g
+    expect(completa.match(formulario)?.length).toBe(1)
+    const h = completa.replace(formulario, '')
     expect(h).not.toMatch(/<(button|input|select|textarea|form)\b/)
     for (const a of h.match(/<a [^>]*>/g) ?? []) expect(a).toContain('class="semana-enlace"')
     expect(h).toContain('<details class="section plegable-seccion semana-plegado">')
