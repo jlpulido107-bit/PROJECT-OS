@@ -34,7 +34,7 @@ export function gruposMenu({ showEco = false, showFinanzas = false, showOperatio
     // /eco y /eco/pipeline solo con RADAROS_SHEET_ID (ORD-POS-067, ORD-POS-097); el layout pasa solo el booleano. ORD-POS-150:
     // Ideas y Compras (/eco/cotizaciones redirige a Compras).
     ...(showEco
-      ? [{ id: 'radaros', label: 'RADAROS', corto: 'RADAROS', items: [{ href: '/eco', label: 'Ideas' }, { href: '/eco/pipeline', label: 'Compras' }] }]
+      ? [{ id: 'radaros', label: 'RADAROS', corto: 'RADAROS', items: [{ href: '/eco', label: 'Ideas' }, { href: '/eco/semana', label: 'Esta semana' }, { href: '/eco/pipeline', label: 'Compras' }] }]
       : []),
     // /finanzas solo con FINANZAS_SHEET_ID (ORD-POS-074).
     ...(showFinanzas ? [{ id: 'finanzas', label: 'Finanzas', corto: 'Finanzas', items: [{ href: '/finanzas', label: 'Finanzas' }] }] : []),
