@@ -1,5 +1,5 @@
 import { MAX_DATA_ROWS, ULTIMA_COLUMNA } from '../schema'
-import { ANCHO, assertFila, assertIdeasTab, type Celda, type IdeasAltaStore, type IdeasTab } from './ideas-alta'
+import { assertAnexo, assertFila, assertIdeasTab, type AmzTab, type Celda, type IdeasAltaStore, type IdeasTab } from './ideas-alta'
 import { letraColumna } from './pipeline-escritura-store'
 
 /**
@@ -7,10 +7,13 @@ import { letraColumna } from './pipeline-escritura-store'
  * un endpoint de escritura de Sheets. Recibe un `spreadsheetId` fijo al construirse (ideas-alta-runtime.ts, siempre
  * RADAROS_SHEET_ID) y nunca uno por petición.
  *
- * - Lista CERRADA de pestañas: PRODUCTS y SCORING; cualquier otra lanza un error de programación antes de pedir el token.
- * - Una sola forma de escribir: batchUpdate de valores con UN rango `A<n>:P<n>` (PRODUCTS) o `A<n>:L<n>` (SCORING), con
- *   exactamente ese ancho. Así nunca se escribe en las fórmulas de SCORING (M en adelante). Sin append: la fila nueva
- *   de SCORING ya existe con sus fórmulas.
+ * - Lista CERRADA de pestañas: PRODUCTS, SCORING y, por DEC-ECO-017 (ORD-POS-160), AMZ_IDEA_ASIN y AMZ_NICHO; cualquier
+ *   otra lanza un error de programación antes de pedir el token.
+ * - PRODUCTS y SCORING: batchUpdate de valores con UN rango `A<n>:P<n>` o `A<n>:L<n>`, con exactamente ese ancho
+ *   (`assertFila`). Así nunca se escribe en las fórmulas de SCORING (M en adelante). Sin append: la fila nueva de SCORING
+ *   ya existe con sus fórmulas.
+ * - AMZ_IDEA_ASIN y AMZ_NICHO: solo el anexado de valores con insertDataOption=INSERT_ROWS de UNA fila desde A, con el ancho
+ *   del encabezado (3 a 52 celdas, `assertAnexo`). Inserta filas: nunca sobrescribe una que el motor haya anexado.
  * - Solo valueInputOption=RAW (nunca evalúa fórmulas). Nunca lee ni propaga el cuerpo de un error.
  */
 
@@ -69,8 +72,17 @@ export class IdeasSheetsStore implements IdeasAltaStore {
   async writeRow(tab: IdeasTab, fila: number, celdas: Celda[]): Promise<void> {
     assertIdeasTab(tab)
     assertFila(tab, fila, celdas)
-    const range = `${quoteTab(tab)}!A${fila}:${letraColumna(ANCHO[tab] - 1)}${fila}`
+    const range = `${quoteTab(tab)}!A${fila}:${letraColumna(celdas.length - 1)}${fila}`
     await this.call('POST', '/values:batchUpdate', { valueInputOption: 'RAW', data: [{ range, majorDimension: 'ROWS', values: [celdas] }] })
+  }
+
+  async appendRow(tab: AmzTab, celdas: Celda[]): Promise<void> {
+    assertIdeasTab(tab)
+    assertAnexo(tab, celdas)
+    const range = `${quoteTab(tab)}!A1:${letraColumna(celdas.length - 1)}1`
+    await this.call('POST', `/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      range, majorDimension: 'ROWS', values: [celdas],
+    })
   }
 }
 
@@ -81,7 +93,8 @@ export class IdeasSheetsStore implements IdeasAltaStore {
 export class InMemoryIdeasStore implements IdeasAltaStore {
   private readonly data = new Map<IdeasTab, unknown[][]>()
   readonly formulasHoja = new Map<string, string>()
-  readonly escrituras: Array<{ tab: IdeasTab; fila: number; celdas: Celda[] }> = []
+  /** En un anexado, `fila` es donde quedó la fila (la siguiente a la última con contenido, también una fórmula). */
+  readonly escrituras: Array<{ tab: IdeasTab; fila: number; celdas: Celda[]; anexo?: true }> = []
   calcular: (tab: IdeasTab, row: unknown[], col: number) => unknown = (_tab, row) => (row[0] === undefined || row[0] === '' ? '' : `calc:${String(row[0])}`)
 
   constructor(readonly libro: string, initial: Partial<Record<IdeasTab, unknown[][]>>) {
@@ -142,6 +155,26 @@ export class InMemoryIdeasStore implements IdeasAltaStore {
       row[i] = v
     })
     this.escrituras.push({ tab, fila, celdas: [...celdas] })
+  }
+
+  /** Como el anexado de Sheets con INSERT_ROWS: inserta la fila tras la última con contenido; nunca sobrescribe. */
+  async appendRow(tab: AmzTab, celdas: Celda[]): Promise<void> {
+    assertIdeasTab(tab)
+    assertAnexo(tab, celdas)
+    this.anexar(tab, celdas)
+    this.escrituras.push({ tab, fila: this.render(tab, true).length, celdas: [...celdas], anexo: true })
+  }
+
+  /** Simula a otro escritor (el motor de RADAROS) que anexa una fila; no cuenta como escritura del alta. */
+  anexarDelMotor(tab: AmzTab, celdas: unknown[]): void {
+    this.anexar(tab, celdas)
+  }
+
+  private anexar(tab: AmzTab, celdas: readonly unknown[]): void {
+    const values = this.rows(tab)
+    const n = this.render(tab, true).length
+    while (values.length < n) values.push([])
+    values.splice(n, 0, [...celdas])
   }
 
   snapshot(): Record<string, unknown[][]> {

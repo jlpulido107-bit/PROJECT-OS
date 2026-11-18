@@ -93,11 +93,14 @@ describe('garantías de seguridad del código', () => {
     expect(ecoRuntime).toMatch(/ecoPipelineWriteServiceAccount\(env\)/)
     expect(ecoRuntime).not.toMatch(/finanzas|FINANZAS|spreadsheetId\(\)|SHEETS_SPREADSHEET_ID|writeServiceAccount\(|PROJECT_OS_WRITE_SERVICE_ACCOUNT|SheetsTableStore|OperationsService/)
     // ORD-POS-131: el adaptador del alta de ideas solo escribe un rango por llamada con values:batchUpdate en RAW (sin
-    // append ni borrado); su runtime usa solo RADAROS_SHEET_ID y la cuenta del pipeline, y exige la bandera.
+    // borrado); su runtime usa solo RADAROS_SHEET_ID y la cuenta del pipeline, y exige la bandera. ORD-POS-160 (SEGUNDO
+    // H1): AMZ_* se anexa con UN solo values:append, en RAW e insertando filas (nunca sobrescribe).
     const ideas = sources.find((s) => s.file === IDEAS_ADAPTER)!.text
     expect(ideas).toMatch(/valueInputOption: 'RAW'/)
-    expect(ideas).not.toMatch(/process\.env|google-auth-library|readFileSync|:append|:clear|values:update|batchUpdateByDataFilter|deleteDimension|method:\s*'(PUT|PATCH|DELETE)'/)
+    expect(ideas).not.toMatch(/process\.env|google-auth-library|readFileSync|:clear|values:update|batchUpdateByDataFilter|deleteDimension|OVERWRITE|method:\s*'(PUT|PATCH|DELETE)'/)
     expect(ideas.match(/:batchUpdate/g)).toEqual([':batchUpdate'])
+    expect(ideas.match(/:append/g)).toEqual([':append'])
+    expect(ideas).toMatch(/:append\?valueInputOption=RAW&insertDataOption=INSERT_ROWS`/)
     const ideasRuntime = sources.find((s) => s.file === IDEAS_RUNTIME)!.text
     expect(ideasRuntime).toMatch(/radarosSheetId\(env\)/)
     expect(ideasRuntime).toMatch(/ecoPipelineWriteServiceAccount\(env\)/)

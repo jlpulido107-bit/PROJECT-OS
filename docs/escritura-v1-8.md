@@ -332,8 +332,8 @@ El código es inerte por defecto y solo el propietario lo activa.
     ARRAYFORMULA); si no, 409 `scoring-sin-formulas` y tampoco se escribe `PRODUCTS`. Preparar filas con fórmulas lo
     hace el propietario a mano.
 - **Escritura.** Un solo rango por pestaña, `A<n>:P<n>` y `A<n>:L<n>`, con `values:batchUpdate` en `RAW`; nunca
-  `append`, nunca otra pestaña ni las columnas M en adelante de `SCORING` (`web/src/lib/radaros/ideas-alta-store.ts`,
-  lista cerrada `PRODUCTS` y `SCORING`).
+  `append` en estas dos, nunca otra pestaña ni las columnas M en adelante de `SCORING`
+  (`web/src/lib/radaros/ideas-alta-store.ts`; `AMZ_IDEA_ASIN` y `AMZ_NICHO` solo se anexan, §9.1).
 - **Después de escribir.** Relee las dos filas: deben coincidir y M de `SCORING` debe tener valor; si M queda vacía,
   409 `idea-sin-calculo` (la fila queda escrita y se reporta).
 - **Auditoría e idempotencia.** `AUDITORIA` de PROJECT-OS antes de escribir en RADAROS: `ACTOR=agente-pm`,
@@ -346,6 +346,50 @@ El código es inerte por defecto y solo el propietario lo activa.
   escritura de PROJECT-OS (`PROJECT_OS_WRITE_MODE=sheets`).
 - **Apagada (por defecto).** Sin `ECO_IDEAS_ALTA=true` exacto, 403 `operacion-no-permitida` sin leer el cuerpo. Con la
   bandera pero sin la escritura del pipeline activa o sin la de PROJECT-OS en `sheets`, 403 `escritura-deshabilitada`.
+
+### 9.1 Enlace de Amazon y palabra de búsqueda (ORD-POS-160, DEC-ECO-017)
+
+DEC-ECO-017 (APROBADA en DECISIONES, leída por el PM el 2026-11-18): con un «sí PAQ» verificado, `idea.alta` puede
+agregar además una fila nueva en `AMZ_IDEA_ASIN` y otra en `AMZ_NICHO`, para que la idea sea medible desde el alta.
+Misma ruta, mismo token, misma bandera: sin `ECO_IDEAS_ALTA=true` exacto sigue apagada (403 sin leer el cuerpo).
+
+- **Cuerpo (opcional).** `enlaceAmazon` **o** `asin` (uno solo), siempre con `palabraClave` (200, una línea). Van juntos
+  o no va ninguno; sin ellos el alta es exactamente la de arriba y no lee ni escribe `AMZ_*`.
+- **ASIN.** Sale del enlace solo si es `https://` (o `http://`) con host `amazon.com.mx` o `www.amazon.com.mx`, sin
+  puerto ni usuario, y la ruta trae `/dp/<ASIN>` o `/gp/product/<ASIN>` con 10 caracteres en mayúsculas o dígitos (la
+  regla `esAsin` de RADAROS). Otro dominio (`amazon.com`, `a.co`, `amzn.to`), una búsqueda, dos ASIN distintos en la
+  ruta u otra forma: 422 con el error en `enlaceAmazon` y cero lecturas y escrituras
+  (`web/src/lib/radaros/idea-amazon.ts`).
+- **Filas.** Las columnas se ubican por su encabezado (fila 1), cada una exactamente una vez; las demás columnas de la
+  fila nueva quedan vacías (`NOTA`, `ALTA_FECHA` u otras):
+  - `AMZ_IDEA_ASIN`: `IDEA_ID` = el `EC-NNN` nuevo, `ASIN`, `ACTIVO` = `SI`, `PRINCIPAL` = `SI`, `ORIGEN` = `POS`;
+  - `AMZ_NICHO`: `ID` = el `EC-NNN` nuevo, `PALABRA_CLAVE`, `ACTIVO` = `SI`.
+- **Antes de escribir** (si algo falla no se escribe nada, tampoco `PRODUCTS`, `SCORING` ni la auditoría):
+  - falta una columna requerida, está repetida o la pestaña está vacía: 409 `idea-encabezados-distintos` (detalle: la
+    pestaña y los nombres de columna);
+  - el ASIN ya está en `AMZ_IDEA_ASIN` con otra idea, activo o no: 409 `idea-asin-en-otra-idea` (detalle: fila);
+  - la fila de la idea se busca por su clave: `IDEA_ID`+`ASIN` en `AMZ_IDEA_ASIN` e `ID`+`PALABRA_CLAVE` en `AMZ_NICHO`
+    (otro nicho de la misma idea no cuenta); dos filas con la misma clave: 409 `conflicto-concurrente`. Con 5000 filas
+    de datos o más: 503 `pestana-llena`.
+- **Escritura.** Después de `PRODUCTS` y `SCORING`, en `AMZ_IDEA_ASIN` y luego en `AMZ_NICHO`: `values:append` con
+  `insertDataOption=INSERT_ROWS` y `valueInputOption=RAW`, una fila desde A con el ancho del encabezado. Inserta la fila
+  al final de la tabla y **nunca sobrescribe**: si el motor de RADAROS (Apps Script) anexa una fila entre la relectura y
+  la escritura, la suya queda intacta y la de la idea va después. `AMZ_*` nunca se escribe por número de fila
+  (`batchUpdate`). La lista de pestañas del almacén sigue cerrada (`PRODUCTS`, `SCORING`, `AMZ_IDEA_ASIN`,
+  `AMZ_NICHO`): ninguna `PIPE_*` ni otra `AMZ_*`, y `SCORING` nunca más allá de A:L.
+- **Verificación.** Relee las dos pestañas y cuenta por clave (`IDEA_ID`+`ASIN`, `ID`+`PALABRA_CLAVE`): exactamente
+  una fila de la idea en cada una y como se planeó; si no (falta, está repetida o alguien la cambió), 409
+  `verificacion-fallida`.
+- **Auditoría e idempotencia.** La misma operación auditada (`ENTIDAD=PRODUCTS`, `REGISTRO_ID=EC-NNN`), con una fila
+  más por celda: `AMZ_IDEA_ASIN!<columna>` y `AMZ_NICHO!<columna>`. El mismo `requestId` no duplica ninguna fila y, si
+  quedó a medias, completa solo lo que falta; una fila de la idea que ya exista distinta de lo auditado no se corrige
+  (409 `estado-divergente`): nunca se editan filas existentes. El mismo `requestId` con otro enlace, ASIN o palabra:
+  409 `conflicto-idempotencia`.
+- **Formulario «Idea rápida».** `web/src/components/eco/idea-rapida.tsx` (`<IdeaRapida />`, sin props): nombre, enlace
+  y palabra de búsqueda. **No escribe** ni llama a ninguna ruta: valida en el navegador con la misma regla del enlace
+  y genera una tarjeta de texto para pegar en POS · Ideas, que la pasa al PM en un paquete. Está montado solo al final
+  de «ECO esta semana» (`/eco/semana`, ORD-POS-159), dentro de `.semana-idea-rapida`, que lleva sus controles a 44 px;
+  es el único formulario de esa página y no cambia que la página solo lea.
 
 ### Activar (solo el propietario, en Cloud Shell)
 

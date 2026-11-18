@@ -190,6 +190,13 @@ nueva de producto para RADAROS. Es solo alta; contrato completo en [escritura §
   `competencia`, `unitEconomics`, `diferenciacion`, `capital`, `logistica`, `riesgo`, `tendencia`, `complejidad` y
   `marca`, enteros del 1 al 5 o vacíos. Son **hipótesis** del PM: van en el paquete para que el propietario las revise
   antes del «sí PAQ».
+- **Enlace de Amazon y palabra de búsqueda (DEC-ECO-017, ORD-POS-160; [escritura §9.1](../../../docs/escritura-v1-8.md)).**
+  Si la idea del paquete trae un enlace de Amazon México y una palabra de búsqueda (la tarjeta de «Idea rápida»), añade
+  al cuerpo `enlaceAmazon` (o `asin`, uno solo) y `palabraClave`, siempre juntos. La API saca el ASIN solo de enlaces de
+  `amazon.com.mx` con `/dp/` o `/gp/product/` y agrega una fila nueva al final de `AMZ_IDEA_ASIN` (`ACTIVO=SI`,
+  `PRINCIPAL=SI`, `ORIGEN=POS`) y de `AMZ_NICHO` (`ACTIVO=SI`). Nunca edites filas de esas pestañas ni toques otra
+  `AMZ_*` o `PIPE_*`. 422 en `enlaceAmazon`: el enlace no vale (pide al propietario el del producto en amazon.com.mx; no
+  lo reescribas ni adivines el ASIN). 409 `idea-asin-en-otra-idea`: ese ASIN ya está en otra idea; no escribió nada.
 - **Antes de cada una**, relee `PRODUCTS` del libro de RADAROS con el conector, **solo lectura**: si ya hay una idea con
   el mismo nombre, no la envíes y dilo.
 - **Cuerpo.** `requestId` (UUID v4), `autorizacion` = `PAQ-AAAA-MM-DD-NN «<sí PAQ literal>» AAAA-MM-DD` (la cita

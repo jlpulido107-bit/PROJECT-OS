@@ -634,7 +634,7 @@ export class OperationsService {
         return { operacion: op, entidad: 'PRODUCTS', id: plan.id, repetida: true }
       }
 
-      const libro = await leerLibroIdeas(ideas)
+      const libro = await leerLibroIdeas(ideas, Boolean(cmd.amazon))
       const id = siguienteIdIdea(libro.products)
       if (idOcupado(libro, id)) throw new OperationError('conflicto-concurrente')
       const plan = planIdea(id, cmd)
