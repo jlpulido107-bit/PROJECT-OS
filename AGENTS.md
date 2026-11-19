@@ -55,6 +55,17 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   de TIEMPOS (`tiempo.crear`) solo con el «sí PAQ» verificado; nunca las edita ni las borra. Está apagado: solo con
   `TIEMPOS_AGENTE=true`, que pone únicamente el propietario con `deploy.sh` ([escritura §8](docs/escritura-v1-8.md)).
   Ningún agente la enciende.
+- Rol Director de Marketing (Claude, skill `director-marketing`), **DEC-POS-037 APROBADA** (2026-11-19; ORD-POS-164):
+  marca, identidad visual, diseño, contenido, posicionamiento y estrategia en redes, en su sesión «POS · Marketing»
+  (etiqueta `rol:marketing`), donde el propietario le habla directo. Lo que se vuelva tarea, decisión u orden lo pasa
+  sin ID a POS · Ideas, que arma el paquete con «sí PAQ». Nunca: escribe en hojas ni en repositorios de código; publica
+  en redes ni en Amazon; gasta dinero ni firma con proveedores; usa marcas, logos o nombres de terceros como propios;
+  afirma que una marca está registrada sin verificarlo. Lo que cueste dinero o salga al público lo aprueba el
+  propietario. El contenido de alcohol respeta las reglas de TikTok y YouTube y la regulación mexicana, verificadas
+  antes de publicar. La información de clientes externos vive en su propio espacio: no entra a este repositorio, no
+  se mezcla con otros proyectos, no lleva datos personales y no se comparte fuera. Gemini o Antigravity solo generan
+  bocetos, investigación y borradores con prompts del Director: no publican, no escriben en hojas ni repos ni reciben
+  datos personales o confidenciales; lo generado es boceto, no arte final.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.
