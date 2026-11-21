@@ -5,8 +5,10 @@
 # Sin --desde-activa, exporta antes las variables de render.mjs. Con ella, la revisión activa las aporta y lo ya exportado
 # (p. ej. IMAGE=<digest nuevo>) prevalece. --quitar permite que esa variable falte en el YAML (repetible).
 # --solo-imagen (ORD-POS-162, para el despliegue desde CI): exige --desde-activa, no admite --quitar y pide IMAGE (por
-# digest) y DEPLOY_COMMIT_SHA exportadas. Se detiene, también con --dry-run, si la comparación muestra algo más que la
-# imagen y DEPLOY_COMMIT_SHA: variable nueva o quitada, cambio valor↔secreto, versión de secreto distinta u otra sobrescrita.
+# digest) y DEPLOY_COMMIT_SHA exportadas. Se detiene, también con --dry-run, si algo más que la imagen y DEPLOY_COMMIT_SHA
+# cambiaría: variable nueva o quitada, cambio valor↔secreto, versión de secreto distinta, otra sobrescrita o, comparando
+# el YAML completo con la revisión activa (comparar.mjs), el valor de una literal o un campo fuera de env (recursos,
+# escala, timeout, cuenta, sondas, tráfico, anotaciones). Lo que no se puede comparar con seguridad también detiene.
 # DEPLOY_COMMIT_SHA (ORD-POS-124): el commit de la imagen; si no se exporta, sale de git rev-parse HEAD de este clon.
 set -euo pipefail
 
@@ -123,7 +125,9 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     try { spec = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).spec.template.spec; c = spec.containers[0] } catch { c = undefined }
     if (!c) { console.error("la revisión activa no es JSON válido o no tiene contenedor"); process.exit(1) }
     const env = new Map((c.env ?? []).map((e) => [e.name, e]))
-    const literal = (n) => env.get(n)?.value
+    // Solo con --solo-imagen: una literal vacía de la activa también se mapea, para que exportarla cuente como sobrescrita.
+    const vacias = process.argv[4] === "1"
+    const literal = (n) => env.get(n)?.value ?? (vacias && env.has(n) && !env.get(n).valueFrom ? "" : undefined)
     const clave = (n) => env.get(n)?.valueFrom?.secretKeyRef?.key
     const m = {
       IMAGE: c.image, RUNTIME_SA: spec.serviceAccountName, SERVICE_URL: literal("NEXTAUTH_URL"), OAUTH_CLIENT_ID: literal("GOOGLE_CLIENT_ID"),
@@ -178,8 +182,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     const quitar = process.argv[2].split(" ")
     const omitir = Object.keys(m).filter((k) => (de[k] ?? "").split(" ").some((n) => n && quitar.includes(n)))
     fs.writeFileSync(process.argv[3], ` ${omitir.join(" ")} `)
-    for (const [k, v] of Object.entries(m)) if (v) process.stdout.write(`${k}=${v}\0`)
-  ' "$WORK/activa.json" "$QUITAR" "$WORK/omitir.txt" > "$WORK/mapeo.bin"; then
+    for (const [k, v] of Object.entries(m)) if (v || (vacias && v === "")) process.stdout.write(`${k}=${v}\0`)
+  ' "$WORK/activa.json" "$QUITAR" "$WORK/omitir.txt" "$SOLO_IMAGEN" > "$WORK/mapeo.bin"; then
     echo "DETENTE: no se pudo leer la configuración de la revisión activa; no se aplicó nada." >&2
     exit 1
   fi
@@ -295,6 +299,12 @@ if [ "$SOLO_IMAGEN" -eq 1 ]; then
   motivo "cambios valor↔secreto" "$(echo "$CAMBIOS_TIPO" | sed 's/:.*//')"
   motivo "secretos con versión distinta" "$(echo "$SECRETOS_DISTINTOS" | sed 's/:.*//')"
   motivo "variables sobrescritas" "$(echo "$SOBRESCRITAS" | tr ' ' '\n' | grep -vxE 'IMAGE|DEPLOY_COMMIT_SHA|' || true)"
+  # El YAML completo contra la activa: valores de literales y campos fuera de env. comparar.mjs solo imprime nombres.
+  if ! DISTINTOS="$(node "$HERE/comparar.mjs" "$YAML" "$WORK/activa.json")"; then
+    echo "DETENTE: --solo-imagen no pudo comparar el YAML con la revisión activa; no se aplicó nada." >&2
+    exit 1
+  fi
+  motivo "campos o valores distintos de la revisión activa" "$DISTINTOS"
   if [ -n "$EXTRA" ]; then
     echo "DETENTE: --solo-imagen solo admite cambiar la imagen y DEPLOY_COMMIT_SHA; no se aplicó nada. Sobran:" >&2
     echo -n "$EXTRA" | sed 's/^/  - /' >&2
