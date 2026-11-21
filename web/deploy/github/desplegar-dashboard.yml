@@ -1,0 +1,120 @@
+name: Desplegar dashboard
+
+# Botón de despliegue del dashboard (ORD-POS-163; DEC-POS-036, PENDIENTE). Este archivo vive FUERA de .github/ y no corre
+# hasta que el propietario lo copie a .github/workflows/ (guía: docs/despliegue-boton.md). Ningún agente lo copia, lo
+# dispara ni aprueba el environment.
+# - Solo se dispara a mano (workflow_dispatch), desde main, y solo si la variable del repositorio DESPLIEGUE_BOTON es
+#   exactamente «true». La compuerta no tiene permisos de Google Cloud.
+# - Sin secretos de GitHub: entra a Google Cloud por Workload Identity Federation (web/deploy/infra/wif-despliegue.sh). El token
+#   OIDC solo existe en el job con environment: produccion, que el propietario aprueba en GitHub.
+# - Despliega con deploy.sh --desde-activa --solo-imagen (ORD-POS-162): solo cambian IMAGE y DEPLOY_COMMIT_SHA; nunca
+#   quita variables. Si el humo remoto falla, humo.sh devuelve el tráfico a la revisión anterior y el job queda en rojo.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desplegar-dashboard
+  cancel-in-progress: false
+
+jobs:
+  compuerta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.compuerta.outputs.commit }}
+    steps:
+      - name: Compuerta (variable DESPLIEGUE_BOTON, rama main y commit)
+        id: compuerta
+        env:
+          ACTIVO: ${{ vars.DESPLIEGUE_BOTON }}
+          RAMA: ${{ github.ref }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          # compuerta:inicio (web/tests/desplegar-boton.test.ts ejecuta este bloque tal cual)
+          set -euo pipefail
+          if [ "${ACTIVO-}" != "true" ]; then
+            echo "DETENTE: la variable DESPLIEGUE_BOTON no es exactamente «true»; no se desplegó nada." >&2
+            exit 1
+          fi
+          if [ "${RAMA-}" != "refs/heads/main" ]; then
+            echo "DETENTE: el botón solo despliega desde main; no se desplegó nada." >&2
+            exit 1
+          fi
+          if ! [[ "${COMMIT-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "DETENTE: el commit no es un SHA de 40 hexadecimales; no se desplegó nada." >&2
+            exit 1
+          fi
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "OK: compuerta abierta para el commit $COMMIT de main."
+          # compuerta:fin
+
+  desplegar:
+    needs: compuerta
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: produccion
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout del commit que pasó la compuerta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.compuerta.outputs.commit }}
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install (lockfile)
+        run: npm ci
+      - name: Autenticación en Google Cloud (Workload Identity Federation, sin claves)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - name: Docker con Artifact Registry
+        run: gcloud auth configure-docker northamerica-south1-docker.pkg.dev --quiet
+      - name: Construir la imagen con la etiqueta del commit
+        env:
+          DEPLOY_COMMIT_SHA: ${{ needs.compuerta.outputs.commit }}
+        run: bash deploy/ci/imagen.sh construir
+      - name: Humo local de la imagen (sin Google Cloud, datos sintéticos)
+        env:
+          DEPLOY_COMMIT_SHA: ${{ needs.compuerta.outputs.commit }}
+        # atajo: repite la ruta por defecto de imagen.sh; si cambia allí (PROJECT_ID, REGION, repositorio o nombre), cambia aquí.
+        run: IMAGE="northamerica-south1-docker.pkg.dev/project-os-511102/project-os/dashboard:$DEPLOY_COMMIT_SHA" SMOKE_BUILD=0 npm run docker:smoke
+      - name: Publicar la imagen (imprime solo la imagen por digest)
+        id: imagen
+        env:
+          DEPLOY_COMMIT_SHA: ${{ needs.compuerta.outputs.commit }}
+        run: |
+          IMAGEN="$(bash deploy/ci/imagen.sh publicar)"
+          echo "imagen=$IMAGEN" >> "$GITHUB_OUTPUT"
+      - name: Anotar la revisión que hoy sirve el 100 %
+        id: anterior
+        run: |
+          ANTERIOR="$(bash deploy/ci/humo.sh anotar)"
+          echo "revision=$ANTERIOR" >> "$GITHUB_OUTPUT"
+      - name: Desplegar solo la imagen (deploy.sh --desde-activa --solo-imagen)
+        env:
+          IMAGE: ${{ steps.imagen.outputs.imagen }}
+          DEPLOY_COMMIT_SHA: ${{ needs.compuerta.outputs.commit }}
+        run: echo desplegar | bash deploy/cloudrun/deploy.sh --desde-activa --solo-imagen
+      - name: Verificar y humo remoto (revierte el tráfico si falla)
+        env:
+          IMAGE: ${{ steps.imagen.outputs.imagen }}
+          REVISION_ANTERIOR: ${{ steps.anterior.outputs.revision }}
+        run: bash deploy/ci/humo.sh verificar

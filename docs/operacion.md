@@ -96,6 +96,12 @@ que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin apli
 [despliegue privado](despliegue-privado-v1-3.md)). Claude da el script; nunca lo ejecuta
 ([delegación](delegacion-codex.md#ciclo)).
 
+**Botón de despliegue** (ORD-POS-163; DEC-POS-036, PENDIENTE): un workflow de GitHub Actions que construye, publica y
+despliega solo la imagen de `main` con `deploy.sh --desde-activa --solo-imagen` y Workload Identity Federation, sin
+`secrets`. Vive fuera de `.github/` y está apagado: solo el propietario lo copia a `.github/workflows/`, corre
+`wif-despliegue.sh --apply`, pone `DESPLIEGUE_BOTON=true`, lo dispara y aprueba el environment `produccion`
+([guía](despliegue-boton.md)). Ningún agente hace ninguno de esos pasos.
+
 ### Commit desplegado (ORD-POS-124, DEC-POS-028 punto 2)
 
 Desde ORD-POS-124, `deploy.sh` pasa al contenedor la variable literal (no secreta) `DEPLOY_COMMIT_SHA` con el commit que
