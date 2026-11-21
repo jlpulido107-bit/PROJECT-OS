@@ -66,6 +66,10 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   se mezcla con otros proyectos, no lleva datos personales y no se comparte fuera. Gemini o Antigravity solo generan
   bocetos, investigación y borradores con prompts del Director: no publican, no escriben en hojas ni repos ni reciben
   datos personales o confidenciales; lo generado es boceto, no arte final.
+- Botón de despliegue (ORD-POS-163; DEC-POS-036, PENDIENTE): el workflow vive en `web/deploy/github/` y está apagado.
+  Solo el propietario lo copia a `.github/workflows/`, ejecuta `web/deploy/infra/wif-despliegue.sh --apply`, pone la
+  variable `DESPLIEGUE_BOTON`, lo dispara y aprueba el environment `produccion` ([guía](docs/despliegue-boton.md)).
+  Ningún agente hace ninguno de esos pasos.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.
