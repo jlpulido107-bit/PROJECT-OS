@@ -152,6 +152,26 @@ describe('humo.sh', () => {
     }
   })
 
+  it('JSON truncado o que no es un objeto: anotar y verificar se detienen sin citar nada de la respuesta', () => {
+    const CENTINELA = 'CENTINELA-QUE-NO-SE-IMPRIME'
+    const truncado = path.join(dir, 'truncado.json')
+    writeFileSync(truncado, `{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"NEXTAUTH_URL","value":"${CENTINELA}"`)
+    const texto = path.join(dir, 'texto.json')
+    writeFileSync(texto, `"${CENTINELA}"`)
+    const nulo = path.join(dir, 'nulo.json')
+    writeFileSync(nulo, 'null')
+    for (const archivo of [truncado, texto, nulo, path.join(dir, 'no-existe.json')]) {
+      for (const r of [run('humo.sh', ['anotar'], { GCLOUD_SERVICIOS: archivo }), verificar([archivo])]) {
+        expect(r.code).toBe(1)
+        expect(r.out).toContain('DETENTE')
+        expect(r.out).not.toContain(CENTINELA)
+        expect(r.out).not.toMatch(/SyntaxError|TypeError|at .*\(node:/)
+        expect(r.stdout).toBe('')
+        expect(r.calls).not.toContain('update-traffic')
+      }
+    }
+  })
+
   it('verificar: revisión nueva lista, con la imagen y el 100 %, y humo correcto: verde sin tocar el tráfico', () => {
     const r = verificar([servicio('ok')])
     expect(r.code).toBe(0)

@@ -742,6 +742,23 @@ describe('deploy.sh', () => {
       })
     })
 
+    it('JSON truncado de gcloud: se detiene sin citar nada de la respuesta, con y sin --solo-imagen y sin --desde-activa', () => {
+      const CENTINELA = 'CENTINELA-QUE-NO-SE-IMPRIME'
+      const raw = `{"spec":{"template":{"spec":{"containers":[{"image":"x","env":[{"name":"NEXTAUTH_URL","value":"${CENTINELA}"`
+      const casos: Array<[string[], Record<string, string>]> = [[['--desde-activa'], min], [['--desde-activa', '--dry-run'], min],
+        [['--desde-activa', '--solo-imagen'], { ...min, IMAGE, DEPLOY_COMMIT_SHA: SHA_NUEVO }], [[], RENDER_ENV], [['--dry-run'], RENDER_ENV]]
+      for (const [args, env] of casos) {
+        for (const cruda of [raw, `"${CENTINELA}"`, `[{"value":"${CENTINELA}"}]`]) {
+          const r = run(args, { raw: cruda, env, input: 'desplegar\n' })
+          expect(r.code).toBe(1)
+          expect(r.out).toContain('DETENTE')
+          expect(r.out).not.toContain(CENTINELA)
+          expect(r.out).not.toMatch(/SyntaxError|TypeError|at .*\(node:/)
+          expect(r.calls).not.toContain('replace')
+        }
+      }
+    })
+
     it('JSON inválido, vacío o sin contenedor: se detiene sin aplicar', () => {
       const env = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
       for (const raw of ['no es json', '{"spec":{"template":{"spec":{"containers":[]}}}}', '']) {

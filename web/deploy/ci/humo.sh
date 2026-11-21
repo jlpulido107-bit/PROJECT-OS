@@ -25,7 +25,10 @@ leer_servicio() {
     exit 1
   fi
   if ! node -e '
-    const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
+    // Sin el try, el error de JSON.parse citaría un trozo de la respuesta, que lleva valores de variables.
+    let s
+    try { s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")) } catch { process.exit(1) }
+    if (s === null || typeof s !== "object") process.exit(1)
     const st = s.status ?? {}
     // Una entrada con latestRevision y sin nombre apunta a la última lista.
     const al100 = (st.traffic ?? []).filter((t) => t.percent === 100).map((t) => t.revisionName ?? (t.latestRevision ? st.latestReadyRevisionName : ""))
