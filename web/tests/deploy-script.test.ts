@@ -511,6 +511,254 @@ describe('deploy.sh', () => {
       expect(r.calls).not.toContain('replace')
     })
 
+    describe('--solo-imagen (ORD-POS-162)', () => {
+      const solo = { ...min, IMAGE, DEPLOY_COMMIT_SHA: SHA_NUEVO }
+      const args = ['--desde-activa', '--solo-imagen']
+      const VALORES = [RENDER_ENV.SERVICE_URL, RENDER_ENV.OAUTH_CLIENT_ID, RENDER_ENV.RUNTIME_SA, RENDER_ENV.WRITE_SERVICE_ACCOUNT, 'e'.repeat(40), 'SECRETO-NO-IMPRIMIR',
+        '16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic', 'CORREO-QUE-NO-SE-IMPRIME', '512Mi']
+      const sinValores = (out: string) => { for (const valor of VALORES) expect(out).not.toContain(valor) }
+      type Env = Array<{ name: string; value?: string; valueFrom?: { secretKeyRef: { name: string; key: string } } }>
+      /**
+       * Una revisión activa completa, como la devuelve `gcloud run services describe`: lo que aplica la plantilla con los
+       * valores de `full`, DEPLOY_COMMIT_SHA del despliegue anterior y lo que Cloud Run agrega por su cuenta.
+       */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON de gcloud, sin tipo propio
+      const activaCon = (cambiar: (env: Env, servicio: any) => void = () => {}) => {
+        const env: Env = JSON.parse(full).spec.template.spec.containers[0].env
+        // `full` abrevia los nombres de los secretos; una activa real usa los de la plantilla.
+        const secretos: Record<string, string> = { n: 'project-os-nextauth-secret', o: 'project-os-google-client-secret', a: 'project-os-allowed-emails',
+          w: 'project-os-writer-emails', p: 'project-os-pm-agent-token-sha256' }
+        for (const e of env) if (e.valueFrom) e.valueFrom.secretKeyRef.name = secretos[e.valueFrom.secretKeyRef.name]!
+        env.push({ name: 'DEPLOY_COMMIT_SHA', value: 'e'.repeat(40) }, { name: 'DASHBOARD_DATA_SOURCE', value: 'sheets' },
+          { name: 'DASHBOARD_CACHE_SECONDS', value: '60' }, { name: 'SHEETS_SPREADSHEET_ID', value: '16UXe7fm90fOTTVJhI_RZ8__I876u2buvjeLGr5cJ-Ic' },
+          { name: 'SHEETS_CREDENTIALS', value: 'adc' }, { name: 'SHEETS_EXPECTED_SERVICE_ACCOUNT', value: RENDER_ENV.RUNTIME_SA },
+          { name: 'AUTH_SESSION_MAX_AGE_SECONDS', value: '28800' })
+        const servicio = {
+          apiVersion: 'serving.knative.dev/v1', kind: 'Service',
+          metadata: {
+            name: 'project-os-dashboard', namespace: '123456789', selfLink: '/apis/x', uid: 'u-1', resourceVersion: 'AAA', generation: 47,
+            creationTimestamp: '2026-10-01T00:00:00Z', labels: { app: 'project-os', component: 'dashboard', 'cloud.googleapis.com/location': 'northamerica-south1' },
+            annotations: { 'run.googleapis.com/ingress': 'all', 'run.googleapis.com/ingress-status': 'all', 'run.googleapis.com/operation-id': 'op-1',
+              'run.googleapis.com/urls': '["https://dash.example.com"]', 'run.googleapis.com/client-name': 'gcloud', 'run.googleapis.com/client-version': '500.0.0',
+              'serving.knative.dev/creator': 'CORREO-QUE-NO-SE-IMPRIME', 'serving.knative.dev/lastModifier': 'CORREO-QUE-NO-SE-IMPRIME' },
+          },
+          spec: {
+            template: {
+              metadata: {
+                name: 'project-os-dashboard-00046-ppl', labels: { app: 'project-os', 'client.knative.dev/nonce': 'abc', 'run.googleapis.com/startupProbeType': 'Custom' },
+                annotations: { 'autoscaling.knative.dev/minScale': '0', 'autoscaling.knative.dev/maxScale': '1', 'run.googleapis.com/cpu-throttling': 'true',
+                  'run.googleapis.com/startup-cpu-boost': 'false', 'run.googleapis.com/client-name': 'gcloud' },
+              },
+              spec: {
+                serviceAccountName: RENDER_ENV.RUNTIME_SA, containerConcurrency: 20, timeoutSeconds: 60,
+                containers: [{
+                  name: 'project-os-dashboard-1', image: `us-docker.pkg.dev/proj-os-1/repo/dash@sha256:${'b'.repeat(64)}`,
+                  ports: [{ name: 'http1', containerPort: 8080 }], resources: { limits: { cpu: '1', memory: '512Mi' } }, env,
+                  startupProbe: { httpGet: { path: '/api/health', port: 8080 }, periodSeconds: 3, timeoutSeconds: 2, failureThreshold: 10 },
+                }],
+              },
+            },
+            traffic: [{ latestRevision: true, percent: 100 }],
+          },
+          status: { url: 'https://dash.example.com', latestReadyRevisionName: 'project-os-dashboard-00046-ppl', traffic: [{ revisionName: 'project-os-dashboard-00046-ppl', percent: 100 }] },
+        }
+        cambiar(env, servicio)
+        return JSON.stringify(servicio)
+      }
+      const detenida = (r: ReturnType<typeof run>, motivo: string) => {
+        expect(r.code).toBe(1)
+        expect(r.out).toContain('DETENTE: --solo-imagen solo admite cambiar la imagen y DEPLOY_COMMIT_SHA')
+        expect(r.out).toContain(motivo)
+        expect(r.calls).not.toContain('replace')
+        sinValores(r.out)
+      }
+
+      it('pasa con solo IMAGE y DEPLOY_COMMIT_SHA: resumen sin valores, aplica con «desplegar» y --dry-run no aplica', () => {
+        const seco = run([...args, '--dry-run'], { raw: activaCon(), env: solo })
+        expect(seco.code).toBe(0)
+        expect(seco.out).toContain(`Imagen nueva:  ${IMAGE}`)
+        expect(seco.out).toMatch(/Variables nuevas:\n  \(ninguna\)/)
+        expect(seco.out).toMatch(/Variables sobrescritas[^\n]*\n  ! IMAGE\nCambios/)
+        expect(seco.out).not.toContain('DETENTE')
+        expect(seco.calls).not.toContain('replace')
+        sinValores(seco.out)
+        const ok = run(args, { raw: activaCon(), env: solo, input: 'desplegar\n' })
+        expect(ok.code).toBe(0)
+        expect(ok.calls).toContain('services replace')
+        sinValores(ok.out)
+        expect(run(args, { raw: activaCon(), env: solo, input: 'no\n' }).calls).not.toContain('replace')
+      })
+
+      it('DEPLOY_COMMIT_SHA como única variable nueva (la activa aún no la tiene): pasa', () => {
+        const raw = activaCon((env) => { env.splice(env.findIndex((e) => e.name === 'DEPLOY_COMMIT_SHA'), 1) })
+        const r = run([...args, '--dry-run'], { raw, env: solo })
+        expect(r.code).toBe(0)
+        expect(r.out).toMatch(/Variables nuevas:\n  \+ DEPLOY_COMMIT_SHA\nVariables quitadas/)
+      })
+
+      it('variable nueva: se detiene, también con --dry-run, y la nombra', () => {
+        for (const extra of [[], ['--dry-run']]) {
+          const r = run([...args, ...extra], { raw: activaCon(), env: { ...solo, ECO_TABULADOR: 'true' }, input: 'desplegar\n' })
+          detenida(r, '  - variables nuevas: ECO_TABULADOR')
+        }
+      })
+
+      it('variable quitada (la activa tiene una que el YAML no trae): se detiene y --quitar no se admite', () => {
+        const r = run(args, { raw: activaCon((env) => env.push({ name: 'ANTIGUA_V2', value: 'SECRETO-NO-IMPRIMIR' })), env: solo, input: 'desplegar\n' })
+        expect(r.code).toBe(1)
+        expect(r.out).toMatch(/DETENTE: la revisión activa tiene variables que el YAML no trae:\n  - ANTIGUA_V2/)
+        expect(r.out).not.toContain('SECRETO-NO-IMPRIMIR')
+        expect(r.calls).not.toContain('replace')
+        const quitar = run([...args, '--quitar', 'ANTIGUA_V2'], { raw: activaCon(), env: solo, input: 'desplegar\n' })
+        expect(quitar.code).toBe(2)
+        expect(quitar.out).toContain('--solo-imagen exige --desde-activa y no admite --quitar')
+        expect(quitar.calls).toBe('')
+      })
+
+      it('cambio de tipo (secreto en la activa, literal en el YAML): se detiene y lo nombra', () => {
+        const raw = activaCon((env) => {
+          const i = env.findIndex((e) => e.name === 'GOOGLE_CLIENT_ID')
+          env[i] = { name: 'GOOGLE_CLIENT_ID', valueFrom: { secretKeyRef: { name: 's', key: '1' } } }
+        })
+        detenida(run(args, { raw, env: { ...solo, OAUTH_CLIENT_ID: RENDER_ENV.OAUTH_CLIENT_ID }, input: 'desplegar\n' }), '  - cambios valor↔secreto: GOOGLE_CLIENT_ID')
+      })
+
+      it('versión de secreto distinta: se detiene y la nombra', () => {
+        const r = run(args, { raw: activaCon(), env: { ...solo, SECRET_VERSION_PM_AGENT: '8' }, input: 'desplegar\n' })
+        detenida(r, '  - secretos con versión distinta: PM_AGENT_TOKEN_SHA256')
+        expect(r.out).toContain('  - variables sobrescritas: SECRET_VERSION_PM_AGENT')
+      })
+
+      it('sobrescrita extra, aunque no cambie nombres ni versiones: se detiene y la nombra', () => {
+        const r = run(args, { raw: activaCon(), env: { ...solo, SERVICE_URL: 'https://otro.example.com' }, input: 'desplegar\n' })
+        detenida(r, '  - variables sobrescritas: SERVICE_URL')
+        expect(r.out).not.toContain('otro.example.com')
+      })
+
+      it('literal fija de la plantilla con otro valor en la activa: se detiene y la nombra sin valores', () => {
+        for (const fija of ['DASHBOARD_DATA_SOURCE', 'DASHBOARD_CACHE_SECONDS', 'SHEETS_SPREADSHEET_ID', 'SHEETS_CREDENTIALS', 'SHEETS_EXPECTED_SERVICE_ACCOUNT', 'AUTH_SESSION_MAX_AGE_SECONDS']) {
+          const raw = activaCon((env) => { env.find((e) => e.name === fija)!.value = 'SECRETO-NO-IMPRIMIR' })
+          for (const extra of [[], ['--dry-run']]) {
+            detenida(run([...args, ...extra], { raw, env: solo, input: 'desplegar\n' }), `  - campos o valores distintos de la revisión activa: ${fija}`)
+          }
+        }
+      })
+
+      it('campo fuera de env que cambiaría (memoria, timeout, escala, cuenta, sonda, tráfico): se detiene y nombra el campo', () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON de gcloud, sin tipo propio
+        const casos: Array<[(s: any) => void, string]> = [
+          [(s) => { s.spec.template.spec.containers[0].resources.limits.memory = '1Gi' }, 'spec.template.spec.containers[0].resources.limits.memory'],
+          [(s) => { s.spec.template.spec.timeoutSeconds = 300 }, 'spec.template.spec.timeoutSeconds'],
+          [(s) => { s.spec.template.spec.containerConcurrency = 80 }, 'spec.template.spec.containerConcurrency'],
+          [(s) => { s.spec.template.metadata.annotations['autoscaling.knative.dev/maxScale'] = '3' }, 'spec.template.metadata.annotations.autoscaling.knative.dev/maxScale'],
+          [(s) => { s.spec.template.spec.containers[0].startupProbe.failureThreshold = 3 }, 'spec.template.spec.containers[0].startupProbe.failureThreshold'],
+          [(s) => { s.metadata.annotations['run.googleapis.com/ingress'] = 'internal' }, 'metadata.annotations.run.googleapis.com/ingress'],
+          [(s) => { s.spec.traffic = [{ revisionName: 'project-os-dashboard-00045-abc', percent: 100 }] }, 'spec.traffic[0].latestRevision'],
+        ]
+        for (const [cambiar, campo] of casos) {
+          const r = run(args, { raw: activaCon((_env, servicio) => cambiar(servicio)), env: solo, input: 'desplegar\n' })
+          detenida(r, '  - campos o valores distintos de la revisión activa: ')
+          expect(r.out).toContain(campo)
+        }
+        // La cuenta de servicio sale de la activa: si alguien la exporta, es además una sobrescrita.
+        const cuenta = run(args, { raw: activaCon(), env: { ...solo, RUNTIME_SA: 'otra-cuenta@project-os-511102.iam.gserviceaccount.com' }, input: 'desplegar\n' })
+        detenida(cuenta, 'spec.template.spec.serviceAccountName')
+        expect(cuenta.out).not.toContain('otra-cuenta@')
+      })
+
+      it('campo de la activa que el YAML no trae (y que no agrega Cloud Run): se detiene y lo nombra', () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON de gcloud, sin tipo propio
+        const casos: Array<[(s: any) => void, string]> = [
+          [(s) => { s.spec.template.metadata.annotations['run.googleapis.com/vpc-access-connector'] = 'SECRETO-NO-IMPRIMIR' }, 'spec.template.metadata.annotations.run.googleapis.com/vpc-access-connector'],
+          [(s) => { s.spec.template.spec.containers[0].volumeMounts = [{ name: 'datos', mountPath: 'SECRETO-NO-IMPRIMIR' }] }, 'spec.template.spec.containers[0].volumeMounts[datos].mountPath'],
+          [(s) => { s.spec.template.spec.containers[0].resources.limits['nvidia.com/gpu'] = '1' }, 'spec.template.spec.containers[0].resources.limits.nvidia.com/gpu'],
+          [(s) => { s.metadata.labels.equipo = 'SECRETO-NO-IMPRIMIR' }, 'metadata.labels.equipo'],
+        ]
+        for (const [cambiar, campo] of casos) {
+          const r = run(args, { raw: activaCon((_env, servicio) => cambiar(servicio)), env: solo, input: 'desplegar\n' })
+          detenida(r, '  - campos o valores distintos de la revisión activa: ')
+          expect(r.out).toContain(campo)
+        }
+      })
+
+      it('literal vacía en la activa que el entorno sobrescribe: cuenta como sobrescrita y se detiene', () => {
+        for (const vacia of [{ name: 'ECO_TABULADOR', value: '' }, { name: 'ECO_TABULADOR' }]) {
+          const r = run(args, { raw: activaCon((env) => { env.push(vacia) }), env: { ...solo, ECO_TABULADOR: 'true' }, input: 'desplegar\n' })
+          detenida(r, '  - variables sobrescritas: ECO_TABULADOR')
+          expect(r.out).toContain('  - campos o valores distintos de la revisión activa: ECO_TABULADOR')
+        }
+        // Sin --solo-imagen nada cambia: la vacía sigue sin contar como sobrescrita.
+        const normal = run(['--desde-activa', '--dry-run'], { raw: activaCon((env) => { env.push({ name: 'ECO_TABULADOR', value: '' }) }), env: { ...solo, ECO_TABULADOR: 'true' } })
+        expect(normal.code).toBe(0)
+        expect(normal.out).toMatch(/Variables sobrescritas[^\n]*\n  ! IMAGE\nCambios/)
+      })
+
+      it('si el YAML no se puede comparar con seguridad: se detiene sin aplicar', () => {
+        // Un render que añade sintaxis que el comparador no entiende (lista en línea).
+        writeFileSync(path.join(dir, 'node'), `#!/usr/bin/env bash\ncase "$1" in *render.mjs) "${process.execPath}" "$@" && echo "args: [a, b]" ;; *) exec "${process.execPath}" "$@" ;; esac\n`)
+        chmodSync(path.join(dir, 'node'), 0o755)
+        const r = run(args, { raw: activaCon(), env: solo, input: 'desplegar\n' })
+        expect(r.code).toBe(1)
+        expect(r.out).toContain('DETENTE: --solo-imagen no pudo comparar el YAML con la revisión activa')
+        expect(r.calls).not.toContain('replace')
+        sinValores(r.out)
+      })
+
+      it('digest mal formado o IMAGE ausente: se detiene antes del render y de leer la activa, sin imprimir el valor', () => {
+        const malas = [`us-docker.pkg.dev/proj-os-1/repo/dash@sha256:${'a'.repeat(63)}`, `us-docker.pkg.dev/proj-os-1/repo/dash@sha256:${'A'.repeat(64)}`,
+          'us-docker.pkg.dev/proj-os-1/repo/dash:latest', `${IMAGE}\nx`, '']
+        // Un node que delata el render: si deploy.sh llegara a render.mjs, la salida lo diría.
+        writeFileSync(path.join(dir, 'node'), `#!/usr/bin/env bash\ncase "$1" in *render.mjs) echo RENDER-EJECUTADO >&2 ;; esac\nexec "${process.execPath}" "$@"\n`)
+        chmodSync(path.join(dir, 'node'), 0o755)
+        for (const mala of malas) {
+          const r = run(args, { raw: activaCon(), env: { ...solo, IMAGE: mala }, input: 'desplegar\n' })
+          expect(r.code).toBe(1)
+          expect(r.out).toContain('DETENTE: --solo-imagen exige IMAGE exportada por digest')
+          expect(r.out).not.toContain('RENDER-EJECUTADO')
+          if (mala) expect(r.out).not.toContain(mala.split('\n')[0])
+          expect(r.calls).toBe('')
+        }
+        const { IMAGE: _sin, ...sinImagen } = solo
+        void _sin
+        const r = run(args, { raw: activaCon(), env: sinImagen, input: 'desplegar\n' })
+        expect(r.code).toBe(1)
+        expect(r.calls).toBe('')
+      })
+
+      it('sin DEPLOY_COMMIT_SHA exportada o mal formada: se detiene sin llamar a gcloud (no cae en git rev-parse)', () => {
+        for (const sha of [undefined, 'abc', 'C'.repeat(40)]) {
+          const env: Record<string, string> = { ...min, IMAGE, ...(sha === undefined ? {} : { DEPLOY_COMMIT_SHA: sha }) }
+          const r = run(args, { raw: activaCon(), env, input: 'desplegar\n' })
+          expect(r.code).toBe(1)
+          expect(r.out).toContain('DETENTE: --solo-imagen exige DEPLOY_COMMIT_SHA exportada')
+          expect(r.calls).toBe('')
+        }
+      })
+
+      it('sin --desde-activa: error de uso sin llamar a gcloud', () => {
+        const r = run(['--solo-imagen'], { input: 'desplegar\n' })
+        expect(r.code).toBe(2)
+        expect(r.calls).toBe('')
+      })
+    })
+
+    it('JSON truncado de gcloud: se detiene sin citar nada de la respuesta, con y sin --solo-imagen y sin --desde-activa', () => {
+      const CENTINELA = 'CENTINELA-QUE-NO-SE-IMPRIME'
+      const raw = `{"spec":{"template":{"spec":{"containers":[{"image":"x","env":[{"name":"NEXTAUTH_URL","value":"${CENTINELA}"`
+      const casos: Array<[string[], Record<string, string>]> = [[['--desde-activa'], min], [['--desde-activa', '--dry-run'], min],
+        [['--desde-activa', '--solo-imagen'], { ...min, IMAGE, DEPLOY_COMMIT_SHA: SHA_NUEVO }], [[], RENDER_ENV], [['--dry-run'], RENDER_ENV]]
+      for (const [args, env] of casos) {
+        for (const cruda of [raw, `"${CENTINELA}"`, `[{"value":"${CENTINELA}"}]`]) {
+          const r = run(args, { raw: cruda, env, input: 'desplegar\n' })
+          expect(r.code).toBe(1)
+          expect(r.out).toContain('DETENTE')
+          expect(r.out).not.toContain(CENTINELA)
+          expect(r.out).not.toMatch(/SyntaxError|TypeError|at .*\(node:/)
+          expect(r.calls).not.toContain('replace')
+        }
+      }
+    })
+
     it('JSON inválido, vacío o sin contenedor: se detiene sin aplicar', () => {
       const env = { PROJECT_ID: 'project-os-511102', REGION: 'northamerica-south1', SERVICE_NAME: 'project-os-dashboard' }
       for (const raw of ['no es json', '{"spec":{"template":{"spec":{"containers":[]}}}}', '']) {

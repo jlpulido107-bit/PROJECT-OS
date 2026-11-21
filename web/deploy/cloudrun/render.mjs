@@ -9,7 +9,8 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const REQUIRED = {
+// Exportada (ORD-POS-162): deploy.sh --solo-imagen y deploy/ci validan IMAGE con esta misma expresión.
+export const REQUIRED = {
   SERVICE_NAME: /^[a-z][a-z0-9-]{0,48}[a-z0-9]$/,
   PROJECT_ID: /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/,
   REGION: /^[a-z]+-[a-z]+\d$/,

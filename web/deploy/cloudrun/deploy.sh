@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Despliega el dashboard a Cloud Run en un solo comando: renderiza el YAML, compara los NOMBRES de variables con la
 # revisión activa (nunca imprime valores), pide confirmación y aplica. Solo lo ejecuta el propietario (Cloud Shell).
-#   web/deploy/cloudrun/deploy.sh [--dry-run] [--desde-activa] [--quitar NOMBRE]...
+#   web/deploy/cloudrun/deploy.sh [--dry-run] [--desde-activa] [--solo-imagen] [--quitar NOMBRE]...
 # Sin --desde-activa, exporta antes las variables de render.mjs. Con ella, la revisión activa las aporta y lo ya exportado
 # (p. ej. IMAGE=<digest nuevo>) prevalece. --quitar permite que esa variable falte en el YAML (repetible).
+# --solo-imagen (ORD-POS-162, para el despliegue desde CI): exige --desde-activa, no admite --quitar y pide IMAGE (por
+# digest) y DEPLOY_COMMIT_SHA exportadas. Se detiene, también con --dry-run, si algo más que la imagen y DEPLOY_COMMIT_SHA
+# cambiaría: variable nueva o quitada, cambio valor↔secreto, versión de secreto distinta, otra sobrescrita o, comparando
+# el YAML completo con la revisión activa (comparar.mjs), el valor de una literal o un campo fuera de env (recursos,
+# escala, timeout, cuenta, sondas, tráfico, anotaciones). Lo que no se puede comparar con seguridad también detiene.
 # DEPLOY_COMMIT_SHA (ORD-POS-124): el commit de la imagen; si no se exporta, sale de git rev-parse HEAD de este clon.
 set -euo pipefail
 
@@ -14,12 +19,14 @@ export PROJECT_ID REGION SERVICE_NAME
 
 DRY_RUN=0
 DESDE_ACTIVA=0
+SOLO_IMAGEN=0
 QUITAR=" "
-USO="Uso: deploy.sh [--dry-run] [--desde-activa] [--quitar NOMBRE]..."
+USO="Uso: deploy.sh [--dry-run] [--desde-activa] [--solo-imagen] [--quitar NOMBRE]..."
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
     --desde-activa) DESDE_ACTIVA=1 ;;
+    --solo-imagen) SOLO_IMAGEN=1 ;;
     --quitar)
       if [ $# -lt 2 ] || ! [[ "$2" =~ ^[A-Z][A-Z0-9_]*$ ]]; then echo "$USO (NOMBRE en mayúsculas)" >&2; exit 2; fi
       QUITAR="$QUITAR$2 "; shift ;;
@@ -83,6 +90,24 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 YAML="$WORK/service.yaml"
 
+if [ "$SOLO_IMAGEN" -eq 1 ]; then
+  if [ "$DESDE_ACTIVA" -ne 1 ] || [ "$QUITAR" != " " ]; then
+    echo "$USO (--solo-imagen exige --desde-activa y no admite --quitar)" >&2
+    exit 2
+  fi
+  # Antes de leer la activa y del render: IMAGE por digest, con la misma expresión de render.mjs. Nunca se imprime el valor.
+  # «validar» es relleno: con la ruta de render.mjs en argv[1], render.mjs se creería el programa principal y renderizaría.
+  if ! node -e 'import(require("url").pathToFileURL(process.argv[2])).then((m) => process.exit(m.REQUIRED.IMAGE.test(process.argv[3]) ? 0 : 1))' \
+    validar "$HERE/render.mjs" "${IMAGE:-}"; then
+    echo "DETENTE: --solo-imagen exige IMAGE exportada por digest (…-docker.pkg.dev/…@sha256:<64 hexadecimales>); no se aplicó nada." >&2
+    exit 1
+  fi
+  if ! [[ "${DEPLOY_COMMIT_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "DETENTE: --solo-imagen exige DEPLOY_COMMIT_SHA exportada (SHA completo de 40 hexadecimales); no se aplicó nada." >&2
+    exit 1
+  fi
+fi
+
 leer_activa() {
   if ! gcloud run services describe "$SERVICE_NAME" --project "$PROJECT_ID" --region "$REGION" --format=json > "$WORK/activa.json"; then
     echo "DETENTE: no se pudo leer la revisión activa; no se aplicó nada." >&2
@@ -100,7 +125,9 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     try { spec = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).spec.template.spec; c = spec.containers[0] } catch { c = undefined }
     if (!c) { console.error("la revisión activa no es JSON válido o no tiene contenedor"); process.exit(1) }
     const env = new Map((c.env ?? []).map((e) => [e.name, e]))
-    const literal = (n) => env.get(n)?.value
+    // Solo con --solo-imagen: una literal vacía de la activa también se mapea, para que exportarla cuente como sobrescrita.
+    const vacias = process.argv[4] === "1"
+    const literal = (n) => env.get(n)?.value ?? (vacias && env.has(n) && !env.get(n).valueFrom ? "" : undefined)
     const clave = (n) => env.get(n)?.valueFrom?.secretKeyRef?.key
     const m = {
       IMAGE: c.image, RUNTIME_SA: spec.serviceAccountName, SERVICE_URL: literal("NEXTAUTH_URL"), OAUTH_CLIENT_ID: literal("GOOGLE_CLIENT_ID"),
@@ -155,8 +182,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     const quitar = process.argv[2].split(" ")
     const omitir = Object.keys(m).filter((k) => (de[k] ?? "").split(" ").some((n) => n && quitar.includes(n)))
     fs.writeFileSync(process.argv[3], ` ${omitir.join(" ")} `)
-    for (const [k, v] of Object.entries(m)) if (v) process.stdout.write(`${k}=${v}\0`)
-  ' "$WORK/activa.json" "$QUITAR" "$WORK/omitir.txt" > "$WORK/mapeo.bin"; then
+    for (const [k, v] of Object.entries(m)) if (v || (vacias && v === "")) process.stdout.write(`${k}=${v}\0`)
+  ' "$WORK/activa.json" "$QUITAR" "$WORK/omitir.txt" "$SOLO_IMAGEN" > "$WORK/mapeo.bin"; then
     echo "DETENTE: no se pudo leer la configuración de la revisión activa; no se aplicó nada." >&2
     exit 1
   fi
@@ -263,6 +290,27 @@ echo "Cambios valor↔secreto:"
 if [ -n "$CAMBIOS_TIPO" ]; then echo "$CAMBIOS_TIPO" | sed 's/^/  ~ /'; else echo "  (ninguno)"; fi
 echo "Secretos con versión distinta:"
 if [ -n "$SECRETOS_DISTINTOS" ]; then echo "$SECRETOS_DISTINTOS" | sed 's/^/  ~ /'; else echo "  (ninguno)"; fi
+
+if [ "$SOLO_IMAGEN" -eq 1 ]; then
+  # Solo nombres, como el resumen de arriba; nunca valores. Una variable quitada ya detuvo arriba: aquí no hay --quitar.
+  EXTRA=""
+  motivo() { [ -z "$2" ] || EXTRA="$EXTRA$1: $(echo "$2" | tr '\n' ' ')"$'\n'; }
+  motivo "variables nuevas" "$(echo "$AGREGADAS" | grep -vx 'DEPLOY_COMMIT_SHA' || true)"
+  motivo "cambios valor↔secreto" "$(echo "$CAMBIOS_TIPO" | sed 's/:.*//')"
+  motivo "secretos con versión distinta" "$(echo "$SECRETOS_DISTINTOS" | sed 's/:.*//')"
+  motivo "variables sobrescritas" "$(echo "$SOBRESCRITAS" | tr ' ' '\n' | grep -vxE 'IMAGE|DEPLOY_COMMIT_SHA|' || true)"
+  # El YAML completo contra la activa: valores de literales y campos fuera de env. comparar.mjs solo imprime nombres.
+  if ! DISTINTOS="$(node "$HERE/comparar.mjs" "$YAML" "$WORK/activa.json")"; then
+    echo "DETENTE: --solo-imagen no pudo comparar el YAML con la revisión activa; no se aplicó nada." >&2
+    exit 1
+  fi
+  motivo "campos o valores distintos de la revisión activa" "$DISTINTOS"
+  if [ -n "$EXTRA" ]; then
+    echo "DETENTE: --solo-imagen solo admite cambiar la imagen y DEPLOY_COMMIT_SHA; no se aplicó nada. Sobran:" >&2
+    echo -n "$EXTRA" | sed 's/^/  - /' >&2
+    exit 1
+  fi
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "--dry-run: no se aplicó nada."
