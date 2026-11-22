@@ -62,20 +62,83 @@ export interface PrDictamen { repo: string; numero: number }
  * Bandera del propietario (DEC-POS-014): sin `geminiSupervisado`, un SEGUNDO de origen gemini-supervisado no cuenta
  * (como si no hubiera SEGUNDO). Los llamadores la toman de segundoGeminiSupervisado (operations/config.ts).
  */
-export interface OpcionesDictamen { geminiSupervisado?: boolean }
+export interface OpcionesDictamen {
+  geminiSupervisado?: boolean
+  /**
+   * Registro de modelos de las sesiones de la orden (ORD-POS-165, DEC-POS-039). Ausente = bandera
+   * SUPERVISION_MODELO_SESION apagada: todo sigue como antes (campo `modelo` del dictamen y FAMILIA_IMPLEMENTADOR).
+   * Presente = encendida: el modelo del revisor y la familia del implementador salen solo de aquí; lo que falte no cuenta.
+   */
+  modelosSesion?: RegistroModelos
+}
+
+export type PapelSesion = 'IMPLEMENTACION' | 'CORRECCION' | 'REVISION'
+
+/** Alta del PM (`orden.modelo_sesion`) de una sesión enlazada a la orden: los dos datos de `get_session` en un head. */
+export interface ModeloRegistrado {
+  papel: PapelSesion
+  sesion: string
+  /** Head del PR al registrar. Solo cuentan los registros del head que se evalúa. */
+  head: string
+  /** Solo REVISION: correlativo de `REV-<orden>-<n>`, tomado del lanzamiento del dashboard (nunca del dictamen ni del PM). */
+  n?: number
+  configurado: string
+  servido: string
+}
+
+export interface RegistroModelos {
+  registros: readonly ModeloRegistrado[]
+  /** Sesiones de corrección que el dashboard lanzó para la orden: cada una necesita su registro en el head. */
+  correcciones: readonly string[]
+}
+
+/** Registro vacío: con la bandera encendida y sin poder leer AUDITORIA, nada es verificable (falla cerrado). */
+export const REGISTRO_VACIO: RegistroModelos = Object.freeze({ registros: [], correcciones: [] })
+
+/**
+ * Familias de los modelos registrados (configurado y servido de cada registro). null = no verificable: sin registros o
+ * con algún modelo no reconocido, que nunca cuenta.
+ */
+function familiasDe(registros: readonly ModeloRegistrado[]): string[] | null {
+  if (registros.length === 0) return null
+  const familias = registros.flatMap((r) => [familiaModelo(r.configurado), familiaModelo(r.servido)])
+  return familias.every((f): f is string => f !== null) ? [...new Set(familias)] : null
+}
+
+/** Registros de la sesión lanzada para el dictamen `r`: mismo head y mismo correlativo de `REV-<orden>-<n>`. */
+function registrosDeRevision(registro: RegistroModelos, ordenId: string, r: Pick<ReporteRevision, 'revisionId' | 'headSha'>): ModeloRegistrado[] {
+  const n = new RegExp(`^REV-${ordenId}-(\\d{1,3})$`).exec(r.revisionId)?.[1]
+  return n === undefined ? [] : registro.registros.filter((x) => x.papel === 'REVISION' && x.head === r.headSha && x.n === Number(n))
+}
+
+/**
+ * Familias de quienes escribieron el código del head (DEC-POS-039, punto 4): la sesión que implementó y cada sesión de
+ * corrección lanzada. null si falta el registro de alguna en ese head o un modelo no se reconoce.
+ */
+function familiasImplementador(registro: RegistroModelos, head: string): string[] | null {
+  const delHead = registro.registros.filter((x) => x.head === head)
+  const implementacion = delHead.filter((x) => x.papel === 'IMPLEMENTACION')
+  if (implementacion.length === 0) return null
+  const correcciones = delHead.filter((x) => x.papel === 'CORRECCION')
+  if (registro.correcciones.some((sesion) => !correcciones.some((x) => x.sesion === sesion))) return null
+  return familiasDe([...implementacion, ...correcciones])
+}
 
 interface Valido { indice: number; id: number; reporte: ReporteRevision }
 
 const tieneMarca = (body: string) => body.split('\n', 1)[0]!.replace(/\r$/, '') === MARCA_DICTAMEN
 
-function leer(body: string, orden: OrdenDictamen, pr: PrDictamen, ciRequerida = !repoSinCi(pr.repo)): ReporteRevision | null {
+function leer(body: string, orden: OrdenDictamen, pr: PrDictamen, opciones: OpcionesDictamen, ciRequerida = !repoSinCi(pr.repo)): ReporteRevision | null {
   const extraidos = extraerCriterios(orden.criterios ?? '')
   const json = BLOQUE_JSON.exec(body)?.[1]
   if (!extraidos.ok || json === undefined) return null
   try {
-    const r = validarReporte(JSON.parse(json), { ...politicaDeRepo(pr.repo, extraidos.criteriosEsperados), ciRequerida })
+    const registro = opciones.modelosSesion
+    const r = validarReporte(JSON.parse(json), { ...politicaDeRepo(pr.repo, extraidos.criteriosEsperados), ciRequerida, modeloOpcional: registro !== undefined })
     if (!r.ok) return null
     const { reporte } = r
+    // Contrato v2 sin `modelo` (ORD-POS-165): solo vale con la bandera encendida y un registro de su sesión enlazada.
+    if (reporte.rol !== undefined && reporte.modelo === undefined && (!registro || registrosDeRevision(registro, orden.id, reporte).length === 0)) return null
     // El dictamen debe ser de esta orden y de este PR: uno copiado de otro PR no cuenta.
     const mismo = reporte.ordenId === orden.id && reporte.pr === pr.numero && reporte.repo.toLowerCase() === pr.repo.toLowerCase()
     return mismo && reporte.hashCriterios === extraidos.hashCriterios ? reporte : null
@@ -93,8 +156,9 @@ function leer(body: string, orden: OrdenDictamen, pr: PrDictamen, ciRequerida = 
  *   de `p`.
  * El PRIMERO o DELTA `p` también tiene que ser de una familia de Claude reconocida.
  */
-function segundoDeOtroModelo(s: ReporteRevision, p: ReporteRevision, opciones: OpcionesDictamen): boolean {
+function segundoDeOtroModelo(s: ReporteRevision, p: ReporteRevision, opciones: OpcionesDictamen, ordenId: string): boolean {
   if (s.rol !== 'SEGUNDO') return false
+  if (opciones.modelosSesion) return segundoPorRegistro(s, p, opciones, opciones.modelosSesion, ordenId)
   const firmante = familiaModelo(s.modelo)
   const revisor = familiaModelo(p.modelo)
   if (!esFamiliaClaude(firmante) || !esFamiliaClaude(revisor) || firmante === FAMILIA_IMPLEMENTADOR) return false
@@ -104,6 +168,24 @@ function segundoDeOtroModelo(s: ReporteRevision, p: ReporteRevision, opciones: O
     return hallazgos === 'gemini' && hallazgos !== revisor
   }
   return firmante !== revisor
+}
+
+/**
+ * La misma regla con SUPERVISION_MODELO_SESION encendida (ORD-POS-165, DEC-POS-039): las familias salen del registro de
+ * cada sesión enlazada y no del campo `modelo`, que se ignora. Cada sesión aporta la familia de su modelo configurado y
+ * la del servido; si difieren, ninguna puede coincidir. Sin registro del firmante, del PRIMERO o DELTA, o de quien
+ * implementó o corrigió, o con un modelo no reconocido, no cuenta («Falta segundo revisor»).
+ */
+function segundoPorRegistro(s: ReporteRevision, p: ReporteRevision, opciones: OpcionesDictamen, registro: RegistroModelos, ordenId: string): boolean {
+  const firmante = familiasDe(registrosDeRevision(registro, ordenId, s))
+  const revisor = familiasDe(registrosDeRevision(registro, ordenId, p))
+  const implementador = familiasImplementador(registro, s.headSha)
+  if (!firmante || !revisor || !implementador) return false
+  if (![...firmante, ...revisor].every(esFamiliaClaude) || firmante.some((f) => implementador.includes(f))) return false
+  if (s.origenSegundo === 'gemini-supervisado') {
+    return opciones.geminiSupervisado === true && familiaModelo(s.modeloHallazgos) === 'gemini'
+  }
+  return !firmante.some((f) => revisor.includes(f))
 }
 
 function siguientePaso(vigentes: Valido[], orden: OrdenDictamen, opciones: OpcionesDictamen): { elegido: Valido | null; texto: string } {
@@ -125,7 +207,7 @@ function siguientePaso(vigentes: Valido[], orden: OrdenDictamen, opciones: Opcio
   if (riesgo === 'MEDIO' && !ordenSensible(orden.sensible) && primeros.length > 0) return { elegido: conforme, texto: LISTO_PARA_DECISION }
   // MEDIO sensible (y todo riesgo no reconocido, por prudencia): un CONFORME PRIMERO o DELTA y otro SEGUNDO de otro
   // modelo, ambos de contrato v2 sobre el mismo head. Los de v1 (sin rol ni modelo) no cuentan como segundo revisor.
-  const dobleRevision = primeros.some((p) => conformes.some((s) => segundoDeOtroModelo(s.reporte, p.reporte, opciones)))
+  const dobleRevision = primeros.some((p) => conformes.some((s) => segundoDeOtroModelo(s.reporte, p.reporte, opciones, orden.id)))
   return { elegido: conforme, texto: riesgo === 'BAJO' || dobleRevision ? LISTO_PARA_DECISION : 'Falta segundo revisor' }
 }
 
@@ -159,10 +241,10 @@ export function dictamenSuficiente(ev: EvaluacionDictamen): boolean {
  * Dictámenes válidos del PR para la orden (ORD-POS-078, /agentes): los mismos que cuenta /ordenes, de cualquier head,
  * el último de cada revisionId. Solo veredicto, rol y ronda; nunca el texto del comentario.
  */
-export function dictamenesValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen): Array<Pick<ReporteRevision, 'revisionId' | 'veredicto' | 'ronda' | 'headSha'>> {
+export function dictamenesValidos(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, opciones: OpcionesDictamen = {}): Array<Pick<ReporteRevision, 'revisionId' | 'veredicto' | 'ronda' | 'headSha'>> {
   const porRevision = new Map<string, ReporteRevision>()
   for (const c of datos.comentarios) {
-    const r = tieneMarca(c.body) ? leer(c.body, orden, pr) : null
+    const r = tieneMarca(c.body) ? leer(c.body, orden, pr, opciones) : null
     if (r) porRevision.set(r.revisionId, r)
   }
   return [...porRevision.values()].map(({ revisionId, veredicto, ronda, headSha }) => ({ revisionId, veredicto, ronda, headSha }))
@@ -178,10 +260,10 @@ function evaluar(datos: DatosPr, orden: OrdenDictamen, pr: PrDictamen, opciones:
   const validos: Valido[] = []
   let ciDetectada = false
   marcados.forEach((c, indice) => {
-    const reporte = leer(c.body, orden, pr)
+    const reporte = leer(c.body, orden, pr, opciones)
     if (reporte) validos.push({ indice, id: c.id, reporte })
     else if (repoSinCi(pr.repo)) {
-      const conCi = leer(c.body, orden, pr, true)
+      const conCi = leer(c.body, orden, pr, opciones, true)
       ciDetectada ||= conCi?.headSha === datos.headSha && conCi.evidencia.ci.estado === 'EXITO'
     }
   })

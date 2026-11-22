@@ -2,8 +2,8 @@ import { isEmailAllowed, parseAllowedEmails } from '../access'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { ecoIdeasAltaFlag } from '../radaros/ideas-alta'
 import { tiemposAgenteHabilitado } from '../tiempos-agente'
-import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_IDEAS_OPERATION, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, OWNER_PLANNING_OPERATIONS, type OperationName } from './constants'
-import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, puedeEditarPlanificacion, writeModeStatus } from './config'
+import { AGENT_ACTOR, AGENT_EDITABLE_TASK_FIELDS, AGENT_IDEAS_OPERATION, AGENT_MODELO_SESION_OPERATION, AGENT_OPERATIONS, AGENT_ORDER_ACTIONS, AGENT_TIEMPOS_OPERATION, LIMITS, OWNER_PLANNING_OPERATIONS, type OperationName } from './constants'
+import { isWriter, pmPuedeRegistrarPr, puedeCerrarTareas, puedeEditarPlanificacion, supervisionModeloSesion, writeModeStatus } from './config'
 import { OperationError } from './errors'
 import type { RateLimiter } from './rate-limit'
 
@@ -70,7 +70,9 @@ async function evaluateAgentRequest(
   const tiempos = ctx.operation === AGENT_TIEMPOS_OPERATION && tiemposAgenteHabilitado(ctx.env)
   // ORD-POS-131 (DEC-ECO-007 e): el alta de ideas en RADAROS solo con ECO_IDEAS_ALTA=true; apagada, inerte sin leer el cuerpo.
   const ideas = ctx.operation === AGENT_IDEAS_OPERATION && ecoIdeasAltaFlag(ctx.env)
-  if (!ctx.operation || (!tiempos && !ideas && !AGENT_OPERATIONS.includes(ctx.operation))) throw new OperationError('operacion-no-permitida')
+  // ORD-POS-165 (DEC-POS-039): el registro del modelo de una sesión solo con SUPERVISION_MODELO_SESION=true; apagada, inerte.
+  const modelo = ctx.operation === AGENT_MODELO_SESION_OPERATION && supervisionModeloSesion(ctx.env)
+  if (!ctx.operation || (!tiempos && !ideas && !modelo && !AGENT_OPERATIONS.includes(ctx.operation))) throw new OperationError('operacion-no-permitida')
   if (writeModeStatus(ctx.env).mode === 'disabled') throw new OperationError('escritura-deshabilitada')
 
   const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
@@ -123,6 +125,8 @@ export async function evaluateWriteRequest(
   }
   // ORD-POS-131: el alta de ideas en RADAROS es solo del token del PM; ninguna sesión de navegador la usa.
   if (ctx.operation === AGENT_IDEAS_OPERATION) throw new OperationError('operacion-no-permitida')
+  // ORD-POS-165 (DEC-POS-039): el modelo de una sesión solo lo registra el token del PM; ninguna sesión de navegador.
+  if (ctx.operation === AGENT_MODELO_SESION_OPERATION) throw new OperationError('operacion-no-permitida')
 
   const origin = request.headers.get('origin')
   const fetchSite = request.headers.get('sec-fetch-site')
@@ -153,7 +157,7 @@ export async function evaluateWriteRequest(
   const real = ctx.operationFromBody?.(body)
   if (real !== undefined && real !== ctx.operation) {
     // Las mismas comprobaciones por operación de arriba, con la operación real (DIS-05).
-    if (real === AGENT_IDEAS_OPERATION) throw new OperationError('operacion-no-permitida')
+    if (real === AGENT_IDEAS_OPERATION || real === AGENT_MODELO_SESION_OPERATION) throw new OperationError('operacion-no-permitida')
     if (real === 'tarea.completar' && !puedeCerrarTareas(ctx.email, ctx.env)) throw new OperationError('cierre-no-permitido')
     // Las de planificación del propietario tienen ruta propia; resueltas desde el cuerpo, nunca (conservador).
     if (OWNER_PLANNING_OPERATIONS.includes(real)) throw new OperationError('operacion-no-permitida')

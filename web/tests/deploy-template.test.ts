@@ -222,6 +222,13 @@ describe('renderizado de la plantilla (sin contactar Google Cloud)', () => {
     for (const bad of ['true', 'ON', '1', 'off']) {
       expect(() => render(template, { ...VARS, SEGUNDO_GEMINI_SUPERVISADO: bad }), bad).toThrow('SEGUNDO_GEMINI_SUPERVISADO solo admite on')
     }
+    // ORD-POS-165 (DEC-POS-039): SUPERVISION_MODELO_SESION apagada por defecto; solo `true`, independiente de WRITE_MODE.
+    expect(out).not.toContain('SUPERVISION_MODELO_SESION')
+    expect(render(template, { ...VARS, SUPERVISION_MODELO_SESION: ' ' })).toBe(render(template, VARS))
+    expect(render(template, { ...VARS, SUPERVISION_MODELO_SESION: 'true' })).toMatch(/- name: SUPERVISION_MODELO_SESION\n\s+value: 'true'\n/)
+    for (const bad of ['on', 'TRUE', '1', 'false']) {
+      expect(() => render(template, { ...VARS, SUPERVISION_MODELO_SESION: bad }), bad).toThrow('SUPERVISION_MODELO_SESION solo admite true')
+    }
     // Sin el marcador en la plantilla no se pierde la escritura en silencio: el render falla.
     expect(() => render(template.replace(/^ *# __ESCRITURA__.*\n/m, ''), { ...VARS, ...WRITE })).toThrow('__ESCRITURA__')
   })

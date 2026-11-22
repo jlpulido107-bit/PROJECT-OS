@@ -236,6 +236,18 @@ describe('deploy.sh', () => {
       expect(apagada.out).toMatch(/Variables quitadas:\n  - PM_PUEDE_REGISTRAR_PR\n/)
     })
 
+    it('SUPERVISION_MODELO_SESION (ORD-POS-165): se conserva de la activa y se apaga con --quitar', () => {
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'SUPERVISION_MODELO_SESION', value: 'true' })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('SUPERVISION_MODELO_SESION')
+      const apagada = run(['--desde-activa', '--quitar', 'SUPERVISION_MODELO_SESION', '--dry-run'], { raw, env: min })
+      expect(apagada.code).toBe(0)
+      expect(apagada.out).toMatch(/Variables quitadas:\n  - SUPERVISION_MODELO_SESION\n/)
+    })
+
     it('SEGUNDO_GEMINI_SUPERVISADO (ORD-POS-100): se conserva de la activa y se apaga con --quitar', () => {
       const activa = JSON.parse(full)
       activa.spec.template.spec.containers[0].env.push({ name: 'SEGUNDO_GEMINI_SUPERVISADO', value: 'on' })

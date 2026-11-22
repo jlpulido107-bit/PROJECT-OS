@@ -120,6 +120,10 @@ pero no cuenta como segundo revisor. BAJO no cambia.
 | `modeloHallazgos` | solo con `gemini-supervisado` (y entonces sí) | Modelo que produjo los hallazgos, mismo formato que `modelo`, p. ej. `gemini-2.5-pro` |
 | `hallazgosGemini` | solo con `gemini-supervisado` (y entonces sí) | Lista (al menos uno) de `{ id, veredicto, evidencia }`: el veredicto del supervisor por hallazgo de Gemini, `CONFIRMADO` o `DESCARTADO`, con su evidencia. Un `CONFIRMADO` exige un hallazgo propio con el mismo `id` en `hallazgos`; si no, el veredicto no puede ser `CONFORME` |
 
+Con `SUPERVISION_MODELO_SESION=true` (ORD-POS-165, DEC-POS-039), `modelo` puede faltar si la sesión del dictamen tiene
+su registro de modelo ([escritura §14](escritura-v1-8.md)); entonces las familias salen de ese registro y no de este
+campo. Apagada, `modelo` sigue siendo obligatorio en v2.
+
 «Otro modelo» se compara por familia (`opus`, `sonnet`, `haiku`, `fable` en `claude-<familia>-<versión>`, con o sin el sufijo `[1m]`; `gemini` en
 `gemini-<versión>` o `gemini-code-assist`); un modelo que no la tiene no cuenta como distinto. El firmante (`modelo`) de un
 `SEGUNDO` es siempre de Claude y, en cualquier origen, nunca de la familia del implementador (`FAMILIA_IMPLEMENTADOR` de

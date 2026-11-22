@@ -41,6 +41,8 @@ export type OperationErrorCode =
   | 'dictamen-insuficiente'
   | 'autorizacion-no-valida'
   | 'pr-no-detectado'
+  | 'sesion-no-enlazada'
+  | 'head-no-vigente'
   | 'finanzas-esquema-invalido'
   | 'finanzas-ids-agotados'
   | 'monto-no-cuadra'
@@ -129,6 +131,8 @@ const STATUS: Record<OperationErrorCode, number> = {
   'dictamen-insuficiente': 422,
   'autorizacion-no-valida': 422,
   'pr-no-detectado': 422,
+  'sesion-no-enlazada': 422,
+  'head-no-vigente': 409,
   'finanzas-esquema-invalido': 400,
   'finanzas-ids-agotados': 409,
   'monto-no-cuadra': 400,
@@ -218,6 +222,8 @@ const MESSAGES: Record<OperationErrorCode, string> = {
   'dictamen-insuficiente': 'El dictamen del head actual no es CONFORME suficiente (DEC-POS-011, 019 y 022: en MEDIO sensible, también SEGUNDO de otro modelo; si es gemini-supervisado, solo con la vía encendida por el propietario y firmado por un modelo distinto del implementador); no se marcó REVISADA.',
   'autorizacion-no-valida': 'La autorización no lleva el ID de esta orden, la palabra «sí» y la fecha de hoy, o ya se usó para otra orden; no se escribió nada.',
   'pr-no-detectado': 'No hay un único PR abierto de la orden detectado en GitHub; el agente PM no registró nada.',
+  'sesion-no-enlazada': 'La sesión no es la que el dashboard lanzó para implementar, revisar o corregir esta orden; no se registró nada.',
+  'head-no-vigente': 'El head no es el actual del PR de la orden, o la orden no tiene un PR abierto registrado; no se registró nada.',
   'finanzas-esquema-invalido': 'FINANZAS no tiene las pestañas o columnas que exige la escritura (MOVIMIENTOS, RECURRENTES y AUDITORIA); no se escribió nada.',
   'finanzas-ids-agotados': 'Se agotaron los MOV_ID MAN-NNNN; hace falta una orden de migración. No se escribió nada.',
   'monto-no-cuadra': 'MONTO_MXN no cuadra con MONTO_ORIG × TIPO_CAMBIO; no se escribió nada.',

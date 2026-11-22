@@ -9,7 +9,7 @@ import {
   CLOSING_TASK_STATES, LIMITS, ORDER_RISKS, TASK_PRIORITIES, WRITABLE_TASK_STATES,
 } from './constants'
 import { OperationError } from './errors'
-import { urlGitHubPermitida } from './github'
+import { esSesionClaude, urlGitHubPermitida } from './github'
 import { safeCellText } from './sanitize'
 
 /**
@@ -515,6 +515,30 @@ export function parseLanzarSupervision(ordenId: string, body: unknown): LanzarSu
   const headEsperado = c.pattern('headEsperado', /^[0-9a-f]{40}$/, true, 'SHA de 40 caracteres hexadecimales')
   c.done()
   return { requestId, ordenId: id, accion: accion!.toLowerCase() as 'revisar' | 'corregir', headEsperado: headEsperado! }
+}
+
+export interface ModeloSesionCommand { requestId: string; ordenId: string; sesion: string; head: string; configuredModel: string; lastServedModel: string }
+
+/** Identificador de modelo tal como lo da `get_session`; el mismo formato que `modelo` en el dictamen (report.ts). */
+const MODELO_SESION = /^[a-z0-9][a-z0-9._-]{2,63}(?:\[1m\])?$/
+
+/**
+ * Alta del modelo real de una sesión (ORD-POS-165, DEC-POS-039): la URL de la sesión, el head del PR y los dos datos de
+ * `get_session`. El papel de la sesión (implementación, revisión o corrección) no se envía: lo deriva el servidor.
+ */
+export function parseModeloSesion(ordenId: string, body: unknown): ModeloSesionCommand {
+  const c = new Checker(asObject(body), ['requestId', 'sesion', 'head', 'configuredModel', 'lastServedModel'])
+  const id = ordenId.trim().toUpperCase()
+  if (!ORDER_ID.test(id)) c.setError('ordenId', 'ID de orden no válido')
+  const requestId = c.requestId()
+  const sesion = c.text('sesion', { required: true, max: 240 })
+  if (sesion !== null && !esSesionClaude(sesion)) c.setError('sesion', 'URL de una sesión de claude.ai/code')
+  const head = c.pattern('head', /^[0-9a-f]{40}$/, true, 'SHA de 40 caracteres hexadecimales')
+  const mensaje = 'Identificador de modelo en minúsculas, como lo devuelve get_session'
+  const configuredModel = c.pattern('configuredModel', MODELO_SESION, true, mensaje)
+  const lastServedModel = c.pattern('lastServedModel', MODELO_SESION, true, mensaje)
+  c.done()
+  return { requestId, ordenId: id, sesion: sesion!, head: head!, configuredModel: configuredModel!, lastServedModel: lastServedModel! }
 }
 
 /** Hash estable del comando validado (sin requestId) para detectar reutilización con otro payload. */

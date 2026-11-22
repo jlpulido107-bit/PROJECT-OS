@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { planificacionEdicionPropietario, pmPuedeRegistrarPr, segundoGeminiSupervisado, tareasCierrePropietario } from './operations/config'
+import { planificacionEdicionPropietario, pmPuedeRegistrarPr, segundoGeminiSupervisado, supervisionModeloSesion, tareasCierrePropietario } from './operations/config'
 import { finanzasAgenteMode } from './finanzas/agente-config'
 import { ecoIdeasAltaHabilitada } from './radaros/ideas-alta'
 import { ecoTabuladorHabilitado } from './radaros/pipeline-tabulador'
@@ -25,6 +25,7 @@ export interface Bandera {
 export const BANDERAS: Readonly<Record<string, Bandera>> = {
   PM_PUEDE_REGISTRAR_PR: { nombre: 'Registro de PR por el PM', encendida: pmPuedeRegistrarPr },
   SEGUNDO_GEMINI_SUPERVISADO: { nombre: 'Segundo revisor Gemini supervisado', encendida: segundoGeminiSupervisado },
+  SUPERVISION_MODELO_SESION: { nombre: 'Supervisión con el modelo registrado de cada sesión', encendida: supervisionModeloSesion },
   TAREAS_CIERRE_PROPIETARIO: { nombre: 'Cierre de tareas por el propietario', encendida: (env) => tareasCierrePropietario(env) !== null },
   TIEMPOS_AGENTE: { nombre: 'Agente de Tiempos (lectura de /api/planificacion)', encendida: tiemposAgenteHabilitado },
   FINANZAS_AGENTE_MODE: { nombre: 'Agente de finanzas (registro de cortes)', encendida: (env) => finanzasAgenteMode(env) === 'sheets' },
