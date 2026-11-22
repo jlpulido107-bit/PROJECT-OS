@@ -34,14 +34,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + ecoBandejaGemini(env, problems) + commitDesplegado(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + modeloSesion(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + ecoBandejaGemini(env, problems) + commitDesplegado(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR, ECO_BANDEJA_GEMINI ni DEPLOY_COMMIT_SHA')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, SUPERVISION_MODELO_SESION, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR, ECO_BANDEJA_GEMINI ni DEPLOY_COMMIT_SHA')
   return output.replace(marker, writeBlock)
 }
 
@@ -156,6 +156,19 @@ function segundoGemini(env, problems) {
   if (!valor) return ''
   if (valor !== 'on') problems.push('SEGUNDO_GEMINI_SUPERVISADO solo admite on')
   return ['            - name: SEGUNDO_GEMINI_SUPERVISADO', "              value: 'on'", ''].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-165, DEC-POS-039): SUPERVISION_MODELO_SESION=true hace que la supervisión tome el modelo del revisor
+ * y la familia del implementador del registro que el PM da de alta de cada sesión, y permite al PM esa alta. Solo la
+ * exporta el propietario; sin ella, el YAML no cambia y todo sigue como antes. Independiente de WRITE_MODE: /ordenes
+ * también la lee (sin escritura no hay registro que leer y nada cuenta).
+ */
+function modeloSesion(env, problems) {
+  const valor = (env.SUPERVISION_MODELO_SESION ?? '').trim()
+  if (!valor) return ''
+  if (valor !== 'true') problems.push('SUPERVISION_MODELO_SESION solo admite true')
+  return ['            - name: SUPERVISION_MODELO_SESION', "              value: 'true'", ''].join('\n')
 }
 
 /**

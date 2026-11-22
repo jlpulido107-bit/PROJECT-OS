@@ -87,6 +87,11 @@ export interface PoliticaReporte {
   ciRequerida: boolean
   /** IDs de los criterios de aceptación de la orden: el reporte debe traer exactamente uno por cada ID. */
   criteriosEsperados: readonly string[]
+  /**
+   * ORD-POS-165 (DEC-POS-039): con SUPERVISION_MODELO_SESION encendida, `modelo` puede faltar en el contrato v2 (el modelo
+   * sale del registro de la sesión; dictamen.ts exige que exista). Si viene, se valida igual. Por defecto, obligatorio.
+   */
+  modeloOpcional?: boolean
 }
 
 export type ResultadoValidacion =
@@ -165,7 +170,7 @@ class Lector {
   }
 }
 
-function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
+function leerReporte(entrada: unknown, L: Lector, modeloOpcional = false): ReporteRevision | null {
   if (!esObj(entrada)) { L.err('reporte', 'debe ser un objeto'); return null }
   const o = entrada
   // §3.1 comunes
@@ -173,7 +178,7 @@ function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
   const versionPolitica = L.texto(o, 'versionPolitica', '', 64)
   const v2 = versionContrato === '2'
   const rol = v2 ? L.opcion<RolRevisor>(o, 'rol', '', ROLES) : undefined
-  const modelo = v2 ? L.texto(o, 'modelo', '', 64, MODELO) : undefined
+  const modelo = v2 && !(modeloOpcional && o.modelo === undefined) ? L.texto(o, 'modelo', '', 64, MODELO) : undefined
   const segundo = leerSegundo(o, L, rol)
   const ordenId = L.texto(o, 'ordenId', '', 64, ORDEN)
   const tareaId = L.texto(o, 'tareaId', '', 64, TAREA)
@@ -259,7 +264,7 @@ function leerReporte(entrada: unknown, L: Lector): ReporteRevision | null {
   const veredicto = L.opcion<Veredicto>(o, 'veredicto', '', VEREDICTOS)
   if (L.errores.length > 0) return null
   return {
-    versionContrato, ...(v2 ? { rol, modelo } : {}), ...segundo, versionPolitica, ordenId, tareaId, proyectoId, repo, issue, pr, headSha, baseSha, hashCriterios,
+    versionContrato, ...(v2 ? { rol, ...(modelo !== undefined ? { modelo } : {}) } : {}), ...segundo, versionPolitica, ordenId, tareaId, proyectoId, repo, issue, pr, headSha, baseSha, hashCriterios,
     revisionId, ejecucionId, intento, ronda, autorizacion, limiteConsumo, criterios,
     evidencia: { propias, ci, autor }, hallazgos, veredicto,
   }
@@ -372,7 +377,7 @@ function coherencia(r: ReporteRevision, politica: PoliticaReporte): string[] {
 export function validarReporte(entrada: unknown, politica: PoliticaReporte): ResultadoValidacion {
   try {
     const L = new Lector()
-    const reporte = leerReporte(entrada, L)
+    const reporte = leerReporte(entrada, L, politica.modeloOpcional === true)
     if (!reporte) return { ok: false, errores: L.errores }
     const errores = coherencia(reporte, politica)
     return errores.length > 0 ? { ok: false, errores } : { ok: true, reporte }

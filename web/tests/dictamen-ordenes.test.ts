@@ -159,6 +159,20 @@ describe('dictamen vigente por orden', () => {
   it('apagada no afecta al SEGUNDO de origen claude', async () => {
     expect((await evaluar([comentario(sonnet), comentario(v2('SEGUNDO', 'claude-opus-5-5', 'R2'))], 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
   })
+  // ORD-POS-165 (DEC-POS-039): con SUPERVISION_MODELO_SESION=true y sin poder leer AUDITORIA (aquí, escritura
+  // deshabilitada), nada es verificable: el `modelo` declarado ya no basta y falta segundo revisor.
+  it('con SUPERVISION_MODELO_SESION=true y sin registro legible, falla cerrado', async () => {
+    const par = [comentario(sonnet), comentario(v2('SEGUNDO', 'claude-opus-5-5', 'R2'))]
+    expect((await evaluar(par, 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
+    limpiarCacheDictamenes()
+    vi.stubEnv('SUPERVISION_MODELO_SESION', 'true')
+    expect((await evaluar(par, 'MEDIO'))?.siguiente).toBe('Falta segundo revisor')
+    expect((await evaluar([comentario(reporte())], 'BAJO'))?.siguiente).toBe('Listo para tu decisión')
+  })
+  it.each(['on', 'TRUE', '1'])('SUPERVISION_MODELO_SESION=%j no enciende nada', async (valor) => {
+    vi.stubEnv('SUPERVISION_MODELO_SESION', valor)
+    expect((await evaluar([comentario(sonnet), comentario(v2('SEGUNDO', 'claude-opus-5-5', 'R2'))], 'MEDIO'))?.siguiente).toBe('Listo para tu decisión')
+  })
   afterEach(() => { vi.unstubAllEnvs() })
 
   // DEC-POS-019: MEDIO no sensible (SENSIBLE = NO) queda listo con PRIMERO o DELTA CONFORME; vacía o ausente = sensible.

@@ -28,6 +28,25 @@ el `SEGUNDO`, venga de donde venga, nunca es de la familia del implementador ni 
 familia del implementador deja la orden en «Falta segundo revisor». Si cambia quien implementa, se cambia la constante
 en un PR. Si una corrección la hace otra familia, el código no lo distingue: solo conoce `FAMILIA_IMPLEMENTADOR`.
 
+**Modelo real de cada sesión (ORD-POS-165, DEC-POS-039; apagado sin `SUPERVISION_MODELO_SESION=true`).** El dashboard
+no puede leer el modelo de una sesión: el token de cada rutina solo dispara
+([referencia](https://platform.claude.com/docs/en/api/claude-code/routines-fire)) y la respuesta no trae el modelo. Con
+la bandera encendida, que pone solo el propietario con `deploy.sh`, el PM lee `configured_model` y `last_served_model`
+con `get_session` y los da de alta por la API (`orden.modelo_sesion`,
+[escritura §14](escritura-v1-8.md#14-modelo-real-de-las-sesiones-ord-pos-165-dec-pos-039)). La supervisión usa entonces
+ese registro y no el campo `modelo` del dictamen ni la constante:
+
+- Solo se registran sesiones que el dashboard lanzó para la orden: la de implementación (comentario de lanzamiento del
+  issue) y las de revisión y corrección (AUDITORIA). El dictamen `REV-<orden>-<n>` se enlaza con su sesión por la clave
+  `orden|revisar|head|n` del lanzamiento. Una orden implementada o revisada a mano no es verificable.
+- Quien implementó es la sesión de implementación más cada corrección lanzada; todas necesitan registro en el head
+  actual. Tras un push hay que registrar de nuevo.
+- Cada sesión aporta la familia de su modelo configurado y la del servido. Si falta un registro, un modelo no se
+  reconoce o alguna familia del `SEGUNDO` coincide con las de quien implementó o las del `PRIMERO` o `DELTA`, sigue
+  «Falta segundo revisor».
+- Con la bandera encendida, `modelo` puede faltar en el dictamen si su sesión tiene registro; apagada, todo sigue como
+  arriba.
+
 ## Entornos
 
 | Entorno | Qué corre ahí | Qué nunca corre ahí | Fuente |

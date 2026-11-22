@@ -13,13 +13,14 @@ import { OperationError } from './errors'
 import { AuditoriaPorPeriodo, tienePestanasAuditoria } from './auditoria-periodo'
 import { ContadorFilas, FILAS_AVISO } from './limite-filas'
 import { esSesionClaude, REPOSITORIOS, repoDeUrl } from './github'
+import type { ModeloRegistrado, PapelSesion, RegistroModelos } from '../supervision/dictamen'
 import {
   cell, contractColumns, findById, readView, toRecord, toRow, type TableStore, type TableView,
 } from './table-store'
 import { meridaCompactDate, meridaIsoTimestamp } from './time'
 import {
   derivedRequestId, payloadHash, type ArchivarEscenarioCommand, type CompleteTaskCommand, type GuardarPlanDiaCommand, type GuardarEscenarioCommand, type RegistrarCapacidadCommand, type CreateDecisionCommand, type CreateOrderCommand, type CreateTaskCommand, type LogTimeCommand,
-  type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
+  type ModeloSesionCommand, type OrderTransitionCommand, type TaskChanges, type UpdateTaskCommand,
 } from './validation'
 import {
   auditDiff, comprobarIdea, escribirIdea, idOcupado, leerLibroIdeas, planDesdeAuditoria, planIdea, siguienteIdIdea,
@@ -114,7 +115,7 @@ const ORDER_TRANSITIONS: Record<OrderTransitionCommand['accion'], { from: readon
   cerrar_fusionado: { from: ['ENVIADA', 'PR_ABIERTO', 'REVISADA'], to: 'CERRADA', op: 'orden.cerrar_fusionado' },
 }
 
-interface AuditedOperation {
+export interface AuditedOperation {
   requestId: string
   operacion: string
   hash: string
@@ -884,6 +885,47 @@ export class OperationsService {
   }
 
   /**
+   * Sesiones de revisión y de corrección que el dashboard lanzó para la orden (AUDITORIA, integridad completa), para
+   * decidir el papel de una sesión antes de registrar su modelo (ORD-POS-165).
+   */
+  async sesionesLanzadas(ordenId: string): Promise<Array<{ papel: 'REVISION' | 'CORRECCION'; sesion: string }>> {
+    return lanzamientosDe(parseAudit(await readView(this.store, 'AUDITORIA')), ordenId)
+  }
+
+  /**
+   * Alta auditada del modelo real de una sesión enlazada a la orden (ORD-POS-165, DEC-POS-039). Solo AUDITORIA: no toca
+   * ORDENES_CODEX ni edita o borra registros anteriores. El papel ya lo derivó el servidor (modelo-sesion.ts).
+   */
+  registrarModeloSesion(cmd: ModeloSesionCommand, papel: PapelSesion, ctx: OperationContext): Promise<OperationResult> {
+    const op = 'orden.modelo_sesion' as const
+    const hash = payloadHash(op, cmd)
+    return this.exclusive(async () => {
+      const audit = await readView(this.store, 'AUDITORIA')
+      const found = this.findAudited(audit, cmd.requestId)
+      if (found) {
+        if (found.op.operacion !== op || found.op.hash !== hash || found.op.id !== cmd.ordenId) throw new OperationError('conflicto-idempotencia')
+        return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: true }
+      }
+      const diff = new Map(Object.entries({
+        SESION: cmd.sesion, HEAD: cmd.head, PAPEL: papel, MODELO_CONFIGURADO: cmd.configuredModel, MODELO_SERVIDO: cmd.lastServedModel,
+      }).map(([campo, despues]) => [campo, { antes: '', despues }]))
+      await this.auditFirst(op, hash, cmd.requestId, ctx, 'ORDENES_CODEX', cmd.ordenId, diff, this.clock(), audit)
+      return { operacion: op, entidad: 'ORDENES_CODEX', id: cmd.ordenId, repetida: false }
+    })
+  }
+
+  /** Registro de modelos de las sesiones de la orden para la supervisión (ORD-POS-165), leído de AUDITORIA. */
+  async modelosDeOrden(ordenId: string): Promise<RegistroModelos> {
+    return registroModelos(parseAudit(await readView(this.store, 'AUDITORIA')), ordenId)
+  }
+
+  /** Lo mismo para varias órdenes con una sola lectura de AUDITORIA (páginas): devuelve el registro de cada orden. */
+  async modelosRegistrados(): Promise<(ordenId: string) => RegistroModelos> {
+    const ops = parseAudit(await readView(this.store, 'AUDITORIA'))
+    return (ordenId) => registroModelos(ops, ordenId)
+  }
+
+  /**
    * Reserva auditada antes de disparar una rutina (ORD-POS-039): si la clave ya tiene lanzamiento o una reserva vigente,
    * no reserva. Si la escritura falla, lanza OperationError y no se dispara nada. Serializa solo este proceso (contrato §6).
    */
@@ -933,7 +975,7 @@ export class OperationsService {
     // Auditorías incompletas o contradictorias: nunca se dan por conciliadas.
     for (const op of ops) if (op.integridad !== 'completa') item(op, op.integridad === 'parcial' ? 'auditoria-parcial' : 'auditoria-inconsistente')
     // Los lanzamientos de rutinas dejan constancia pero no cambian la orden: no hay efecto que conciliar.
-    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.((revisar|corregir)_lanzar|supervision_(reservar|liberar))$/.test(op.operacion))
+    const complete = ops.filter((op) => op.integridad === 'completa' && !/^orden\.((revisar|corregir)_lanzar|supervision_(reservar|liberar)|modelo_sesion)$/.test(op.operacion))
     // Actualización perdida: dos ediciones auditadas parten de la misma VERSION del mismo registro
     // (posible solo sin CAS entre instancias; contrato §6). La segunda pisó a la primera.
     const transitions = new Map<string, AuditedOperation[]>()
@@ -1348,6 +1390,7 @@ const REQUIRED_AUDIT_FIELDS: Record<string, string[]> = {
   'orden.revisar': ['ESTADO'],
   'orden.cerrar': ['ESTADO'],
   'orden.cerrar_fusionado': ['ESTADO'],
+  'orden.modelo_sesion': ['SESION', 'HEAD', 'PAPEL', 'MODELO_CONFIGURADO', 'MODELO_SERVIDO'],
 }
 /** Operaciones que modifican un registro existente (no reescriben su ID). */
 const TRANSITION_OPS = new Set(['tarea.editar', 'tarea.completar', 'escenario.archivar', 'orden.aprobar', 'orden.cancelar', 'orden.enviar', 'orden.registrar_pr', 'orden.revisar', 'orden.cerrar', 'orden.cerrar_fusionado'])
@@ -1402,6 +1445,43 @@ export function parseAudit(audit: TableView): AuditedOperation[] {
     }
     return op
   })
+}
+
+const lanzadaCompleta = (o: AuditedOperation, ordenId: string) =>
+  o.integridad === 'completa' && o.entidad === 'ORDENES_CODEX' && o.id === ordenId && /^orden\.(revisar|corregir)_lanzar$/.test(o.operacion)
+
+function lanzamientosDe(ops: AuditedOperation[], ordenId: string): Array<{ papel: 'REVISION' | 'CORRECCION'; sesion: string; clave: string }> {
+  return ops.filter((o) => lanzadaCompleta(o, ordenId) && esSesionClaude(o.fields.get('SESION')?.despues ?? '')).map((o) => ({
+    papel: o.operacion === 'orden.corregir_lanzar' ? 'CORRECCION' as const : 'REVISION' as const,
+    sesion: o.fields.get('SESION')!.despues,
+    clave: o.fields.get('CLAVE')?.despues ?? '',
+  }))
+}
+
+/**
+ * Registro de modelos de la orden (ORD-POS-165, DEC-POS-039), solo con auditorías de integridad completa. Función pura.
+ * El enlace de una revisión con su dictamen no sale de lo que registró el PM sino del lanzamiento del dashboard: la
+ * clave `orden|revisar|head|n` de la sesión da el head y el correlativo de `REV-<orden>-<n>`. Un registro de revisión cuya
+ * sesión no tiene un único lanzamiento con clave válida, o cuyo head no es el de esa clave, no entra.
+ */
+export function registroModelos(ops: AuditedOperation[], ordenId: string): RegistroModelos {
+  const lanzadas = lanzamientosDe(ops, ordenId)
+  const registros: ModeloRegistrado[] = []
+  for (const o of ops) {
+    if (o.integridad !== 'completa' || o.operacion !== 'orden.modelo_sesion' || o.entidad !== 'ORDENES_CODEX' || o.id !== ordenId) continue
+    const campo = (c: string) => o.fields.get(c)?.despues ?? ''
+    const base = { sesion: campo('SESION'), head: campo('HEAD'), configurado: campo('MODELO_CONFIGURADO'), servido: campo('MODELO_SERVIDO') }
+    const papel = campo('PAPEL')
+    if (papel === 'IMPLEMENTACION') registros.push({ ...base, papel })
+    else if (papel === 'CORRECCION') {
+      if (lanzadas.some((l) => l.papel === 'CORRECCION' && l.sesion === base.sesion)) registros.push({ ...base, papel })
+    } else if (papel === 'REVISION') {
+      const suyas = lanzadas.filter((l) => l.papel === 'REVISION' && l.sesion === base.sesion)
+      const clave = suyas.length === 1 ? new RegExp(`^${ordenId}\\|revisar\\|([0-9a-f]{40})\\|(\\d{1,3})$`).exec(suyas[0]!.clave) : null
+      if (clave && clave[1] === base.head) registros.push({ ...base, papel, n: Number(clave[2]) })
+    }
+  }
+  return { registros, correcciones: [...new Set(lanzadas.filter((l) => l.papel === 'CORRECCION').map((l) => l.sesion))] }
 }
 
 export type EstadoLanzamiento = { tipo: 'lanzada'; sesion: string } | { tipo: 'reservada' } | { tipo: 'sesion-invalida' } | { tipo: 'libre' }

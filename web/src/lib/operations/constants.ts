@@ -134,6 +134,11 @@ export type OperationName =
   | 'orden.revisar_lanzar' | 'orden.corregir_lanzar'
   /** Reserva auditada antes de lanzar una revisión o corrección (ORD-POS-039) y su liberación si la rutina la rechaza (ORD-POS-045); tampoco cambian la orden. */
   | 'orden.supervision_reservar' | 'orden.supervision_liberar'
+  /**
+   * Alta auditada del modelo real de una sesión enlazada a la orden (ORD-POS-165, DEC-POS-039): solo el agente PM y solo
+   * con SUPERVISION_MODELO_SESION=true. No escribe en la entidad ni edita o borra registros.
+   */
+  | 'orden.modelo_sesion'
 
 /** Órdenes (V1.8 F3, docs/migracion-ordenes-codex.md). Desde el dashboard no se crean órdenes de riesgo ALTO. */
 export const ORDER_RISKS = ['BAJO', 'MEDIO'] as const
@@ -148,6 +153,8 @@ export const AGENT_OPERATIONS: readonly OperationName[] = ['tarea.crear', 'tarea
 export const AGENT_TIEMPOS_OPERATION: OperationName = 'tiempo.crear'
 /** ORD-POS-131 (DEC-ECO-007): operación SOLO del PM, fuera de AGENT_OPERATIONS; el guard la permite con ECO_IDEAS_ALTA=true. */
 export const AGENT_IDEAS_OPERATION: OperationName = 'idea.alta'
+/** ORD-POS-165 (DEC-POS-039): operación SOLO del PM, fuera de AGENT_OPERATIONS; el guard la permite con SUPERVISION_MODELO_SESION=true. */
+export const AGENT_MODELO_SESION_OPERATION: OperationName = 'orden.modelo_sesion'
 /** Operaciones solo del propietario con su sesión (DEC-POS-029 a): con cualquier Authorization, 403 sin leer el cuerpo. */
 export const OWNER_PLANNING_OPERATIONS: readonly OperationName[] = ['capacidad.registrar', 'plan.dia.guardar', 'escenario.guardar', 'escenario.archivar']
 export const AGENT_ORDER_ACTIONS: readonly string[] = ['APROBAR', 'ENVIAR', 'REVISAR']

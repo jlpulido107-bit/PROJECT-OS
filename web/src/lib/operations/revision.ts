@@ -6,6 +6,7 @@ import { evaluarDictamen, type PlanLanzamiento } from '../supervision/dictamen'
 import { rutinasSupervision, RoutineError, textoSupervision, type RutinasSupervision } from './claude-routine'
 import { segundoGeminiSupervisado } from './config'
 import { githubClient } from './dispatch'
+import { modelosSesionDe } from './dictamenes'
 import { OperationError } from './errors'
 import { mapaDeProceso } from './process-map'
 import { GitHubError, REPOSITORIOS, repoDeUrl, type GitHubClient } from './github'
@@ -73,7 +74,7 @@ async function lanzarUnaVez(
   let plan: PlanLanzamiento | null
   try {
     const datos = await github.datosDictamen(proyectoId, prUrl)
-    const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null, sensible: o[ORDENES_SENSIBLE] ?? null }, { repo, numero: Number(/\/pull\/(\d+)$/.exec(prUrl)![1]) }, { geminiSupervisado: segundoGeminiSupervisado() })
+    const ev = evaluarDictamen(datos, { id: cmd.ordenId, riesgo: o.RIESGO ?? null, criterios: o.CRITERIOS_ACEPTACION ?? null, sensible: o[ORDENES_SENSIBLE] ?? null }, { repo, numero: Number(/\/pull\/(\d+)$/.exec(prUrl)![1]) }, { geminiSupervisado: segundoGeminiSupervisado(), ...await modelosSesionDe(service, cmd.ordenId) })
     if (ev.agotado) return { ok: false, codigo: 'correlativo-agotado' }
     plan = ev.plan
   } catch (error) {

@@ -1,6 +1,8 @@
 import { cacheSeconds } from '../config'
-import { evaluarDictamen, type EvaluacionDictamen, type DatosPr, type PrDictamen } from '../supervision/dictamen'
-import { segundoGeminiSupervisado } from './config'
+import { evaluarDictamen, REGISTRO_VACIO, type EvaluacionDictamen, type DatosPr, type PrDictamen, type RegistroModelos } from '../supervision/dictamen'
+import { segundoGeminiSupervisado, supervisionModeloSesion } from './config'
+import { operationsService, writeGeneration } from './runtime'
+import type { OperationsService } from './service'
 import { REPOSITORIOS, codigoFalloGitHub, repoDeUrl, type GitHubClient } from './github'
 
 /**
@@ -15,7 +17,7 @@ const cache = new Map<string, { hasta: number; datos: DatosPr | null; fallo?: st
 
 export interface OrdenConPr { id: string; proyectoId: string | null; prUrl: string | null; riesgo: string | null; criterios: string | null; sensible?: string | null }
 
-export function limpiarCacheDictamenes(): void { cache.clear() }
+export function limpiarCacheDictamenes(): void { cache.clear(); registros = null }
 
 /** Código del último fallo de lectura guardado para el PR (http-NNN, tiempo, …) o null si no falló. */
 export const falloDictamen = (prUrl: string): string | null => cache.get(prUrl)?.fallo ?? null
@@ -26,7 +28,32 @@ export const urlComentario = (prUrl: string, id: number): string | null =>
 
 export async function dictamenDeOrden(client: GitHubClient, o: OrdenConPr, ahora = Date.now()): Promise<EvaluacionDictamen | null> {
   const leido = await datosDePr(client, o, ahora)
-  return leido && evaluarDictamen(leido.datos, o, leido.pr, { geminiSupervisado: segundoGeminiSupervisado() })
+  return leido && evaluarDictamen(leido.datos, o, leido.pr, { geminiSupervisado: segundoGeminiSupervisado(), ...await modelosSesionEnCache(o.id, ahora) })
+}
+
+/**
+ * Opción `modelosSesion` de evaluarDictamen para una orden (ORD-POS-165, DEC-POS-039): ausente con la bandera
+ * SUPERVISION_MODELO_SESION apagada (comportamiento de siempre); encendida, el registro leído ahora de AUDITORIA, o vacío
+ * si no se puede leer (nada verificable: falla cerrado). Para las escrituras (REVISADA, lanzar revisión).
+ */
+export async function modelosSesionDe(service: OperationsService | null, ordenId: string): Promise<{ modelosSesion?: RegistroModelos }> {
+  if (!supervisionModeloSesion()) return {}
+  return { modelosSesion: await service?.modelosDeOrden(ordenId).catch(() => REGISTRO_VACIO) ?? REGISTRO_VACIO }
+}
+
+let registros: { hasta: number; generacion: number; leer: Promise<(ordenId: string) => RegistroModelos> } | null = null
+
+/** Lo mismo para las páginas: una sola lectura de AUDITORIA por DASHBOARD_CACHE_SECONDS, que una escritura invalida. */
+async function modelosSesionEnCache(ordenId: string, ahora: number): Promise<{ modelosSesion?: RegistroModelos }> {
+  if (!supervisionModeloSesion()) return {}
+  if (!registros || registros.hasta <= ahora || registros.generacion !== writeGeneration()) {
+    const vacio = () => REGISTRO_VACIO
+    registros = {
+      hasta: ahora + cacheSeconds() * 1000, generacion: writeGeneration(),
+      leer: operationsService()?.modelosRegistrados().catch(() => vacio) ?? Promise.resolve(vacio),
+    }
+  }
+  return { modelosSesion: (await registros.leer)(ordenId) }
 }
 
 /**

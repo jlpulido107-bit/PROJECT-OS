@@ -762,3 +762,51 @@ web/deploy/cloudrun/deploy.sh --desde-activa --quitar ECO_BANDEJA_GEMINI
 
 Quitar `ECO_PIPELINE_WRITE_MODE` sin quitar también `ECO_BANDEJA_GEMINI` hace fallar el render: no se aplica nada. La
 pestaña y sus filas se quedan como están.
+
+## 14. Modelo real de las sesiones (ORD-POS-165, DEC-POS-039)
+
+DEC-POS-039 (APROBADA en DECISIONES, 2026-11-21) amplía DEC-POS-011: el dashboard no puede leer el modelo de una sesión de
+Claude, así que el PM lo lee con `get_session` y lo da de alta. La supervisión usa ese registro en vez del campo `modelo`
+del dictamen y de la constante `FAMILIA_IMPLEMENTADOR`. No cambia quién aprueba, fusiona, cierra o despliega.
+
+- **Bandera.** `SUPERVISION_MODELO_SESION`: solo el valor exacto `true` (`web/src/lib/operations/config.ts`). Enciende a
+  la vez el alta del PM y la lectura del registro en la supervisión. Solo el propietario la pone con `deploy.sh`.
+- **`orden.modelo_sesion` del PM.** `POST /api/operaciones/ordenes/<ORDEN_ID>/modelo-sesion` con el token del PM y el
+  cuerpo `{ requestId, sesion, head, configuredModel, lastServedModel }`: la URL de la sesión de claude.ai/code, el head
+  actual del PR y los dos datos de `get_session`, tal cual. Ninguna sesión de navegador puede usarla. No está en
+  `AGENT_OPERATIONS`: el guard la permite solo con la bandera.
+- **Qué comprueba el servidor.** La orden está en `PR_ABIERTO` o `REVISADA` con su PR registrado; `head` es el head
+  actual del PR en GitHub (`head-no-vigente`); la sesión es una que el dashboard lanzó para esa orden
+  (`sesion-no-enlazada`): la de revisión o corrección que quedó en AUDITORIA, o la de implementación del comentario de
+  lanzamiento del issue. De ahí deriva el papel (`REVISION`, `CORRECCION` o `IMPLEMENTACION`); el PM no lo envía. Sin
+  GitHub no registra nada.
+- **Qué escribe.** Solo AUDITORIA, una fila por campo (`SESION`, `HEAD`, `PAPEL`, `MODELO_CONFIGURADO`,
+  `MODELO_SERVIDO`) con `ACTOR=agente-pm`, `ENTIDAD=ORDENES_CODEX`, el ID de la orden, la fecha y `;agente=pm`. Solo
+  alta: no edita ni borra registros y no toca `ORDENES_CODEX`. Idempotente por `requestId`; el mismo `requestId` con
+  otro contenido da `conflicto-idempotencia`. Registrar otra vez la misma sesión añade un registro, y cuentan todos.
+- **Cómo lo usa la supervisión** (`dictamen.ts`). Solo registros de integridad completa y del head que se evalúa. El
+  detalle de la regla está en [operación](operacion.md#roles-y-modelos). La AUDITORIA que se lee es la vigente y la
+  anterior (§12.1): un registro más viejo deja de contar.
+- **Apagada (por defecto).** El alta responde 403 `operacion-no-permitida` sin escribir, y la supervisión se comporta
+  como antes. Sin la variable, el YAML no cambia.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+Requisitos: la imagen que trae ORD-POS-165 desplegada, la escritura activa (`WRITE_MODE=sheets`), el token del PM (§6) y
+`SECRET_VERSION_GITHUB`. Ningún agente exporta esta variable ni despliega.
+
+```bash
+export SUPERVISION_MODELO_SESION=true
+web/deploy/cloudrun/deploy.sh --desde-activa
+```
+
+Al encenderla, las órdenes MEDIO sensibles abiertas quedan en «Falta segundo revisor» hasta que el PM registre sus
+sesiones en el head actual.
+
+### Revertir
+
+```bash
+web/deploy/cloudrun/deploy.sh --desde-activa --quitar SUPERVISION_MODELO_SESION
+```
+
+Los registros quedan en AUDITORIA y dejan de usarse.

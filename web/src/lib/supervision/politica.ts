@@ -35,8 +35,8 @@ export const esFamiliaClaude = (familia: string | null): boolean => familia !== 
  * esta constante en vez de nombrar un modelo. El firmante de un SEGUNDO, de cualquier origen, no puede ser de esta
  * familia (DEC-POS-035, ORD-POS-161; antes solo el gemini-supervisado, DEC-POS-022).
  * Para cambiar de implementador: cambiar este valor (uno de los que devuelve familiaModelo), en un PR.
- * atajo: es la asignación operativa, no se lee del PR ni distingue a un corrector de otra familia; mejorarlo si la
- * orden llega a registrar quién la implementó y quién la corrigió.
+ * Solo rige con SUPERVISION_MODELO_SESION apagada. Encendida (ORD-POS-165, DEC-POS-039), la familia de quien implementó
+ * y de quien corrigió sale del registro de cada sesión de la orden (dictamen.ts) y esta constante no se usa.
  */
 export const FAMILIA_IMPLEMENTADOR = 'fable'
 

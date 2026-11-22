@@ -90,6 +90,16 @@ export function segundoGeminiSupervisado(env: NodeJS.ProcessEnv = process.env): 
 }
 
 /**
+ * ORD-POS-165 (DEC-POS-039): la supervisión toma el modelo del revisor y la familia del implementador del registro que
+ * el PM da de alta de cada sesión enlazada (`orden.modelo_sesion`), no del texto del dictamen ni de una constante. Apagada
+ * por defecto: solo el valor exacto `true`, que pone únicamente el propietario en Cloud Run con deploy.sh. Apagada, el PM
+ * no puede registrar y la supervisión se comporta como antes.
+ */
+export function supervisionModeloSesion(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SUPERVISION_MODELO_SESION === 'true'
+}
+
+/**
  * ORD-POS-106 (DEC-POS-023, DEC-POS-014): cierre de tareas por el propietario, apagado por defecto. Solo con
  * TAREAS_CIERRE_PROPIETARIO=true exacto y un único correo en TAREAS_CIERRE_PROPIETARIO_EMAIL que además esté en
  * AUTH_ALLOWED_EMAILS. Devuelve ese correo, o null si falta cualquier condición. Solo el propietario la pone en Cloud Run

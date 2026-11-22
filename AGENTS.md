@@ -45,6 +45,12 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   DEC-POS-013 (enmienda de DEC-POS-008): el «sí PAQ-AAAA-MM-DD-NN» que el propietario da en la sesión POS · Ideas
   autoriza solo las altas de ese paquete, y solo después de que el PM lo verifica en la fuente (`pm-escribir-api`,
   sección «Altas con sí PAQ»); aprobar, enviar, cancelar y cerrar no cambian: un «sí PAQ» nunca vale para ellos.
+  DEC-POS-039 (APROBADA en DECISIONES, 2026-11-21; ORD-POS-165), amplía DEC-POS-011: el PM da de alta el modelo real
+  (`configured_model` y `last_served_model` de `get_session`) de las sesiones que el dashboard lanzó para una orden, con
+  la operación auditada `orden.modelo_sesion`; nunca edita ni borra esos registros. La supervisión usa ese registro y no
+  el campo `modelo` del dictamen ni una constante; si falta o no cuadra, sigue «Falta segundo revisor». Está apagado:
+  solo con `SUPERVISION_MODELO_SESION=true`, que pone únicamente el propietario con `deploy.sh`
+  ([escritura §14](docs/escritura-v1-8.md)). Ningún agente la enciende.
 - Rol Tiempos (Claude, skill `planear-tiempo`), **DEC-POS-024 APROBADA** (2026-10-28): lee la hoja
   (solo lectura) y la vista /planificacion y propone; nunca escribe en Sheets ni cambia ESTADO o BLOQUEO. Sus ediciones
   (HORAS_ESTIMADAS, FECHA_PLAN, HITO_ID) y altas de tareas van en un paquete sin ID a POS · Ideas, que le pone el PAQ;
