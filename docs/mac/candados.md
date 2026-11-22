@@ -45,7 +45,7 @@ Las reglas de managed-settings ganan a las del usuario y a las del repositorio; 
   acepte comodines. Un script que abra por su cuenta un archivo de `privado/` no queda bloqueado por esta plantilla;
   el candado ahí son los permisos 700 de la carpeta del propietario.
 - No se verificó en la documentación qué dueño y permisos exige el archivo instalado; los de abajo (root, 644) son
-  los mínimos para que «taller» lo lea y no lo cambie.
+  los mínimos para que «taller» lo lea y no lo cambie, y el punto 5 del script los comprueba.
 
 ## Cómo instalar (propietario, con sudo)
 
@@ -75,7 +75,11 @@ sudo bash scripts/mac-verificar.sh
 ```
 
 Opciones: `--propietario <cuenta>`, `--taller <cuenta>` (por defecto `taller`) y `--plantilla <archivo>`.
-Termina con 0 si todo está OK y con 1 si hay alguna FALLA.
+Termina con 0 si todo está OK y con 1 si hay alguna FALLA. Una carpeta de sesión que existe pero no se deja leer
+es FALLA, nunca «sin sesión».
+
+Si la primera línea dice `AVISO MAC_VERIFICAR_RAIZ está definida`, el resultado no vale: esa variable es solo de las
+pruebas y hace que el script revise una carpeta simulada. Quítala (`unset MAC_VERIFICAR_RAIZ`) y repite.
 
 | Punto | OK cuando | Si sale FALLA |
 | --- | --- | --- |
@@ -85,7 +89,7 @@ Termina con 0 si todo está OK y con 1 si hay alguna FALLA.
 | 2c | «taller» no tiene sesión de gcloud | En «taller»: `gcloud auth revoke --all` y `gcloud auth application-default revoke` |
 | 3 | el propietario no tiene sesión de gcloud | Lo mismo, en tu cuenta, al terminar de desplegar |
 | 4 | no existe `~/.clasprc.json` en ninguna de las dos cuentas | `clasp logout` |
-| 5 | el archivo instalado es idéntico, byte a byte, a la plantilla | Repite la instalación |
+| 5 | el archivo instalado es idéntico, byte a byte, a la plantilla; él y su carpeta son de root, no son enlaces y solo root los escribe | Repite la instalación; si falla la carpeta: `sudo chown root:wheel` y `sudo chmod 755` sobre `/Library/Application Support/ClaudeCode` |
 
 El script solo lee. Usa `id` y `stat` y mira archivos; no ejecuta `gh`, `gcloud` ni `clasp`, no cierra sesiones y no
 escribe nada. Para gcloud da FALLA si encuentra `application_default_credentials.json`, cuentas en

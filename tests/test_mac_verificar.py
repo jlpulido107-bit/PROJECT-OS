@@ -19,8 +19,12 @@ exit 1
 """
 STAT_FALSO = f"""#!{BASH}
 echo "stat $*" >> "$DIR_FALSO/llamadas"
-[ "$1" = "-f" ] && [ "$2" = "%Lp" ] || exit 1
-echo "$MODO_FALSO"
+[ "$1" = "-f" ] || exit 1
+case "$2" in
+  %Lp) echo "$MODO_FALSO" ;;
+  "%u %Lp") if [ -d "$3" ]; then echo "$CARPETA_FALSA"; else echo "$ARCHIVO_FALSO"; fi ;;
+  *) exit 1 ;;
+esac
 """
 PUNTOS = ["1.", "2a.", "2b.", "2c.", "3.", "4.", "5."]
 
@@ -42,9 +46,10 @@ class TestMacVerificar(unittest.TestCase):
             carpeta.mkdir(parents=True)
         shutil.copyfile(PLANTILLA, self.instalado)
 
-    def ejecutar(self, *args, modo="700", grupos="staff everyone", sudo_user=None):
+    def ejecutar(self, *args, modo="700", grupos="staff everyone", sudo_user=None, archivo="0 644", carpeta="0 755"):
         # PATH solo con los falsos: cualquier otro comando externo fallaría en vez de tocar el sistema.
         entorno = {"PATH": str(self.bin), "DIR_FALSO": str(self.tmp), "MODO_FALSO": modo, "GRUPOS_FALSOS": grupos,
+                   "ARCHIVO_FALSO": archivo, "CARPETA_FALSA": carpeta,
                    "MAC_VERIFICAR_RAIZ": str(self.raiz)}
         if sudo_user:
             entorno["SUDO_USER"] = sudo_user
@@ -107,7 +112,8 @@ class TestMacVerificar(unittest.TestCase):
     def test_solo_llama_a_id_y_stat(self):
         self.ejecutar()
         llamadas = (self.tmp / "llamadas").read_text().splitlines()
-        self.assertEqual(llamadas, ["id -un", f"stat -f %Lp {self.dueno}", "id -Gn taller"])
+        self.assertEqual(llamadas, ["id -un", f"stat -f %Lp {self.dueno}", "id -Gn taller",
+                                    f"stat -f %u %Lp {self.instalado}", f"stat -f %u %Lp {self.instalado.parent}"])
 
     def test_script_sin_comandos_que_cambian(self):
         codigo = "\n".join(l.split(" # ")[0] for l in SCRIPT.read_text().splitlines() if not l.lstrip().startswith("#"))
@@ -136,6 +142,48 @@ class TestMacVerificar(unittest.TestCase):
         r = self.ejecutar(sudo_user="dueno")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertNotIn("id -un", (self.tmp / "llamadas").read_text())
+
+    # H4: la variable de pruebas nunca pasa en silencio.
+    def test_aviso_de_carpeta_simulada(self):
+        r = self.ejecutar()
+        self.assertIn(f"AVISO MAC_VERIFICAR_RAIZ está definida: se revisa la carpeta simulada {self.raiz}", r.stdout)
+        self.assertIn("Resultado: todo OK en la carpeta simulada: NO vale como verificación de esta Mac", r.stdout)
+        r = self.ejecutar(modo="755")
+        self.assertIn("1 FALLA(s) en la carpeta simulada", r.stdout)
+        self.assertEqual(SCRIPT.read_text().count('[ -n "$raiz" ]'), 1)
+
+    # H1: una carpeta que existe pero no se deja listar nunca es «sin sesión».
+    def test_carpetas_de_sesion_ilegibles(self):
+        casos = {".config": ["2b.", "2c."], ".config/gcloud": ["2c."], ".config/gcloud/configurations": ["2c."],
+                 ".config/gcloud/legacy_credentials": ["2c."], ".config/gh": ["2b."]}
+        for ruta, esperadas in casos.items():
+            with self.subTest(ruta=ruta):
+                if not ruta.endswith("legacy_credentials"):
+                    self.escribir(self.taller / ".config/gcloud/configurations/config_default", "[core]\naccount = alguien\n")
+                if ruta.endswith("legacy_credentials"):
+                    self.escribir(self.taller / ruta / "cuenta/adc.json")
+                self.escribir(self.taller / ".config/gh/hosts.yml", "github.com:\n")
+                cerrada = self.taller / ruta
+                cerrada.chmod(0o000)
+                try:
+                    if os.access(cerrada, os.R_OK):
+                        self.skipTest("root lee cualquier carpeta")
+                    lineas = self.lineas(self.ejecutar())
+                    for punto in esperadas:
+                        self.assertTrue(lineas[punto].startswith("FALLA"), lineas[punto])
+                    self.assertIn("no se puede leer", lineas[esperadas[0]])
+                finally:
+                    cerrada.chmod(0o755)
+                    shutil.rmtree(self.taller / ".config")
+
+    def test_configurations_ilegible_del_propietario(self):
+        cerrada = self.dueno / ".config/gcloud/configurations"
+        self.escribir(cerrada / "config_default", "[core]\naccount = alguien\n")
+        cerrada.chmod(0o000)
+        self.addCleanup(cerrada.chmod, 0o755)
+        if os.access(cerrada, os.R_OK):
+            self.skipTest("root lee cualquier carpeta")
+        self.falla_solo("3.", "no se puede leer configurations")
 
     # Punto 2.
     def test_taller_administrador_o_inexistente(self):
@@ -207,6 +255,31 @@ class TestMacVerificar(unittest.TestCase):
         self.falla_solo("5.", "no está instalado")
         r = self.ejecutar("--plantilla", str(self.tmp / "no-existe.json"))
         self.assertIn("FALLA 5. managed-settings: no se puede leer la plantilla", r.stdout)
+
+    # H2: idéntico no basta si alguien que no es root puede cambiarlo.
+    def test_managed_settings_no_protegido(self):
+        casos = [({"archivo": "501 644"}, "su dueño no es root"), ({"archivo": "0 666"}, "permisos 666"),
+                 ({"archivo": "0 664"}, "permisos 664"), ({"archivo": "0 646"}, "permisos 646"),
+                 ({"archivo": "0 1666"}, "permisos 1666"), ({"archivo": ""}, "no se pudieron leer"),
+                 ({"archivo": "root 644"}, "no se pudieron leer"), ({"carpeta": "501 755"}, "su carpeta: su dueño no es root"),
+                 ({"carpeta": "0 777"}, "su carpeta: permisos 777"), ({"carpeta": "0 775"}, "su carpeta: permisos 775")]
+        for kw, texto in casos:
+            with self.subTest(kw=kw):
+                self.falla_solo("5.", texto, **kw)
+        for kw in ({"archivo": "0 444"}, {"archivo": "0 600"}, {"archivo": "0 755"}, {"carpeta": "0 1755"}, {"carpeta": "0 700"}):
+            with self.subTest(kw=kw):
+                self.assertEqual(self.ejecutar(**kw).returncode, 0)
+
+    def test_managed_settings_por_enlace(self):
+        real = self.tmp / "otro" / "managed-settings.json"
+        self.escribir(real, PLANTILLA.read_text())
+        self.instalado.unlink()
+        self.instalado.symlink_to(real)
+        self.falla_solo("5.", "no protegido: es un enlace simbólico")
+        self.instalado.unlink()
+        self.instalado.parent.rmdir()
+        self.instalado.parent.symlink_to(real.parent)
+        self.falla_solo("5.", "su carpeta: es un enlace simbólico")
 
     def test_plantilla_alterna(self):
         otra = self.tmp / "otra.json"

@@ -51,6 +51,7 @@ tiene_entradas() { local e; for e in "$1"/* "$1"/.[!.]*; do [ -e "$e" ] && retur
 # atajo: mira archivos, no credentials.db (SQLite); si gcloud cambia dónde guarda la sesión, revisar aquí.
 sesion_gcloud() {
   local dir="$1/.config/gcloud" conf linea
+  [ ! -e "$1/.config" ] || legible "$1/.config" || { echo "no se puede leer $1/.config"; return 0; }
   [ -e "$dir" ] || return 0
   legible "$dir" || { echo "no se puede leer $dir"; return 0; }
   [ ! -e "$dir/application_default_credentials.json" ] || { echo "hay application_default_credentials.json"; return 0; }
@@ -58,6 +59,8 @@ sesion_gcloud() {
     legible "$dir/legacy_credentials" || { echo "no se puede leer legacy_credentials"; return 0; }
     ! tiene_entradas "$dir/legacy_credentials" || { echo "hay cuentas en legacy_credentials"; return 0; }
   fi
+  # Sin poder listar configurations/, el patrón de abajo no encontraría nada y parecería «sin sesión».
+  [ ! -e "$dir/configurations" ] || legible "$dir/configurations" || { echo "no se puede leer configurations"; return 0; }
   for conf in "$dir"/configurations/config_*; do
     [ -e "$conf" ] || continue
     [ -r "$conf" ] || { echo "no se puede leer $conf"; return 0; }
@@ -71,6 +74,7 @@ sesion_gcloud() {
 # Devuelve el motivo si gh tiene sesión guardada en esa carpeta de usuario (hosts.yml con contenido).
 sesion_gh() {
   local dir="$1/.config/gh" linea
+  [ ! -e "$1/.config" ] || legible "$1/.config" || { echo "no se puede leer $1/.config"; return 0; }
   [ -e "$dir" ] || return 0
   legible "$dir" || { echo "no se puede leer $dir"; return 0; }
   [ -e "$dir/hosts.yml" ] || return 0
@@ -82,6 +86,11 @@ sesion_gh() {
 }
 
 echo "Candados de la Mac · propietario: $propietario · taller: $taller"
+simulada=
+if [ -n "$raiz" ]; then
+  simulada=" en la carpeta simulada: NO vale como verificación de esta Mac"
+  echo "AVISO MAC_VERIFICAR_RAIZ está definida: se revisa la carpeta simulada $raiz, no esta Mac. Quítala y repite."
+fi
 
 # 1. Carpeta del propietario con permisos 700.
 if [ ! -d "$casa_propietario" ]; then
@@ -130,7 +139,17 @@ else
   ok "4. clasp sin sesión abierta"
 fi
 
-# 5. managed-settings instalado e idéntico a la plantilla, byte a byte.
+# Vacío si la ruta es de root y solo root la escribe; si no, el motivo. «taller» no debe poder cambiar los candados.
+solo_root() {
+  local dato
+  [ ! -L "$1" ] || { echo "es un enlace simbólico"; return 0; }
+  dato=$(stat -f '%u %Lp' "$1" 2>/dev/null) || dato=
+  [[ "$dato" =~ ^[0-9]+\ [0-7]{3,4}$ ]] || { echo "no se pudieron leer su dueño y permisos"; return 0; }
+  [ "${dato%% *}" = 0 ] || { echo "su dueño no es root"; return 0; }
+  [[ "${dato: -2}" =~ ^[0145][0145]$ ]] || { echo "permisos ${dato##* }: lo puede escribir alguien que no es root"; return 0; }
+}
+
+# 5. managed-settings instalado, de root, sin escritura para otros e idéntico a la plantilla, byte a byte.
 if [ ! -f "$plantilla" ] || [ ! -r "$plantilla" ]; then
   falla "5. managed-settings: no se puede leer la plantilla $plantilla"
 elif [ ! -f "$instalado" ]; then
@@ -141,9 +160,12 @@ else
   # read -d '' lee el archivo entero, con sus saltos de línea finales (un JSON no trae bytes nulos).
   IFS= read -r -d '' esperado < "$plantilla" || true
   IFS= read -r -d '' actual < "$instalado" || true
-  if [ "$esperado" = "$actual" ]; then ok "5. managed-settings instalado e idéntico a la plantilla"
-  else falla "5. managed-settings instalado pero distinto de la plantilla"; fi
+  motivo=$(solo_root "$instalado")
+  [ -n "$motivo" ] || { motivo=$(solo_root "${instalado%/*}"); [ -z "$motivo" ] || motivo="su carpeta: $motivo"; }
+  if [ "$esperado" != "$actual" ]; then falla "5. managed-settings instalado pero distinto de la plantilla"
+  elif [ -n "$motivo" ]; then falla "5. managed-settings idéntico a la plantilla pero no protegido: $motivo"
+  else ok "5. managed-settings instalado, de root e idéntico a la plantilla"; fi
 fi
 
-if [ "$fallas" -eq 0 ]; then echo "Resultado: todo OK"; exit 0; fi
-echo "Resultado: $fallas FALLA(s)"; exit 1
+if [ "$fallas" -eq 0 ]; then echo "Resultado: todo OK$simulada"; exit 0; fi
+echo "Resultado: $fallas FALLA(s)$simulada"; exit 1
