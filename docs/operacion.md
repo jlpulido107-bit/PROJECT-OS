@@ -1,7 +1,7 @@
 # Guía de operación — PROJECT-OS
 
 Una página para saber quién hace qué, en qué entorno y cómo fluye una orden de punta a punta. No cambia reglas ni
-decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-10-23. Si algo aquí contradice la fuente, manda la fuente.
+decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-11-22. Si algo aquí contradice la fuente, manda la fuente.
 
 ## Roles y modelos
 
@@ -54,7 +54,10 @@ ese registro y no el campo `modelo` del dictamen ni la constante:
 | POS · Ingeniería | Implementar, revisar y corregir (las 4 rutinas) | Escritura en la hoja: no tiene el secreto de red de la API ni usa el conector de Sheets | Orden ORD-POS-047; [`AGENTS.md`](../AGENTS.md) |
 | POS · PM | Solo el escritor PM, por la API: altas con [`scripts/pm-alta.sh`](../scripts/pm-alta.sh), edición de campos permitidos de tareas y, con el «sí» citado y fechado del propietario, aprobar y enviar órdenes BAJO o MEDIO con [`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh); marcar REVISADA solo con dictamen CONFORME de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el mismo head (DEC-POS-019; gemini-supervisado según DEC-POS-022, solo si el propietario encendió `SEGUNDO_GEMINI_SUPERVISADO`); registrar el PR detectado (ENVIADA → PR_ABIERTO) solo si el propietario encendió `PM_PUEDE_REGISTRAR_PR` (ORD-POS-063) | Implementar, revisar o corregir; cancelar o cerrar órdenes; cualquier transición de una orden ALTO; cambiar `ESTADO` o `BLOQUEO` de tareas, también cerrarlas con `…/completar` (DEC-POS-023: solo el propietario) | DEC-POS-005, DEC-POS-011 (ORD-POS-055, 057 y 059); [`AGENTS.md`](../AGENTS.md); [`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md) |
 | POS · Ideas | Conversar las ideas con el propietario y entregar paquetes `PAQ-AAAA-MM-DD-NN` al PM, cada uno terminado en «Responde sí PAQ-… para autorizar las altas»; abrir PRs en NOTAS **solo cuando el propietario lo pide** ([`revisar-ideas`](../.claude/skills/revisar-ideas/SKILL.md)) | Leer `privado/` de NOTAS; push a `main` de NOTAS, salvo la escritura directa limitada en `_contexto/`, `*/contexto.md`, `*/referencia/` y la sección `## Referencia` de los `indice.md` ([notas](notas.md#escritura-directa-limitada-pos--ideas)); escribir en la hoja; tomar un «sí PAQ» por algo más que altas: nunca aprueba, envía, cancela ni cierra | Orden ORD-POS-056 y ORD-POS-060 (DEC-POS-013); [notas](notas.md) |
-| Cloud Shell del propietario | Despliegue, rutinas, tokens y secretos | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera) |
+| Cloud Shell del propietario | Banderas, secretos, IAM, rutinas y tokens; el despliegue solo como plan B (DEC-POS-040, punto 2) | Nada que lance Claude: Claude solo da el script | [`deploy.sh`](../web/deploy/cloudrun/deploy.sh) (cabecera); [Despliegue](#despliegue) |
+| GitHub Actions, environment `produccion` | El botón de despliegue: la imagen de `main` y `DEPLOY_COMMIT_SHA`, cuando el propietario lo dispara y lo aprueba | Banderas, variables, secretos o IAM; nada que dispare o apruebe un agente | DEC-POS-036, DEC-POS-040; [guía](despliegue-boton.md) |
+| Mac, propietario | El usuario macOS del propietario: fusionar PRs con `gh` ([Fusión](#fusión-y-main-protegida)); `clasp`, solo él y por sesión | Antigravity y Claude Code local; una sesión de `gcloud` abierta; Remote Control, salvo a pedido y en una carpeta sin credenciales | DEC-POS-040 (puntos 3 y 4); [candados](mac/candados.md) |
+| Mac, taller | El usuario macOS «taller», cuenta estándar: Antigravity como taller diario y Claude Code local, con clones de solo lectura | `gh` con escritura, `clasp`, `gcloud` y la cuenta de Google del propietario; escribir en hojas, NOTAS o repositorios; fusionar o empujar a `main` | DEC-POS-034, DEC-POS-040 (punto 3); [candados](mac/candados.md) |
 
 El token de la API lo añade el proxy del entorno POS · PM; nadie lo lee, imprime ni pide
 ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#token)).
@@ -63,6 +66,10 @@ Regla de permiso en POS · PM (la añade el propietario; ORD-POS-062): además d
 que el escritor apruebe, envíe y marque REVISADA sin un `curl` a mano, permite `Bash(bash scripts/pm-transicion.sh:*)`.
 El script solo hace `PATCH` a `/api/operaciones/ordenes/<ORD-PRY-NNN>` con `APROBAR`, `ENVIAR` o `REVISAR`
 ([`scripts/pm-transicion.sh`](../scripts/pm-transicion.sh)).
+
+Los candados de la cuenta «taller» (plantilla de managed-settings) y su verificación de solo lectura,
+[`scripts/mac-verificar.sh`](../scripts/mac-verificar.sh), están en [candados](mac/candados.md) (ORD-POS-169,
+[#374](https://github.com/jlpulido107-bit/PROJECT-OS/pull/374)); los instala y los verifica solo el propietario.
 
 ## Las 4 rutinas y su disparo
 
@@ -88,6 +95,10 @@ la página. Los botones de revisión y corrección solo aparecen cuando el propi
 (ORD-POS-037, [rutina de Claude](rutina-claude.md#botones-revisar-y-corregir-en-ordenes-ord-pos-037)). Plan B si la
 llamada falla: **Ejecutar con Claude** o **Copiar para Claude** ([delegación](delegacion-codex.md#ciclo)).
 
+**Sin «sí» por ronda (DEC-POS-033, APROBADA).** Lanzar PRIMERO, DELTA, SEGUNDO y corrector de una orden BAJO o MEDIO en
+`PR_ABIERTO` está autorizado de forma permanente: el PM no pide «sí», siempre sobre el head actual y con máximo 2
+rondas de corrección. Cancelar, cerrar, ALTO, fusionar, desplegar y banderas siguen siendo solo del propietario.
+
 ## Flujo de una orden por riesgo
 
 Común a todas: el PM redacta el borrador → el propietario lo aprueba en `/ordenes` (`ENVIADA` + issue `[ORD-…]`) →
@@ -105,21 +116,46 @@ propietario decide. Fuente: [delegación](delegacion-codex.md#ciclo) y la
 Ningún dictamen autoriza fusión, despliegue ni cierre, y un PR fusionado no cierra la tarea por sí solo
 ([delegación](delegacion-codex.md#ciclo)).
 
+## Fusión y main protegida
+
+`main` está protegida desde el 2026-11-21 (DEC-POS-040, punto 5): PR obligatorio y sin force-push en PROJECT-OS, SIGSAH
+y RADAROS; sin force-push ni borrado en NOTAS. Nadie empuja a `main`: todo entra por PR.
+
+Fusiona solo el propietario, desde su usuario de la Mac o desde la web de GitHub. Con `gh`, atado al head que se
+revisó:
+
+```bash
+gh pr merge <PR> --merge --match-head-commit <SHA completo del head revisado>
+```
+
+`--match-head-commit` hace que GitHub rechace la fusión si el head del PR ya no es ese commit: lo que se fusiona es lo
+que se dictaminó. El SHA es el head del dictamen CONFORME, completo. Si la fusión se rechaza, hubo un commit posterior
+y toca revisar el delta, no reintentar con el SHA nuevo. `--merge` es como se ha fusionado hasta hoy (commits «Merge
+pull request»). La cuenta «taller» tiene negado `gh pr merge` ([candados](mac/candados.md)).
+
 ## Despliegue
 
-Lo corre solo el propietario, en Cloud Shell, con
-[`web/deploy/cloudrun/deploy.sh --desde-activa`](../web/deploy/cloudrun/deploy.sh): toma las variables de la revisión
-activa, deja prevalecer lo exportado (p. ej. `IMAGE` con el digest nuevo), compara solo los nombres de variables, pide
-que escriba «desplegar» y aplica. `--dry-run` muestra la comparación sin aplicar. Conserva las variables de las rutinas
+Despliega solo el propietario. Hay dos vías (DEC-POS-036, APROBADA; DEC-POS-040, puntos 1 y 2):
+
+| Vía | Para qué | Cómo |
+| --- | --- | --- |
+| **Botón**, la vía normal | Desplegar la imagen de `main` | *Actions → Desplegar dashboard → Run workflow*, rama `main`, y aprobar el environment `produccion` ([guía](despliegue-boton.md)) |
+| **Cloud Shell** | Banderas, variables, secretos, IAM y plan B si el botón falla | [`web/deploy/cloudrun/deploy.sh --desde-activa`](../web/deploy/cloudrun/deploy.sh) |
+
+**Botón** (ORD-POS-162, ORD-POS-163). El workflow `desplegar-dashboard` construye, publica y despliega solo la imagen
+con `deploy.sh --desde-activa --solo-imagen` y Workload Identity Federation, sin llaves ni `secrets`: solo cambia la
+imagen y `DEPLOY_COMMIT_SHA`. Corre solo desde `main`, con la variable `DESPLIEGUE_BOTON` en `true` y la cuenta
+`project-os-despliegue`. Su fuente vive en `web/deploy/github/`; la copia de `.github/workflows/` la puso el
+propietario y el preflight P15 exige que sea idéntica a la fuente (ORD-POS-167,
+[#373](https://github.com/jlpulido107-bit/PROJECT-OS/pull/373)). Ningún agente lo dispara ni lo aprueba, ni cambia
+banderas, variables, secretos, IAM, GCP o `.github/workflows`.
+
+**Cloud Shell.** `deploy.sh --desde-activa` toma las variables de la revisión activa, deja prevalecer lo exportado (p.
+ej. una bandera, o `IMAGE` con el digest nuevo en el plan B), compara solo los nombres de variables, pide que escriba
+«desplegar» y aplica. `--dry-run` muestra la comparación sin aplicar. Conserva las variables de las rutinas
 ([rutina de Claude](rutina-claude.md#botones-revisar-y-corregir-en-ordenes-ord-pos-037);
 [despliegue privado](despliegue-privado-v1-3.md)). Claude da el script; nunca lo ejecuta
-([delegación](delegacion-codex.md#ciclo)).
-
-**Botón de despliegue** (ORD-POS-163; DEC-POS-036, PENDIENTE): un workflow de GitHub Actions que construye, publica y
-despliega solo la imagen de `main` con `deploy.sh --desde-activa --solo-imagen` y Workload Identity Federation, sin
-`secrets`. Vive fuera de `.github/` y está apagado: solo el propietario lo copia a `.github/workflows/`, corre
-`wif-despliegue.sh --apply`, pone `DESPLIEGUE_BOTON=true`, lo dispara y aprueba el environment `produccion`
-([guía](despliegue-boton.md)). Ningún agente hace ninguno de esos pasos.
+([delegación](delegacion-codex.md#ciclo)). `gcloud` se usa ahí, no en la Mac (DEC-POS-040, punto 3).
 
 ### Commit desplegado (ORD-POS-124, DEC-POS-028 punto 2)
 
@@ -191,7 +227,8 @@ copiada a [estado actual](estado-actual.md) con [`cerrar-orden`](../.claude/skil
 
 ## Qué hace solo el propietario
 
-Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-POS-011, DEC-POS-013 y DEC-POS-014.
+Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-POS-011, DEC-POS-013, DEC-POS-014,
+DEC-POS-033, DEC-POS-036 y DEC-POS-040.
 
 - Cancelar y cerrar órdenes; aprobar o enviar órdenes de riesgo ALTO; decidir las decisiones; cambiar `ESTADO` o
   `BLOQUEO` de tareas en la hoja. Desde el dashboard, con su sesión, puede marcar una tarea COMPLETADA (DEC-POS-023,
@@ -199,16 +236,21 @@ Fuente: [`AGENTS.md`](../AGENTS.md), DEC-POS-002, DEC-POS-005, DEC-POS-008, DEC-
 - Dar el «sí» literal a cada escritura del PM (vale dado al PM y reenviado al escritor, DEC-POS-008). Con ese «sí»,
   citado con la orden y su fecha, el PM aprueba y envía órdenes BAJO o MEDIO, y marca REVISADA solo con dictamen
   CONFORME de PRIMERO o DELTA y, en MEDIO sensible, también SEGUNDO de otro modelo en el mismo head (DEC-POS-019; gemini-supervisado según DEC-POS-022) (DEC-POS-011, ORD-POS-057).
+  Ese «sí» para aprobar y enviar también vale dado en POS · Ideas con el ID de la orden y la fecha, verificado por el
+  PM en la fuente; lanzar revisores y corrector ya no lo necesita (DEC-POS-033).
 - O dar el «sí PAQ-AAAA-MM-DD-NN» en POS · Ideas (DEC-POS-013, enmienda de DEC-POS-008): autoriza solo las altas de
   ese paquete y, en uno del rol Tiempos, sus ediciones de `HORAS_ESTIMADAS`, `FECHA_PLAN` e `HITO_ID` (DEC-POS-024),
   después de que el PM lo verifica en la fuente; aprobar, enviar, cancelar y cerrar no cambian
   ([`pm-escribir-api`](../.claude/skills/pm-escribir-api/SKILL.md#altas-con-sí-paq-dec-pos-013)).
-- Fusionar PRs, desplegar y cerrar tareas e issues.
+- Fusionar PRs ([cómo](#fusión-y-main-protegida)), desplegar (disparar el botón y aprobar el environment
+  `produccion`, o `deploy.sh`) y cerrar tareas e issues.
 - Aplicar la activación del carril ALTO (DEC-POS-014): correr el script que enciende el mecanismo inerte (desplegar,
   encender la bandera en producción, crear o montar secretos). Ningún agente la aplica. Ejemplo: `PM_PUEDE_REGISTRAR_PR`
   (ORD-POS-063), que deja al PM registrar el PR detectado, la enciende solo el propietario con `deploy.sh`, después de
   registrar la decisión que amplía DEC-POS-011 ([`escritura-v1-8.md` §6](escritura-v1-8.md)).
   Lo mismo con `TAREAS_CIERRE_PROPIETARIO` (ORD-POS-106, DEC-POS-023): comandos, comprobación y reversión en
   [`escritura-v1-8.md` §7](escritura-v1-8.md#7-cierre-de-tareas-por-el-propietario-ord-pos-106-dec-pos-023).
-- Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP.
+- Crear las rutinas, sus tokens y los secretos; cambiar `.github/workflows`, permisos, IAM o configuración de GCP;
+  cambiar la protección de `main`.
+- En la Mac: instalar los candados de «taller», usar `clasp` y abrir Remote Control (DEC-POS-040, puntos 3 y 4).
 - Habilitar cualquier ejecución con horario (`schedule`), tras aprobar una prueba real.

@@ -72,10 +72,32 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   se mezcla con otros proyectos, no lleva datos personales y no se comparte fuera. Gemini o Antigravity solo generan
   bocetos, investigación y borradores con prompts del Director: no publican, no escriben en hojas ni repos ni reciben
   datos personales o confidenciales; lo generado es boceto, no arte final.
-- Botón de despliegue (ORD-POS-163; DEC-POS-036, PENDIENTE): el workflow vive en `web/deploy/github/` y está apagado.
-  Solo el propietario lo copia a `.github/workflows/`, ejecuta `web/deploy/infra/wif-despliegue.sh --apply`, pone la
-  variable `DESPLIEGUE_BOTON`, lo dispara y aprueba el environment `produccion` ([guía](docs/despliegue-boton.md)).
-  Ningún agente hace ninguno de esos pasos.
+- Revisión sin «sí» por ronda, **DEC-POS-033 APROBADA** (enmienda de DEC-POS-011): lanzar PRIMERO, DELTA, SEGUNDO y
+  corrector de una orden BAJO o MEDIO en PR_ABIERTO queda autorizado de forma permanente; el PM no pide «sí», siempre
+  sobre el head actual y con máximo 2 rondas de corrección. El «sí» para aprobar y enviar también vale si el
+  propietario lo da en POS · Ideas con el ID de la orden y la fecha, y el PM lo verifica en la fuente. No cambia:
+  cancelar, cerrar, ALTO, fusionar, desplegar y banderas son solo del propietario.
+- Despliegue, **DEC-POS-036 APROBADA**, corregida por **DEC-POS-040** (puntos 1 y 2): la imagen del dashboard se
+  despliega con el botón, el workflow `desplegar-dashboard` de GitHub Actions; `deploy.sh` en Cloud Shell queda para
+  banderas, secretos, IAM y plan B. El workflow corre solo desde `main`, en el environment `produccion` que aprueba el
+  propietario, con WIF y sin llaves, y solo cambia la imagen y `DEPLOY_COMMIT_SHA`. La cuenta es
+  `project-os-despliegue` y la variable `DESPLIEGUE_BOTON`. Ningún agente aprueba ni dispara el workflow, cambia
+  banderas, variables, secretos, IAM o GCP, ni modifica `.github/workflows` ([guía](docs/despliegue-boton.md);
+  [operación](docs/operacion.md#despliegue)).
+- La Mac, **DEC-POS-034** y **DEC-POS-040** (puntos 3 a 5), APROBADAS: Antigravity y Claude Code local corren solo en
+  el usuario macOS «taller», con clones de solo lectura, sin `gh` con escritura, sin `clasp` y sin la cuenta de Google
+  del propietario; no escriben en hojas, NOTAS ni repositorios. `gcloud` no tiene sesión en la Mac y nunca usa la
+  cuenta del propietario; `clasp` solo lo usa el propietario, por sesión. Remote Control, solo a pedido y en una
+  carpeta sin credenciales. `main` está protegida desde el 2026-11-21: PR obligatorio y sin force-push en PROJECT-OS,
+  SIGSAH y RADAROS; sin force-push ni borrado en NOTAS ([candados](docs/mac/candados.md);
+  [operación](docs/operacion.md#entornos)).
+- Lectura de encargos de Marketing, **DEC-POS-038 APROBADA**, sin implementar: el Director de Marketing leerá sus
+  encargos por una ruta GET de solo lectura, con token propio y bandera apagada por defecto. Hasta que exista, sigue
+  la puerta directa de DEC-POS-037.
+- Modelo real de las sesiones, **DEC-POS-039 APROBADA**, en implementación (ORD-POS-165,
+  [PR #367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367)): el PM registrará el modelo real de las sesiones
+  de implementación y de revisión con una operación auditada de solo alta, apagada con una bandera. Hasta que se
+  fusione y el propietario la encienda, no existe.
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.
