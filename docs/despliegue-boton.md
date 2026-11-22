@@ -144,3 +144,6 @@ cosas (paso 2).
   `DESPLIEGUE_BOTON`, banderas, variables, secretos, IAM o GCP (DEC-POS-036).
 - No crea claves de cuenta de servicio ni usa `secrets`.
 - No cambia variables del servicio: `--solo-imagen` se detiene si hay algo más que la imagen y `DEPLOY_COMMIT_SHA`.
+  No cuentan como cambio (ORD-POS-171, lista cerrada en [`comparar.mjs`](../web/deploy/cloudrun/comparar.mjs)): la
+  etiqueta de servicio `run.googleapis.com/satisfiesPzs`, que pone Google, y el `maxScale` de servicio cuando vale lo
+  mismo que el de revisión de la plantilla (1). Con otro valor, se detiene.

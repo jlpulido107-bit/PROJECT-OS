@@ -714,6 +714,68 @@ describe('deploy.sh', () => {
         }
       })
 
+      describe('ORD-POS-171: lo que administra Google y el maxScale de servicio', () => {
+        // La activa real de la ejecución 45065790263 del botón: la etiqueta satisfiesPzs que pone Google y el tope de
+        // instancias del servicio (remediación V1.6), que la plantilla no trae.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON de gcloud, sin tipo propio
+        const real = (cambiar: (env: Env, servicio: any) => void = () => {}) => activaCon((env, s) => {
+          s.metadata.labels['run.googleapis.com/satisfiesPzs'] = 'true'
+          s.metadata.annotations['run.googleapis.com/maxScale'] = '1'
+          cambiar(env, s)
+        })
+
+        it('reproduce el fallo del botón: con satisfiesPzs y maxScale de servicio 1 en la activa, pasa y aplica', () => {
+          const seco = run([...args, '--dry-run'], { raw: real(), env: solo })
+          expect(seco.out).not.toContain('DETENTE')
+          expect(seco.code).toBe(0)
+          expect(seco.calls).not.toContain('replace')
+          const ok = run(args, { raw: real(), env: solo, input: 'desplegar\n' })
+          expect(ok.code).toBe(0)
+          expect(ok.calls).toContain('services replace')
+          sinValores(ok.out)
+        })
+
+        it('un maxScale distinto de verdad sigue deteniendo, de servicio o de revisión', () => {
+          const SERVICIO = 'metadata.annotations.run.googleapis.com/maxScale'
+          const REVISION = 'spec.template.metadata.annotations.autoscaling.knative.dev/maxScale'
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON de gcloud, sin tipo propio
+          const casos: Array<[(s: any) => void, string[]]> = [
+            [(s) => { s.metadata.annotations['run.googleapis.com/maxScale'] = '3' }, [SERVICIO]],
+            [(s) => { s.metadata.annotations['run.googleapis.com/maxScale'] = 3 }, [SERVICIO]],
+            [(s) => { s.metadata.annotations['run.googleapis.com/maxScale'] = '' }, [SERVICIO]],
+            [(s) => { s.spec.template.metadata.annotations['autoscaling.knative.dev/maxScale'] = '3' }, [REVISION]],
+            [(s) => { s.metadata.annotations['run.googleapis.com/maxScale'] = '3'; s.spec.template.metadata.annotations['autoscaling.knative.dev/maxScale'] = '3' }, [SERVICIO, REVISION]],
+          ]
+          for (const [cambiar, campos] of casos) {
+            for (const extra of [[], ['--dry-run']]) {
+              const r = run([...args, ...extra], { raw: real((_env, s) => cambiar(s)), env: solo, input: 'desplegar\n' })
+              detenida(r, `  - campos o valores distintos de la revisión activa: ${campos.join(' ')} \n`)
+            }
+          }
+        })
+
+        it('casos negativos: variable nueva, secreto con otra versión y otra anotación o etiqueta siguen dando DETENTE', () => {
+          detenida(run(args, { raw: real(), env: { ...solo, ECO_TABULADOR: 'true' }, input: 'desplegar\n' }), '  - variables nuevas: ECO_TABULADOR')
+          detenida(run(args, { raw: real(), env: { ...solo, SECRET_VERSION_PM_AGENT: '8' }, input: 'desplegar\n' }), '  - secretos con versión distinta: PM_AGENT_TOKEN_SHA256')
+          const otraVersion = real((env) => { env.find((e) => e.name === 'PM_AGENT_TOKEN_SHA256')!.valueFrom!.secretKeyRef.key = '6' })
+          detenida(run(args, { raw: otraVersion, env: { ...solo, SECRET_VERSION_PM_AGENT: '7' }, input: 'desplegar\n' }), '  - secretos con versión distinta: PM_AGENT_TOKEN_SHA256')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON de gcloud, sin tipo propio
+          const casos: Array<[(s: any) => void, string]> = [
+            [(s) => { s.metadata.annotations['run.googleapis.com/ingress'] = 'internal' }, 'metadata.annotations.run.googleapis.com/ingress'],
+            [(s) => { s.metadata.annotations['run.googleapis.com/minScale'] = '1' }, 'metadata.annotations.run.googleapis.com/minScale'],
+            [(s) => { s.metadata.annotations['run.googleapis.com/launch-stage'] = 'BETA' }, 'metadata.annotations.run.googleapis.com/launch-stage'],
+            [(s) => { s.spec.template.metadata.annotations['run.googleapis.com/cpu-throttling'] = 'false' }, 'spec.template.metadata.annotations.run.googleapis.com/cpu-throttling'],
+            [(s) => { s.spec.template.metadata.annotations['run.googleapis.com/maxScale'] = '1' }, 'spec.template.metadata.annotations.run.googleapis.com/maxScale'],
+            [(s) => { s.metadata.labels['run.googleapis.com/satisfiesPzi'] = 'true' }, 'metadata.labels.run.googleapis.com/satisfiesPzi'],
+            [(s) => { s.spec.template.metadata.labels['run.googleapis.com/satisfiesPzs'] = 'true' }, 'spec.template.metadata.labels.run.googleapis.com/satisfiesPzs'],
+            [(s) => { s.metadata.labels.equipo = 'SECRETO-NO-IMPRIMIR' }, 'metadata.labels.equipo'],
+          ]
+          for (const [cambiar, campo] of casos) {
+            detenida(run(args, { raw: real((_env, s) => cambiar(s)), env: solo, input: 'desplegar\n' }), `  - campos o valores distintos de la revisión activa: ${campo} \n`)
+          }
+        })
+      })
+
       it('literal vacía en la activa que el entorno sobrescribe: cuenta como sobrescrita y se detiene', () => {
         for (const vacia of [{ name: 'ECO_TABULADOR', value: '' }, { name: 'ECO_TABULADOR' }]) {
           const r = run(args, { raw: activaCon((env) => { env.push(vacia) }), env: { ...solo, ECO_TABULADOR: 'true' }, input: 'desplegar\n' })
