@@ -26,6 +26,13 @@ import { codigoDeSalida, DESPLEGADO, linea, PRODUCCION, RUTAS_DE_LA_IMAGEN } fro
  */
 export const WORKFLOW_COLECTOR_MANUAL = 'manual-github-evidence.yml'
 const OPCION_COLECTOR = 'sync_to_sheets'
+/**
+ * Botón de despliegue (DEC-POS-036 y DEC-POS-040, ORD-POS-167): el único otro workflow manual con credenciales de Google
+ * autorizado. Solo vale si es idéntico byte a byte a su fuente revisada (la que prueba desplegar-boton.test.ts); con
+ * cualquier diferencia, o sin la fuente, P15 da FALLO.
+ */
+export const WORKFLOW_BOTON = 'desplegar-dashboard.yml'
+export const FUENTE_BOTON = 'web/deploy/github/desplegar-dashboard.yml'
 /** Acceso real a Google: credenciales, gcloud, la API de Google (Sheets incluida) o el sincronizador real. */
 const ACCESO_GOOGLE = /google-github-actions\/auth|\bgcloud\b|GOOGLE_APPLICATION_CREDENTIALS|PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|googleapis\.com|\bsync_sheets\b|secrets\.[A-Z0-9_]*(GOOGLE|GCP|SERVICE_ACCOUNT)[A-Z0-9_]*/
 /** Cualquier secreto del repositorio salvo el token efímero de GitHub: `secrets.X`, `secrets[…]`, `toJSON(secrets)`, `secrets: inherit`. */
@@ -152,7 +159,7 @@ export function preflightAceptacion(ROOT) {
     else fallo(id, `no se encontró el control esperado en ${rel}`)
   }
 
-  // ---- Workflows: sin horarios; la CI automática sin credenciales (P12); el colector manual, solo con opción (P15) ----
+  // ---- Workflows: sin horarios; la CI automática sin credenciales (P12); el colector manual, solo con opción, y el botón idéntico a su fuente (P15) ----
   const wfDir = path.join(ROOT, '.github', 'workflows')
   if (!existsSync(wfDir)) {
     noVerificado('P11', 'sin .github/workflows')
@@ -164,12 +171,16 @@ export function preflightAceptacion(ROOT) {
     const automaticos = [], manualesMal = []
     let colectorManual = false
     for (const [f, t] of textos) {
+      const fuenteBoton = path.join(ROOT, FUENTE_BOTON)
+      const botonIdentico = f === WORKFLOW_BOTON && existsSync(fuenteBoton) && readFileSync(path.join(wfDir, f)).equals(readFileSync(fuenteBoton))
+      if (f === WORKFLOW_BOTON && !botonIdentico) manualesMal.push(`${f}: no es idéntico byte a byte a ${FUENTE_BOTON}`)
       const eventos = eventosDe(t)
       if (eventos === null || eventos.some((e) => e !== 'workflow_dispatch')) {
         const motivos = [ACCESO_GOOGLE.test(t) && 'credenciales o API de Google', SECRETO_DEL_REPOSITORIO.test(t) && 'secretos del repositorio',
           ...OTRAS_VIAS.filter(([re]) => re.test(t)).map(([, m]) => m)].filter(Boolean)
         if (motivos.length) automaticos.push(`${f} (${eventos ? eventos.join(', ') : 'eventos ilegibles'}: ${motivos.join(' y ')})`)
       } else if (ACCESO_GOOGLE.test(t)) {
+        if (f === WORKFLOW_BOTON) continue // idéntico a la fuente: autorizado; si difiere, ya quedó anotado arriba
         if (f !== WORKFLOW_COLECTOR_MANUAL) manualesMal.push(`${f}: credenciales de Google en un workflow manual distinto del colector`)
         else if (!conOpcionExplicita(t)) manualesMal.push(`${f}: acceso a Google sin depender de la opción explícita ${OPCION_COLECTOR} (booleana, desactivada por defecto)`)
         else colectorManual = true
@@ -179,7 +190,7 @@ export function preflightAceptacion(ROOT) {
     else ok('P12', 'ningún workflow automático (PR, push u otro evento) recibe credenciales de Google, secretos del repositorio ni la API de Google; la CI de los PR valida Sheets con una hoja en memoria')
     if (manualesMal.length) fallo('P15', manualesMal.join('; '))
     else if (colectorManual) noVerificado('P15', `deuda de credenciales del colector V1.1: ${WORKFLOW_COLECTOR_MANUAL} usa una clave JSON de cuenta de servicio de Google (Editor de la hoja según su guía; sin verificar). Solo se ejecuta a mano y con la opción ${OPCION_COLECTOR}: pendiente de decisión del propietario (X-8), no del dashboard`)
-    else ok('P15', 'ningún workflow usa credenciales de Google')
+    else ok('P15', 'ningún workflow manual usa credenciales de Google fuera del botón de despliegue autorizado')
   }
 
   // ---- Identidad de la versión: ¿el código de la imagen es el desplegado? ----

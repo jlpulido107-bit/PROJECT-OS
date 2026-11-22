@@ -35,8 +35,9 @@ function compuerta(): string {
 }
 
 describe('workflow desplegar-dashboard (ORD-POS-163)', () => {
-  it('vive fuera de .github/ y solo se dispara a mano', () => {
-    expect(existsSync(path.join(ROOT, '.github/workflows/desplegar-dashboard.yml'))).toBe(false)
+  it('la copia activa en .github/workflows, si existe, es idéntica byte a byte a la fuente (ORD-POS-167); solo se dispara a mano', () => {
+    const activo = path.join(ROOT, '.github/workflows/desplegar-dashboard.yml')
+    if (existsSync(activo)) expect(readFileSync(activo).equals(readFileSync(path.join(ROOT, 'web/deploy/github/desplegar-dashboard.yml')))).toBe(true)
     expect(WORKFLOW).toMatch(/^on:\n {2}workflow_dispatch:\n\n/m)
     expect(WORKFLOW).not.toMatch(/^\s+(push|pull_request|schedule|workflow_run|repository_dispatch):/m)
   })

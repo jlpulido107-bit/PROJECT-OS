@@ -32,7 +32,7 @@ function fixtureRoot(mutate?: (root: string) => void) {
   for (const rel of [
     'web/deploy/cloudrun/service.template.yaml', 'web/deploy/cloudrun/artifact-cleanup-policy.json', 'web/src/proxy.ts',
     'web/src/app/(private)/layout.tsx', 'web/src/lib/auth.ts', 'web/src/lib/authz.ts', 'docs/estado-produccion-v1-6-2026-10-11.md',
-    'docs/estado-produccion-v1-7-2026-10-13.md', 'docs/estado-produccion-v1-8-2026-10-14.md',
+    'docs/estado-produccion-v1-7-2026-10-13.md', 'docs/estado-produccion-v1-8-2026-10-14.md', 'web/deploy/github/desplegar-dashboard.yml',
   ]) {
     mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
     cpSync(path.join(ROOT, rel), path.join(root, rel))
@@ -119,6 +119,49 @@ describe('preflight de aceptación offline', () => {
     const { status, por } = estados(fixtureRoot(mutate))
     expect(por[id]).toBe('FALLO')
     expect(status).toBe(1)
+  })
+
+  describe('ORD-POS-167 · P15 y el botón de despliegue (DEC-POS-036 y DEC-POS-040)', () => {
+    const BOTON = '.github/workflows/desplegar-dashboard.yml'
+    const FUENTE = 'web/deploy/github/desplegar-dashboard.yml'
+    const motivoP15 = (root: string) => (estados(root).out.resultados.find((r) => r.id === 'P15') as { motivo?: string } | undefined)?.motivo ?? ''
+    /** Fixture con el botón copiado de su fuente, esté o no en el .github/workflows real. */
+    const conBoton = (mutate?: (r: string) => void) => fixtureRoot((r) => {
+      cpSync(path.join(r, FUENTE), path.join(r, BOTON))
+      mutate?.(r)
+    })
+
+    it('idéntico a su fuente: autorizado, P15 no da FALLO (queda la deuda del colector) y P12 sigue OK', () => {
+      const { por } = estados(conBoton())
+      expect(por.P15).toBe('NO_VERIFICADO')
+      expect(por.P12).toBe('OK')
+      expect(por.P11).toBe('OK')
+      // Sin el colector, el botón idéntico no deja deuda: OK.
+      expect(estados(conBoton((r) => rmSync(path.join(r, '.github/workflows/manual-github-evidence.yml')))).por.P15).toBe('OK')
+    })
+
+    it.each([
+      ['un byte de más al final', (r: string) => edit(r, BOTON, (t) => `${t}\n`)],
+      ['una línea cambiada', (r: string) => edit(r, BOTON, (t) => t.replace('environment: produccion', 'environment: otro'))],
+      ['la fuente cambiada y el workflow no', (r: string) => edit(r, FUENTE, (t) => `${t}# x\n`)],
+      ['sin credenciales de Google pero distinto', (r: string) => writeFileSync(path.join(r, BOTON), 'on:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
+      ['la fuente ausente', (r: string) => rmSync(path.join(r, FUENTE))],
+    ])('distinto de su fuente (%s) → P15 FALLO y código 1', (_n, mutate) => {
+      const root = conBoton(mutate)
+      const { status, por } = estados(root)
+      expect(por.P15).toBe('FALLO')
+      expect(status).toBe(1)
+      expect(motivoP15(root)).toContain('no es idéntico byte a byte')
+    })
+
+    it('otro workflow manual con credenciales sigue en FALLO, aunque sea una copia exacta del botón con otro nombre', () => {
+      const root = conBoton((r) => cpSync(path.join(r, FUENTE), path.join(r, '.github/workflows/desplegar-otro.yml')))
+      const { status, por } = estados(root)
+      expect(por.P15).toBe('FALLO')
+      expect(status).toBe(1)
+      expect(motivoP15(root)).toContain('desplegar-otro.yml: credenciales de Google en un workflow manual distinto del colector')
+      expect(motivoP15(root)).not.toContain('desplegar-dashboard.yml')
+    })
   })
 
   it('R3-1 · el token efímero de GitHub sí puede usarse en la CI de PR', () => {
