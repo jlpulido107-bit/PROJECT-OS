@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "disableBypassPermissionsMode": "disable",
+    "deny": [
+      "Bash(gh pr merge *)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push *+main*)",
+      "Bash(git push *refs/heads/main*)",
+      "Bash(clasp *)",
+      "Bash(npx clasp *)",
+      "Bash(npx @google/clasp *)",
+      "Bash(gcloud *)",
+      "Read(~/.clasprc.json)",
+      "Read(~/.config/gcloud/**)",
+      "Read(//**/privado/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyRead": [
+        "~/.clasprc.json",
+        "~/.config/gcloud"
+      ]
+    }
+  }
+}
