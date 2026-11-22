@@ -81,8 +81,16 @@ const DEL_SISTEMA = [
   /^spec\.template\.metadata\.name$/,
   /^(metadata|spec\.template\.metadata)\.annotations\.(serving\.knative\.dev\/(creator|lastModifier)|run\.googleapis\.com\/(client-name|client-version|operation-id|ingress-status|urls))$/,
   /^(metadata|spec\.template\.metadata)\.labels\.(cloud\.googleapis\.com\/location|client\.knative\.dev\/nonce|run\.googleapis\.com\/startupProbeType)$/,
+  // ORD-POS-171: etiqueta de cumplimiento (Assured Workloads) que Google pone y quita sola en el servicio; la plantilla
+  // no puede fijarla. Solo esta etiqueta y solo a nivel de servicio: cualquier otra sigue deteniendo.
+  /^metadata\.labels\.run\.googleapis\.com\/satisfiesPzs$/,
   /^spec\.template\.spec\.containers\[0\]\.name$/,
 ]
+// ORD-POS-171: el tope de instancias del SERVICIO (`gcloud run services update --max`, remediación V1.6) vive en una
+// anotación de servicio que la plantilla no trae a propósito (preflight P2) y que `replace` conserva; el tope de la
+// REVISIÓN es la anotación de la plantilla. Que la activa tenga el de servicio no es un cambio solo si vale lo mismo que
+// el de revisión del YAML (hoy 1): con otro valor el tope efectivo es ambiguo y detiene. Si el YAML la trae, se compara normal.
+const MAX_SERVICIO = 'metadata.annotations.run.googleapis.com/maxScale'
 const esMapa = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const conNombre = (lista) => lista.every((e) => esMapa(e) && typeof e.name === 'string' && /^[A-Za-z0-9_.-]+$/.test(e.name))
 const sinRepetir = (lista) => new Set(lista.map((e) => e.name)).size === lista.length
@@ -95,10 +103,12 @@ const nombre = (ruta) => (ruta.startsWith(`${CONTENEDOR}.env[`) ? ruta.slice(`${
  */
 export function diferencias(nuevo, activa) {
   const salida = new Set()
+  const maxRevision = nuevo?.spec?.template?.metadata?.annotations?.['autoscaling.knative.dev/maxScale']
   const sistema = (ruta) => PERMITIDO.has(ruta) || DEL_SISTEMA.some((r) => r.test(ruta))
   // Todo lo que hay bajo un campo de la activa que el YAML no trae cuenta, salvo lo del sistema.
   function sobrante(b, ruta) {
     if (sistema(ruta)) return
+    if (ruta === MAX_SERVICIO && typeof maxRevision === 'string' && ['string', 'number'].includes(typeof b) && String(b) === maxRevision) return
     if (esMapa(b)) for (const [k, v] of Object.entries(b)) sobrante(v, `${ruta}.${k}`)
     else if (Array.isArray(b) && b.length) b.forEach((v, i) => sobrante(v, `${ruta}[${esMapa(v) && typeof v.name === 'string' ? v.name : i}]`))
     else if (!Array.isArray(b)) salida.add(nombre(ruta))

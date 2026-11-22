@@ -75,4 +75,58 @@ describe('diferencias', () => {
     const a = { ...activa(), status: { url: 'u' }, metadata: { uid: 'u', generation: 3, annotations: { 'serving.knative.dev/lastModifier': 'x', 'run.googleapis.com/otra': 'y' }, labels: { 'cloud.googleapis.com/location': 'r' } } }
     expect(diferencias(base(), a)).toEqual(['metadata.annotations.run.googleapis.com/otra'])
   })
+
+  describe('ORD-POS-171: lo que administra Google y el maxScale de servicio', () => {
+    const MAX = 'metadata.annotations.run.googleapis.com/maxScale'
+    const PZS = 'metadata.labels.run.googleapis.com/satisfiesPzs'
+    const anot = (max: string) => ({ annotations: { 'autoscaling.knative.dev/minScale': '0', 'autoscaling.knative.dev/maxScale': max } })
+    const nuevo = (meta: Record<string, unknown> = {}) => {
+      const n = base() as ReturnType<typeof base> & { metadata?: unknown; spec: { template: { metadata?: unknown } } }
+      n.spec.template.metadata = anot('1')
+      n.metadata = { labels: { app: 'project-os' }, annotations: { 'run.googleapis.com/ingress': 'all' }, ...meta }
+      return n
+    }
+    const real = (anotaciones: Record<string, unknown>, etiquetas: Record<string, unknown>, maxRevision = '1') => {
+      const a = activa() as ReturnType<typeof activa> & { metadata?: unknown; spec: { template: { metadata?: unknown } } }
+      a.spec.template.metadata = anot(maxRevision)
+      a.metadata = { labels: { app: 'project-os', ...etiquetas }, annotations: { 'run.googleapis.com/ingress': 'all', ...anotaciones } }
+      return a
+    }
+
+    it('reproduce la ejecución 45065790263: satisfiesPzs y un maxScale de servicio igual al de revisión no son diferencias', () => {
+      expect(diferencias(nuevo(), real({ 'run.googleapis.com/maxScale': '1' }, { 'run.googleapis.com/satisfiesPzs': 'true' }))).toEqual([])
+      expect(diferencias(nuevo(), real({ 'run.googleapis.com/maxScale': 1 }, { 'run.googleapis.com/satisfiesPzs': 'false' }))).toEqual([])
+    })
+
+    it('un maxScale distinto de verdad sigue deteniendo: de servicio, de revisión o sin tope de revisión en el YAML', () => {
+      for (const valor of ['3', '2', '0', '', '01', ' 1', true, null, { v: '1' }]) {
+        expect(diferencias(nuevo(), real({ 'run.googleapis.com/maxScale': valor }, {})), JSON.stringify(valor)).toEqual([valor !== null && typeof valor === 'object' ? `${MAX}.v` : MAX])
+      }
+      const REV = 'spec.template.metadata.annotations.autoscaling.knative.dev/maxScale'
+      // La revisión activa con tope 3: detiene, coincida o no el de servicio con el del YAML.
+      expect(diferencias(nuevo(), real({}, {}, '3'))).toEqual([REV])
+      expect(diferencias(nuevo(), real({ 'run.googleapis.com/maxScale': '1' }, {}, '3'))).toEqual([REV])
+      expect(diferencias(nuevo(), real({ 'run.googleapis.com/maxScale': '3' }, {}, '3'))).toEqual([MAX, REV])
+      // Un YAML sin tope de revisión no tiene con qué igualar el de servicio.
+      const sinTope = nuevo()
+      ;(sinTope.spec.template.metadata as { annotations: Record<string, string> }).annotations = { 'autoscaling.knative.dev/minScale': '0' }
+      expect(diferencias(sinTope, real({ 'run.googleapis.com/maxScale': '1' }, {}))).toEqual([MAX, REV])
+      // Si el YAML trae el tope de servicio, se compara como cualquier campo.
+      const conTope = nuevo({ annotations: { 'run.googleapis.com/ingress': 'all', 'run.googleapis.com/maxScale': '1' } })
+      expect(diferencias(conTope, real({ 'run.googleapis.com/maxScale': '1' }, {}))).toEqual([])
+      expect(diferencias(conTope, real({ 'run.googleapis.com/maxScale': '3' }, {}))).toEqual([MAX])
+      expect(diferencias(conTope, real({}, {}))).toEqual([MAX])
+    })
+
+    it('la lista es cerrada: otras etiquetas o anotaciones de Google, o las mismas en otro nivel, siguen deteniendo', () => {
+      expect(diferencias(nuevo(), real({ 'run.googleapis.com/minScale': '1', 'run.googleapis.com/launch-stage': 'BETA' }, { 'run.googleapis.com/satisfiesPzi': 'true', otra: 'x' })))
+        .toEqual(['metadata.annotations.run.googleapis.com/launch-stage', 'metadata.annotations.run.googleapis.com/minScale', 'metadata.labels.otra', 'metadata.labels.run.googleapis.com/satisfiesPzi'])
+      const a = real({}, {})
+      a.spec.template.metadata = { ...anot('1'), labels: { 'run.googleapis.com/satisfiesPzs': 'true' } }
+      ;(a.spec.template.metadata as { annotations: Record<string, string> }).annotations['run.googleapis.com/maxScale'] = '1'
+      expect(diferencias(nuevo(), a)).toEqual(['spec.template.metadata.annotations.run.googleapis.com/maxScale', 'spec.template.metadata.labels.run.googleapis.com/satisfiesPzs'])
+      // Un YAML que quisiera fijar satisfiesPzs con otro valor no pasa por ser «del sistema».
+      expect(diferencias(nuevo({ labels: { app: 'project-os', 'run.googleapis.com/satisfiesPzs': 'true' } }), real({}, { 'run.googleapis.com/satisfiesPzs': 'false' }))).toEqual([PZS])
+    })
+  })
 })
