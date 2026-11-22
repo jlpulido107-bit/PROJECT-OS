@@ -193,8 +193,8 @@ describe('docs/despliegue-boton.md (ORD-POS-163)', () => {
     for (const v of ['PROJECT_ID', 'NUMERO_PROYECTO', 'WIF_PROVIDER', 'WIF_SERVICE_ACCOUNT']) expect(definidas.has(v), v).toBe(true)
   })
 
-  it('explica de dónde sale cada valor y marca DEC-POS-036 como pendiente', () => {
-    expect(GUIA).toMatch(/DEC-POS-036: PENDIENTE/)
+  it('explica de dónde sale cada valor y marca DEC-POS-036 como aprobada', () => {
+    expect(GUIA).toMatch(/DEC-POS-036: APROBADA/)
     expect(GUIA).toMatch(/gcloud projects describe "\$PROJECT_ID" --format='value\(projectNumber\)'/)
     expect(GUIA).toMatch(/variables, no secrets/)
   })
