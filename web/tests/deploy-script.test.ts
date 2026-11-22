@@ -329,6 +329,27 @@ describe('deploy.sh', () => {
       expect(mala.calls).not.toContain('replace')
     })
 
+    it('DIRECTOR_MKT_LECTURA (ORD-POS-170): se conserva de la activa con su secreto y --quitar retira las dos', () => {
+      const activa = JSON.parse(full)
+      activa.spec.template.spec.containers[0].env.push({ name: 'DIRECTOR_MKT_LECTURA', value: 'true' },
+        { name: 'DIRECTOR_MKT_TOKEN_SHA256', valueFrom: { secretKeyRef: { name: 'project-os-director-mkt-token-sha256', key: '4' } } })
+      const raw = JSON.stringify(activa)
+      const sigue = run(['--desde-activa', '--dry-run'], { raw, env: min })
+      expect(sigue.code).toBe(0)
+      expect(sigue.out).not.toContain('DIRECTOR_MKT')
+      for (const nombre of ['DIRECTOR_MKT_LECTURA', 'DIRECTOR_MKT_TOKEN_SHA256']) {
+        const apagada = run(['--desde-activa', '--quitar', nombre, '--dry-run'], { raw, env: min })
+        expect(apagada.code).toBe(0)
+        expect(apagada.out).toMatch(/Variables quitadas:\n  - DIRECTOR_MKT_LECTURA\n  - DIRECTOR_MKT_TOKEN_SHA256\n/)
+      }
+      const nueva = run(['--desde-activa', '--dry-run'], { raw: full, env: { ...min, DIRECTOR_MKT_LECTURA: 'true', SECRET_VERSION_DIRECTOR_MKT: '4' } })
+      expect(nueva.code).toBe(0)
+      for (const nombre of ['DIRECTOR_MKT_LECTURA', 'DIRECTOR_MKT_TOKEN_SHA256']) expect(nueva.out).toContain(`  + ${nombre}\n`)
+      const mala = run(['--desde-activa'], { raw, env: { ...min, DIRECTOR_MKT_LECTURA: 'TRUE' }, input: 'desplegar\n' })
+      expect(mala.code).toBe(1)
+      expect(mala.calls).not.toContain('replace')
+    })
+
     it('PLANIFICACION_ICS (ORD-POS-142): se conserva de la activa con su secreto y --quitar retira las dos', () => {
       const activa = JSON.parse(full)
       activa.spec.template.spec.containers[0].env.push({ name: 'PLANIFICACION_ICS', value: 'true' },

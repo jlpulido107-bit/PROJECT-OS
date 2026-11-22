@@ -91,9 +91,11 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   carpeta sin credenciales. `main` está protegida desde el 2026-11-21: PR obligatorio y sin force-push en PROJECT-OS,
   SIGSAH y RADAROS; sin force-push ni borrado en NOTAS ([candados](docs/mac/candados.md);
   [operación](docs/operacion.md#entornos)).
-- Lectura de encargos de Marketing, **DEC-POS-038 APROBADA**, sin implementar: el Director de Marketing leerá sus
-  encargos por una ruta GET de solo lectura, con token propio y bandera apagada por defecto. Hasta que exista, sigue
-  la puerta directa de DEC-POS-037.
+- Lectura de encargos de Marketing, **DEC-POS-038 APROBADA** (ORD-POS-170): el Director de Marketing lee sus encargos
+  con `GET /api/marketing/encargos`, solo lectura y con token propio. Está apagada: solo con
+  `DIRECTOR_MKT_LECTURA=true`, que pone únicamente el propietario con `deploy.sh`
+  ([escritura §15](docs/escritura-v1-8.md)). Ningún agente la enciende ni crea el token. Sin ella, sigue la puerta
+  directa de DEC-POS-037.
 - Modelo real de las sesiones, **DEC-POS-039 APROBADA**, en implementación (ORD-POS-165,
   [PR #367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367)): el PM registrará el modelo real de las sesiones
   de implementación y de revisión con una operación auditada de solo alta, apagada con una bandera. Hasta que se

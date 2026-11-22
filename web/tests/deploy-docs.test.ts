@@ -109,9 +109,16 @@ describe('smoke remoto (scripts/smoke-remote.mjs)', () => {
     const routes = files(apiDir).filter((f) => f.endsWith('route.ts'))
       .map((f) => `/api/${path.relative(apiDir, path.dirname(f)).split(path.sep).join('/')}`)
       // El calendario ICS (ORD-POS-142) no pide sesión: va aparte, con su comprobación de 404 sin token.
-      .filter((r) => !r.startsWith('/api/auth/') && r !== '/api/health' && r !== '/api/planificacion/calendario.ics')
+      // Los encargos del Director de Marketing (ORD-POS-170) tampoco: van aparte, con 404 o 401 sin token.
+      .filter((r) => !r.startsWith('/api/auth/') && r !== '/api/health' && r !== '/api/planificacion/calendario.ics' && r !== '/api/marketing/encargos')
     const apis = list('PRIVATE_APIS')
     for (const route of routes) expect(apis.some((p) => toPattern(route).test(p)), route).toBe(true)
+  })
+
+  it('comprueba que los encargos de Marketing sin token responden 404 o 401 sin datos (ORD-POS-170)', () => {
+    expect(list('PRIVATE_APIS')).not.toContain('/api/marketing/encargos')
+    expect(script).toContain("get('/api/marketing/encargos')")
+    expect(script).toMatch(/\[401, 404\]\.includes\(mkt\.status\) && Object\.keys\(mktBody\)\.join\(\) === 'error'/)
   })
 
   it('comprueba que el calendario ICS sin token responde 404 sin calendario (ORD-POS-142)', () => {

@@ -810,3 +810,69 @@ web/deploy/cloudrun/deploy.sh --desde-activa --quitar SUPERVISION_MODELO_SESION
 ```
 
 Los registros quedan en AUDITORIA y dejan de usarse.
+
+## 15. Lectura de encargos por el Director de Marketing (ORD-POS-170, DEC-POS-038)
+
+DEC-POS-038 (APROBADA en DECISIONES) da al Director de Marketing (DEC-POS-037) una lectura de sus encargos, con el mismo
+patrón que el rol Tiempos (§8). No escribe nada y no cambia la puerta directa ni el paquete con «sí PAQ».
+
+- **Ruta.** `GET /api/marketing/encargos`: JSON `{ fuente, encargos }`. Cada encargo lleva solo `id`, `titulo`,
+  `estado`, `prioridad`, `fechaPlan`, `fechaLimite` y `descripcion`.
+- **Filtro** (`web/src/lib/director-mkt-lectura.ts`). Tareas con `RESPONSABLE` «Director de Marketing» (sin distinguir
+  mayúsculas ni espacios al borde) o con `PROYECTO_ID` `BOT` o `MESALENTA`. Las tareas de `SIG` nunca salen, aunque
+  tengan ese responsable. Solo lee `TAREAS`: nada de DECISIONES, FINANZAS, órdenes, tiempos ni responsables.
+- **Bandera.** `DIRECTOR_MKT_LECTURA`: solo el valor exacto `true`. Sin ella la ruta responde 404 a cualquier token,
+  método o sesión.
+- **Token.** `DIRECTOR_MKT_TOKEN_SHA256` (64 hex, desde el secreto `project-os-director-mkt-token-sha256`). Si es igual
+  al hash del PM, de Tiempos, del agente de finanzas o del calendario ICS, no vale. Solo alcanza esa ruta y solo con
+  `GET`: otro método recibe 405 (`Allow: GET`); cualquier otra ruta o página, 401 o `/login`. Con cookie de sesión no
+  cuenta. Los tokens del PM, de Tiempos y de finanzas, y la sesión del navegador, reciben 401 en esta ruta. El guard de
+  operaciones no lo reconoce: no escribe (401).
+- **Apagada (por defecto).** Sin `DIRECTOR_MKT_LECTURA` ni `SECRET_VERSION_DIRECTOR_MKT`, el YAML no cambia.
+
+### Activar (solo el propietario, en Cloud Shell)
+
+Requisito: la imagen que trae ORD-POS-170 desplegada. Ningún agente crea el token, toca Secret Manager o IAM, exporta
+estas variables ni despliega.
+
+```bash
+# 1. Token nuevo, fuera del repositorio y del chat. A Secret Manager va solo su SHA-256.
+TOKEN="$(openssl rand -hex 32)"
+printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1 | tr -d '\n' | gcloud secrets create project-os-director-mkt-token-sha256 \
+  --project="$PROJECT_ID" --replication-policy=automatic --data-file=-
+gcloud secrets add-iam-policy-binding project-os-director-mkt-token-sha256 --project="$PROJECT_ID" --condition=None \
+  --member="serviceAccount:${RUNTIME_SA}" --role=roles/secretmanager.secretAccessor --format=none
+# 2. Copia "$TOKEN" una sola vez a la credencial del entorno «POS · Marketing» (paso siguiente) y bórralo de aquí:
+unset TOKEN
+
+# 3. Variables y despliegue (la versión del secreto recién creado es 1):
+export DIRECTOR_MKT_LECTURA=true SECRET_VERSION_DIRECTOR_MKT=1
+web/deploy/cloudrun/deploy.sh --desde-activa --dry-run   # debe listar «+ DIRECTOR_MKT_LECTURA» y «+ DIRECTOR_MKT_TOKEN_SHA256»
+web/deploy/cloudrun/deploy.sh --desde-activa             # escribe «desplegar» para aplicar
+```
+
+**Credencial del entorno «POS · Marketing».** En claude.ai/code, abre la configuración del entorno «POS · Marketing» y
+añade una credencial (secreto de red) para el host del dashboard: cabecera `Authorization`, prefijo `Bearer` y el token
+como valor. El proxy del entorno la añade a las peticiones a ese host; la sesión no la lee, no la imprime ni la pide, y
+no se guarda como variable de entorno, en el repositorio ni en el chat. No la pongas en el entorno de otro rol.
+
+Otro valor que `true`, una sola de las dos variables o una versión que no sea un número hacen fallar el render sin
+aplicar nada. `--desde-activa` las conserva en los despliegues siguientes. Para rotar el token, agrega una versión al
+secreto (`gcloud secrets versions add … --data-file=-`), despliega con la nueva `SECRET_VERSION_DIRECTOR_MKT` y cambia
+el valor de la credencial del entorno.
+
+### Comprobar
+
+1. Hash distinto: el valor del secreto no es el de `project-os-pm-agent-token-sha256`, el de
+   `project-os-tiempos-agente-token-sha256` ni el de `project-os-finanzas-agente-token-sha256` (compáralos sin
+   imprimirlos; si coinciden, el token no entra).
+2. Desde la sesión POS · Marketing: `GET /api/marketing/encargos` → 200 con `encargos`; `POST` al mismo path → 405;
+   `GET /api/planificacion` y `GET /api/resumen` → 401.
+3. Desde POS · PM (su token): `GET /api/marketing/encargos` → 401.
+
+### Revertir
+
+`web/deploy/cloudrun/deploy.sh --desde-activa --quitar DIRECTOR_MKT_LECTURA` (quita también
+`DIRECTOR_MKT_TOKEN_SHA256`). La ruta vuelve a 404. Para revocar solo el token, deshabilita su versión
+(`gcloud secrets versions disable <versión> --secret=project-os-director-mkt-token-sha256`) después de quitarla del
+despliegue y borra la credencial del entorno.

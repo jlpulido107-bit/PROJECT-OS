@@ -2,6 +2,7 @@ import { getToken } from 'next-auth/jwt'
 import { NextResponse, type NextRequest } from 'next/server'
 import { allowedEmails, isEmailAllowed, isPublicPath } from './access'
 import { CALENDARIO_ICS_RUTA } from './calendario-ics-acceso'
+import { DIRECTOR_MKT_RUTA, directorMktLecturaHabilitada, esTokenDelDirectorMkt } from './director-mkt-lectura'
 import { esTokenDeTiempos, TIEMPOS_AGENTE_RUTA } from './tiempos-agente'
 
 export type AuthDecision =
@@ -12,8 +13,13 @@ export type AuthDecision =
    * vuelve a verificar token, operación y campos.
    */
   | { action: 'agent' }
-  /** Token de Tiempos válido en /api/planificacion con un método distinto de GET (ORD-POS-112). */
+  /**
+   * Token de Tiempos válido en /api/planificacion (ORD-POS-112), o del Director de Marketing en /api/marketing/encargos
+   * (ORD-POS-170), con un método distinto de GET.
+   */
   | { action: 'method-not-allowed' }
+  /** /api/marketing/encargos sin DIRECTOR_MKT_LECTURA=true (ORD-POS-170): la ruta no existe para nadie. */
+  | { action: 'not-found' }
   | { action: 'unauthenticated' }
   | { action: 'forbidden' }
 
@@ -27,6 +33,8 @@ export async function decide(
     secret?: string; allowed?: Set<string>; agentTokenSha256?: string; finanzasAgenteTokenSha256?: string
     /** Entorno del rol Tiempos (bandera y los tres hashes); por defecto process.env. */
     tiemposEnv?: NodeJS.ProcessEnv
+    /** Entorno del Director de Marketing (bandera y hashes); por defecto process.env. */
+    directorMktEnv?: NodeJS.ProcessEnv
   } = {},
 ): Promise<AuthDecision> {
   if (isPublicPath(req.nextUrl.pathname)) return { action: 'public' }
@@ -41,6 +49,12 @@ export async function decide(
   // ORD-POS-112: el token de Tiempos solo alcanza /api/planificacion y solo con GET; inerte sin TIEMPOS_AGENTE=true.
   if (TIEMPOS_AGENTE_RUTA.test(req.nextUrl.pathname) && await esTokenDeTiempos(req.headers, opts.tiemposEnv ?? process.env)) {
     return req.method === 'GET' ? { action: 'agent' } : { action: 'method-not-allowed' }
+  }
+  // ORD-POS-170: sin DIRECTOR_MKT_LECTURA=true la ruta responde 404 a todos; con ella, su token solo la alcanza con GET.
+  if (DIRECTOR_MKT_RUTA.test(req.nextUrl.pathname)) {
+    const mktEnv = opts.directorMktEnv ?? process.env
+    if (!directorMktLecturaHabilitada(mktEnv)) return { action: 'not-found' }
+    if (await esTokenDelDirectorMkt(req.headers, mktEnv)) return req.method === 'GET' ? { action: 'agent' } : { action: 'method-not-allowed' }
   }
   const secret = opts.secret ?? process.env.NEXTAUTH_SECRET
   if (!secret) return { action: 'unauthenticated' }
@@ -105,6 +119,7 @@ export function respond(decision: AuthDecision, req: NextRequest): NextResponse 
   if (decision.action === 'method-not-allowed') {
     return NextResponse.json({ error: 'Método no permitido' }, { status: 405, headers: { ...NO_STORE, Allow: 'GET' } })
   }
+  if (decision.action === 'not-found') return NextResponse.json({ error: 'No encontrado' }, { status: 404, headers: NO_STORE })
   const isApi = req.nextUrl.pathname.startsWith('/api/')
   if (isApi) {
     return decision.action === 'forbidden'
