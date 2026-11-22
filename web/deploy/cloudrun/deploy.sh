@@ -84,6 +84,13 @@ case "$QUITAR" in
       [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
     done ;;
 esac
+# ORD-POS-170: lo mismo con la lectura del Director de Marketing (bandera y hash del token).
+case "$QUITAR" in
+  *" DIRECTOR_MKT_LECTURA "*|*" DIRECTOR_MKT_TOKEN_SHA256 "*)
+    for NOMBRE in DIRECTOR_MKT_LECTURA DIRECTOR_MKT_TOKEN_SHA256; do
+      [[ "$QUITAR" == *" $NOMBRE "* ]] || QUITAR="$QUITAR$NOMBRE "
+    done ;;
+esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$(mktemp -d)"
@@ -150,6 +157,7 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
       PLANIFICACION_EDICION_PROPIETARIO_EMAIL: literal("PLANIFICACION_EDICION_PROPIETARIO_EMAIL"),
       PLANIFICACION_ICS: literal("PLANIFICACION_ICS"), SECRET_VERSION_CALENDARIO_ICS: clave("CALENDARIO_ICS_TOKEN_SHA256"),
       ECO_TABULADOR: literal("ECO_TABULADOR"), ECO_BANDEJA_GEMINI: literal("ECO_BANDEJA_GEMINI"),
+      DIRECTOR_MKT_LECTURA: literal("DIRECTOR_MKT_LECTURA"), SECRET_VERSION_DIRECTOR_MKT: clave("DIRECTOR_MKT_TOKEN_SHA256"),
     }
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {
       m[`CLAUDE_ROUTINE_${n}_ID`] = literal(`CLAUDE_ROUTINE_${n}_ID`)
@@ -175,6 +183,8 @@ if [ "$DESDE_ACTIVA" -eq 1 ]; then
     for (const k of edicion.split(" ")) de[k] = edicion
     const tiempos = "TIEMPOS_AGENTE TIEMPOS_AGENTE_TOKEN_SHA256"
     for (const k of ["TIEMPOS_AGENTE", "SECRET_VERSION_TIEMPOS_AGENTE"]) de[k] = tiempos
+    const mkt = "DIRECTOR_MKT_LECTURA DIRECTOR_MKT_TOKEN_SHA256"
+    for (const k of ["DIRECTOR_MKT_LECTURA", "SECRET_VERSION_DIRECTOR_MKT"]) de[k] = mkt
     const calendario = "PLANIFICACION_ICS CALENDARIO_ICS_TOKEN_SHA256"
     for (const k of ["PLANIFICACION_ICS", "SECRET_VERSION_CALENDARIO_ICS"]) de[k] = calendario
     for (const n of ["REVISAR", "SEGUNDO", "CORREGIR"]) {

@@ -40,7 +40,7 @@ describe('árbol integrado V1.3–V1.6', () => {
       'eco/pipeline/bandeja/[id]/confirmar/route.ts', 'eco/pipeline/bandeja/[id]/rechazar/route.ts',
       'eco/pipeline/cotizaciones/[id]/route.ts', 'eco/pipeline/cotizaciones/pedir/route.ts', 'eco/pipeline/cotizaciones/route.ts', 'eco/pipeline/embarques/[id]/route.ts', 'eco/pipeline/embarques/route.ts',
       'eco/pipeline/productos/[id]/etapa/route.ts', 'eco/pipeline/productos/[id]/route.ts', 'eco/pipeline/productos/route.ts', 'eco/pipeline/proveedores/[id]/route.ts', 'eco/pipeline/proveedores/route.ts',
-      'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'operaciones/capacidad/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/escenarios/archivar/route.ts', 'operaciones/escenarios/route.ts', 'operaciones/ideas/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/modelo-sesion/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts', 'operaciones/plan-dia/route.ts',
+      'finanzas/agente/cargo-extra/route.ts', 'finanzas/agente/rendimiento/route.ts', 'finanzas/movimientos/route.ts', 'finanzas/recurrentes/confirmar/route.ts', 'health/route.ts', 'marketing/encargos/route.ts', 'operaciones/capacidad/route.ts', 'operaciones/decisiones/route.ts', 'operaciones/escenarios/archivar/route.ts', 'operaciones/escenarios/route.ts', 'operaciones/ideas/route.ts', 'operaciones/ordenes/[id]/ejecutar/route.ts', 'operaciones/ordenes/[id]/modelo-sesion/route.ts', 'operaciones/ordenes/[id]/route.ts', 'operaciones/ordenes/[id]/supervision/route.ts', 'operaciones/ordenes/route.ts', 'operaciones/plan-dia/route.ts',
       'operaciones/tareas/[id]/completar/route.ts', 'operaciones/tareas/[id]/route.ts', 'operaciones/tareas/route.ts', 'operaciones/tiempos/route.ts', 'planificacion/calendario.ics/route.ts', 'planificacion/route.ts', 'resumen/route.ts',
     ])
     for (const route of routes) {
@@ -68,6 +68,14 @@ describe('árbol integrado V1.3–V1.6', () => {
         expect(text, route).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE|HEAD|OPTIONS)/)
         expect(text.indexOf('esSecretoDelCalendario('), route).toBeGreaterThan(-1)
         expect(text.indexOf('esSecretoDelCalendario('), route).toBeLessThan(text.indexOf('getDataset()'))
+      }
+      // ORD-POS-170: encargos del Director de Marketing sin sesión; solo GET, y bandera y token propio antes de leer la hoja.
+      else if (route === 'marketing/encargos/route.ts') {
+        expect(text, route).toMatch(/export async function GET\(/)
+        expect(text, route).not.toMatch(/export (async )?function (POST|PUT|PATCH|DELETE|HEAD|OPTIONS)/)
+        expect(text.indexOf('directorMktLecturaHabilitada()'), route).toBeGreaterThan(-1)
+        expect(text.indexOf('directorMktLecturaHabilitada()'), route).toBeLessThan(text.indexOf('esTokenDelDirectorMkt('))
+        expect(text.indexOf('esTokenDelDirectorMkt('), route).toBeLessThan(text.indexOf('getDataset()'))
       }
       else {
         expect(text, route).toMatch(/export async function GET\(/)

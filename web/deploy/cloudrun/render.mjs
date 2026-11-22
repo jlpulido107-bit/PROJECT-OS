@@ -34,14 +34,14 @@ export function render(template, env) {
   if (!problems.length && env.RUNTIME_SA.trim().split('@')[1] !== `${env.PROJECT_ID.trim()}.iam.gserviceaccount.com`) {
     problems.push('RUNTIME_SA debe pertenecer a PROJECT_ID')
   }
-  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + modeloSesion(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + ecoBandejaGemini(env, problems) + commitDesplegado(env, problems)
+  const writeBlock = escritura(env, problems) + radaros(template, env, problems) + finanzas(template, env, problems) + finanzasEscritura(env, problems) + finanzasAgente(env, problems) + ecoPipeline(env, problems) + segundoGemini(env, problems) + modeloSesion(env, problems) + cierrePropietario(env, problems) + edicionPlanificacion(env, problems) + tiemposAgente(env, problems) + directorMkt(env, problems) + calendarioIcs(env, problems) + ideasAlta(env, problems) + ecoTabulador(env, problems) + ecoBandejaGemini(env, problems) + commitDesplegado(env, problems)
   if (problems.length) throw new Error(problems.join('; '))
   const output = template.replace(/\$\{([A-Z_]+)\}/g, (match, name) => {
     if (!(name in REQUIRED)) throw new Error(`variable no reconocida en la plantilla: ${name}`)
     return env[name].trim()
   })
   const marker = /^ *# __ESCRITURA__.*\n/m
-  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, SUPERVISION_MODELO_SESION, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR, ECO_BANDEJA_GEMINI ni DEPLOY_COMMIT_SHA')
+  if (writeBlock && !marker.test(output)) throw new Error('la plantilla no tiene el marcador __ESCRITURA__: no se puede agregar la escritura, RADAROS_SHEET_ID, FINANZAS_SHEET_ID, la escritura de finanzas, el agente de finanzas, la escritura del pipeline de ECO, SEGUNDO_GEMINI_SUPERVISADO, SUPERVISION_MODELO_SESION, TAREAS_CIERRE_PROPIETARIO, PLANIFICACION_EDICION_PROPIETARIO, TIEMPOS_AGENTE, DIRECTOR_MKT_LECTURA, PLANIFICACION_ICS, ECO_IDEAS_ALTA, ECO_TABULADOR, ECO_BANDEJA_GEMINI ni DEPLOY_COMMIT_SHA')
   return output.replace(marker, writeBlock)
 }
 
@@ -247,6 +247,34 @@ function tiemposAgente(env, problems) {
     '              valueFrom:',
     '                secretKeyRef:',
     '                  name: project-os-tiempos-agente-token-sha256',
+    `                  key: '${version}'`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Opcional (ORD-POS-170, DEC-POS-038): lectura de encargos por el Director de Marketing, apagada por defecto. Las dos
+ * van juntas y solo las exporta el propietario:
+ * - DIRECTOR_MKT_LECTURA: solo `true`. Enciende GET /api/marketing/encargos con el token del Director de Marketing.
+ * - SECRET_VERSION_DIRECTOR_MKT: versión del secreto project-os-director-mkt-token-sha256 (DIRECTOR_MKT_TOKEN_SHA256).
+ * Sin ninguna de las dos, el YAML no cambia; nunca se imprime un valor.
+ */
+function directorMkt(env, problems) {
+  const flag = (env.DIRECTOR_MKT_LECTURA ?? '').trim()
+  const version = (env.SECRET_VERSION_DIRECTOR_MKT ?? '').trim()
+  if (!flag && !version) return ''
+  const antes = problems.length
+  if (flag && flag !== 'true') problems.push('DIRECTOR_MKT_LECTURA solo admite true')
+  if (!flag || !version) problems.push('DIRECTOR_MKT_LECTURA y SECRET_VERSION_DIRECTOR_MKT van juntas')
+  if (version && !/^[1-9][0-9]*$/.test(version)) problems.push('SECRET_VERSION_DIRECTOR_MKT no tiene el formato esperado')
+  if (problems.length > antes) return ''
+  return [
+    '            - name: DIRECTOR_MKT_LECTURA',
+    "              value: 'true'",
+    '            - name: DIRECTOR_MKT_TOKEN_SHA256',
+    '              valueFrom:',
+    '                secretKeyRef:',
+    '                  name: project-os-director-mkt-token-sha256',
     `                  key: '${version}'`,
     '',
   ].join('\n')

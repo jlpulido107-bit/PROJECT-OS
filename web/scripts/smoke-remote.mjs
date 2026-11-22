@@ -69,6 +69,11 @@ const ics = await get('/api/planificacion/calendario.ics')
 const icsBody = await ics.text().catch(() => '')
 check('/api/planificacion/calendario.ics sin token → 404 sin calendario', ics.status === 404 && !icsBody.includes('BEGIN:VCALENDAR'), ics.status)
 
+// ORD-POS-170: los encargos del Director de Marketing no usan sesión; sin token, 404 (apagada) o 401 (encendida), sin datos.
+const mkt = await get('/api/marketing/encargos')
+const mktBody = await mkt.json().catch(() => ({}))
+check('/api/marketing/encargos sin token → 404 o 401 sin datos', [401, 404].includes(mkt.status) && Object.keys(mktBody).join() === 'error', mkt.status)
+
 const login = await get('/login')
 check('/login → 200', login.status === 200, login.status)
 check('Strict-Transport-Security', (login.headers.get('strict-transport-security') ?? '').includes('max-age='), '')
