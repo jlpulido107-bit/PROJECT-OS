@@ -37,7 +37,7 @@ Todo dato lleva su fuente; lo no verificado va como **hipótesis**. Historial (f
 - Banderas: `TAREAS_CIERRE_PROPIETARIO` y `TIEMPOS_AGENTE` encendidas desde `00045` (mismo registro). **Hipótesis:** siguen así, y
   no sé el estado de `ECO_IDEAS_ALTA`, `ECO_BANDEJA_GEMINI`, `SEGUNDO_GEMINI_SUPERVISADO`, `PM_PUEDE_REGISTRAR_PR` ni `DESPLIEGUE_BOTON`.
 - Órdenes abiertas (PM, hoja, 2026-11-22): ORD-ECO-057, ORD-POS-165 y ORD-POS-166
-  ([issue #365](https://github.com/jlpulido107-bit/PROJECT-OS/issues/365), este estado). Sin otro PR abierto en PROJECT-OS (GitHub, 2026-11-22).
+  ([issue #365](https://github.com/jlpulido107-bit/PROJECT-OS/issues/365), este estado). ORD-POS-165 tiene PR en borrador, [#367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367).
 - Modelos: implementa y corrige la familia de `FAMILIA_IMPLEMENTADOR` (`politica.ts`), revisa Sonnet, SEGUNDO de otra
   familia que ambos o gemini-supervisado ([operación](operacion.md#roles-y-modelos), [#356](https://github.com/jlpulido107-bit/PROJECT-OS/pull/356), [#358](https://github.com/jlpulido107-bit/PROJECT-OS/pull/358)).
 - Riesgo conocido: la reserva supone una sola instancia (`maxScale: 1`) ([migración](migracion-supervision.md)).
