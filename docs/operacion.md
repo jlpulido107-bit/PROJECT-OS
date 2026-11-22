@@ -28,6 +28,18 @@ el `SEGUNDO`, venga de donde venga, nunca es de la familia del implementador ni 
 familia del implementador deja la orden en «Falta segundo revisor». Si cambia quien implementa, se cambia la constante
 en un PR. Si una corrección la hace otra familia, el código no lo distingue: solo conoce `FAMILIA_IMPLEMENTADOR`.
 
+**Límite conocido: el dashboard no puede leer el modelo de una sesión (ORD-POS-165, 2026-11-22).** El enlace entre un
+dictamen y su sesión ya existe: la revisión lanzada desde `/ordenes` deja en AUDITORIA la URL de la sesión con la clave
+`orden|revisar|head|n`, y el dictamen lleva `REV-<orden>-<n>` y el mismo head; la sesión que implementa queda en el
+comentario de lanzamiento del issue. Lo que falta es el dato: `configured_model` y `last_served_model` solo los ve una
+sesión de Claude de la misma cuenta (`get_session`). El token de cada rutina solo dispara esa rutina, sin lectura
+([referencia](https://platform.claude.com/docs/en/api/claude-code/routines-fire)); la respuesta del disparo no trae el
+modelo, y no hay un endpoint documentado para que un servidor lea una sesión. Por eso el modelo del revisor sigue
+saliendo del campo `modelo` del dictamen (obligatorio en el contrato v2: sin él el dictamen entero es inválido) y la
+familia del implementador de la constante. Cambiarlo exige una decisión del propietario sobre quién atestigua el
+modelo; ningún agente inventa esa fuente. Un dictamen revisado por una sesión no lanzada desde `/ordenes` no tiene
+enlace verificable.
+
 ## Entornos
 
 | Entorno | Qué corre ahí | Qué nunca corre ahí | Fuente |
