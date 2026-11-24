@@ -16,6 +16,7 @@ decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-11-22. Si algo a
 | Tiempos | **DEC-POS-024 APROBADA** (2026-10-28). Lunes: propone `HORAS_ESTIMADAS`, `FECHA_PLAN` e `HITO_ID`, cierres probables con evidencia, vencidas por reprogramar y altas de tareas que falten, en un paquete sin ID a POS · Ideas, que le pone el `PAQ` (solo esos tres campos y altas de tareas, escritos por el PM con el «sí PAQ» verificado; nunca cierra ni cancela); media semana: lo mismo con los días que quedan; diario: plan del día de `/planificacion` y minutos reales de ayer; viernes: lo planeado contra `TIEMPOS`. Nunca escribe en Sheets ni cambia `ESTADO` o `BLOQUEO`; `CAPACIDAD_SEMANAL` e hitos son del propietario; sin rutina programada | Claude | DEC-POS-024 (APROBADA); ORD-POS-107, ORD-POS-111; [`planear-tiempo`](../.claude/skills/planear-tiempo/SKILL.md) |
 | Agente de finanzas | Por corte (días 15 y fin de mes): rendimiento de `reporte-consumo` y, con el total de factura que da el propietario, el cargo extra o el cierre «sin cargo», solo por `POST /api/finanzas/agente/…` con su token. Nunca estima, edita, borra ni registra la suscripción; inerte hasta que el propietario lo active ([/finanzas v3 §8.2](diseno-finanzas-v3.md#82-activación-solo-el-propietario-tras-aprobar-dec-pos-018-fusionar-y-desplegar-f-3)) | Claude | DEC-POS-018 (PENDIENTE); ORD-POS-092; [diseño v3](diseno-finanzas-v3.md) |
 | Director de Marketing | **DEC-POS-037 APROBADA** (2026-11-19). Marca, identidad visual, diseño, contenido, posicionamiento y estrategia en redes; hoy MESALENTA (ECO) y el video de la botillería. Puerta directa: el propietario habla con él en la sesión «POS · Marketing» (etiqueta `rol:marketing`); lo que se vuelva tarea, decisión u orden lo pasa sin ID a POS · Ideas, que arma el paquete con «sí PAQ». Prepara prompts para Gemini o Antigravity (imágenes, investigación, borradores), que corre el propietario o Antigravity; el resultado va a Drive «Marketing > Para revisar» y lo generado es boceto. Nunca escribe en hojas ni en repositorios de código, publica en redes o en Amazon, gasta, firma con proveedores, usa marcas de terceros como propias ni afirma que una marca está registrada sin verificarlo; la información de clientes externos no entra al repositorio | Claude | DEC-POS-037 (APROBADA); ORD-POS-164; [`director-marketing`](../.claude/skills/director-marketing/SKILL.md) |
+| Colector | Workflow `manual-github-evidence.yml`: lee la actividad de GitHub del día de Mérida y, con `sync_to_sheets`, añade filas a `EVIDENCIAS` y `SYNC_RUNS`; solo lee, no cierra tareas ni decide. Hoy **solo manual**. **Horario** propuesto: diario a las 23:00 de Mérida (`cron: '0 5 * * *'`, 05:00 UTC), **DEC-POS-044 PENDIENTE**; no corre hasta que el propietario apruebe la decisión y pegue el texto. **Apagarlo:** *Actions → el workflow → ⋯ → Disable workflow*, o quitar el bloque `schedule`. **Si falla:** el log del run, los dos secretos, que la hoja siga compartida con la cuenta de servicio, y repetir a mano con la fecha. Detalle en [Horario del colector](#horario-del-colector-ord-pos-172-dec-pos-044-pendiente) | — (GitHub Actions, Python) | DEC-POS-044 (PENDIENTE); ORD-POS-172; [`sheets-sync-setup.md`](sheets-sync-setup.md) |
 
 Cada función corre en una sesión separada; el revisor nunca es la sesión que implementó y usa otro modelo (DEC-POS-002,
 [`AGENTS.md`](../AGENTS.md)). Sin auditor externo: ChatGPT ya no participa (DEC-POS-008).
@@ -98,6 +99,78 @@ llamada falla: **Ejecutar con Claude** o **Copiar para Claude** ([delegación](d
 **Sin «sí» por ronda (DEC-POS-033, APROBADA).** Lanzar PRIMERO, DELTA, SEGUNDO y corrector de una orden BAJO o MEDIO en
 `PR_ABIERTO` está autorizado de forma permanente: el PM no pide «sí», siempre sobre el head actual y con máximo 2
 rondas de corrección. Cancelar, cerrar, ALTO, fusionar, desplegar y banderas siguen siendo solo del propietario.
+
+### Horario del colector (ORD-POS-172, DEC-POS-044 PENDIENTE)
+
+El colector no es una rutina de Claude: es el workflow `.github/workflows/manual-github-evidence.yml`, que hoy solo
+tiene `workflow_dispatch`. **DEC-POS-044 está PENDIENTE**: nada de esto corre hasta que el propietario la apruebe, pegue
+el texto y lo fusione. Ningún agente edita `.github/workflows` ([`AGENTS.md`](../AGENTS.md)); esta sección solo entrega el texto.
+
+**Horario.** Todos los días a las 05:00 UTC, que son las 23:00 de Mérida (`America/Merida`, UTC−6, sin horario de
+verano). GitHub puede retrasar un `schedule` varios minutos, a veces más en horas de carga, y solo lo corre desde `main`.
+
+**Texto que pega el propietario** (tres cambios sobre el archivo de `main`; el archivo completo está en el PR de
+ORD-POS-172):
+
+```diff
+ on:
++  # 05:00 UTC = 23:00 en America/Merida (UTC-6, sin horario de verano). DEC-POS-044.
++  schedule:
++    - cron: '0 5 * * *'
+   workflow_dispatch:
+     inputs:
+```
+
+```diff
+       - name: Install Sheets auth dependency
+-        if: ${{ inputs.sync_to_sheets }}
++        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
+         run: pip install -r requirements-sync.txt
+       - name: Sync verified evidence to Google Sheets (explicit opt-in)
+-        if: ${{ inputs.sync_to_sheets }}
++        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
+         env:
+```
+
+`workflow_dispatch` y sus dos entradas no cambian: a mano, la sincronización sigue apagada por defecto. En un evento
+`schedule` no hay entradas: `inputs.sync_to_sheets` y `inputs.report_date` llegan vacíos, por eso la condición añade
+`github.event_name == 'schedule'`. Con `REPORT_DATE` vacío los dos pasos toman el día de Mérida, cada uno por su
+cuenta: el colector con `dt.datetime.now(ZoneInfo("America/Merida"))` (`src/collect_activity.py`) y la sincronización
+con `TZ=America/Merida date +%F` (el propio workflow).
+
+**Antes de pegarlo: hoy rompe la CI.** El preflight de aceptación prohíbe justo esto y `npm test` en `web/` lo corre
+sobre el repositorio real. Con el texto pegado (probado en una copia, 2026-11-23): `P11` da FALLO («workflows con
+schedule») y `P12` da FALLO (workflow automático con credenciales de Google y secretos), y fallan 12 pruebas de
+`web/tests/operacion-v1-6.test.ts`, así que la validación de todos los PR quedaría en rojo. Hace falta antes una orden
+aparte, con su decisión, que ajuste `web/scripts/ops/preflight-aceptacion.mjs` y sus pruebas para tolerar el horario
+del colector. Es un control de seguridad (R3-1, X-8): no entra en ORD-POS-172.
+
+**Límites conocidos.**
+
+- A las 23:00 el informe del día no incluye lo que pase entre las 23:00 y las 23:59 de Mérida, y ninguna corrida
+  posterior lo recoge sola. Se recupera corriendo el workflow a mano con esa fecha: la sincronización no duplica filas.
+- Si GitHub retrasa la corrida más de una hora, cae en el día siguiente de Mérida y el día anterior queda sin informe.
+  Si la medianoche cae entre los dos pasos, la sincronización busca un informe que no existe y falla sin escribir.
+- GitHub desactiva solo los `schedule` de un repositorio público tras 60 días sin actividad.
+- Sigue usando la clave JSON de la cuenta de servicio, ahora sin una persona delante: la deuda `P15` (X-8) pesa más.
+
+**Cómo apagarlo** (solo el propietario).
+
+- Rápido, sin PR: *Actions → PROJECT-OS — Manual GitHub evidence report → ⋯ → Disable workflow*. Apaga también la
+  ejecución manual hasta pulsar *Enable workflow*.
+- Definitivo: un PR que quite el bloque `schedule` y devuelva las dos condiciones a `if: ${{ inputs.sync_to_sheets }}`.
+
+**Qué revisar si falla** (*Actions →* la corrida en rojo):
+
+1. El paso que falló. *Run unit tests*: una prueba rota en `main`. *Collect read-only evidence*: el secreto
+   `PROJECT_OS_GH_READ_TOKEN` (caducado o sin permiso de lectura) o un error de la API de GitHub.
+2. *Sync verified evidence*: «Missing Google service-account secret» es el secreto
+   `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON`; un 403 es que la hoja ya no está compartida con la cuenta de servicio; un
+   informe con errores de recopilación o encabezados cambiados en `EVIDENCIAS` o `SYNC_RUNS` se rechaza sin escribir
+   ([garantías](sheets-sync-setup.md#garantías-y-límites)).
+3. En la hoja, la última fila de `SYNC_RUNS`: fecha y conteos de la última corrida buena.
+4. Recuperar el día: correr el workflow a mano con `report_date` y `sync_to_sheets` activado. No repite evidencias.
+5. Si no hubo corrida: el workflow está en *Disabled*, o GitHub la retrasó o la omitió.
 
 ## Flujo de una orden por riesgo
 
