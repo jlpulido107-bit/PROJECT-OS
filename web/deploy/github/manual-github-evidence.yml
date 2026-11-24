@@ -1,0 +1,71 @@
+name: PROJECT-OS — Manual GitHub evidence report
+
+on:
+  # 05:00 UTC = 23:00 en America/Merida (UTC-6, sin horario de verano). DEC-POS-044.
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      report_date:
+        description: "YYYY-MM-DD; empty = current day in America/Merida"
+        required: false
+        type: string
+      sync_to_sheets:
+        description: "Opt-in: append verified evidence to Google Sheets"
+        required: true
+        type: boolean
+        default: false
+
+# Serialize report/sync jobs from this workflow to reduce duplicate writers.
+concurrency:
+  group: project-os-evidence-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Collect read-only evidence
+        env:
+          GH_READ_TOKEN: ${{ secrets.PROJECT_OS_GH_READ_TOKEN }}
+          REPORT_DATE: ${{ inputs.report_date }}
+        run: python src/collect_activity.py
+      - name: Install Sheets auth dependency
+        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
+        run: pip install -r requirements-sync.txt
+      - name: Sync verified evidence to Google Sheets (explicit opt-in)
+        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
+        env:
+          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}
+          REPORT_DATE: ${{ inputs.report_date }}
+        shell: bash
+        run: |
+          if [ -z "$PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Missing Google service-account secret; no sync attempted"
+            exit 1
+          fi
+          if [ -z "$REPORT_DATE" ]; then
+            REPORT_DATE=$(TZ=America/Merida date +%F)
+          fi
+          python src/sync_sheets.py --report "reports/${REPORT_DATE:0:7}/${REPORT_DATE}.json"
+      - name: Upload report as build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-evidence-${{ github.run_id }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30

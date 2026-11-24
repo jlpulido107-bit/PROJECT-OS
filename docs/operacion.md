@@ -138,12 +138,26 @@ ORD-POS-172):
 cuenta: el colector con `dt.datetime.now(ZoneInfo("America/Merida"))` (`src/collect_activity.py`) y la sincronización
 con `TZ=America/Merida date +%F` (el propio workflow).
 
-**Antes de pegarlo: hoy rompe la CI.** El preflight de aceptación prohíbe justo esto y `npm test` en `web/` lo corre
-sobre el repositorio real. Con el texto pegado (probado en una copia, 2026-11-23): `P11` da FALLO («workflows con
-schedule») y `P12` da FALLO (workflow automático con credenciales de Google y secretos), y fallan 12 pruebas de
-`web/tests/operacion-v1-6.test.ts`, así que la validación de todos los PR quedaría en rojo. Hace falta antes una orden
-aparte, con su decisión, que ajuste `web/scripts/ops/preflight-aceptacion.mjs` y sus pruebas para tolerar el horario
-del colector. Es un control de seguridad (R3-1, X-8): no entra en ORD-POS-172.
+**Paso exacto del propietario (ORD-POS-173, DEC-POS-044 y DEC-POS-045).** El archivo completo, ya con los tres
+cambios, es la fuente revisada [`web/deploy/github/manual-github-evidence.yml`](../web/deploy/github/manual-github-evidence.yml).
+En un PR tuyo (ningún agente edita `.github/workflows`), desde `main` al día:
+
+```bash
+git switch -c propietario/horario-colector
+cp web/deploy/github/manual-github-evidence.yml .github/workflows/manual-github-evidence.yml
+cmp web/deploy/github/manual-github-evidence.yml .github/workflows/manual-github-evidence.yml && echo IDENTICOS
+git add .github/workflows/manual-github-evidence.yml
+git commit -m "Colector: horario diario (DEC-POS-044, DEC-POS-045)"
+git push -u origin propietario/horario-colector
+```
+
+Copia el archivo entero, sin retocarlo: el preflight de aceptación (`web/scripts/ops/preflight-aceptacion.mjs`, que
+`npm test` corre sobre el repositorio real) solo tolera ese `schedule` si la copia es **idéntica byte a byte** a la
+fuente. `P11` admite `schedule` únicamente en `manual-github-evidence.yml` y únicamente así; `P12` lo excluye solo en
+ese caso y solo si sus eventos son exactamente `schedule` y `workflow_dispatch`. Un byte distinto, la fuente ausente,
+`push` o `pull_request` en el colector, u otro workflow con `schedule` dan FALLO y la validación de los PR queda en
+rojo. `P15` sigue NO VERIFICADO por la deuda de la clave (X-8). Para cambiar el horario se cambia primero la fuente,
+con su orden y su revisión, y después se vuelve a copiar.
 
 **Límites conocidos.**
 
