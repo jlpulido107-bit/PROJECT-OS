@@ -6,6 +6,22 @@ en el historial de git de `docs/estado-actual.md` (p. ej. [#252](https://github.
 
 ## Órdenes fusionadas
 
+### 2026-11-22 a 2026-11-25 (fechas de fusión de GitHub, en UTC)
+
+- Supervisión: 165 [#367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367) (modelo real de cada sesión, DEC-POS-039; apagado sin `SUPERVISION_MODELO_SESION`).
+- Botón de despliegue: [#369](https://github.com/jlpulido107-bit/PROJECT-OS/pull/369), del propietario (copió el workflow a `.github/workflows`, DEC-POS-036); 167 [#373](https://github.com/jlpulido107-bit/PROJECT-OS/pull/373) (preflight P15:
+  el botón es el único workflow manual autorizado, idéntico a su fuente) y 171 [#379](https://github.com/jlpulido107-bit/PROJECT-OS/pull/379) (`--solo-imagen` ignora `satisfiesPzs` y compara bien `maxScale`).
+- La Mac y documentos: 166 [#368](https://github.com/jlpulido107-bit/PROJECT-OS/pull/368) (estado e historial tras 118 a 164), 168 [#375](https://github.com/jlpulido107-bit/PROJECT-OS/pull/375) (`AGENTS.md`, operación y guía del botón con
+  DEC-POS-033 a 040) y 169 [#374](https://github.com/jlpulido107-bit/PROJECT-OS/pull/374) (candados de la Mac: plantilla y verificación de solo lectura).
+- Marketing: 170 [#377](https://github.com/jlpulido107-bit/PROJECT-OS/pull/377) (el Director de Marketing lee sus encargos, DEC-POS-038; apagado sin `DIRECTOR_MKT_LECTURA`).
+- Colector: 172 [#381](https://github.com/jlpulido107-bit/PROJECT-OS/pull/381) (texto del horario diario), 173 [#383](https://github.com/jlpulido107-bit/PROJECT-OS/pull/383) (preflight P11 y P12: toleran ese horario solo si el workflow es
+  idéntico a su fuente) y [#384](https://github.com/jlpulido107-bit/PROJECT-OS/pull/384), del propietario (el horario en `.github/workflows`, DEC-POS-044 y 045).
+- SIGSAH, ORD-SIG-091 a 095: 091 [#189](https://github.com/jlpulido107-bit/SIGSAH/pull/189) y 095 [#197](https://github.com/jlpulido107-bit/SIGSAH/pull/197) (SIGSAH simple), y 092 [#192](https://github.com/jlpulido107-bit/SIGSAH/pull/192), 093 [#193](https://github.com/jlpulido107-bit/SIGSAH/pull/193) y
+  094 [#195](https://github.com/jlpulido107-bit/SIGSAH/pull/195) (app de almacén v2: especificaciones y guías).
+- RADAROS, ORD-ECO-056 a 061: fusionadas según la orden ORD-POS-175 ([issue #386](https://github.com/jlpulido107-bit/PROJECT-OS/issues/386)). **Hipótesis:** sus PRs no se verificaron aquí
+  (sin acceso a RADAROS al escribirlo).
+- **Hipótesis:** el estado en la hoja de 165 a 173 (REVISADA o CERRADA) no se verificó aquí.
+
 ### 2026-11-17 a 2026-11-21
 
 - Despliegue: 162 [#363](https://github.com/jlpulido107-bit/PROJECT-OS/pull/363) (modo «solo imagen» y scripts de CI) y 163 [#364](https://github.com/jlpulido107-bit/PROJECT-OS/pull/364) (workflow del botón, guía y
@@ -53,8 +69,14 @@ en el historial de git de `docs/estado-actual.md` (p. ej. [#252](https://github.
 
 ## Despliegues anteriores
 
+- 2026-11-22, antes de `00070-587` ([estado actual](estado-actual.md)): `00068-kh9` llevó la imagen de `d0abf15` (ORD-POS-170), a mano en Cloud Shell, después de que
+  la ejecución 45065790263 del botón se detuviera por `maxScale` y `satisfiesPzs`; luego `00069-5rs` encendió `DIRECTOR_MKT_LECTURA`
+  ([issue #378](https://github.com/jlpulido107-bit/PROJECT-OS/issues/378)). Lo corrigió ORD-POS-171 ([#379](https://github.com/jlpulido107-bit/PROJECT-OS/pull/379)).
+- Primera ejecución del botón, [44971316184](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/44971316184) (commit `dc0ad18`, 4 intentos): terminó en fallo. La guía atribuye el primer intento a un 403 de
+  `iam.serviceAccounts.getAccessToken` por propagación de IAM ([errores conocidos](despliegue-boton.md#errores-conocidos)).
+- **Hipótesis:** las revisiones `00047` a `00067` son despliegues sin registro en el repositorio.
 - `00046-ppl` (2026-10-30) con ORD-POS-115 (`f7c8a7c`), con vuelta atrás a `00045`; el PM no vio el smoke
-  ([registro en #270](https://github.com/jlpulido107-bit/PROJECT-OS/pull/270#issuecomment-6532847729)). Fue la revisión en producción del estado del 2026-10-31; la de hoy está por confirmar.
+  ([registro en #270](https://github.com/jlpulido107-bit/PROJECT-OS/pull/270#issuecomment-6532847729)). Fue la revisión en producción del estado del 2026-10-31 y el último registro del estado del 2026-11-22.
 - `00045` (2026-10-29, según el propietario vía POS · Ideas): 105, 106, 112, 113 y 114; encendió `TAREAS_CIERRE_PROPIETARIO`
   y `TIEMPOS_AGENTE` (tarea POS-037) ([registro en #270](https://github.com/jlpulido107-bit/PROJECT-OS/pull/270#issuecomment-6532847729)).
 - Registros de despliegue del PM (2026-10-29), smoke 52/52 en las cuatro revisiones:
@@ -65,6 +87,15 @@ en el historial de git de `docs/estado-actual.md` (p. ej. [#252](https://github.
 
 ## Hitos y fechas pasadas
 
+- Pendientes del estado del 2026-11-22 que dejaron de serlo:
+  - La incoherencia de nombres de DEC-POS-036 («project-os-deploy», «POS_DESPLIEGUE_ACTIVO»): DEC-POS-040, punto 1, dejó `project-os-despliegue` y
+    `DESPLIEGUE_BOTON` ([guía](despliegue-boton.md)), y ORD-POS-168 corrigió los documentos que decían DEC-POS-036 PENDIENTE ([#375](https://github.com/jlpulido107-bit/PROJECT-OS/pull/375)).
+  - «`actionlint` no corrió en #364»: el workflow corrió completo y con éxito el 2026-11-22
+    ([ejecución 45071096152](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/45071096152)). **Hipótesis:** `actionlint` sigue sin correr.
+  - Decía que DEC-POS-033, 034 y 038 vivían «solo en DECISIONES»: desde ORD-POS-168 y 170 su contenido consta en [`AGENTS.md`](../AGENTS.md)
+    ([#375](https://github.com/jlpulido107-bit/PROJECT-OS/pull/375), [#377](https://github.com/jlpulido107-bit/PROJECT-OS/pull/377)).
+- Órdenes abiertas del estado del 2026-11-22 (PM, hoja): ORD-POS-165 y 166 se fusionaron ([#367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367), [#368](https://github.com/jlpulido107-bit/PROJECT-OS/pull/368)). ORD-ECO-057: fusionada según la orden
+  ORD-POS-175 ([issue #386](https://github.com/jlpulido107-bit/PROJECT-OS/issues/386)); **hipótesis**, sin verificar en RADAROS.
 - Fechas del estado del 2026-10-31 que ya pasaron, **sin resultado verificado aquí**: prueba real del agente de finanzas
   (2026-11-01, [`diseno-finanzas-v3.md`](diseno-finanzas-v3.md)); cierre de la prueba Gemini (2026-11-02, DEC-POS-020) y SEGUNDO
   gemini-supervisado desde el 2026-11-03 ([§8](prueba-gemini.md)); primera corrida de Tiempos en modo LUNES (2026-11-02);

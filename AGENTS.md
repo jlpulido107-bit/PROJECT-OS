@@ -96,10 +96,15 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   `DIRECTOR_MKT_LECTURA=true`, que pone únicamente el propietario con `deploy.sh`
   ([escritura §15](docs/escritura-v1-8.md)). Ningún agente la enciende ni crea el token. Sin ella, sigue la puerta
   directa de DEC-POS-037.
-- Modelo real de las sesiones, **DEC-POS-039 APROBADA**, en implementación (ORD-POS-165,
-  [PR #367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367)): el PM registrará el modelo real de las sesiones
-  de implementación y de revisión con una operación auditada de solo alta, apagada con una bandera. Hasta que se
-  fusione y el propietario la encienda, no existe.
+- Modelo real de las sesiones, **DEC-POS-039 APROBADA**, fusionada el 2026-11-22 (ORD-POS-165,
+  [PR #367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367)): el PM registra el modelo real de las sesiones
+  de implementación y de revisión con una operación auditada de solo alta, apagada con una bandera. Hasta que el
+  propietario la encienda, no existe.
+- **DEC-POS-041 APROBADA** (POS · Ideas, 2026-11-25): su texto vive solo en DECISIONES; este repositorio no lo recoge y ningún agente lo supone.
+- **DEC-POS-042 APROBADA** (POS · Ideas, 2026-11-25): igual que la 041, su texto vive solo en DECISIONES y ningún agente lo supone.
+- **DEC-POS-043 APROBADA**, enmendada por **DEC-POS-046** (POS · Ideas, 2026-11-25): la migración queda en el congelador, con disparadores; cuál migración y qué disparadores constan solo en DECISIONES.
+- **DEC-POS-044 APROBADA**: el colector corre solo cada día a las 05:00 UTC (23:00 de Mérida), con el `schedule` que el propietario puso en `manual-github-evidence.yml` ([PR #384](https://github.com/jlpulido107-bit/PROJECT-OS/pull/384)); cómo apagarlo y qué revisar si falla, en [operación](docs/operacion.md).
+- **DEC-POS-045 APROBADA**: el preflight (P11 y P12) tolera solo ese `schedule`, y solo si el workflow es idéntico byte a byte a su fuente, `web/deploy/github/manual-github-evidence.yml`; el horario se cambia primero en la fuente, con su orden, y la copia la hace el propietario ([PR #383](https://github.com/jlpulido107-bit/PROJECT-OS/pull/383)).
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.
