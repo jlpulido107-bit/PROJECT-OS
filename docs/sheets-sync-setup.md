@@ -13,8 +13,10 @@ compartir la hoja y pasar una prueba manual; sin `schedule`.
    Guardar el JSON completo en el secret de repositorio
    `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON`. No subirlo a Git ni enviarlo al chat.
 5. Mantener `PROJECT_OS_GH_READ_TOKEN` de solo lectura sobre los repositorios fuente.
-6. La alternativa recomendada para producción a largo plazo es **Workload Identity Federation
-   (OIDC)** en lugar de claves JSON de larga duración.
+6. Desde ORD-POS-174 la ruta revisada es **Workload Identity Federation (OIDC)**, sin claves JSON de larga duración:
+   una cuenta propia del colector, solo Editor de la hoja, y los pasos del propietario en la
+   [guía](colector-wif.md). La clave del paso 4 es la ruta anterior: sigue funcionando mientras exista el secreto y se
+   retira al terminar esa guía. `src/sync_sheets.py` elige una de las dos de forma explícita, nunca por descarte.
 
 ## Validación en la CI de los PR (sin credenciales)
 - El workflow `PROJECT-OS — PR validation` (`pr-validation.yml`) **nunca** recibe `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON`

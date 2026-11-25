@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -33,7 +34,7 @@ function fixtureRoot(mutate?: (root: string) => void) {
     'web/deploy/cloudrun/service.template.yaml', 'web/deploy/cloudrun/artifact-cleanup-policy.json', 'web/src/proxy.ts',
     'web/src/app/(private)/layout.tsx', 'web/src/lib/auth.ts', 'web/src/lib/authz.ts', 'docs/estado-produccion-v1-6-2026-10-11.md',
     'docs/estado-produccion-v1-7-2026-10-13.md', 'docs/estado-produccion-v1-8-2026-10-14.md', 'web/deploy/github/desplegar-dashboard.yml',
-    'web/deploy/github/manual-github-evidence.yml',
+    'web/deploy/github/manual-github-evidence.yml', 'web/deploy/github/manual-github-evidence.anterior.yml',
   ]) {
     mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
     cpSync(path.join(ROOT, rel), path.join(root, rel))
@@ -43,6 +44,26 @@ function fixtureRoot(mutate?: (root: string) => void) {
   return root
 }
 const edit = (root: string, rel: string, fn: (t: string) => string) => writeFileSync(path.join(root, rel), fn(read(path.join(root, rel))))
+/** El colector y sus dos fuentes revisadas (ORD-POS-174): la vigente (WIF, sin clave) y la anterior (clave JSON), congelada. */
+const COLECTOR = '.github/workflows/manual-github-evidence.yml'
+const FUENTE_WIF = 'web/deploy/github/manual-github-evidence.yml'
+const FUENTE_ANTERIOR = 'web/deploy/github/manual-github-evidence.anterior.yml'
+const FUENTES = { wif: FUENTE_WIF, anterior: FUENTE_ANTERIOR } as const
+/** El colector de antes de ORD-POS-172 (R3-1): solo workflow_dispatch y la clave tras la opción. Es la fuente anterior sin el horario. */
+const colectorManual = (anterior: string) => anterior
+  .replace("  # 05:00 UTC = 23:00 en America/Merida (UTC-6, sin horario de verano). DEC-POS-044.\n  schedule:\n    - cron: '0 5 * * *'\n", '')
+  .replaceAll("        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}\n", '        if: ${{ inputs.sync_to_sheets }}\n')
+/**
+ * Fixture con el colector en un estado conocido, esté como esté el workflow real (antes o después de que el propietario
+ * copie la fuente): 'wif' y 'anterior' son copias exactas de su fuente; 'manual' es el de R3-1.
+ */
+function conColector(estado: 'wif' | 'anterior' | 'manual', mutate?: (root: string) => void) {
+  return fixtureRoot((r) => {
+    if (estado === 'manual') writeFileSync(path.join(r, COLECTOR), colectorManual(read(path.join(r, FUENTE_ANTERIOR))))
+    else cpSync(path.join(r, FUENTES[estado]), path.join(r, COLECTOR))
+    mutate?.(r)
+  })
+}
 const preflight = (root: string, json = false) => node(PREFLIGHT, ['--root', root, ...(json ? ['--json'] : [])])
 const estados = (root: string) => {
   const r = preflight(root, true)
@@ -66,36 +87,43 @@ describe('preflight de aceptación offline', () => {
   })
 
   it('sin git, P14 queda NO_VERIFICADO y el código de salida es 3: NO_VERIFICADO nunca cuenta como OK', () => {
-    const { status, por, out } = estados(fixtureRoot())
+    const { status, por, out } = estados(conColector('anterior'))
     expect(por.P14).toBe('NO_VERIFICADO')
-    // P15: el colector V1.1 usa una clave de cuenta de servicio de Google (riesgo pendiente de decisión).
+    // P15: mientras el colector use la clave de cuenta de servicio de Google (la fuente anterior), sigue la deuda.
     expect(por.P15).toBe('NO_VERIFICADO')
     expect(Object.entries(por).filter(([id]) => !['P14', 'P15'].includes(id)).every(([, e]) => e === 'OK')).toBe(true)
     expect(status).toBe(3)
     expect(out.codigo).toBe(3)
+    // Con el colector idéntico a la fuente vigente (WIF), solo queda P14.
+    const wif = estados(conColector('wif'))
+    expect(Object.entries(wif.por).filter(([, e]) => e !== 'OK')).toEqual([['P14', 'NO_VERIFICADO']])
+    expect(wif.status).toBe(3)
   })
 
   it('R3-1 · la CI de los PR no recibe la clave de Google; el colector manual con opción explícita queda en P15 (NO_VERIFICADO), nunca OK', () => {
-    const { por, out } = estados(fixtureRoot())
+    const { por, out } = estados(conColector('manual'))
+    expect(por.P11).toBe('OK')
     expect(por.P12).toBe('OK')
     expect(por.P15).toBe('NO_VERIFICADO')
     const p15 = out.resultados.find((r) => r.id === 'P15') as { motivo: string } | undefined
     expect(p15?.motivo).toMatch(/manual-github-evidence\.yml/)
     expect(p15?.motivo).toMatch(/sync_to_sheets/)
-    expect(p15?.motivo).toMatch(/decisión del propietario/)
+    expect(p15?.motivo).toMatch(/Solo se ejecuta a mano/)
+    expect(p15?.motivo).toMatch(/pendiente de que el propietario copie/)
     expect(p15?.motivo).not.toMatch(/pr-validation/)
     // La CI de los PR valida la sincronización con la hoja EN MEMORIA, sin secretos ni el sincronizador real.
     const pr = read(path.join(ROOT, '.github/workflows/pr-validation.yml'))
     expect(pr).not.toMatch(/secrets|PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|sync_sheets\.py|requirements-sync/)
     expect(pr).toContain('python tests/sheets_fixture_dry_run.py')
-    const sinColector = estados(fixtureRoot((r) => rmSync(path.join(r, '.github/workflows/manual-github-evidence.yml'))))
+    const sinColector = estados(fixtureRoot((r) => rmSync(path.join(r, COLECTOR))))
     expect(sinColector.por.P15).toBe('OK')
   })
 
   // El paso que la CI de los PR tenía antes de R3: clave de Google y dry-run con el código del propio PR.
   const PASO_ANTERIOR = '      - name: Verify Google Sheets credentials and schema (read-only)\n        env:\n          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n        run: python src/sync_sheets.py --report r.json --dry-run\n'
   const enLaCiDePr = (paso: string) => (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace('      - name: Preserve smoke report for review', `${paso}      - name: Preserve smoke report for review`))
-  const enElColector = (fn: (t: string) => string) => (r: string) => edit(r, '.github/workflows/manual-github-evidence.yml', fn)
+  // Las mutaciones de R3-1 se escribieron contra el colector solo manual: parten de él (conColector('manual')).
+  const enElColector = (fn: (t: string) => string) => (r: string) => edit(r, COLECTOR, fn)
   it.each([
     ['la CI de PR vuelve a inyectar la clave y el dry-run real (el workflow anterior a R3)', 'P12', enLaCiDePr(PASO_ANTERIOR)],
     ['la CI de PR ejecuta el sincronizador real, aunque sea sin clave', 'P12', enLaCiDePr('      - run: python src/sync_sheets.py --report r.json --dry-run\n')],
@@ -117,7 +145,7 @@ describe('preflight de aceptación offline', () => {
     ['el colector manual con un segundo job con la clave sin condición', 'P15', enElColector((t) => `${t}  otro:\n    runs-on: ubuntu-latest\n    env:\n      K: \${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n    steps:\n      - run: echo ok\n`)],
     ['otro workflow manual con credenciales de Google', 'P15', (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: google-github-actions/auth@v2\n')],
   ])('R3-1 · %s → FALLO en %s y código 1 (nunca un NO_VERIFICADO aceptable)', (_n, id, mutate) => {
-    const { status, por } = estados(fixtureRoot(mutate))
+    const { status, por } = estados(conColector('manual', mutate))
     expect(por[id]).toBe('FALLO')
     expect(status).toBe(1)
   })
@@ -127,7 +155,7 @@ describe('preflight de aceptación offline', () => {
     const FUENTE = 'web/deploy/github/desplegar-dashboard.yml'
     const motivoP15 = (root: string) => (estados(root).out.resultados.find((r) => r.id === 'P15') as { motivo?: string } | undefined)?.motivo ?? ''
     /** Fixture con el botón copiado de su fuente, esté o no en el .github/workflows real. */
-    const conBoton = (mutate?: (r: string) => void) => fixtureRoot((r) => {
+    const conBoton = (mutate?: (r: string) => void) => conColector('anterior', (r) => {
       cpSync(path.join(r, FUENTE), path.join(r, BOTON))
       mutate?.(r)
     })
@@ -137,8 +165,9 @@ describe('preflight de aceptación offline', () => {
       expect(por.P15).toBe('NO_VERIFICADO')
       expect(por.P12).toBe('OK')
       expect(por.P11).toBe('OK')
-      // Sin el colector, el botón idéntico no deja deuda: OK.
-      expect(estados(conBoton((r) => rmSync(path.join(r, '.github/workflows/manual-github-evidence.yml')))).por.P15).toBe('OK')
+      // Sin el colector, el botón idéntico no deja deuda: OK. Con el colector idéntico a su fuente vigente (WIF), tampoco.
+      expect(estados(conBoton((r) => rmSync(path.join(r, COLECTOR)))).por.P15).toBe('OK')
+      expect(estados(conBoton((r) => cpSync(path.join(r, FUENTE_WIF), path.join(r, COLECTOR)))).por.P15).toBe('OK')
     })
 
     it.each([
@@ -165,88 +194,126 @@ describe('preflight de aceptación offline', () => {
     })
   })
 
-  describe('ORD-POS-173 · P11, P12 y el horario del colector (DEC-POS-044 y DEC-POS-045)', () => {
-    const COLECTOR = '.github/workflows/manual-github-evidence.yml'
-    const FUENTE = 'web/deploy/github/manual-github-evidence.yml'
+  describe('ORD-POS-173 y ORD-POS-174 · P11, P12, P15 y las fuentes del colector (DEC-POS-044 y DEC-POS-045)', () => {
     const motivo = (root: string, id: string) => (estados(root).out.resultados.find((r) => r.id === id) as { motivo?: string } | undefined)?.motivo ?? ''
-    /** Fixture con el colector copiado de su fuente (con horario), como quedará cuando el propietario lo pegue. */
-    const conHorario = (mutate?: (r: string) => void) => fixtureRoot((r) => {
-      cpSync(path.join(r, FUENTE), path.join(r, COLECTOR))
-      mutate?.(r)
-    })
-    const enAmbos = (fn: (t: string) => string) => (r: string) => { edit(r, COLECTOR, fn); edit(r, FUENTE, fn) }
     const mas = (evento: string) => (t: string) => t.replace('  workflow_dispatch:', `  ${evento}:\n  workflow_dispatch:`)
 
-    it('la fuente es el workflow de main más el horario de ORD-POS-172, y nada más', () => {
-      const fuente = read(path.join(ROOT, FUENTE))
-      const real = read(path.join(ROOT, COLECTOR))
-      const esperado = real
-        .replace('on:\n  workflow_dispatch:', "on:\n  # 05:00 UTC = 23:00 en America/Merida (UTC-6, sin horario de verano). DEC-POS-044.\n  schedule:\n    - cron: '0 5 * * *'\n  workflow_dispatch:")
-        .replaceAll('        if: ${{ inputs.sync_to_sheets }}\n', "        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}\n")
-      // Antes de que el propietario lo pegue, la fuente es el real más el horario; después, son idénticos.
-      expect([esperado, real]).toContain(fuente)
-      expect(fuente.match(/^\s*schedule\s*:/gm)).toHaveLength(1)
-      expect(fuente).toContain("    - cron: '0 5 * * *'\n")
-      expect(fuente.match(/if: \$\{\{ inputs\.sync_to_sheets \|\| github\.event_name == 'schedule' \}\}\n/g)).toHaveLength(2)
-      expect(fuente).not.toContain('if: ${{ inputs.sync_to_sheets }}')
-      expect(fuente).not.toMatch(/^\s*(push|pull_request|pull_request_target)\s*:/m)
+    it('candado sobre el repositorio real: el workflow activo es idéntico a la fuente vigente o, mientras el propietario no la copie, a la anterior', () => {
+      const real = readFileSync(path.join(ROOT, COLECTOR))
+      expect([FUENTE_WIF, FUENTE_ANTERIOR].some((f) => real.equals(readFileSync(path.join(ROOT, f))))).toBe(true)
     })
 
-    it('mientras el workflow real no cambie (sin schedule), todo sigue igual: P11 y P12 OK, P15 NO_VERIFICADO', () => {
-      const root = fixtureRoot()
+    it('la fuente anterior está congelada: es, byte a byte, el workflow con horario que el propietario fusionó (ORD-POS-173, PR #384)', () => {
+      const anterior = readFileSync(path.join(ROOT, FUENTE_ANTERIOR))
+      expect(createHash('sha256').update(anterior).digest('hex')).toBe('772bbd978feac25a415324b1b9d9bf56519a7fb3819dad6dace061932baa3cba')
+      // Es la fuente con clave: la que se retira cuando ya no exista el secreto. La vigente no la nombra.
+      expect(anterior.toString('utf8')).toContain('secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON')
+      expect(read(path.join(ROOT, FUENTE_WIF))).not.toMatch(/PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|credentials_json/)
+    })
+
+    it('ORD-POS-174 · idéntico a la fuente vigente (WIF, sin clave): P11 y P12 pasan y P15 da OK', () => {
+      const root = conColector('wif')
       const { status, por } = estados(root)
-      expect(por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
-      expect(status).toBe(3)
-      expect(motivo(root, 'P11')).toBe('workflows sin schedule')
-      expect(motivo(root, 'P15')).toContain('Solo se ejecuta a mano')
+      expect(por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'OK' })
+      expect(Object.values(por)).not.toContain('FALLO')
+      expect(status).toBe(3) // solo por P14 (sin git en la copia)
+      expect(motivo(root, 'P11')).toContain(`idéntico byte a byte a ${FUENTE_WIF}`)
+      expect(motivo(root, 'P15')).toContain(`idéntico byte a byte a ${FUENTE_WIF}`)
+      expect(motivo(root, 'P15')).toMatch(/Workload Identity Federation/)
+      expect(motivo(root, 'P15')).toMatch(/sin clave JSON/)
+      // Offline no se sabe si el secreto ya se retiró: el OK no lo afirma.
+      expect(motivo(root, 'P15')).toMatch(/Offline no se ve si el secreto y la clave ya se retiraron/)
     })
 
-    it('idéntico a su fuente: P11 y P12 pasan y P15 sigue NO_VERIFICADO por X-8, nunca OK', () => {
-      const root = conHorario()
+    it('transición · idéntico a la fuente anterior (clave JSON): P11 y P12 pasan y P15 sigue NO_VERIFICADO por X-8, nunca OK', () => {
+      const root = conColector('anterior')
       const { status, por } = estados(root)
       expect(por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
       expect(Object.values(por)).not.toContain('FALLO')
       expect(status).toBe(3)
-      expect(motivo(root, 'P11')).toContain('idéntico byte a byte')
+      expect(motivo(root, 'P11')).toContain(`idéntico byte a byte a ${FUENTE_ANTERIOR}`)
       expect(motivo(root, 'P15')).toMatch(/X-8/)
       expect(motivo(root, 'P15')).toMatch(/Corre con horario/)
+      expect(motivo(root, 'P15')).toMatch(/clave JSON/)
+      expect(motivo(root, 'P15')).toContain(`pendiente de que el propietario copie ${FUENTE_WIF}`)
+    })
+
+    it('volver atrás no deja la CI en rojo: de la vigente a la anterior, P11 y P12 siguen OK y P15 vuelve a NO_VERIFICADO', () => {
+      const root = conColector('wif', (r) => cpSync(path.join(r, FUENTE_ANTERIOR), path.join(r, COLECTOR)))
+      expect(estados(root).por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
+    })
+
+    describe.each(['wif', 'anterior'] as const)('con el colector copiado de la fuente «%s»', (base) => {
+      const FUENTE = FUENTES[base]
+      const enAmbos = (fn: (t: string) => string) => (r: string) => { edit(r, COLECTOR, fn); edit(r, FUENTE, fn) }
+      it.each([
+        ['el colector con push (solo el workflow)', ['P11', 'P12', 'P15'], (r: string) => edit(r, COLECTOR, mas('push'))],
+        ['el colector con pull_request (solo el workflow)', ['P11', 'P12', 'P15'], (r: string) => edit(r, COLECTOR, mas('pull_request'))],
+        ['el colector con push también en la fuente', ['P12', 'P15'], enAmbos(mas('push'))],
+        ['el colector con pull_request también en la fuente', ['P12', 'P15'], enAmbos(mas('pull_request'))],
+        ['el colector con pull_request_target también en la fuente', ['P12', 'P15'], enAmbos(mas('pull_request_target'))],
+        ['el colector solo con schedule, también en la fuente', ['P12', 'P15'], enAmbos((t) => t.replace(/  workflow_dispatch:[\s\S]*?(?=\n# Serialize)/, ''))],
+        ['un byte de más al final', ['P11', 'P12', 'P15'], (r: string) => edit(r, COLECTOR, (t) => `${t}\n`)],
+        ['un byte cambiado (otro cron)', ['P11', 'P12', 'P15'], (r: string) => edit(r, COLECTOR, (t) => t.replace("'0 5 * * *'", "'0 6 * * *'"))],
+        ['la fuente cambiada y el workflow no', ['P11', 'P12', 'P15'], (r: string) => edit(r, FUENTE, (t) => `${t}# x\n`)],
+        ['la fuente ausente', ['P11', 'P12', 'P15'], (r: string) => rmSync(path.join(r, FUENTE))],
+        ['otro workflow con schedule', ['P11'], (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  schedule:\n    - cron: "0 5 * * *"\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
+        ['una copia exacta de la fuente con otro nombre', ['P11', 'P12'], (r: string) => cpSync(path.join(r, FUENTE), path.join(r, '.github/workflows/colector-2.yml'))],
+        ['schedule añadido a la CI de PR', ['P11'], (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace(/^on:\n/m, "on:\n  schedule:\n    - cron: '0 5 * * *'\n"))],
+      ])('%s → FALLO y código 1', (_n, ids, mutate) => {
+        const { status, por } = estados(conColector(base, mutate))
+        for (const id of ids) expect(por[id], id).toBe('FALLO')
+        expect(status).toBe(1)
+      })
     })
 
     it.each([
-      ['el colector con push (solo el workflow)', ['P11', 'P12'], (r: string) => edit(r, COLECTOR, mas('push'))],
-      ['el colector con pull_request (solo el workflow)', ['P11', 'P12'], (r: string) => edit(r, COLECTOR, mas('pull_request'))],
-      ['el colector con push también en la fuente', ['P12'], enAmbos(mas('push'))],
-      ['el colector con pull_request también en la fuente', ['P12'], enAmbos(mas('pull_request'))],
-      ['el colector con pull_request_target también en la fuente', ['P12'], enAmbos(mas('pull_request_target'))],
-      ['el colector solo con schedule, también en la fuente', ['P12'], enAmbos((t) => t.replace(/  workflow_dispatch:[\s\S]*?(?=\n# Serialize)/, ''))],
-      ['un byte de más al final', ['P11', 'P12'], (r: string) => edit(r, COLECTOR, (t) => `${t}\n`)],
-      ['un byte cambiado (otro cron)', ['P11', 'P12'], (r: string) => edit(r, COLECTOR, (t) => t.replace("'0 5 * * *'", "'0 6 * * *'"))],
-      ['la fuente cambiada y el workflow no', ['P11', 'P12'], (r: string) => edit(r, FUENTE, (t) => `${t}# x\n`)],
-      ['la fuente ausente', ['P11', 'P12'], (r: string) => rmSync(path.join(r, FUENTE))],
-      ['otro workflow con schedule', ['P11'], (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  schedule:\n    - cron: "0 5 * * *"\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
-      ['una copia exacta de la fuente con otro nombre', ['P11', 'P12'], (r: string) => cpSync(path.join(r, FUENTE), path.join(r, '.github/workflows/colector-2.yml'))],
-      ['schedule añadido a la CI de PR', ['P11'], (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace(/^on:\n/m, "on:\n  schedule:\n    - cron: '0 5 * * *'\n"))],
-    ])('%s → FALLO y código 1', (_n, ids, mutate) => {
-      const { status, por } = estados(conHorario(mutate))
-      for (const id of ids) expect(por[id], id).toBe('FALLO')
-      expect(status).toBe(1)
-    })
-
-    it.each([
-      ['sin fuente', (r: string) => rmSync(path.join(r, FUENTE))],
-      ['con la fuente de main, distinta', () => {}],
-    ])('el colector con schedule pero %s → P11 y P12 FALLO', (_n, mutate) => {
-      // El horario pegado a mano sobre el workflow real, sin pasar por la fuente idéntica.
-      const root = fixtureRoot((r) => { edit(r, COLECTOR, (t) => t.replace('on:\n', "on:\n  schedule:\n    - cron: '0 5 * * *'\n")); mutate(r) })
+      ['sin ninguna fuente', (r: string) => { rmSync(path.join(r, FUENTE_WIF)); rmSync(path.join(r, FUENTE_ANTERIOR)) }],
+      ['con las dos fuentes, distintas de él', () => {}],
+    ])('el horario pegado a mano sobre el colector manual, %s → P11, P12 y P15 FALLO', (_n, mutate) => {
+      // Sin pasar por una fuente idéntica: el schedule no vale, y un colector automático así nunca deja P15 en OK.
+      const root = conColector('manual', (r) => { edit(r, COLECTOR, (t) => t.replace('on:\n', "on:\n  schedule:\n    - cron: '0 5 * * *'\n")); mutate(r) })
       const { status, por } = estados(root)
-      expect(por).toMatchObject({ P11: 'FALLO', P12: 'FALLO' })
+      expect(por).toMatchObject({ P11: 'FALLO', P12: 'FALLO', P15: 'FALLO' })
       expect(status).toBe(1)
       expect(motivo(root, 'P11')).toContain('manual-github-evidence.yml')
+      expect(motivo(root, 'P15')).toContain('se dispara de forma automática')
     })
 
-    it('el workflow activo, si ya tiene schedule, es idéntico a la fuente (candado sobre el repositorio real)', () => {
-      const real = readFileSync(path.join(ROOT, COLECTOR))
-      if (/^\s*schedule\s*:/m.test(real.toString('utf8'))) expect(real.equals(readFileSync(path.join(ROOT, FUENTE)))).toBe(true)
+    describe('ORD-POS-174 · P15 solo da OK sin clave JSON e idéntico a la fuente vigente (pruebas negativas)', () => {
+      const PASO_SYNC = '      - name: Sync verified evidence to Google Sheets (explicit opt-in)\n        env:\n'
+      const enLasDos = (fn: (t: string) => string) => (r: string) => { edit(r, COLECTOR, fn); edit(r, FUENTE_WIF, fn) }
+      it.each([
+        // Idéntico a la vigente, pero la propia fuente volvió a usar una clave u otro secreto: nunca OK.
+        ['la clave JSON de vuelta en el paso de sincronización', 'NO_VERIFICADO', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: \${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n`))],
+        ['la acción de autenticación con credentials_json', 'NO_VERIFICADO', enLasDos((t) => t.replace('          workload_identity_provider: ${{ vars.COLECTOR_WIF_PROVIDER }}\n', '          credentials_json: ${{ secrets.CLAVE }}\n'))],
+        ['un archivo de credenciales puesto a mano', 'NO_VERIFICADO', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          GOOGLE_APPLICATION_CREDENTIALS: clave.json\n`))],
+        ['otro secreto además del token de lectura de GitHub', 'NO_VERIFICADO', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          OTRO: \${{ secrets.OTRO }}\n`))],
+        ['un secreto con el nombre del token de lectura como prefijo', 'NO_VERIFICADO', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          OTRO: \${{ secrets.PROJECT_OS_GH_READ_TOKEN_2 }}\n`))],
+        ['todos los secretos con toJSON(secrets)', 'NO_VERIFICADO', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          TODO: \${{ toJSON(secrets) }}\n`))],
+        ['otro secreto escrito en mayúsculas (los contextos de GitHub no las distinguen)', 'NO_VERIFICADO', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          OTRO: \${{ SECRETS.OTRO }}\n`))],
+        ['sin la autenticación por WIF', 'NO_VERIFICADO', enLasDos((t) => t.replace(/      - name: Authenticate to Google Cloud[\s\S]*?(?=      - name: Sync verified)/, ''))],
+        // Sin clave, pero no idéntico a la vigente: nunca OK.
+        ['sin clave pero con un byte distinto', 'FALLO', (r: string) => edit(r, COLECTOR, (t) => `${t}\n`)],
+        ['sin clave pero con otra cuenta de servicio', 'FALLO', (r: string) => edit(r, COLECTOR, (t) => t.replaceAll('project-os-colector@', 'project-os-despliegue@'))],
+        ['sin clave pero con id-token: write en todo el workflow', 'FALLO', (r: string) => edit(r, COLECTOR, (t) => t.replace('permissions:\n  contents: read\n', 'permissions:\n  id-token: write\n  contents: read\n'))],
+        ['la fuente vigente ausente', 'FALLO', (r: string) => rmSync(path.join(r, FUENTE_WIF))],
+        ['la fuente vigente cambiada y el workflow no', 'FALLO', (r: string) => edit(r, FUENTE_WIF, (t) => `${t}# x\n`)],
+        // La anterior no cuenta como vigente, aunque se copie sobre ella.
+        ['la fuente anterior (con clave) copiada sobre la vigente y sobre el workflow', 'NO_VERIFICADO', (r: string) => { cpSync(path.join(r, FUENTE_ANTERIOR), path.join(r, FUENTE_WIF)); cpSync(path.join(r, FUENTE_ANTERIOR), path.join(r, COLECTOR)) }],
+        // Solo manual y sin acceso a Google, pero distinto de su fuente: no es la fuente revisada.
+        ['un colector solo manual y sin acceso a Google, distinto de su fuente', 'NO_VERIFICADO', (r: string) => writeFileSync(path.join(r, COLECTOR), 'on:\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
+      ])('%s → P15 %s, nunca OK', (_n, estado, mutate) => {
+        const { status, por } = estados(conColector('wif', mutate))
+        expect(por.P15).toBe(estado)
+        expect(status).toBe(estado === 'FALLO' ? 1 : 3)
+      })
+
+      it('la clave de vuelta en la fuente vigente se nombra en el motivo; el OK nunca se da por la sola identidad', () => {
+        const root = conColector('wif', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: \${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n`)))
+        expect(estados(root).por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
+        expect(motivo(root, 'P15')).toMatch(/no entra a Google solo por Workload Identity Federation/)
+      })
     })
   })
 
@@ -388,9 +455,12 @@ describe('preflight de CIERRE (Misión 014, D.1)', () => {
       const f = path.join(r, '.github/workflows/pr-validation.yml')
       writeFileSync(f, read(f).replace('      - name: Preserve', '      - env:\n          K: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n        run: python src/sync_sheets.py --dry-run\n      - name: Preserve'))
     }],
-    ['el colector manual sin la opción explícita (R3-1)', 'K4', (r: string) => {
+    ['el colector sin la condición de la opción (R3-1): deja de ser idéntico a su fuente', 'K4', (r: string) => {
+      // Vale con el workflow real idéntico a cualquiera de sus dos fuentes: la condición está en los pasos o en el job.
       const f = path.join(r, '.github/workflows/manual-github-evidence.yml')
-      writeFileSync(f, read(f).replaceAll('        if: ${{ inputs.sync_to_sheets }}\n', ''))
+      const sin = read(f).replace(/^ +if: \$\{\{ inputs\.sync_to_sheets \|\| github\.event_name == 'schedule' \}\}\n/gm, '')
+      expect(sin).not.toBe(read(f))
+      writeFileSync(f, sin)
     }],
   ])('%s → FALLO en %s y código 1', (_n, id, mutate) => {
     const { status, por } = ejecutar(repo(mutate))
