@@ -1,6 +1,9 @@
 name: PROJECT-OS — Manual GitHub evidence report
 
 on:
+  # 05:00 UTC = 23:00 en America/Merida (UTC-6, sin horario de verano). DEC-POS-044.
+  schedule:
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       report_date:
@@ -41,10 +44,10 @@ jobs:
           REPORT_DATE: ${{ inputs.report_date }}
         run: python src/collect_activity.py
       - name: Install Sheets auth dependency
-        if: ${{ inputs.sync_to_sheets }}
+        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
         run: pip install -r requirements-sync.txt
       - name: Sync verified evidence to Google Sheets (explicit opt-in)
-        if: ${{ inputs.sync_to_sheets }}
+        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
         env:
           PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}
           REPORT_DATE: ${{ inputs.report_date }}
