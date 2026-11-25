@@ -67,8 +67,9 @@ function conColector(estado: 'wif' | 'anterior' | 'manual', mutate?: (root: stri
 const preflight = (root: string, json = false) => node(PREFLIGHT, ['--root', root, ...(json ? ['--json'] : [])])
 const estados = (root: string) => {
   const r = preflight(root, true)
-  const out = JSON.parse(r.stdout) as { resultados: Array<{ id: string; estado: string }>; codigo: number }
-  return { status: r.status, por: Object.fromEntries(out.resultados.map((x) => [x.id, x.estado])), out }
+  const out = JSON.parse(r.stdout) as { resultados: Array<{ id: string; estado: string; motivo?: string }>; codigo: number }
+  const motivo = (id: string) => out.resultados.find((x) => x.id === id)?.motivo ?? ''
+  return { status: r.status, por: Object.fromEntries(out.resultados.map((x) => [x.id, x.estado])), motivo, out }
 }
 
 describe('preflight de aceptación offline', () => {
@@ -195,7 +196,6 @@ describe('preflight de aceptación offline', () => {
   })
 
   describe('ORD-POS-173 y ORD-POS-174 · P11, P12, P15 y las fuentes del colector (DEC-POS-044 y DEC-POS-045)', () => {
-    const motivo = (root: string, id: string) => (estados(root).out.resultados.find((r) => r.id === id) as { motivo?: string } | undefined)?.motivo ?? ''
     const mas = (evento: string) => (t: string) => t.replace('  workflow_dispatch:', `  ${evento}:\n  workflow_dispatch:`)
 
     it('candado sobre el repositorio real: el workflow activo es idéntico a la fuente vigente o, mientras el propietario no la copie, a la anterior', () => {
@@ -212,30 +212,28 @@ describe('preflight de aceptación offline', () => {
     })
 
     it('ORD-POS-174 · idéntico a la fuente vigente (WIF, sin clave): P11 y P12 pasan y P15 da OK', () => {
-      const root = conColector('wif')
-      const { status, por } = estados(root)
+      const { status, por, motivo } = estados(conColector('wif'))
       expect(por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'OK' })
       expect(Object.values(por)).not.toContain('FALLO')
       expect(status).toBe(3) // solo por P14 (sin git en la copia)
-      expect(motivo(root, 'P11')).toContain(`idéntico byte a byte a ${FUENTE_WIF}`)
-      expect(motivo(root, 'P15')).toContain(`idéntico byte a byte a ${FUENTE_WIF}`)
-      expect(motivo(root, 'P15')).toMatch(/Workload Identity Federation/)
-      expect(motivo(root, 'P15')).toMatch(/sin clave JSON/)
+      expect(motivo('P11')).toContain(`idéntico byte a byte a ${FUENTE_WIF}`)
+      expect(motivo('P15')).toContain(`idéntico byte a byte a ${FUENTE_WIF}`)
+      expect(motivo('P15')).toMatch(/Workload Identity Federation/)
+      expect(motivo('P15')).toMatch(/sin clave JSON/)
       // Offline no se sabe si el secreto ya se retiró: el OK no lo afirma.
-      expect(motivo(root, 'P15')).toMatch(/Offline no se ve si el secreto y la clave ya se retiraron/)
+      expect(motivo('P15')).toMatch(/Offline no se ve si el secreto y la clave ya se retiraron/)
     })
 
     it('transición · idéntico a la fuente anterior (clave JSON): P11 y P12 pasan y P15 sigue NO_VERIFICADO por X-8, nunca OK', () => {
-      const root = conColector('anterior')
-      const { status, por } = estados(root)
+      const { status, por, motivo } = estados(conColector('anterior'))
       expect(por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
       expect(Object.values(por)).not.toContain('FALLO')
       expect(status).toBe(3)
-      expect(motivo(root, 'P11')).toContain(`idéntico byte a byte a ${FUENTE_ANTERIOR}`)
-      expect(motivo(root, 'P15')).toMatch(/X-8/)
-      expect(motivo(root, 'P15')).toMatch(/Corre con horario/)
-      expect(motivo(root, 'P15')).toMatch(/clave JSON/)
-      expect(motivo(root, 'P15')).toContain(`pendiente de que el propietario copie ${FUENTE_WIF}`)
+      expect(motivo('P11')).toContain(`idéntico byte a byte a ${FUENTE_ANTERIOR}`)
+      expect(motivo('P15')).toMatch(/X-8/)
+      expect(motivo('P15')).toMatch(/Corre con horario/)
+      expect(motivo('P15')).toMatch(/clave JSON/)
+      expect(motivo('P15')).toContain(`pendiente de que el propietario copie ${FUENTE_WIF}`)
     })
 
     it('volver atrás no deja la CI en rojo: de la vigente a la anterior, P11 y P12 siguen OK y P15 vuelve a NO_VERIFICADO', () => {
@@ -257,9 +255,7 @@ describe('preflight de aceptación offline', () => {
         ['un byte cambiado (otro cron)', ['P11', 'P12', 'P15'], (r: string) => edit(r, COLECTOR, (t) => t.replace("'0 5 * * *'", "'0 6 * * *'"))],
         ['la fuente cambiada y el workflow no', ['P11', 'P12', 'P15'], (r: string) => edit(r, FUENTE, (t) => `${t}# x\n`)],
         ['la fuente ausente', ['P11', 'P12', 'P15'], (r: string) => rmSync(path.join(r, FUENTE))],
-        ['otro workflow con schedule', ['P11'], (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  schedule:\n    - cron: "0 5 * * *"\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
         ['una copia exacta de la fuente con otro nombre', ['P11', 'P12'], (r: string) => cpSync(path.join(r, FUENTE), path.join(r, '.github/workflows/colector-2.yml'))],
-        ['schedule añadido a la CI de PR', ['P11'], (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace(/^on:\n/m, "on:\n  schedule:\n    - cron: '0 5 * * *'\n"))],
       ])('%s → FALLO y código 1', (_n, ids, mutate) => {
         const { status, por } = estados(conColector(base, mutate))
         for (const id of ids) expect(por[id], id).toBe('FALLO')
@@ -268,16 +264,25 @@ describe('preflight de aceptación offline', () => {
     })
 
     it.each([
+      ['otro workflow con schedule', (r: string) => writeFileSync(path.join(r, '.github/workflows/otro.yml'), 'on:\n  schedule:\n    - cron: "0 5 * * *"\n  workflow_dispatch:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n')],
+      ['schedule añadido a la CI de PR', (r: string) => edit(r, '.github/workflows/pr-validation.yml', (t) => t.replace(/^on:\n/m, "on:\n  schedule:\n    - cron: '0 5 * * *'\n"))],
+    ])('%s, aunque el colector sea idéntico a su fuente → P11 FALLO y código 1', (_n, mutate) => {
+      const { status, por } = estados(conColector('wif', mutate))
+      expect(por.P11).toBe('FALLO')
+      expect(status).toBe(1)
+    })
+
+    it.each([
       ['sin ninguna fuente', (r: string) => { rmSync(path.join(r, FUENTE_WIF)); rmSync(path.join(r, FUENTE_ANTERIOR)) }],
       ['con las dos fuentes, distintas de él', () => {}],
     ])('el horario pegado a mano sobre el colector manual, %s → P11, P12 y P15 FALLO', (_n, mutate) => {
       // Sin pasar por una fuente idéntica: el schedule no vale, y un colector automático así nunca deja P15 en OK.
       const root = conColector('manual', (r) => { edit(r, COLECTOR, (t) => t.replace('on:\n', "on:\n  schedule:\n    - cron: '0 5 * * *'\n")); mutate(r) })
-      const { status, por } = estados(root)
+      const { status, por, motivo } = estados(root)
       expect(por).toMatchObject({ P11: 'FALLO', P12: 'FALLO', P15: 'FALLO' })
       expect(status).toBe(1)
-      expect(motivo(root, 'P11')).toContain('manual-github-evidence.yml')
-      expect(motivo(root, 'P15')).toContain('se dispara de forma automática')
+      expect(motivo('P11')).toContain('manual-github-evidence.yml')
+      expect(motivo('P15')).toContain('se dispara de forma automática')
     })
 
     describe('ORD-POS-174 · P15 solo da OK sin clave JSON e idéntico a la fuente vigente (pruebas negativas)', () => {
@@ -310,9 +315,9 @@ describe('preflight de aceptación offline', () => {
       })
 
       it('la clave de vuelta en la fuente vigente se nombra en el motivo; el OK nunca se da por la sola identidad', () => {
-        const root = conColector('wif', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: \${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n`)))
-        expect(estados(root).por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
-        expect(motivo(root, 'P15')).toMatch(/no entra a Google solo por Workload Identity Federation/)
+        const { por, motivo } = estados(conColector('wif', enLasDos((t) => t.replace(PASO_SYNC, `${PASO_SYNC}          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: \${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}\n`))))
+        expect(por).toMatchObject({ P11: 'OK', P12: 'OK', P15: 'NO_VERIFICADO' })
+        expect(motivo('P15')).toMatch(/no entra a Google solo por Workload Identity Federation/)
       })
     })
   })

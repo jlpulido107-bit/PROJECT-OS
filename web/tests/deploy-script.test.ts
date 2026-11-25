@@ -544,7 +544,9 @@ describe('deploy.sh', () => {
       expect(r.calls).not.toContain('replace')
     })
 
-    describe('--solo-imagen (ORD-POS-162)', () => {
+    // Margen de tiempo, no de contenido: varias pruebas de este bloque lanzan deploy.sh de 6 a 12 veces seguidas y en la
+    // CI rozan los 5 s por defecto de Vitest (una se pasó por 72 ms en el PR #388, ORD-POS-174). Comprueban lo mismo.
+    describe('--solo-imagen (ORD-POS-162)', { timeout: 30_000 }, () => {
       const solo = { ...min, IMAGE, DEPLOY_COMMIT_SHA: SHA_NUEVO }
       const args = ['--desde-activa', '--solo-imagen']
       const VALORES = [RENDER_ENV.SERVICE_URL, RENDER_ENV.OAUTH_CLIENT_ID, RENDER_ENV.RUNTIME_SA, RENDER_ENV.WRITE_SERVICE_ACCOUNT, 'e'.repeat(40), 'SECRETO-NO-IMPRIMIR',
