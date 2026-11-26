@@ -1,7 +1,10 @@
 """One-way, opt-in synchronization from verified GitHub report JSON to Sheets.
 
 This module NEVER changes task state. It only appends EVIDENCIAS and SYNC_RUNS.
-Credentials must be a service-account secret; no browser credentials are used.
+The writer is always a service account, chosen explicitly and never by fallback (credential_config):
+its JSON key, the current route while the key exists, or Application Default Credentials for an
+expected service account (Workload Identity Federation in GitHub Actions, ORD-POS-174).
+User (browser) credentials are rejected.
 """
 import argparse
 import datetime as dt
@@ -18,6 +21,8 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 ZONE = ZoneInfo("America/Merida")
 SHEETS_SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
+KEY_ENV = "PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON"
+SERVICE_ACCOUNT_EMAIL = re.compile(r"[a-z0-9-]+@[a-z0-9.-]+\.iam\.gserviceaccount\.com")
 EVIDENCE_HEADER = ["EVIDENCIA_ID", "TAREA_ID", "PROYECTO_ID", "TIPO", "FUENTE",
                    "REFERENCIA_URL", "REFERENCIA_EXTERNA_ID", "FECHA",
                    "VERIFICACION", "DESCRIPCION"]
@@ -123,18 +128,54 @@ def run_id(report, github_run_id):
     return f"GH-SYNC-{github_run_id}-{report['report_date']}"
 
 
+def credential_config(env):
+    """Explicit credential choice, same policy as web/src/lib/credentials.ts: no silent fallback.
+
+    Returns ("service-account-key", key_json), the current route while the key exists, or
+    ("adc", expected_service_account) when SHEETS_CREDENTIALS=adc. ADC is never chosen by
+    omission, and a key next to SHEETS_CREDENTIALS=adc is refused. Messages carry no credential
+    content and no email.
+    """
+    key = (env.get(KEY_ENV) or "").strip()
+    mode = (env.get("SHEETS_CREDENTIALS") or "").strip().lower()
+    if mode not in ("", "adc"):
+        raise ValueError('SHEETS_CREDENTIALS must be "adc" or unset')
+    if not mode:
+        if not key:
+            raise ValueError("Missing PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON GitHub secret")
+        return "service-account-key", key
+    if key:
+        raise ValueError("SHEETS_CREDENTIALS=adc does not accept " + KEY_ENV + "; remove the key")
+    expected = (env.get("SHEETS_EXPECTED_SERVICE_ACCOUNT") or "").strip().lower()
+    if not SERVICE_ACCOUNT_EMAIL.fullmatch(expected):
+        raise ValueError("SHEETS_CREDENTIALS=adc requires SHEETS_EXPECTED_SERVICE_ACCOUNT "
+                         "(a service-account email)")
+    return "adc", expected
+
+
 class SheetsClient:
-    def __init__(self, spreadsheet_id, credentials_json):
+    def __init__(self, spreadsheet_id, mode, value):
+        """mode and value come from credential_config(): the key JSON or the expected account."""
         try:
+            import google.auth
             from google.oauth2 import service_account
             from google.auth.transport.requests import Request as GoogleAuthRequest
         except ImportError as error:
             raise RuntimeError("Install google-auth[requests] dependency") from error
-        info = json.loads(credentials_json)
-        if info.get("type") != "service_account":
-            raise ValueError("Expected a Google service-account JSON")
-        self.credentials = service_account.Credentials.from_service_account_info(
-            info, scopes=SHEETS_SCOPE)
+        if mode == "adc":
+            # Without scopes, default() only reads the local credential configuration: the identity
+            # is checked before any token is requested.
+            credentials, _ = google.auth.default()
+            email = getattr(credentials, "service_account_email", None)
+            if not isinstance(email, str) or email.strip().lower() != value:
+                raise ValueError("ADC identity is not SHEETS_EXPECTED_SERVICE_ACCOUNT")
+            self.credentials = credentials.with_scopes(SHEETS_SCOPE)
+        else:
+            info = json.loads(value)
+            if info.get("type") != "service_account":
+                raise ValueError("Expected a Google service-account JSON")
+            self.credentials = service_account.Credentials.from_service_account_info(
+                info, scopes=SHEETS_SCOPE)
         self.credentials.refresh(GoogleAuthRequest())
         self.spreadsheet_id = spreadsheet_id
 
@@ -208,10 +249,11 @@ def main():
     spreadsheet_id = config.get("spreadsheet_id")
     if not spreadsheet_id:
         raise SystemExit("Missing spreadsheet ID in project config")
-    credentials = os.getenv("PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON")
-    if not credentials:
-        raise SystemExit("Missing PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON GitHub secret")
-    client = SheetsClient(spreadsheet_id, credentials)
+    try:
+        mode, value = credential_config(os.environ)
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
+    client = SheetsClient(spreadsheet_id, mode, value)
     result = synchronize(report, proposed, client, os.getenv("GITHUB_RUN_ID"),
                          dry_run=args.dry_run)
     print("Sheets sync result:", json.dumps(result, ensure_ascii=False))

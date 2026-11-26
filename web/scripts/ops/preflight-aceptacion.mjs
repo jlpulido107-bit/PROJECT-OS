@@ -17,10 +17,11 @@ import path from 'node:path'
 import { codigoDeSalida, DESPLEGADO, linea, PRODUCCION, RUTAS_DE_LA_IMAGEN } from './produccion-v1-6.mjs'
 
 /**
- * Workflow MANUAL del colector V1.1 (Python), anterior al dashboard: solo con la opción explícita `sync_to_sheets` añade
- * filas a la hoja con la clave de cuenta de servicio PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON. Es la única excepción
- * tolerada, y solo si se ejecuta exclusivamente a mano (workflow_dispatch) y cada paso con acceso a Google depende de esa
- * opción (o con el horario de FUENTE_COLECTOR, más abajo). P15 la declara como deuda de credenciales pendiente de decisión del propietario: nunca cuenta como OK.
+ * Workflow del colector V1.1 (Python), anterior al dashboard: añade filas a la hoja. Formas toleradas, y ninguna más:
+ * - idéntico byte a byte a su fuente revisada (FUENTE_COLECTOR o, en la transición, FUENTE_COLECTOR_ANTERIOR; más abajo);
+ * - o solo manual (workflow_dispatch) y con cada paso con acceso a Google condicionado a la opción explícita
+ *   `sync_to_sheets`: la forma de R3-1, con la clave PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON. Nunca cuenta como OK.
+ * P15 solo da OK si el colector es idéntico a FUENTE_COLECTOR y no usa ninguna clave (ORD-POS-174).
  * Un workflow AUTOMÁTICO (PR, push o cualquier otro evento) ejecuta código que puede venir de un PR: nunca recibe
  * credenciales de Google, otros secretos ni acceso a la API de Google. Si vuelve a tenerlos, P12 da FALLO (R3-1, PR #24).
  */
@@ -35,16 +36,33 @@ export const WORKFLOW_BOTON = 'desplegar-dashboard.yml'
 export const FUENTE_BOTON = 'web/deploy/github/desplegar-dashboard.yml'
 /**
  * Horario del colector (DEC-POS-044 y DEC-POS-045, ORD-POS-173): el único `schedule` tolerado. Solo vale en
- * WORKFLOW_COLECTOR_MANUAL, solo si es idéntico byte a byte a su fuente revisada y solo si sus eventos son exactamente
- * schedule y workflow_dispatch. Con cualquier diferencia, sin la fuente o en otro workflow, P11 y P12 dan FALLO como
- * antes. La deuda de la clave (X-8) no cambia: P15 sigue NO_VERIFICADO.
+ * WORKFLOW_COLECTOR_MANUAL, solo si es idéntico byte a byte a una fuente revisada y solo si sus eventos son exactamente
+ * schedule y workflow_dispatch. Con cualquier diferencia, sin la fuente o en otro workflow, P11 y P12 dan FALLO.
+ *
+ * Fuentes revisadas (ORD-POS-174):
+ * - FUENTE_COLECTOR, la vigente: entra a Google por Workload Identity Federation, sin clave. Con ella, P15 da OK.
+ * - FUENTE_COLECTOR_ANTERIOR, la de ORD-POS-173 (clave JSON), congelada. Es la transición: el workflow real sigue
+ *   siendo este hasta que el propietario copie la vigente, y a él se vuelve si la primera noche con WIF falla. Con
+ *   ella, P11 y P12 pasan igual, pero P15 sigue NO_VERIFICADO (X-8). Se retira, en otra orden, cuando ya no exista
+ *   el secreto.
  */
 export const FUENTE_COLECTOR = 'web/deploy/github/manual-github-evidence.yml'
+export const FUENTE_COLECTOR_ANTERIOR = 'web/deploy/github/manual-github-evidence.anterior.yml'
 const EVENTOS_COLECTOR_CON_HORARIO = ['schedule', 'workflow_dispatch']
 /** Acceso real a Google: credenciales, gcloud, la API de Google (Sheets incluida) o el sincronizador real. */
 const ACCESO_GOOGLE = /google-github-actions\/auth|\bgcloud\b|GOOGLE_APPLICATION_CREDENTIALS|PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|googleapis\.com|\bsync_sheets\b|secrets\.[A-Z0-9_]*(GOOGLE|GCP|SERVICE_ACCOUNT)[A-Z0-9_]*/
 /** Cualquier secreto del repositorio salvo el token efímero de GitHub: `secrets.X`, `secrets[…]`, `toJSON(secrets)`, `secrets: inherit`. */
 const SECRETO_DEL_REPOSITORIO = /\bsecrets\s*(?:\.(?!GITHUB_TOKEN\b)|\[|\)|\}|:\s*inherit\b)/
+/** Una clave de cuenta de servicio de Google en un workflow: el secreto del colector, la entrada de clave de la acción de autenticación o un archivo de credenciales puesto a mano. */
+const CLAVE_DE_GOOGLE = /PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON|credentials_json|GOOGLE_APPLICATION_CREDENTIALS/i
+/** El único secreto que el colector necesita sin clave de Google: su token de solo lectura de GitHub. */
+const SECRETO_DE_LECTURA_DE_GITHUB = /\bsecrets\.PROJECT_OS_GH_READ_TOKEN\b/g
+/**
+ * El colector entra a Google solo por Workload Identity Federation: sin clave, y la palabra `secrets` (en cualquier
+ * forma: los contextos de GitHub no distinguen mayúsculas) solo aparece para el token de lectura de GitHub.
+ */
+const soloWif = (texto) => !CLAVE_DE_GOOGLE.test(texto) && !/\bsecrets\b/i.test(texto.replace(SECRETO_DE_LECTURA_DE_GITHUB, ''))
+  && /google-github-actions\/auth@/.test(texto) && /^\s*workload_identity_provider\s*:/m.test(texto)
 /** Otras vías de un workflow automático hacia credenciales o hacia el colector (revisión final del PR #24). */
 const OTRAS_VIAS = [
   [/\bid-token\s*:\s*write\b/, 'identidad OIDC (id-token: write)'],
@@ -167,49 +185,62 @@ export function preflightAceptacion(ROOT) {
     else fallo(id, `no se encontró el control esperado en ${rel}`)
   }
 
-  // ---- Workflows: sin horarios, salvo el del colector idéntico a su fuente (P11); la CI automática sin credenciales (P12); el colector manual, solo con opción, y el botón idéntico a su fuente (P15) ----
+  // ---- Workflows: sin horarios, salvo el del colector idéntico a una fuente revisada (P11); la CI automática sin credenciales (P12); el colector sin clave e idéntico a su fuente, y el botón idéntico a la suya (P15) ----
   const wfDir = path.join(ROOT, '.github', 'workflows')
   if (!existsSync(wfDir)) {
     noVerificado('P11', 'sin .github/workflows')
   } else {
     const textos = readdirSync(wfDir).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, readFileSync(path.join(wfDir, f), 'utf8')])
-    const fuenteColector = path.join(ROOT, FUENTE_COLECTOR)
-    const colectorIdentico = existsSync(fuenteColector) && existsSync(path.join(wfDir, WORKFLOW_COLECTOR_MANUAL))
-      && readFileSync(path.join(wfDir, WORKFLOW_COLECTOR_MANUAL)).equals(readFileSync(fuenteColector))
+    const rutaColector = path.join(wfDir, WORKFLOW_COLECTOR_MANUAL)
+    const colectorIgualA = (fuente) => existsSync(path.join(ROOT, fuente)) && existsSync(rutaColector)
+      && readFileSync(rutaColector).equals(readFileSync(path.join(ROOT, fuente)))
+    // Fuente revisada a la que el colector es idéntico byte a byte: la vigente, la anterior (transición) o ninguna.
+    const fuenteDelColector = [FUENTE_COLECTOR, FUENTE_COLECTOR_ANTERIOR].find(colectorIgualA) ?? null
+    const formaAutorizada = `idéntico byte a byte a ${FUENTE_COLECTOR} o, en la transición, a ${FUENTE_COLECTOR_ANTERIOR}`
     const todosConHorario = textos.filter(([, t]) => /^\s*schedule\s*:/m.test(t)).map(([f]) => f)
-    const conHorario = todosConHorario.filter((f) => !(f === WORKFLOW_COLECTOR_MANUAL && colectorIdentico))
-    if (conHorario.length) fallo('P11', `workflows con schedule: ${conHorario.join(', ')} (solo se tolera ${WORKFLOW_COLECTOR_MANUAL} idéntico byte a byte a ${FUENTE_COLECTOR})`)
-    else if (todosConHorario.length) ok('P11', `el único schedule es el de ${WORKFLOW_COLECTOR_MANUAL}, idéntico byte a byte a ${FUENTE_COLECTOR} (DEC-POS-044 y DEC-POS-045)`)
+    const conHorario = todosConHorario.filter((f) => !(f === WORKFLOW_COLECTOR_MANUAL && fuenteDelColector !== null))
+    if (conHorario.length) fallo('P11', `workflows con schedule: ${conHorario.join(', ')} (solo se tolera ${WORKFLOW_COLECTOR_MANUAL} ${formaAutorizada})`)
+    else if (todosConHorario.length) ok('P11', `el único schedule es el de ${WORKFLOW_COLECTOR_MANUAL}, idéntico byte a byte a ${fuenteDelColector} (DEC-POS-044 y DEC-POS-045)`)
     else ok('P11', 'workflows sin schedule')
     const automaticos = [], manualesMal = []
-    let colectorManual = false, colectorConHorario = false
+    // Estado del colector para P15: 'wif' (idéntico a la vigente y sin clave), 'clave' (idéntico a una fuente, con clave),
+    // 'manual' (R3-1: solo a mano y con opción), 'distinto' (solo a mano, sin acceso a Google y distinto de su fuente) o null.
+    let colector = null
     for (const [f, t] of textos) {
       const fuenteBoton = path.join(ROOT, FUENTE_BOTON)
       const botonIdentico = f === WORKFLOW_BOTON && existsSync(fuenteBoton) && readFileSync(path.join(wfDir, f)).equals(readFileSync(fuenteBoton))
       if (f === WORKFLOW_BOTON && !botonIdentico) manualesMal.push(`${f}: no es idéntico byte a byte a ${FUENTE_BOTON}`)
       const eventos = eventosDe(t)
-      // Horario autorizado del colector: idéntico a la fuente y con exactamente schedule y workflow_dispatch. No es OK: deja la deuda en P15.
-      if (f === WORKFLOW_COLECTOR_MANUAL && colectorIdentico && eventos !== null && eventos.length === EVENTOS_COLECTOR_CON_HORARIO.length
+      // Colector autorizado: idéntico a una fuente revisada y con exactamente schedule y workflow_dispatch. Solo es OK sin clave y con la vigente.
+      if (f === WORKFLOW_COLECTOR_MANUAL && fuenteDelColector !== null && eventos !== null && eventos.length === EVENTOS_COLECTOR_CON_HORARIO.length
         && EVENTOS_COLECTOR_CON_HORARIO.every((e) => eventos.includes(e))) {
-        colectorManual = colectorConHorario = true
+        colector = fuenteDelColector === FUENTE_COLECTOR && soloWif(t) ? 'wif' : 'clave'
         continue
       }
       if (eventos === null || eventos.some((e) => e !== 'workflow_dispatch')) {
         const motivos = [ACCESO_GOOGLE.test(t) && 'credenciales o API de Google', SECRETO_DEL_REPOSITORIO.test(t) && 'secretos del repositorio',
           ...OTRAS_VIAS.filter(([re]) => re.test(t)).map(([, m]) => m)].filter(Boolean)
         if (motivos.length) automaticos.push(`${f} (${eventos ? eventos.join(', ') : 'eventos ilegibles'}: ${motivos.join(' y ')})`)
+        // Un colector automático fuera de la forma autorizada nunca deja P15 en OK.
+        if (f === WORKFLOW_COLECTOR_MANUAL) manualesMal.push(`${f}: se dispara de forma automática y no es ${formaAutorizada}, con eventos exactamente schedule y workflow_dispatch`)
       } else if (ACCESO_GOOGLE.test(t)) {
         if (f === WORKFLOW_BOTON) continue // idéntico a la fuente: autorizado; si difiere, ya quedó anotado arriba
         if (f !== WORKFLOW_COLECTOR_MANUAL) manualesMal.push(`${f}: credenciales de Google en un workflow manual distinto del colector`)
-        else if (!conOpcionExplicita(t)) manualesMal.push(`${f}: acceso a Google sin depender de la opción explícita ${OPCION_COLECTOR} (booleana, desactivada por defecto)`)
-        else colectorManual = true
+        else if (!conOpcionExplicita(t)) manualesMal.push(`${f}: no es idéntico a ${FUENTE_COLECTOR} y tiene acceso a Google sin que cada paso dependa de la opción explícita ${OPCION_COLECTOR} (booleana, desactivada por defecto)`)
+        else colector = 'manual'
+      } else if (f === WORKFLOW_COLECTOR_MANUAL) {
+        colector = 'distinto'
       }
     }
     if (automaticos.length) fallo('P12', `workflows automáticos con acceso a Google o a secretos (la CI de un PR nunca los recibe): ${automaticos.join('; ')}`)
     else ok('P12', 'ningún workflow automático (PR, push u otro evento) recibe credenciales de Google, secretos del repositorio ni la API de Google; la CI de los PR valida Sheets con una hoja en memoria')
+    const deuda = `deuda de credenciales del colector V1.1: ${WORKFLOW_COLECTOR_MANUAL} usa una clave JSON de cuenta de servicio de Google (Editor de la hoja según su guía; sin verificar)`
     if (manualesMal.length) fallo('P15', manualesMal.join('; '))
-    else if (colectorConHorario) noVerificado('P15', `deuda de credenciales del colector V1.1: ${WORKFLOW_COLECTOR_MANUAL} usa una clave JSON de cuenta de servicio de Google (Editor de la hoja según su guía; sin verificar). Corre con horario, idéntico a ${FUENTE_COLECTOR} (DEC-POS-044 y DEC-POS-045), y a mano con la opción ${OPCION_COLECTOR}: pendiente de decisión del propietario (X-8), no del dashboard`)
-    else if (colectorManual) noVerificado('P15', `deuda de credenciales del colector V1.1: ${WORKFLOW_COLECTOR_MANUAL} usa una clave JSON de cuenta de servicio de Google (Editor de la hoja según su guía; sin verificar). Solo se ejecuta a mano y con la opción ${OPCION_COLECTOR}: pendiente de decisión del propietario (X-8), no del dashboard`)
+    else if (colector === 'wif') ok('P15', `${WORKFLOW_COLECTOR_MANUAL} es idéntico byte a byte a ${FUENTE_COLECTOR} y entra a Google solo por Workload Identity Federation: sin clave JSON y sin más secreto que el token de lectura de GitHub (X-8). Offline no se ve si el secreto y la clave ya se retiraron: eso lo hace el propietario`)
+    else if (colector === 'clave' && fuenteDelColector === FUENTE_COLECTOR) noVerificado('P15', `${WORKFLOW_COLECTOR_MANUAL} es idéntico a ${FUENTE_COLECTOR}, pero esa fuente no entra a Google solo por Workload Identity Federation (usa una clave JSON u otro secreto, o le falta WIF): no cuenta como OK (X-8)`)
+    else if (colector === 'clave') noVerificado('P15', `${deuda}. Corre con horario, idéntico a ${fuenteDelColector} (DEC-POS-044 y DEC-POS-045), y a mano con la opción ${OPCION_COLECTOR}: pendiente de que el propietario copie ${FUENTE_COLECTOR} (Workload Identity Federation, sin clave) y retire la clave (X-8)`)
+    else if (colector === 'manual') noVerificado('P15', `${deuda}. Solo se ejecuta a mano y con la opción ${OPCION_COLECTOR}, y no es idéntico a ${FUENTE_COLECTOR}: pendiente de que el propietario copie esa fuente (Workload Identity Federation, sin clave) y retire la clave (X-8)`)
+    else if (colector === 'distinto') noVerificado('P15', `${WORKFLOW_COLECTOR_MANUAL} no es idéntico a ${FUENTE_COLECTOR}: solo se ejecuta a mano y no tiene acceso a Google, pero no es la fuente revisada`)
     else ok('P15', 'ningún workflow manual usa credenciales de Google fuera del botón de despliegue autorizado')
   }
 

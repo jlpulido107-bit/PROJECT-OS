@@ -16,7 +16,7 @@ decisiones: resume las vigentes y enlaza su fuente. Fecha: 2026-11-22. Si algo a
 | Tiempos | **DEC-POS-024 APROBADA** (2026-10-28). Lunes: propone `HORAS_ESTIMADAS`, `FECHA_PLAN` e `HITO_ID`, cierres probables con evidencia, vencidas por reprogramar y altas de tareas que falten, en un paquete sin ID a POS · Ideas, que le pone el `PAQ` (solo esos tres campos y altas de tareas, escritos por el PM con el «sí PAQ» verificado; nunca cierra ni cancela); media semana: lo mismo con los días que quedan; diario: plan del día de `/planificacion` y minutos reales de ayer; viernes: lo planeado contra `TIEMPOS`. Nunca escribe en Sheets ni cambia `ESTADO` o `BLOQUEO`; `CAPACIDAD_SEMANAL` e hitos son del propietario; sin rutina programada | Claude | DEC-POS-024 (APROBADA); ORD-POS-107, ORD-POS-111; [`planear-tiempo`](../.claude/skills/planear-tiempo/SKILL.md) |
 | Agente de finanzas | Por corte (días 15 y fin de mes): rendimiento de `reporte-consumo` y, con el total de factura que da el propietario, el cargo extra o el cierre «sin cargo», solo por `POST /api/finanzas/agente/…` con su token. Nunca estima, edita, borra ni registra la suscripción; inerte hasta que el propietario lo active ([/finanzas v3 §8.2](diseno-finanzas-v3.md#82-activación-solo-el-propietario-tras-aprobar-dec-pos-018-fusionar-y-desplegar-f-3)) | Claude | DEC-POS-018 (PENDIENTE); ORD-POS-092; [diseño v3](diseno-finanzas-v3.md) |
 | Director de Marketing | **DEC-POS-037 APROBADA** (2026-11-19). Marca, identidad visual, diseño, contenido, posicionamiento y estrategia en redes; hoy MESALENTA (ECO) y el video de la botillería. Puerta directa: el propietario habla con él en la sesión «POS · Marketing» (etiqueta `rol:marketing`); lo que se vuelva tarea, decisión u orden lo pasa sin ID a POS · Ideas, que arma el paquete con «sí PAQ». Prepara prompts para Gemini o Antigravity (imágenes, investigación, borradores), que corre el propietario o Antigravity; el resultado va a Drive «Marketing > Para revisar» y lo generado es boceto. Nunca escribe en hojas ni en repositorios de código, publica en redes o en Amazon, gasta, firma con proveedores, usa marcas de terceros como propias ni afirma que una marca está registrada sin verificarlo; la información de clientes externos no entra al repositorio | Claude | DEC-POS-037 (APROBADA); ORD-POS-164; [`director-marketing`](../.claude/skills/director-marketing/SKILL.md) |
-| Colector | Workflow `manual-github-evidence.yml`: lee la actividad de GitHub del día de Mérida y, con `sync_to_sheets`, añade filas a `EVIDENCIAS` y `SYNC_RUNS`; solo lee, no cierra tareas ni decide. Hoy **solo manual**. **Horario** propuesto: diario a las 23:00 de Mérida (`cron: '0 5 * * *'`, 05:00 UTC), **DEC-POS-044 PENDIENTE**; no corre hasta que el propietario apruebe la decisión y pegue el texto. **Apagarlo:** *Actions → el workflow → ⋯ → Disable workflow*, o quitar el bloque `schedule`. **Si falla:** el log del run, los dos secretos, que la hoja siga compartida con la cuenta de servicio, y repetir a mano con la fecha. Detalle en [Horario del colector](#horario-del-colector-ord-pos-172-dec-pos-044-pendiente) | — (GitHub Actions, Python) | DEC-POS-044 (PENDIENTE); ORD-POS-172; [`sheets-sync-setup.md`](sheets-sync-setup.md) |
+| Colector | Workflow `manual-github-evidence.yml`: lee la actividad de GitHub del día de Mérida y, con `sync_to_sheets`, añade filas a `EVIDENCIAS` y `SYNC_RUNS`; solo lee, no cierra tareas ni decide. Hoy **solo manual**. **Horario** propuesto: diario a las 23:00 de Mérida (`cron: '0 5 * * *'`, 05:00 UTC), **DEC-POS-044 PENDIENTE**; no corre hasta que el propietario apruebe la decisión y pegue el texto. **Apagarlo:** *Actions → el workflow → ⋯ → Disable workflow*, o quitar el bloque `schedule`. **Si falla:** el log del run, los dos secretos, que la hoja siga compartida con la cuenta de servicio, y repetir a mano con la fecha. Detalle en [Horario del colector](#horario-del-colector-ord-pos-172-dec-pos-044-pendiente). **Credenciales** (ORD-POS-174): escribe con la clave JSON de una cuenta de servicio hasta que el propietario copie la fuente con Workload Identity Federation; desde entonces, sin clave, como la cuenta propia `project-os-colector`, solo Editor de la hoja ([guía](colector-wif.md)) | — (GitHub Actions, Python) | DEC-POS-044 (PENDIENTE); ORD-POS-172; ORD-POS-174; [`sheets-sync-setup.md`](sheets-sync-setup.md); [`colector-wif.md`](colector-wif.md) |
 
 Cada función corre en una sesión separada; el revisor nunca es la sesión que implementó y usa otro modelo (DEC-POS-002,
 [`AGENTS.md`](../AGENTS.md)). Sin auditor externo: ChatGPT ya no participa (DEC-POS-008).
@@ -138,41 +138,45 @@ ORD-POS-172):
 cuenta: el colector con `dt.datetime.now(ZoneInfo("America/Merida"))` (`src/collect_activity.py`) y la sincronización
 con `TZ=America/Merida date +%F` (el propio workflow).
 
-**Paso exacto del propietario (ORD-POS-173, DEC-POS-044 y DEC-POS-045).** El archivo completo, ya con los tres
-cambios, es la fuente revisada [`web/deploy/github/manual-github-evidence.yml`](../web/deploy/github/manual-github-evidence.yml).
-En un PR tuyo (ningún agente edita `.github/workflows`), desde `main` al día:
+**Fuentes revisadas (ORD-POS-173 y ORD-POS-174, DEC-POS-044 y DEC-POS-045).** El workflow real nunca es un texto
+retocado a mano: es la copia exacta de una fuente revisada, que el propietario pone en un PR suyo (ningún agente edita
+`.github/workflows`). Hay dos:
 
-```bash
-git switch -c propietario/horario-colector
-cp web/deploy/github/manual-github-evidence.yml .github/workflows/manual-github-evidence.yml
-cmp web/deploy/github/manual-github-evidence.yml .github/workflows/manual-github-evidence.yml && echo IDENTICOS
-git add .github/workflows/manual-github-evidence.yml
-git commit -m "Colector: horario diario (DEC-POS-044, DEC-POS-045)"
-git push -u origin propietario/horario-colector
-```
+- [`web/deploy/github/manual-github-evidence.anterior.yml`](../web/deploy/github/manual-github-evidence.anterior.yml):
+  el archivo de `main` con los tres cambios de arriba y la clave JSON. Es, byte a byte, el que el propietario fusionó
+  en el [PR #384](https://github.com/jlpulido107-bit/PROJECT-OS/pull/384). Queda congelado: sirve para la transición y
+  para volver atrás.
+- [`web/deploy/github/manual-github-evidence.yml`](../web/deploy/github/manual-github-evidence.yml): la fuente vigente
+  (ORD-POS-174). Mismo horario, pero entra a Google con Workload Identity Federation, sin clave. Cómo copiarla,
+  probarla, retirar el secreto y volver atrás: [guía](colector-wif.md).
 
-Copia el archivo entero, sin retocarlo: el preflight de aceptación (`web/scripts/ops/preflight-aceptacion.mjs`, que
-`npm test` corre sobre el repositorio real) solo tolera ese `schedule` si la copia es **idéntica byte a byte** a la
-fuente. `P11` admite `schedule` únicamente en `manual-github-evidence.yml` y únicamente así; `P12` lo excluye solo en
-ese caso y solo si sus eventos son exactamente `schedule` y `workflow_dispatch`. Un byte distinto, la fuente ausente,
-`push` o `pull_request` en el colector, u otro workflow con `schedule` dan FALLO y la validación de los PR queda en
-rojo. `P15` sigue NO VERIFICADO por la deuda de la clave (X-8). Para cambiar el horario se cambia primero la fuente,
-con su orden y su revisión, y después se vuelve a copiar.
+El preflight de aceptación (`web/scripts/ops/preflight-aceptacion.mjs`, que `npm test` corre sobre el repositorio real)
+solo tolera ese `schedule` si la copia es **idéntica byte a byte** a una de las dos. `P11` admite `schedule` únicamente
+en `manual-github-evidence.yml` y únicamente así; `P12` lo excluye solo en ese caso y solo si sus eventos son
+exactamente `schedule` y `workflow_dispatch`. Un byte distinto, las fuentes ausentes, `push` o `pull_request` en el
+colector, u otro workflow con `schedule` dan FALLO y la validación de los PR queda en rojo. `P15` sigue NO VERIFICADO
+mientras el workflow sea el de la clave (X-8) y solo pasa a OK cuando es idéntico a la fuente vigente y no usa ninguna
+clave. Para cambiar el horario se cambia primero la fuente vigente, con su orden y su revisión, y después se vuelve a
+copiar.
 
 **Límites conocidos.**
 
 - A las 23:00 el informe del día no incluye lo que pase entre las 23:00 y las 23:59 de Mérida, y ninguna corrida
   posterior lo recoge sola. Se recupera corriendo el workflow a mano con esa fecha: la sincronización no duplica filas.
 - Si GitHub retrasa la corrida más de una hora, cae en el día siguiente de Mérida y el día anterior queda sin informe.
-  Si la medianoche cae entre los dos pasos, la sincronización busca un informe que no existe y falla sin escribir.
+  Si la medianoche cae entre los dos pasos, la sincronización busca un informe que no existe y falla sin escribir. Esto
+  último solo pasa con el workflow de la clave: con la fuente de WIF, `sync` toma el informe que dejó `report`.
 - GitHub desactiva solo los `schedule` de un repositorio público tras 60 días sin actividad.
 - Sigue usando la clave JSON de la cuenta de servicio, ahora sin una persona delante: la deuda `P15` (X-8) pesa más.
+  Se cierra cuando el propietario copie la fuente con WIF y retire la clave ([guía](colector-wif.md)).
 
 **Cómo apagarlo** (solo el propietario).
 
 - Rápido, sin PR: *Actions → PROJECT-OS — Manual GitHub evidence report → ⋯ → Disable workflow*. Apaga también la
   ejecución manual hasta pulsar *Enable workflow*.
-- Definitivo: un PR que quite el bloque `schedule` y devuelva las dos condiciones a `if: ${{ inputs.sync_to_sheets }}`.
+- Definitivo, con el workflow de la clave: un PR que quite el bloque `schedule` y devuelva las dos condiciones a
+  `if: ${{ inputs.sync_to_sheets }}`. Con el de WIF no se retoca a mano: deja de ser idéntico a su fuente y `P15` da
+  FALLO. Se usa *Disable workflow* y, si hace falta, se cambia la fuente con una orden y se vuelve a copiar.
 
 **Qué revisar si falla** (*Actions →* la corrida en rojo):
 
@@ -181,7 +185,9 @@ con su orden y su revisión, y después se vuelve a copiar.
 2. *Sync verified evidence*: «Missing Google service-account secret» es el secreto
    `PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON`; un 403 es que la hoja ya no está compartida con la cuenta de servicio; un
    informe con errores de recopilación o encabezados cambiados en `EVIDENCIAS` o `SYNC_RUNS` se rechaza sin escribir
-   ([garantías](sheets-sync-setup.md#garantías-y-límites)).
+   ([garantías](sheets-sync-setup.md#garantías-y-límites)). Con el workflow de WIF, lo que cambia está en su
+   [guía](colector-wif.md#si-falla): la variable `COLECTOR_WIF_PROVIDER`, el binding y la hoja compartida con la cuenta
+   del colector.
 3. En la hoja, la última fila de `SYNC_RUNS`: fecha y conteos de la última corrida buena.
 4. Recuperar el día: correr el workflow a mano con `report_date` y `sync_to_sheets` activado. No repite evidencias.
 5. Si no hubo corrida: el workflow está en *Disabled*, o GitHub la retrasó o la omitió.
