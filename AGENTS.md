@@ -100,16 +100,16 @@ Un dictamen favorable no autoriza fusión, despliegue ni cierre.
   [PR #367](https://github.com/jlpulido107-bit/PROJECT-OS/pull/367)): el PM registra el modelo real de las sesiones
   de implementación y de revisión con una operación auditada de solo alta, apagada con una bandera. Hasta que el
   propietario la encienda, no existe.
-- **DEC-POS-041 APROBADA** (POS · Ideas, 2026-11-25): su texto vive solo en DECISIONES; este repositorio no lo recoge y ningún agente lo supone.
-- **DEC-POS-042 APROBADA** (POS · Ideas, 2026-11-25): igual que la 041, su texto vive solo en DECISIONES y ningún agente lo supone.
-- **DEC-POS-043 APROBADA**, enmendada por **DEC-POS-046** (POS · Ideas, 2026-11-25): la migración queda en el congelador, con disparadores; cuál migración y qué disparadores constan solo en DECISIONES.
-- **DEC-POS-044 APROBADA**: el colector corre solo cada día a las 05:00 UTC (23:00 de Mérida), con el `schedule` que el propietario puso en `manual-github-evidence.yml` ([PR #384](https://github.com/jlpulido107-bit/PROJECT-OS/pull/384)); cómo apagarlo y qué revisar si falla, en [operación](docs/operacion.md).
-- **DEC-POS-045 APROBADA**: el preflight (P11 y P12) tolera solo ese `schedule`, y solo si el workflow es idéntico byte a byte a su fuente, `web/deploy/github/manual-github-evidence.yml`; el horario se cambia primero en la fuente, con su orden, y la copia la hace el propietario ([PR #383](https://github.com/jlpulido107-bit/PROJECT-OS/pull/383)).
+- **DEC-POS-041 APROBADA** (DECISIONES fila 86, 2026-11-23; resumen del PM, que la leyó el 2026-11-26): Antigravity, en «taller», lee solo una cuenta de Gmail dedicada a cotizaciones.
+- **DEC-POS-042 APROBADA** (DECISIONES fila 87, 2026-11-23; resumen del PM, que la leyó el 2026-11-26): Antigravity, en «taller», asume el trabajo de los Gems; amplía la 041.
+- **DEC-POS-043 APROBADA** (DECISIONES fila 88, 2026-11-23), enmendada por **DEC-POS-046** (fila 91, 2026-11-25; resumen del PM, que las leyó el 2026-11-26): la persistencia en Cloud SQL, por rebanadas y empezando por AUDITORIA, queda en el congelador, solo con disparador.
+- **DEC-POS-044 APROBADA** (DECISIONES fila 89, 2026-11-23; leída por el PM el 2026-11-26): el colector corre solo cada día, con el `schedule` que el propietario puso en `manual-github-evidence.yml` ([PR #384](https://github.com/jlpulido107-bit/PROJECT-OS/pull/384)); la hora y cómo va, en [estado actual](docs/estado-actual.md); cómo apagarlo y qué revisar si falla, en [operación](docs/operacion.md).
+- **DEC-POS-045 APROBADA** (DECISIONES fila 90, 2026-11-24; leída por el PM el 2026-11-26): el preflight (P11 y P12) tolera solo ese `schedule`, y solo si el workflow es idéntico byte a byte a una fuente revisada de `web/deploy/github/`; el horario se cambia primero en la fuente, con su orden, y la copia la hace el propietario ([PR #383](https://github.com/jlpulido107-bit/PROJECT-OS/pull/383), [PR #388](https://github.com/jlpulido107-bit/PROJECT-OS/pull/388)).
 - No registrar secretos, tokens, datos clínicos ni datos personales.
 - Los cambios de esquema requieren migración explícita, no cambios silenciosos.
 - Reglas de estados, auditoría, concurrencia, IDs estables e idempotencia son obligatorias.
 - Validar tests y diff antes de pedir revisión.
-- No habilitar `schedule` hasta que el usuario apruebe una prueba real.
+- No habilitar `schedule` hasta que el usuario apruebe una prueba real; el único que existe es el del colector, que puso el propietario (DEC-POS-044 y DEC-POS-045).
 - El colector solo lee; no cierra tareas ni toma decisiones de negocio.
 
 ## Implementación y supervisión
