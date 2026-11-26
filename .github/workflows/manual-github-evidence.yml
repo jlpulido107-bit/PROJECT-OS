@@ -1,5 +1,11 @@
 name: PROJECT-OS — Manual GitHub evidence report
 
+# Colector de evidencias con Workload Identity Federation (ORD-POS-174). Esta es la FUENTE revisada: lo que corre es
+# la copia de .github/workflows/, que pone el propietario (guía: docs/colector-wif.md). Ningún agente la copia ni la dispara.
+# - «report» lee GitHub con su token de solo lectura. No tiene identidad de Google.
+# - «sync» es el único job con id-token: write. Entra a Google sin claves ni secretos, como la cuenta propia del
+#   colector (solo Editor de la hoja maestra; no es la del despliegue), y añade filas a EVIDENCIAS y SYNC_RUNS.
+#   Solo corre con el horario o, a mano, con la opción sync_to_sheets, y sincroniza el informe que dejó «report».
 on:
   # 05:00 UTC = 23:00 en America/Merida (UTC-6, sin horario de verano). DEC-POS-044.
   schedule:
@@ -43,24 +49,6 @@ jobs:
           GH_READ_TOKEN: ${{ secrets.PROJECT_OS_GH_READ_TOKEN }}
           REPORT_DATE: ${{ inputs.report_date }}
         run: python src/collect_activity.py
-      - name: Install Sheets auth dependency
-        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
-        run: pip install -r requirements-sync.txt
-      - name: Sync verified evidence to Google Sheets (explicit opt-in)
-        if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
-        env:
-          PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON }}
-          REPORT_DATE: ${{ inputs.report_date }}
-        shell: bash
-        run: |
-          if [ -z "$PROJECT_OS_GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
-            echo "::error::Missing Google service-account secret; no sync attempted"
-            exit 1
-          fi
-          if [ -z "$REPORT_DATE" ]; then
-            REPORT_DATE=$(TZ=America/Merida date +%F)
-          fi
-          python src/sync_sheets.py --report "reports/${REPORT_DATE:0:7}/${REPORT_DATE}.json"
       - name: Upload report as build artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,3 +57,56 @@ jobs:
           path: reports/
           if-no-files-found: warn
           retention-days: 30
+          # «sync» descarga este artefacto: al repetir la corrida completa se reemplaza en vez de fallar por nombre repetido.
+          overwrite: true
+
+  sync:
+    needs: report
+    if: ${{ inputs.sync_to_sheets || github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check the collector identity provider variable
+        env:
+          PROVIDER: ${{ vars.COLECTOR_WIF_PROVIDER }}
+        run: |
+          if [ -z "$PROVIDER" ]; then
+            echo "::error::Missing repository variable COLECTOR_WIF_PROVIDER; no sync attempted (docs/colector-wif.md)"
+            exit 1
+          fi
+      - name: Checkout project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install Sheets auth dependency
+        run: pip install -r requirements-sync.txt
+      - name: Download the report collected by the report job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: github-evidence-${{ github.run_id }}
+          path: reports/
+      - name: Authenticate to Google Cloud (Workload Identity Federation, no keys)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.COLECTOR_WIF_PROVIDER }}
+          service_account: project-os-colector@project-os-511102.iam.gserviceaccount.com
+      - name: Sync verified evidence to Google Sheets (explicit opt-in)
+        env:
+          SHEETS_CREDENTIALS: adc
+          SHEETS_EXPECTED_SERVICE_ACCOUNT: project-os-colector@project-os-511102.iam.gserviceaccount.com
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=(reports/*/*.json)
+          if [ "${#reports[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one report from the report job; found ${#reports[@]}. No sync attempted"
+            exit 1
+          fi
+          python src/sync_sheets.py --report "${reports[0]}"
