@@ -5,6 +5,9 @@ Decisión del propietario (2026-10-20, chat del PM): las ideas se registran en O
 usa como contexto leyendo solo un índice corto por proyecto, para ahorrar tokens. Plantilla:
 [`plantilla-notas/`](plantilla-notas/README.md).
 
+La copia en Drive la sube el workflow `sync-to-drive.yml` de NOTAS; su fuente revisada y los pasos para pasarlo al
+permiso mínimo (`drive.file`, ORD-POS-177) están en [`notas-drive.md`](notas-drive.md).
+
 La operativa sigue en la hoja y la memoria duradera de cada repositorio en `docs/brief-proyecto.md`: una idea en NOTAS
 no es una tarea ni una decisión. Desde NOTAS#4, además de ideas guarda decisiones en borrador, hallazgos, revisiones
 semanales y referencia, cada tipo en su subcarpeta y con su plantilla.

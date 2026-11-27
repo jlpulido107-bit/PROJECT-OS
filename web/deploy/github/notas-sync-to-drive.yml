@@ -1,0 +1,80 @@
+name: NOTAS — Sync to Drive
+
+# Sincronización de NOTAS a Drive con el permiso mínimo (ORD-POS-177). Esta es la FUENTE revisada: vive en PROJECT-OS y
+# lo que corre es la copia que el propietario pone en .github/workflows/sync-to-drive.yml de NOTAS, en un PR suyo
+# (guía: docs/notas-drive.md en PROJECT-OS). Ningún agente la copia ni la dispara.
+# - Sin WIF: una cuenta de servicio no tiene cuota de Drive ni puede ser dueña de archivos, y un Drive personal no
+#   tiene unidades compartidas. Por eso sigue habiendo un token de OAuth, pero con el alcance «drive.file»: solo ve y
+#   toca lo que creó esta misma app (la carpeta de las notas), no el resto del Drive.
+# - Solo se sube lo que está en git, sin «privado/» ni «.obsidian/workspace*»; rclone los excluye otra vez.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: notas-sync-to-drive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the Drive folder and OAuth client variables
+        env:
+          CARPETA: ${{ vars.NOTAS_DRIVE_FOLDER_ID }}
+          CLIENTE: ${{ vars.NOTAS_DRIVE_CLIENT_ID }}
+        run: |
+          if [ -z "$CARPETA" ] || [ -z "$CLIENTE" ]; then
+            echo "::error::Missing repository variable NOTAS_DRIVE_FOLDER_ID or NOTAS_DRIVE_CLIENT_ID; no sync attempted"
+            exit 1
+          fi
+      - name: Checkout notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Stage only tracked notes (never privado/ or .obsidian/workspace*)
+        env:
+          ORIGEN: ${{ runner.temp }}/notas-a-drive
+        shell: bash
+        run: |
+          rm -rf "$ORIGEN" "$ORIGEN.lista"
+          mkdir -p "$ORIGEN"
+          # Solo lo que está en git; fuera cualquier carpeta «privado» y el estado local de Obsidian, a cualquier nivel.
+          git ls-files -z | { grep -zvE '(^|/)privado(/|$)|(^|/)\.obsidian/workspace' || true; } > "$ORIGEN.lista"
+          if [ ! -s "$ORIGEN.lista" ]; then
+            echo "::error::No tracked notes to upload; no sync attempted"
+            exit 1
+          fi
+          tar --null --no-recursion -T "$ORIGEN.lista" -cf - | tar -xf - -C "$ORIGEN"
+          rm -f "$ORIGEN.lista"
+          # Segunda comprobación, sobre lo que de verdad quedó por subir.
+          prohibido="$(find "$ORIGEN" \( -name privado -o -path '*/.obsidian/workspace*' \) -print -quit)"
+          if [ -n "$prohibido" ]; then
+            echo "::error::privado/ or .obsidian/workspace* reached the upload folder; no sync attempted"
+            exit 1
+          fi
+      - name: Install rclone
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+      - name: Sync notes to the Drive folder (drive.file scope only)
+        env:
+          ORIGEN: ${{ runner.temp }}/notas-a-drive
+          RCLONE_CONFIG_NOTAS_TYPE: drive
+          RCLONE_CONFIG_NOTAS_SCOPE: drive.file
+          RCLONE_CONFIG_NOTAS_ROOT_FOLDER_ID: ${{ vars.NOTAS_DRIVE_FOLDER_ID }}
+          RCLONE_CONFIG_NOTAS_CLIENT_ID: ${{ vars.NOTAS_DRIVE_CLIENT_ID }}
+          RCLONE_CONFIG_NOTAS_CLIENT_SECRET: ${{ secrets.NOTAS_DRIVE_CLIENT_SECRET }}
+          RCLONE_CONFIG_NOTAS_TOKEN: ${{ secrets.NOTAS_DRIVE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$RCLONE_CONFIG_NOTAS_CLIENT_SECRET" ] || [ -z "$RCLONE_CONFIG_NOTAS_TOKEN" ]; then
+            echo "::error::Missing secret NOTAS_DRIVE_CLIENT_SECRET or NOTAS_DRIVE_TOKEN; no sync attempted"
+            exit 1
+          fi
+          rclone sync "$ORIGEN" notas: \
+            --exclude 'privado/**' --exclude '.obsidian/workspace*' \
+            --max-delete 50 --stats-one-line -v
