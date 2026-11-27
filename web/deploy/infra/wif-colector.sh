@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Workload Identity Federation para el colector de evidencias (ORD-POS-174). Guía: docs/colector-wif.md.
+# Workload Identity Federation para el colector de evidencias (ORD-POS-174 y ORD-POS-176). Guía: docs/colector-wif.md.
 # Solo lo ejecuta el propietario, en Cloud Shell; ningún agente usa --apply.
 #   web/deploy/infra/wif-colector.sh           SIMULA (predeterminado): imprime los comandos y NO llama a gcloud.
 #   web/deploy/infra/wif-colector.sh --apply   Lee el número del proyecto, pide escribir «AUTORIZO WIF COLECTOR» y aplica.
+#   … --quitar-subject                         Opcional, con o sin --apply: además quita, si existe, el binding por
+#                                              subject que creaba ORD-POS-174 y que no sirvió. Solo ese.
 # Crea, si no existen, el pool «github-colector» (propio: no comparte identidades con el pool «github» del despliegue),
 # su proveedor OIDC «github-actions» (solo el repositorio de PROJECT-OS, la rama main y el workflow
 # manual-github-evidence.yml) y la cuenta del colector. A esa cuenta NO le da ningún rol: ni en el proyecto ni en ningún
 # recurso. Solo permite que la identidad de GitHub la use (roles/iam.workloadIdentityUser sobre la propia cuenta). Lo
 # único que podrá hacer es lo que el propietario le dé al compartirle la hoja maestra como Editor.
+# El permiso va por repositorio (principalSet por attribute.repository), no por subject: el subject escrito a mano no
+# coincidió con el del token (403 del 26 y el 27-nov-2026; causa en docs/colector-wif.md). Quién entra al pool lo sigue
+# limitando la condición del proveedor: este repositorio, main y el workflow del colector.
 # Sin claves: nunca crea ni descarga una clave de cuenta de servicio.
 # Al final imprime la VARIABLE (no secret) del repositorio, COLECTOR_WIF_PROVIDER, y la cuenta con la que se comparte la hoja.
 set -euo pipefail
@@ -24,10 +29,13 @@ readonly MAPEO='google.subject=assertion.sub,attribute.repository=assertion.repo
 readonly ACK='AUTORIZO WIF COLECTOR'
 
 APPLY=0
-case "$#:${1:-}" in
-  0:) ;;
-  1:--apply) APPLY=1 ;;
-  *) echo "Uso: wif-colector.sh [--apply]" >&2; exit 2 ;;
+QUITAR_SUBJECT=0
+case "$#:${1:-}:${2:-}" in
+  0::) ;;
+  1:--apply:) APPLY=1 ;;
+  1:--quitar-subject:) QUITAR_SUBJECT=1 ;;
+  2:--apply:--quitar-subject) APPLY=1; QUITAR_SUBJECT=1 ;;
+  *) echo "Uso: wif-colector.sh [--apply] [--quitar-subject]" >&2; exit 2 ;;
 esac
 
 # En la simulación el número del proyecto no se consulta: queda la variable de shell, que --apply llena.
@@ -40,8 +48,10 @@ if [ "$APPLY" -eq 1 ]; then
   fi
 fi
 POOL_RUTA="projects/${NUMERO_PROYECTO}/locations/global/workloadIdentityPools/${POOL}"
-# Sin environment, el sujeto del token de GitHub es el repositorio y la rama: schedule y workflow_dispatch desde main.
-MIEMBRO_WIF="principal://iam.googleapis.com/${POOL_RUTA}/subject/repo:${REPO_GITHUB}:ref:refs/heads/main"
+# Todas las identidades del pool cuyo atributo «repository» es este repositorio; nunca otro ni el pool entero («/*»).
+MIEMBRO_WIF="principalSet://iam.googleapis.com/${POOL_RUTA}/attribute.repository/${REPO_GITHUB}"
+# El binding de ORD-POS-174, por subject exacto: ya no se crea; --quitar-subject lo retira.
+MIEMBRO_SUBJECT="principal://iam.googleapis.com/${POOL_RUTA}/subject/repo:${REPO_GITHUB}:ref:refs/heads/main"
 
 paso() { # comando: lo imprime (simulación) o lo ejecuta (--apply)
   if [ "$APPLY" -eq 1 ]; then
@@ -95,6 +105,25 @@ crear_si_falta "la cuenta $CUENTA" gcloud iam service-accounts create "$CUENTA_N
 # El único permiso que se concede: que la identidad de GitHub use la cuenta del colector.
 paso gcloud iam service-accounts add-iam-policy-binding "$CUENTA" --project "$PROJECT_ID" \
   --role roles/iam.workloadIdentityUser --member "$MIEMBRO_WIF"
+
+# Opcional: quitar el binding por subject. Idempotente: solo llama a «remove» si ese miembro exacto está en la política.
+if [ "$QUITAR_SUBJECT" -eq 1 ]; then
+  QUITAR=(gcloud iam service-accounts remove-iam-policy-binding "$CUENTA" --project "$PROJECT_ID"
+    --role roles/iam.workloadIdentityUser --member "$MIEMBRO_SUBJECT")
+  if [ "$APPLY" -eq 0 ]; then
+    echo "# Si existe el binding por subject (el de ORD-POS-174):"
+    paso "${QUITAR[@]}"
+  else
+    MIEMBROS="$(gcloud iam service-accounts get-iam-policy "$CUENTA" --project "$PROJECT_ID" \
+      --flatten 'bindings[].members' --filter 'bindings.role:roles/iam.workloadIdentityUser' --format 'value(bindings.members)')"
+    if grep -Fxq -- "$MIEMBRO_SUBJECT" <<< "$MIEMBROS"; then
+      "${QUITAR[@]}"
+      echo "Quitado: el binding por subject."
+    else
+      echo "No existe el binding por subject (no se cambia)."
+    fi
+  fi
+fi
 
 echo
 echo "Variable del repositorio (Settings → Secrets and variables → Actions → Variables; no es un secret):"

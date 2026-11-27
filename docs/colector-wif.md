@@ -1,6 +1,6 @@
 # Colector con Workload Identity Federation
 
-Guía del propietario (ORD-POS-174, POS-071). El colector deja de escribir en la hoja con la clave JSON de una cuenta de
+Guía del propietario (ORD-POS-174 y ORD-POS-176, POS-071). El colector deja de escribir en la hoja con la clave JSON de una cuenta de
 servicio y entra a Google sin claves, con Workload Identity Federation (WIF), como ya hace el
 [botón de despliegue](despliegue-boton.md). Cierra la deuda X-8, que el preflight declara en P15.
 
@@ -58,7 +58,8 @@ bash web/deploy/infra/wif-colector.sh
 ```
 
 No llama a `gcloud`: imprime lo que haría. Revisa que el proveedor solo acepte `jlpulido107-bit/PROJECT-OS`, la rama
-`main` y el workflow `manual-github-evidence.yml`, y que el único rol sea `roles/iam.workloadIdentityUser`.
+`main` y el workflow `manual-github-evidence.yml`, que el único rol sea `roles/iam.workloadIdentityUser` y que su
+miembro termine en `attribute.repository/jlpulido107-bit/PROJECT-OS`.
 
 ### 3. Crear la cuenta de servicio y el binding WIF
 
@@ -68,7 +69,13 @@ bash web/deploy/infra/wif-colector.sh --apply
 
 Pide escribir `AUTORIZO WIF COLECTOR`. Crea, si faltan, el pool `github-colector`, su proveedor y la cuenta
 `project-os-colector`, y permite que la identidad de GitHub use esa cuenta (el binding). Lo que ya existe no se vuelve a
-crear. No crea ninguna clave. Comprueba el resultado:
+crear. No crea ninguna clave.
+
+Desde ORD-POS-176 el binding es **por repositorio** (`principalSet` por `attribute.repository`), que es el que funcionó
+el 27-nov-2026, y ya no por subject ([por qué](#por-qué-no-sirvió-el-binding-por-subject)). Quién puede entrar lo
+sigue limitando la condición del proveedor: este repositorio, `main` y el workflow del colector. Si corriste el script
+de ORD-POS-174, tienes además el binding por subject, que no sirve:
+[quítalo](#quitar-el-binding-por-subject). Comprueba el resultado:
 
 ```bash
 echo "$COLECTOR_WIF_PROVIDER"
@@ -78,9 +85,32 @@ gcloud projects get-iam-policy "$PROJECT_ID" --flatten="bindings[].members" \
 ```
 
 - El `echo` debe coincidir con el `COLECTOR_WIF_PROVIDER` que imprimió el script.
-- El segundo comando debe listar `roles/iam.workloadIdentityUser` con un miembro que termina en
-  `subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main`.
+- El segundo comando debe listar `roles/iam.workloadIdentityUser` con un solo miembro: empieza por `principalSet://` y
+  termina en `workloadIdentityPools/github-colector/attribute.repository/jlpulido107-bit/PROJECT-OS`. No debe haber
+  ninguno que termine en `/*` (todo el pool) ni que nombre otro repositorio. Si además sale uno con
+  `subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main`, es el de ORD-POS-174: [quítalo](#quitar-el-binding-por-subject).
 - El tercero no debe imprimir nada: la cuenta no tiene ningún rol en el proyecto.
+
+#### Quitar el binding por subject
+
+Solo si la comprobación lo muestra. Es opcional (no da acceso a nadie más: solo sobra) y se puede repetir: si el
+binding ya no está, no cambia nada.
+
+```bash
+bash web/deploy/infra/wif-colector.sh --apply --quitar-subject
+```
+
+Pide la misma frase. Vuelve a conceder el binding por repositorio (si ya está, queda igual), lee la política de la
+cuenta y quita el de subject solo si está, y solo ese. Si prefieres el comando directo, hace lo mismo:
+
+```bash
+gcloud iam service-accounts remove-iam-policy-binding "$CUENTA_COLECTOR" --project "$PROJECT_ID" \
+  --role roles/iam.workloadIdentityUser \
+  --member "principal://iam.googleapis.com/projects/${NUMERO_PROYECTO}/locations/global/workloadIdentityPools/github-colector/subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main"
+```
+
+Si ese binding ya no existe, el comando directo termina con un error que lo dice: no pasa nada. Repite después la
+comprobación del paso 3 y, de día, la [prueba a mano](#7-probar-a-mano-y-esperar-una-noche-buena).
 
 ### 4. Compartir la hoja maestra
 
@@ -177,7 +207,7 @@ En *Actions*, abre la corrida en rojo y mira en qué paso de `sync` se detuvo:
 | *Download the report collected by the report job* | No encuentra el artefacto | `report` no subió el informe. Vuelve a correr el workflow completo. |
 | *Authenticate to Google Cloud* | Cualquier error | El valor de `COLECTOR_WIF_PROVIDER`: debe ser, entero, el que imprimió el paso 3. |
 | *Sync verified evidence* | `ADC identity is not SHEETS_EXPECTED_SERVICE_ACCOUNT` | El workflow no es la copia exacta de la fuente. Repite el paso 6. |
-| *Sync verified evidence* | Un 403 que nombra `iam.serviceAccounts.getAccessToken` | El binding del paso 3: repite su comprobación. Recién concedido puede tardar unos minutos, como le pasó al [botón](despliegue-boton.md#errores-conocidos). |
+| *Sync verified evidence* | `google.auth.exceptions.RefreshError: ('Unable to acquire impersonated credentials', …)` con `"code": 403`, `Permission 'iam.serviceAccounts.getAccessToken' denied on resource (or it may not exist)` y `"reason": "IAM_PERMISSION_DENIED"` | Es el error real del 26 y el 27-nov-2026: la identidad entró al pool (*Authenticate to Google Cloud* pasó), pero ningún binding de la cuenta la nombraba. Falta el binding por repositorio: repite el paso 3 con el script al día y su comprobación. Recién concedido puede tardar unos minutos. [Por qué](#por-qué-no-sirvió-el-binding-por-subject). |
 | *Sync verified evidence* | Un error que nombra la «attribute condition» o el «audience» | **Hipótesis** (no lo probé contra Google): el valor de `COLECTOR_WIF_PROVIDER` no es el del paso 3, o la corrida no salió de `main`. |
 | *Sync verified evidence* | `Google Sheets request failed (HTTP 403)` | La hoja no está compartida con `project-os-colector@…` como Editor (paso 4). Menos probable: la API de Sheets apagada en el proyecto; el dashboard ya la usa. |
 | *Sync verified evidence* | `Expected exactly one report from the report job` | El artefacto de `report` no trae un informe, o trae más de uno. |
@@ -185,10 +215,52 @@ En *Actions*, abre la corrida en rojo y mira en qué paso de `sync` se detuvo:
 Lo demás no cambia: el paso que falló en `report`, la última fila de `SYNC_RUNS` y cómo apagar el horario están en
 [operación](operacion.md#horario-del-colector-ord-pos-172-dec-pos-044-pendiente).
 
+## Por qué no sirvió el binding por subject
+
+Lo observado (logs de *Actions*, job `sync`, las tres corridas con `workflow_dispatch` desde `main` en el commit `48653e7`):
+
+- [45862659405](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/45862659405) (26-nov) y
+  [46024134102](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/46024134102) (27-nov, 15:21 UTC):
+  *Authenticate to Google Cloud* pasó y *Sync verified evidence* falló con el 403 de la tabla de arriba.
+- [46025090830](https://github.com/jlpulido107-bit/PROJECT-OS/actions/runs/46025090830) (27-nov, 15:27 UTC): en verde,
+  seis minutos después y con el mismo código, cuando agregaste a mano el binding
+  `principalSet://…/workloadIdentityPools/github-colector/attribute.repository/jlpulido107-bit/PROJECT-OS`.
+
+Lo que eso prueba: el proveedor aceptó el token (su condición usa `repository`, `ref` y `workflow_ref`, no `sub`) y el
+atributo `repository` valía `jlpulido107-bit/PROJECT-OS`. Lo que no coincidía era el subject: el del token no era
+`repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main`, que es el que nombraba el binding. No fue un retraso de
+propagación: el binding por subject llevaba al menos un día puesto.
+
+**Hipótesis** de la causa (no vi el token; saberlo con certeza pide una prueba en vivo, que esta orden no hace): GitHub
+cambió el formato del subject. Según su documentación, los repositorios creados después del 15-jul-2026 usan por
+defecto un subject «inmutable», con los ID numéricos: `repo:OWNER@OWNER-ID/REPO@REPO-ID:ref:refs/heads/BRANCH` en vez
+de `repo:OWNER/REPO:ref:refs/heads/BRANCH`
+([GitHub, *OpenID Connect reference*, «Immutable subject claims»](https://docs.github.com/en/actions/reference/security/oidc)).
+Este repositorio se creó el 2026-10-08 (API de GitHub), así que su subject llevaría esos ID y nunca sería igual al
+texto sin ID que escribió ORD-POS-174. El claim `repository`, en cambio, sigue siendo `OWNER/REPO`, y por eso el
+binding por `attribute.repository` sí coincide. Otras causas que no puedo descartar sin ver el token: una plantilla
+de subject personalizada en el repositorio (misma página, «Customizing the subject claims») o una diferencia de
+mayúsculas, que Google sí distingue
+([google-github-actions/auth, *Troubleshooting*](https://github.com/google-github-actions/auth/blob/main/docs/TROUBLESHOOTING.md)).
+
+Por qué el binding por repositorio es correcto y no más amplio de la cuenta: Google define `principal://…/subject/…`
+para una sola identidad y `principalSet://…/attribute.NOMBRE/VALOR` para las identidades del pool con ese atributo
+([Google, *Principal identifiers*](https://docs.cloud.google.com/iam/docs/principal-identifiers)); la guía de
+`google-github-actions/auth` usa justo `attribute.repository` para `roles/iam.workloadIdentityUser`
+([README](https://github.com/google-github-actions/auth#readme)). En este pool solo entra lo que deja pasar la
+condición del proveedor (este repositorio, `main` y el workflow del colector), así que «todas las identidades de este
+repositorio» son las mismas corridas de antes. Google recomienda además limitar por los ID numéricos, que no se
+reutilizan ([Google, *Workload Identity Federation with deployment pipelines*](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines)):
+eso pediría modificar el proveedor y queda para otra orden.
+
+Para confirmarlo sin tocar nada, tú puedes ver el subject real en Cloud Shell: en *Logs Explorer*, los registros de
+auditoría de `sts.googleapis.com` o de `iamcredentials.googleapis.com` de una corrida muestran el `principalSubject`.
+**Hipótesis:** solo aparecen si los registros de acceso a datos de esas API están activados; no lo comprobé.
+
 ## Qué no hace
 
-- Ningún agente copia el workflow, ejecuta `wif-colector.sh --apply`, crea la variable, comparte la hoja, retira el
-  secreto ni borra la clave. Tampoco dispara el workflow.
+- Ningún agente copia el workflow, ejecuta `wif-colector.sh --apply` (con o sin `--quitar-subject`), concede o quita
+  bindings, crea la variable, comparte la hoja, retira el secreto ni borra la clave. Tampoco dispara el workflow.
 - No crea claves de cuenta de servicio ni usa `secrets` de Google.
 - No da a la cuenta del colector ningún rol en el proyecto, y no toca la cuenta ni el pool del despliegue.
 - No cambia el horario, lo que se recoge ni lo que se escribe: sigue añadiendo filas a `EVIDENCIAS` y `SYNC_RUNS`, y

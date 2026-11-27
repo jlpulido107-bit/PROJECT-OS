@@ -153,23 +153,52 @@ describe('fuente del colector con WIF (ORD-POS-174, criterio 1)', () => {
   })
 })
 
-describe('wif-colector.sh (ORD-POS-174)', () => {
+describe('wif-colector.sh (ORD-POS-174 y ORD-POS-176)', () => {
   let dir: string
   beforeEach(() => { dir = mkdtempSync(path.join(tmpdir(), 'wif-colector-')) })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  /** gcloud falso: anota cada llamada, devuelve el número del proyecto y, si `existe` es falso, falla en los demás `describe`. */
-  function correr(args: string[], input = '', existe = true) {
+  const POOL = 'projects/123456789012/locations/global/workloadIdentityPools/github-colector'
+  const POR_REPOSITORIO = `principalSet://iam.googleapis.com/${POOL}/attribute.repository/jlpulido107-bit/PROJECT-OS`
+  const POR_SUBJECT = `principal://iam.googleapis.com/${POOL}/subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main`
+  const CONCEDER = `iam service-accounts add-iam-policy-binding ${CUENTA} --project project-os-511102 --role roles/iam.workloadIdentityUser --member`
+  const QUITAR = `iam service-accounts remove-iam-policy-binding ${CUENTA} --project project-os-511102 --role roles/iam.workloadIdentityUser --member`
+
+  /**
+   * gcloud falso: anota cada llamada, devuelve el número del proyecto y, si `existe` es falso, falla en los demás
+   * `describe`. `get-iam-policy` devuelve `miembros`. Como IAM de mentira, RECHAZA (código 1) cualquier concesión que no
+   * sea, exacta, la del repositorio de PROJECT-OS, y cualquier retiro que no sea, exacto, el del binding por subject.
+   */
+  function correr(args: string[], input = '', existe = true, miembros: string[] = [], guion = WIF) {
     const log = path.join(dir, 'gcloud.log')
     writeFileSync(log, '')
-    writeFileSync(path.join(dir, 'gcloud'), `#!/usr/bin/env bash\necho "$*" >> "$GCLOUD_LOG"\ncase "$*" in\n  "projects describe"*) echo 123456789012 ;;\n  *" describe "*) exit ${existe ? 0 : 1} ;;\nesac\n`)
+    writeFileSync(path.join(dir, 'miembros'), miembros.map((m) => `${m}\n`).join(''))
+    writeFileSync(path.join(dir, 'gcloud'), `#!/usr/bin/env bash
+echo "$*" >> "$GCLOUD_LOG"
+case "$*" in
+  "projects describe"*) echo 123456789012 ;;
+  *" get-iam-policy "*) cat "$MIEMBROS" ;;
+  "${CONCEDER} ${POR_REPOSITORIO}") ;;
+  "${QUITAR} ${POR_SUBJECT}") ;;
+  *add-iam-policy-binding*|*remove-iam-policy-binding*|*set-iam-policy*) echo "IAM falso: binding no permitido: $*" >&2; exit 1 ;;
+  *" describe "*) exit ${existe ? 0 : 1} ;;
+esac
+`)
     chmodSync(path.join(dir, 'gcloud'), 0o755)
-    const r = spawnSync('bash', [WIF, ...args], {
-      env: { PATH: `${dir}:${process.env.PATH}`, GCLOUD_LOG: log } as unknown as NodeJS.ProcessEnv, input, encoding: 'utf8',
+    const r = spawnSync('bash', [guion, ...args], {
+      env: { PATH: `${dir}:${process.env.PATH}`, GCLOUD_LOG: log, MIEMBROS: path.join(dir, 'miembros') } as unknown as NodeJS.ProcessEnv, input, encoding: 'utf8',
     })
     return { code: r.status, out: r.stdout, err: r.stderr, log: readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) }
   }
-  const POOL = 'projects/123456789012/locations/global/workloadIdentityPools/github-colector'
+  /** Copia del script con una mutación, para las pruebas negativas. */
+  function mutado(de: string, a: string) {
+    const texto = readFileSync(WIF, 'utf8')
+    expect(texto.split(de)).toHaveLength(2)
+    const ruta = path.join(dir, 'wif-mutado.sh')
+    writeFileSync(ruta, texto.replace(de, a))
+    return ruta
+  }
+  const MIEMBRO_EN_FUENTE = 'MIEMBRO_WIF="principalSet://iam.googleapis.com/${POOL_RUTA}/attribute.repository/${REPO_GITHUB}"'
 
   it('sin --apply no llama a gcloud e imprime el plan: pool propio, solo este repositorio, main y el workflow del colector', () => {
     const r = correr([])
@@ -183,6 +212,9 @@ describe('wif-colector.sh (ORD-POS-174)', () => {
     expect(r.out).toContain("assertion.workflow_ref==\\'jlpulido107-bit/PROJECT-OS/.github/workflows/manual-github-evidence.yml@refs/heads/main\\'")
     expect(r.out).toContain('COLECTOR_WIF_PROVIDER=projects/$NUMERO_PROYECTO/locations/global/workloadIdentityPools/github-colector/providers/github-actions')
     expect(r.out).toContain(`  ${CUENTA}\n`)
+    // ORD-POS-176: el permiso va por repositorio; el de subject ya no se crea ni se nombra sin --quitar-subject.
+    expect(r.out).toContain('--member principalSet://iam.googleapis.com/projects/\\$NUMERO_PROYECTO/locations/global/workloadIdentityPools/github-colector/attribute.repository/jlpulido107-bit/PROJECT-OS \n')
+    expect(r.out).not.toMatch(/subject\/|remove-iam-policy-binding/)
   })
 
   it('mínimo privilegio: el único rol es workloadIdentityUser sobre la propia cuenta; ningún rol de proyecto ni de recurso, ninguna clave', () => {
@@ -190,28 +222,49 @@ describe('wif-colector.sh (ORD-POS-174)', () => {
     expect([...new Set(texto.match(/roles\/[\w.]+/g))]).toEqual(['roles/iam.workloadIdentityUser'])
     expect(texto.match(/add-iam-policy-binding/g)).toHaveLength(1)
     expect(texto).toMatch(/paso gcloud iam service-accounts add-iam-policy-binding "\$CUENTA" /)
-    expect(texto).not.toMatch(/keys create|projects add-iam-policy-binding|set-iam-policy|roles\/(owner|editor)/)
+    // Lo único que se retira es un binding de la propia cuenta, y solo el de subject.
+    expect(texto.match(/remove-iam-policy-binding/g)).toHaveLength(1)
+    expect(texto).toMatch(/QUITAR=\(gcloud iam service-accounts remove-iam-policy-binding "\$CUENTA" --project "\$PROJECT_ID"\n\s+--role roles\/iam\.workloadIdentityUser --member "\$MIEMBRO_SUBJECT"\)/)
+    expect(texto).not.toMatch(/keys create|projects (add|remove)-iam-policy-binding|set-iam-policy|roles\/(owner|editor)/)
+    // gcloud solo se llama sobre el proyecto (leer su número), el pool, el proveedor y la cuenta de servicio.
+    const grupos = new Set([...texto.matchAll(/gcloud (projects describe|iam workload-identity-pools|iam service-accounts)?/g)].map((m) => m[1]))
+    expect([...grupos].sort()).toEqual(['iam service-accounts', 'iam workload-identity-pools', 'projects describe'])
     // No toca nada del despliegue: otro pool y otra cuenta.
     expect(texto).toContain("readonly POOL='github-colector'")
     expect(texto).not.toMatch(/project-os-despliegue|POOL='github'/)
     for (const c of texto.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) ?? []) expect(c).toMatch(/\.iam\.gserviceaccount\.com$/)
   })
 
-  it.each([['--plan'], ['--apply', 'extra'], ['apply']])('argumentos no válidos %j: uso, sin gcloud', (...args) => {
+  it('el miembro es un principalSet del repositorio exacto: ni subject, ni comodín, ni otro atributo', () => {
+    const texto = readFileSync(WIF, 'utf8')
+    expect(texto).toContain(`${MIEMBRO_EN_FUENTE}\n`)
+    expect(texto.match(/^MIEMBRO_WIF=/gm)).toHaveLength(1)
+    expect(texto.match(/"\$MIEMBRO_WIF"/g)).toHaveLength(1)
+    expect(texto).toContain("readonly REPO_GITHUB='jlpulido107-bit/PROJECT-OS'")
+    // El comodín del pool entero no aparece como miembro en ningún sitio.
+    expect(texto).not.toMatch(/workloadIdentityPools\/[^\n"]*\/\*"/)
+    // La condición del proveedor no cambia: sigue limitando a este repositorio, a main y al workflow del colector.
+    expect(texto).toContain(`readonly CONDICION="assertion.repository=='\${REPO_GITHUB}' && assertion.ref=='refs/heads/main' && assertion.workflow_ref=='\${WORKFLOW}'"`)
+    expect(texto).toContain("readonly MAPEO='google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref'")
+  })
+
+  it.each([['--plan'], ['--apply', 'extra'], ['apply'], ['--quitar-subject', '--apply'], ['--apply', '--quitar-subject', 'extra'], ['--quitar-subject', '--quitar-subject']])('argumentos no válidos %j: uso, sin gcloud', (...args) => {
     const r = correr(args)
     expect(r.code).toBe(2)
     expect(r.log).toEqual([])
   })
 
   it('--apply sin «AUTORIZO WIF COLECTOR» solo lee el número del proyecto y no cambia nada', () => {
-    for (const respuesta of ['si\n', 'AUTORIZO WIF\n', '']) {
-      const r = correr(['--apply'], respuesta)
-      expect(r.code).toBe(1)
-      expect(r.log).toEqual(['projects describe project-os-511102 --format=value(projectNumber)'])
+    for (const args of [['--apply'], ['--apply', '--quitar-subject']]) {
+      for (const respuesta of ['si\n', 'AUTORIZO WIF\n', '']) {
+        const r = correr(args, respuesta)
+        expect(r.code).toBe(1)
+        expect(r.log).toEqual(['projects describe project-os-511102 --format=value(projectNumber)'])
+      }
     }
   })
 
-  it('--apply con la frase crea lo que falta y concede un solo permiso, a la identidad del colector en main', () => {
+  it('--apply con la frase crea lo que falta y concede un solo permiso, al repositorio de PROJECT-OS; ya no el de subject', () => {
     const r = correr(['--apply'], 'AUTORIZO WIF COLECTOR\n', false)
     expect(r.code).toBe(0)
     const cambios = r.log.filter((l) => !/ describe /.test(l))
@@ -219,8 +272,9 @@ describe('wif-colector.sh (ORD-POS-174)', () => {
       'iam workload-identity-pools create github-colector --project project-os-511102 --location global --display-name GitHub Actions colector',
       "iam workload-identity-pools providers create-oidc github-actions --project project-os-511102 --location global --workload-identity-pool github-colector --display-name PROJECT-OS main colector --issuer-uri https://token.actions.githubusercontent.com --attribute-mapping google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref --attribute-condition assertion.repository=='jlpulido107-bit/PROJECT-OS' && assertion.ref=='refs/heads/main' && assertion.workflow_ref=='jlpulido107-bit/PROJECT-OS/.github/workflows/manual-github-evidence.yml@refs/heads/main'",
       'iam service-accounts create project-os-colector --project project-os-511102 --display-name Colector de evidencias desde GitHub (WIF)',
-      `iam service-accounts add-iam-policy-binding ${CUENTA} --project project-os-511102 --role roles/iam.workloadIdentityUser --member principal://iam.googleapis.com/${POOL}/subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main`,
+      `${CONCEDER} ${POR_REPOSITORIO}`,
     ])
+    expect(r.log.join('\n')).not.toMatch(/subject\/|get-iam-policy|remove-iam-policy-binding/)
     expect(r.out).toContain(`COLECTOR_WIF_PROVIDER=${POOL}/providers/github-actions`)
   })
 
@@ -229,7 +283,86 @@ describe('wif-colector.sh (ORD-POS-174)', () => {
     expect(r.code).toBe(0)
     expect(r.out.match(/Ya existe: /g)).toHaveLength(3)
     expect(r.log.filter((l) => / create/.test(l))).toEqual([])
-    expect(r.log.filter((l) => /add-iam-policy-binding/.test(l))).toHaveLength(1)
+    expect(r.log.filter((l) => /add-iam-policy-binding/.test(l))).toEqual([`${CONCEDER} ${POR_REPOSITORIO}`])
+  })
+
+  // Criterio 3: ningún rol en el proyecto, en ninguna de las formas de llamarlo.
+  it.each([[['--apply']], [['--apply', '--quitar-subject']]])('%j nunca llama a gcloud projects salvo para leer el número, ni crea claves', (args) => {
+    const r = correr(args, 'AUTORIZO WIF COLECTOR\n', false, [POR_SUBJECT])
+    expect(r.code).toBe(0)
+    expect(r.log.filter((l) => l.startsWith('projects '))).toEqual(['projects describe project-os-511102 --format=value(projectNumber)'])
+    expect(r.log.join('\n')).not.toMatch(/keys |set-iam-policy|roles\/(?!iam\.workloadIdentityUser\b)/)
+    for (const l of r.log.filter((x) => /-iam-policy/.test(x))) expect(l).toMatch(new RegExp(`^iam service-accounts (add-iam-policy-binding|remove-iam-policy-binding|get-iam-policy) ${CUENTA.replace(/\./g, '\\.')} `))
+  })
+
+  describe('--quitar-subject (ORD-POS-176, criterio 2)', () => {
+    const LEER = `iam service-accounts get-iam-policy ${CUENTA} --project project-os-511102 --flatten bindings[].members --filter bindings.role:roles/iam.workloadIdentityUser --format value(bindings.members)`
+
+    it('simulado: imprime el retiro del binding por subject y no llama a gcloud', () => {
+      const r = correr(['--quitar-subject'])
+      expect(r.code).toBe(0)
+      expect(r.log).toEqual([])
+      expect(r.out).toContain('remove-iam-policy-binding project-os-colector@project-os-511102.iam.gserviceaccount.com --project project-os-511102 --role roles/iam.workloadIdentityUser --member principal://iam.googleapis.com/projects/\\$NUMERO_PROYECTO/locations/global/workloadIdentityPools/github-colector/subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main \n')
+      expect(r.out.match(/remove-iam-policy-binding/g)).toHaveLength(1)
+    })
+
+    it('si existe, quita ese binding y solo ese, después de conceder el del repositorio', () => {
+      const r = correr(['--apply', '--quitar-subject'], 'AUTORIZO WIF COLECTOR\n', true, [POR_REPOSITORIO, POR_SUBJECT])
+      expect(r.code).toBe(0)
+      expect(r.log.filter((l) => /-iam-policy/.test(l))).toEqual([`${CONCEDER} ${POR_REPOSITORIO}`, LEER, `${QUITAR} ${POR_SUBJECT}`])
+      expect(r.out).toContain('Quitado: el binding por subject.')
+    })
+
+    it.each([
+      ['no hay ninguno', []],
+      ['solo está el del repositorio', [POR_REPOSITORIO]],
+      ['hay un subject parecido (otra rama, otro repositorio, un prefijo)', [
+        `${POR_SUBJECT.replace('refs/heads/main', 'refs/heads/otra')}`,
+        `${POR_SUBJECT.replace('PROJECT-OS', 'SIGSAH')}`,
+        `${POR_SUBJECT}-2`,
+      ]],
+    ])('idempotente: si %s no retira nada y termina bien', (_n, miembros) => {
+      const r = correr(['--apply', '--quitar-subject'], 'AUTORIZO WIF COLECTOR\n', true, miembros)
+      expect(r.code).toBe(0)
+      expect(r.log.filter((l) => /remove-iam-policy-binding/.test(l))).toEqual([])
+      expect(r.log).toContain(LEER)
+      expect(r.out).toContain('No existe el binding por subject (no se cambia).')
+    })
+
+    it('si no se puede leer la política, se detiene sin retirar nada', () => {
+      const guion = mutado('gcloud iam service-accounts get-iam-policy', 'false gcloud iam service-accounts get-iam-policy')
+      const r = correr(['--apply', '--quitar-subject'], 'AUTORIZO WIF COLECTOR\n', true, [POR_SUBJECT], guion)
+      expect(r.code).not.toBe(0)
+      expect(r.log.filter((l) => /remove-iam-policy-binding/.test(l))).toEqual([])
+    })
+  })
+
+  // Criterio 6: el IAM falso solo acepta el principalSet de este repositorio; cualquier otro miembro hace fallar el script.
+  describe('pruebas negativas (ORD-POS-176, criterio 6): otro miembro falla', () => {
+    it.each([
+      ['un principalSet de otro repositorio', MIEMBRO_EN_FUENTE.replace('${REPO_GITHUB}', 'jlpulido107-bit/SIGSAH')],
+      ['un principalSet de otro dueño con el mismo nombre', MIEMBRO_EN_FUENTE.replace('${REPO_GITHUB}', 'otro/PROJECT-OS')],
+      ['un principalSet de todo el pool', MIEMBRO_EN_FUENTE.replace('attribute.repository/${REPO_GITHUB}', '*')],
+      ['un principalSet por otro atributo (la rama, de cualquier repositorio)', MIEMBRO_EN_FUENTE.replace('attribute.repository/${REPO_GITHUB}', 'attribute.ref/refs/heads/main')],
+      ['el repositorio con otras mayúsculas', MIEMBRO_EN_FUENTE.replace('${REPO_GITHUB}', 'jlpulido107-bit/project-os')],
+      ['el binding por subject de ORD-POS-174', 'MIEMBRO_WIF="principal://iam.googleapis.com/${POOL_RUTA}/subject/repo:${REPO_GITHUB}:ref:refs/heads/main"'],
+    ])('%s', (_n, miembro) => {
+      const r = correr(['--apply'], 'AUTORIZO WIF COLECTOR\n', true, [], mutado(MIEMBRO_EN_FUENTE, miembro))
+      expect(r.code).not.toBe(0)
+      expect(r.err).toMatch(/IAM falso: binding no permitido/)
+      expect(r.out).not.toMatch(/COLECTOR_WIF_PROVIDER=/)
+    })
+
+    it('el retiro de cualquier otro binding (el del repositorio) también falla', () => {
+      const guion = mutado('--role roles/iam.workloadIdentityUser --member "$MIEMBRO_SUBJECT")', '--role roles/iam.workloadIdentityUser --member "$MIEMBRO_WIF")')
+      const r = correr(['--apply', '--quitar-subject'], 'AUTORIZO WIF COLECTOR\n', true, [POR_REPOSITORIO, POR_SUBJECT], guion)
+      expect(r.code).not.toBe(0)
+      expect(r.err).toMatch(/IAM falso: binding no permitido/)
+    })
+
+    it('control: sin mutar, la misma corrida termina bien', () => {
+      expect(correr(['--apply'], 'AUTORIZO WIF COLECTOR\n', true, [], mutado(MIEMBRO_EN_FUENTE, MIEMBRO_EN_FUENTE)).code).toBe(0)
+    })
   })
 })
 
@@ -280,6 +413,33 @@ describe('docs/colector-wif.md (ORD-POS-174, criterio 4)', () => {
     const usadas = new Set(bloques.flatMap((b) => [...b.matchAll(/\$\{?([A-Z_][A-Z0-9_]*)/g)].map((m) => m[1] ?? '')))
     expect([...usadas].filter((v) => !definidas.has(v))).toEqual([])
     for (const v of ['PROJECT_ID', 'NUMERO_PROYECTO', 'CUENTA_COLECTOR', 'COLECTOR_WIF_PROVIDER']) expect(definidas.has(v), v).toBe(true)
+  })
+
+  it('ORD-POS-176 · el paso 3 y su comprobación nombran el binding por repositorio; el de subject solo para quitarlo', () => {
+    const paso3 = GUIA.slice(GUIA.indexOf('### 3. '), GUIA.indexOf('### 4. '))
+    expect(paso3).toContain('workloadIdentityPools/github-colector/attribute.repository/jlpulido107-bit/PROJECT-OS')
+    expect(paso3).toMatch(/No debe haber\s+ninguno que termine en `\/\*`/)
+    expect(paso3).toContain('#### Quitar el binding por subject')
+    expect(paso3).toContain('bash web/deploy/infra/wif-colector.sh --apply --quitar-subject\n')
+    // El comando directo retira el mismo miembro que el script, en la cuenta del colector y con el mismo rol.
+    const directo = bloques.find((b) => b.includes('remove-iam-policy-binding')) ?? ''
+    expect(directo).toBe('gcloud iam service-accounts remove-iam-policy-binding "$CUENTA_COLECTOR" --project "$PROJECT_ID" \\\n  --role roles/iam.workloadIdentityUser \\\n  --member "principal://iam.googleapis.com/projects/${NUMERO_PROYECTO}/locations/global/workloadIdentityPools/github-colector/subject/repo:jlpulido107-bit/PROJECT-OS:ref:refs/heads/main"\n')
+    expect(readFileSync(WIF, 'utf8')).toContain('MIEMBRO_SUBJECT="principal://iam.googleapis.com/${POOL_RUTA}/subject/repo:${REPO_GITHUB}:ref:refs/heads/main"')
+    expect(bloques.join('\n').match(/remove-iam-policy-binding/g)).toHaveLength(1)
+    // Ningún bloque concede nada a mano ni toca roles del proyecto.
+    expect(bloques.join('\n')).not.toMatch(/add-iam-policy-binding|projects (add|remove)-iam-policy-binding|set-iam-policy/)
+  })
+
+  it('ORD-POS-176 · «Si falla» trae el error real del 27-nov y la causa va como hipótesis, con fuentes de GitHub y de Google', () => {
+    const falla = GUIA.slice(GUIA.indexOf('## Si falla'), GUIA.indexOf('## Por qué no sirvió el binding por subject'))
+    expect(falla).toContain("Permission 'iam.serviceAccounts.getAccessToken' denied on resource (or it may not exist)")
+    expect(falla).toContain('Unable to acquire impersonated credentials')
+    expect(falla).toContain('IAM_PERMISSION_DENIED')
+    const causa = GUIA.slice(GUIA.indexOf('## Por qué no sirvió el binding por subject'), GUIA.indexOf('## Qué no hace'))
+    for (const run of ['45862659405', '46024134102', '46025090830']) expect(causa, run).toContain(`actions/runs/${run}`)
+    expect(causa).toMatch(/\*\*Hipótesis\*\* de la causa \(no vi el token/)
+    expect(causa).toContain('https://docs.github.com/en/actions/reference/security/oidc')
+    expect(causa).toContain('https://docs.cloud.google.com/iam/docs/principal-identifiers')
   })
 
   it('ningún agente hace los pasos: ni la copia, ni --apply, ni la variable, ni el secreto', () => {
