@@ -189,8 +189,8 @@ Después de fusionar:
 - `notas-salud.py` cuenta lo que hay en `referencia/antigravity/` como notas de `referencia/`: a la plantilla puede
   pedirle su línea en `POS/indice.md`, una plantilla para su `tipo` y contenido en sus secciones (probado con una copia
   de la bóveda de ejemplo y una plantilla inventada). Es ruido conocido, no un error del PR.
-- Mover más de 50 archivos de golpe son más de 50 borrados para la copia a Drive, que se detiene por su tope
-  ([`notas-drive.md`](notas-drive.md), paso 6).
+- Con el workflow de [`notas-drive.md`](notas-drive.md) (paso 6), mover más de 50 archivos de golpe son más de 50
+  borrados y la copia a Drive se detiene por su tope.
 
 ## Flujo idea → tarea u orden
 
