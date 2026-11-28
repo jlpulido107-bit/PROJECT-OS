@@ -1,4 +1,5 @@
 import type { Dataset } from '../types'
+import { esDeAntigravity } from './rules'
 import type { PlanningInput } from './types'
 
 const TABS = ['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL', 'ASIGNACIONES', 'PLAN_DIARIO', 'PLAN_ITEMS', 'TIEMPOS'] as const
@@ -6,6 +7,7 @@ const TABS = ['PROYECTOS', 'HITOS', 'TAREAS', 'DEPENDENCIAS', 'CAPACIDAD_SEMANAL
 /**
  * Proyección mínima del conjunto de datos para el planificador (solo lectura).
  * Excluye responsables, notas, descripciones, URLs y marcas de tiempo: no hacen falta para planificar.
+ * De RESPONSABLE sale una sola marca, `deAntigravity`, en los encargos de Antigravity (ORD-POS-181); nunca su texto.
  */
 export function planningInputFromDataset(ds: Dataset): PlanningInput {
   return {
@@ -22,6 +24,8 @@ export function planningInputFromDataset(ds: Dataset): PlanningInput {
       fechaLimite: t.fechaLimite,
       horasEstimadas: t.horasEstimadas,
       bloqueo: t.bloqueo,
+      // La clave solo existe en los encargos: sin ellos, la entrada y su huella son las de antes.
+      ...(esDeAntigravity(t.responsable) ? { deAntigravity: true as const } : {}),
     })),
     dependencias: ds.dependencias.map((d) => ({ id: d.id, tareaId: d.tareaId, dependeDeTareaId: d.dependeDeTareaId, estado: d.estado })),
     capacidad: ds.capacidad.map((c) => ({ id: c.id, fechaInicio: c.fechaInicio, horasDisponibles: c.horasDisponibles, reservaPct: c.reservaPct, estado: c.estado })),

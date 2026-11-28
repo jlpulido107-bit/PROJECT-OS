@@ -326,6 +326,7 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
 
   const plans: TaskPlan[] = []
   let cerradasOmitidas = 0
+  let deAntigravityOmitidas = 0
   const noEstimate: string[] = []
   const noState: string[] = []
   const unknownPriority: string[] = []
@@ -340,6 +341,13 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
   for (const t of input.tareas) {
     if (t.estado && CLOSED_TASK_STATES.has(t.estado)) {
       cerradasOmitidas += 1
+      continue
+    }
+    // Encargos de Antigravity (ORD-POS-181): no son trabajo del propietario. No se listan ni se proponen, y no suman
+    // demanda ni preguntas. Siguen en `tasks`: cuentan como prerrequisito, y los PLAN_ITEMS y TIEMPOS que el
+    // propietario ya registró sobre ellos se respetan como uso (contrato §4.1, punto 3 y §4.2).
+    if (t.deAntigravity) {
+      deAntigravityOmitidas += 1
       continue
     }
     const motivos: Reason[] = []
@@ -730,6 +738,7 @@ export function planWeek(rawInput: PlanningInput, scenario: Scenario, options: P
       sinCapacidad: tareas.filter((p) => p.categoria === 'sin-capacidad').length,
       excluidas: tareas.filter((p) => p.categoria === 'excluida').length,
       cerradasOmitidas,
+      deAntigravityOmitidas,
     },
     conflictos,
     preguntas,

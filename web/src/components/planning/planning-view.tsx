@@ -330,6 +330,7 @@ export function PlanningView({ input, referenceDate, timeZone, hitosSemana, edic
         </div>
         <TaskList tasks={plan.tareas.filter((t) => filter === 'todas' || t.categoria === filter)} />
         {plan.resumen.cerradasOmitidas ? <p className="muted small">{plan.resumen.cerradasOmitidas === 1 ? '1 tarea cerrada (COMPLETADO o CANCELADO) no se lista.' : `${plan.resumen.cerradasOmitidas} tareas cerradas (COMPLETADO o CANCELADO) no se listan.`}</p> : null}
+        {plan.resumen.deAntigravityOmitidas ? <p className="muted small">{plan.resumen.deAntigravityOmitidas === 1 ? '1 encargo de Antigravity no se lista: no ocupa tu capacidad.' : `${plan.resumen.deAntigravityOmitidas} encargos de Antigravity no se listan: no ocupan tu capacidad.`}</p> : null}
       </Section>
 
       <Section title="Preguntas y conflictos" id="conflictos">

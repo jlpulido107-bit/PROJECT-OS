@@ -50,7 +50,8 @@ anunciados (`aria-invalid` y `role="alert"`).
 - **Uso:** el tiempo real de los días pasados y, desde hoy, `máx(plan registrado, real)` por día y proyecto. Nunca
   se descuenta dos veces.
 - **Elegibles:** tareas abiertas, sin bloqueo, con prerrequisitos `COMPLETADO`, con estimación y de un proyecto
-  activo.
+  activo. Los encargos de Antigravity (tareas con `RESPONSABLE` «Antigravity») no entran: no ocupan la capacidad del
+  propietario, no se listan y la vista dice cuántos dejó fuera.
 - **Orden:** vencidas → vencen esta semana → prioridad → desbloquea más → en curso → límite → ID.
 - **Reparto entre proyectos:** urgencia → piso de 60 min por proyecto → proporción por peso (ALTA 3, MEDIA 2,
   BAJA 1). Las `ASIGNACIONES` registradas son límites duros.
