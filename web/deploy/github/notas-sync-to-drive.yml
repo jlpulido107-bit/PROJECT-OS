@@ -1,11 +1,14 @@
 name: NOTAS — Sync to Drive
 
-# Sincronización de NOTAS a Drive con el permiso mínimo (ORD-POS-177). Esta es la FUENTE revisada: vive en PROJECT-OS y
-# lo que corre es la copia que el propietario pone en .github/workflows/sync-to-drive.yml de NOTAS, en un PR suyo
-# (guía: docs/notas-drive.md en PROJECT-OS). Ningún agente la copia ni la dispara.
+# Sincronización de NOTAS a Drive con el permiso mínimo (ORD-POS-177 y ORD-POS-178). Esta es la FUENTE revisada: vive
+# en PROJECT-OS y lo que corre es la copia que el propietario pone en .github/workflows/sync-to-drive.yml de NOTAS, en
+# un PR suyo (guía: docs/notas-drive.md en PROJECT-OS). Ningún agente la copia ni la dispara.
 # - Sin WIF: una cuenta de servicio no tiene cuota de Drive ni puede ser dueña de archivos, y un Drive personal no
 #   tiene unidades compartidas. Por eso sigue habiendo un token de OAuth, pero con el alcance «drive.file»: solo ve y
 #   toca lo que creó esta misma app (la carpeta de las notas), no el resto del Drive.
+# - Cliente de OAuth (ORD-POS-178): el propio solo si vienen sus dos datos (NOTAS_DRIVE_CLIENT_ID y
+#   NOTAS_DRIVE_CLIENT_SECRET); sin ninguno, el integrado de rclone; con uno solo, se detiene. El integrado es
+#   compartido y rclone anunció que lo retira durante 2026: ver «Riesgo que queda» en la guía.
 # - Solo se sube lo que está en git, sin «privado/» ni «.obsidian/workspace*»; rclone los excluye otra vez.
 on:
   push:
@@ -24,13 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check the Drive folder and OAuth client variables
+      - name: Check the Drive folder variable
         env:
           CARPETA: ${{ vars.NOTAS_DRIVE_FOLDER_ID }}
-          CLIENTE: ${{ vars.NOTAS_DRIVE_CLIENT_ID }}
         run: |
-          if [ -z "$CARPETA" ] || [ -z "$CLIENTE" ]; then
-            echo "::error::Missing repository variable NOTAS_DRIVE_FOLDER_ID or NOTAS_DRIVE_CLIENT_ID; no sync attempted"
+          if [ -z "$CARPETA" ]; then
+            echo "::error::Missing repository variable NOTAS_DRIVE_FOLDER_ID; no sync attempted"
             exit 1
           fi
       - name: Checkout notes
@@ -71,9 +73,19 @@ jobs:
           RCLONE_CONFIG_NOTAS_TOKEN: ${{ secrets.NOTAS_DRIVE_TOKEN }}
         shell: bash
         run: |
-          if [ -z "$RCLONE_CONFIG_NOTAS_CLIENT_SECRET" ] || [ -z "$RCLONE_CONFIG_NOTAS_TOKEN" ]; then
-            echo "::error::Missing secret NOTAS_DRIVE_CLIENT_SECRET or NOTAS_DRIVE_TOKEN; no sync attempted"
+          if [ -z "$RCLONE_CONFIG_NOTAS_TOKEN" ]; then
+            echo "::error::Missing secret NOTAS_DRIVE_TOKEN; no sync attempted"
             exit 1
+          fi
+          # Cliente de OAuth: el propio solo con sus dos datos; sin ninguno, rclone usa el integrado.
+          if [ -z "$RCLONE_CONFIG_NOTAS_CLIENT_ID" ] && [ -z "$RCLONE_CONFIG_NOTAS_CLIENT_SECRET" ]; then
+            unset RCLONE_CONFIG_NOTAS_CLIENT_ID RCLONE_CONFIG_NOTAS_CLIENT_SECRET
+            echo "OAuth client: rclone built-in (NOTAS_DRIVE_CLIENT_ID and NOTAS_DRIVE_CLIENT_SECRET are not set)"
+          elif [ -z "$RCLONE_CONFIG_NOTAS_CLIENT_ID" ] || [ -z "$RCLONE_CONFIG_NOTAS_CLIENT_SECRET" ]; then
+            echo "::error::Set both NOTAS_DRIVE_CLIENT_ID and NOTAS_DRIVE_CLIENT_SECRET, or neither; no sync attempted"
+            exit 1
+          else
+            echo "OAuth client: own (NOTAS_DRIVE_CLIENT_ID and NOTAS_DRIVE_CLIENT_SECRET)"
           fi
           rclone sync "$ORIGEN" notas: \
             --exclude 'privado/**' --exclude '.obsidian/workspace*' \
