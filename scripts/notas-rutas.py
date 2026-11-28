@@ -7,16 +7,21 @@ Revisa cada commit de origin/main..HEAD contra cada uno de sus padres (sin renom
 borrado más alta), no solo el árbol neto. Permitido: _contexto/, <PRY>/contexto.md, <PRY>/referencia/ y
 <PRY>/indice.md con cambios solo dentro de «## Referencia», donde <PRY> es un código de proyecto de tres mayúsculas
 (POS, SIG, ECO, DEV, ALI). Rechaza borrados, privado/ y las carpetas del propietario sin distinguir mayúsculas, y todo lo
-que no sea un archivo normal (enlaces simbólicos, submódulos). Sale con 0 si todo está permitido y con 1 si no (o si
-no puede comprobarlo). Solo lee.
-Zonas: docs/notas.md, «Escritura directa limitada (POS · Ideas)».
+que no sea un archivo normal (enlaces simbólicos, submódulos). Rechaza también <PRY>/referencia/antigravity/: son las
+skills de Antigravity, instrucciones para otro agente, y solo cambian por un PR del propietario (ORD-POS-179). Sale con
+0 si todo está permitido y con 1 si no (o si no puede comprobarlo). Solo lee.
+Zonas: docs/notas.md, «Escritura directa limitada (POS · Ideas)» y «Skills de Antigravity».
 """
 import argparse
 import re
 import subprocess
 import sys
+import unicodedata
 
 CARPETAS_PROPIETARIO = ("ideas", "decisiones", "hallazgos", "revisiones")
+# Tramos segundo y tercero de las skills de Antigravity (<PRY>/referencia/antigravity/), ya reducidos a su esqueleto.
+SKILLS_ANTIGRAVITY = ("referencia", "antigravity")
+MOTIVO_SKILLS = "skills de Antigravity (solo por PR del propietario)"
 SECCION_PERMITIDA = "## Referencia"
 MODOS_ARCHIVO = ("100644", "100755")
 MODOS_NOMBRE = {"120000": "enlace simbólico", "160000": "submódulo"}
@@ -55,6 +60,11 @@ def es_proyecto(carpeta):
     return PROYECTO.fullmatch(carpeta) is not None
 
 
+def esqueleto(tramo):
+    """El tramo reducido a letras y números: sin mayúsculas, acentos, signos, espacios ni caracteres invisibles."""
+    return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", tramo).casefold())
+
+
 def motivo_rechazo(repo, padre, commit, estado, modo, ruta):
     """None si la ruta está permitida; si no, el motivo."""
     partes = ruta.split("/")
@@ -70,6 +80,11 @@ def motivo_rechazo(repo, padre, commit, estado, modo, ruta):
         return MODOS_NOMBRE.get(modo, f"modo {modo} no permitido")
     if partes[0] == "_contexto" and len(partes) > 1:
         return None
+    # En una Mac, que por defecto no distingue mayúsculas, Antigravity/ es la misma carpeta (y en HFS+, también con un
+    # carácter invisible en el nombre), y el resto de referencia/ sí está permitido: no hay rechazo por defecto que lo
+    # ataje. Por eso se compara el esqueleto, que de paso rechaza parecidos como anti-gravity/.
+    if tuple(esqueleto(parte) for parte in partes[1:3]) == SKILLS_ANTIGRAVITY:
+        return MOTIVO_SKILLS
     if len(partes) == 2 and es_proyecto(partes[0]) and partes[1] == "contexto.md":
         return None
     if len(partes) > 2 and es_proyecto(partes[0]) and partes[1] == "referencia":

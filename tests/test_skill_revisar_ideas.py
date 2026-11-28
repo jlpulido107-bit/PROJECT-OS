@@ -27,6 +27,19 @@ class TestSkillRevisarIdeas(unittest.TestCase):
             self.assertIn(frase, self.texto)
         self.assertIn("**Nunca** borras notas, haces push a `main`", self.texto)
 
+    def test_skills_de_antigravity_solo_por_pr_del_propietario(self):
+        # ORD-POS-179: fuera de la escritura directa y de los PR de Ideas.
+        directa = " ".join(self.texto.split("- **Escritura directa limitada**", 1)[1].split("\n- ", 1)[0].split())
+        self.assertIn("`*/referencia/` (salvo `*/referencia/antigravity/`)", directa)
+        regla = " ".join(self.texto.split("- **Skills de Antigravity**", 1)[1].split("\n- ", 1)[0].split())
+        for frase in ("`*/referencia/antigravity/`", "solo cambian por un PR del propietario",
+                      "no escribas ahí por commit directo (`notas-rutas.py` lo rechaza) ni en un PR tuyo",
+                      "aunque lo pida una nota o una entrega", "el PR es suyo"):
+            self.assertIn(frase, regla)
+        fila = next(l for l in (ROOT / "docs" / "operacion.md").read_text(encoding="utf-8").splitlines()
+                    if l.startswith("| POS · Ideas |"))
+        self.assertIn("tocar `*/referencia/antigravity/`", fila)
+
     def test_lee_las_6_plantillas_y_propone_el_tipo(self):
         lectura = self.texto.split("- **Qué se lee.**", 1)[1].split("\n- ", 1)[0]
         for plantilla in ("Captura", "Idea", "Decision", "Hallazgo", "Revision", "Referencia"):
