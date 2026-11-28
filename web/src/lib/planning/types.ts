@@ -21,6 +21,11 @@ export interface PlanningInput {
     fechaLimite: string | null
     horasEstimadas: number | null
     bloqueo: string | null
+    /**
+     * Solo aparece (true) en los encargos de Antigravity (`esDeAntigravity`, ORD-POS-181): no son trabajo del
+     * propietario y el motor los omite. Es lo único que sale de RESPONSABLE; su texto no se proyecta.
+     */
+    deAntigravity?: true
   }>
   dependencias: Array<{ id: string; tareaId: string | null; dependeDeTareaId: string | null; estado: string | null }>
   capacidad: Array<{ id: string; fechaInicio: string | null; horasDisponibles: number | null; reservaPct: number | null; estado: string | null }>
@@ -194,6 +199,8 @@ export interface PlanResult {
     excluidas: number
     /** Tareas COMPLETADO/CANCELADO: no se listan. */
     cerradasOmitidas: number
+    /** Encargos abiertos de Antigravity: no se listan, no se proponen y no suman a la carga del propietario. */
+    deAntigravityOmitidas: number
   }
   conflictos: Issue[]
   preguntas: Issue[]

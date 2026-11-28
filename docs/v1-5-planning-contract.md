@@ -35,13 +35,14 @@ Código: `web/src/lib/planning/`. Pruebas: `web/tests/planning-*.test.ts` y `web
 ## 2. Entradas (solo lectura, encabezados reales de `schema.ts`)
 
 `planningInputFromDataset(dataset)` proyecta **solo** las columnas necesarias. No incluye responsables, notas,
-descripciones, URLs ni marcas de tiempo.
+descripciones, URLs ni marcas de tiempo. De `RESPONSABLE` sale una sola marca, `deAntigravity`, en los encargos de
+Antigravity (§4.2); su texto nunca se proyecta.
 
 | Pestaña | Columnas usadas |
 | --- | --- |
 | `PROYECTOS` | `PROYECTO_ID`, `NOMBRE`, `ESTADO`, `PRIORIDAD` |
 | `HITOS` | `HITO_ID`, `PROYECTO_ID`, `ESTADO` |
-| `TAREAS` | `TAREA_ID`, `PROYECTO_ID`, `HITO_ID`, `TITULO`, `ESTADO`, `PRIORIDAD`, `FECHA_PLAN`, `FECHA_LIMITE`, `HORAS_ESTIMADAS`, `BLOQUEO` |
+| `TAREAS` | `TAREA_ID`, `PROYECTO_ID`, `HITO_ID`, `TITULO`, `ESTADO`, `PRIORIDAD`, `FECHA_PLAN`, `FECHA_LIMITE`, `HORAS_ESTIMADAS`, `BLOQUEO`; de `RESPONSABLE`, solo la marca `deAntigravity` |
 | `DEPENDENCIAS` | `DEPENDENCIA_ID`, `TAREA_ID`, `DEPENDE_DE_TAREA_ID`, `ESTADO` |
 | `CAPACIDAD_SEMANAL` | `SEMANA_ID`, `FECHA_INICIO`, `HORAS_DISPONIBLES`, `RESERVA_PCT`, `ESTADO` |
 | `ASIGNACIONES` | `ASIGNACION_ID`, `SEMANA_ID`, `PROYECTO_ID`, `HORAS_OBJETIVO` |
@@ -120,6 +121,15 @@ Reglas de las dependencias:
 - **Inactivas:** `RESUELTA`, `INACTIVA` y `CANCELADA` no exigen el prerrequisito.
 - **Se ignoran con aviso:** las incompletas, las duplicadas (se cuentan una vez) y las de tareas inexistentes.
 - **Tarea dependiente ya cerrada:** su dependencia no exige nada.
+
+**Encargos de Antigravity (ORD-POS-181).** Una tarea abierta cuyo `RESPONSABLE` nombra a Antigravity no es trabajo del
+propietario. La regla es `esDeAntigravity` (`planning/rules.ts`), la misma que usa Inicio en `esDelPropietario`.
+
+- **Se omite y se cuenta** en `deAntigravityOmitidas`. No se lista ni se propone, no suma demanda y no genera
+  preguntas ni avisos; tampoco entra con el supuesto «horas para tareas sin estimación».
+- **Sigue contando como prerrequisito:** quien depende de un encargo espera hasta que esté `COMPLETADO`.
+- **Lo ya registrado se respeta:** los `PLAN_ITEMS` y `TIEMPOS` que el propietario haya registrado sobre un encargo
+  cuentan como uso (§4.1, punto 3). El motor nunca altera lo registrado; solo deja de proponer.
 
 ### 4.3 Necesidad de una tarea (minutos)
 
@@ -223,6 +233,8 @@ Reglas comunes:
   corto.
 - `conflictos[]` y `preguntas[]` con código, mensaje y referencias (IDs). Las preguntas son lo que el motor
   **no puede decidir**.
+- `resumen`: cuántas tareas quedaron en cada categoría y cuántas se omitieron, por cerradas (`cerradasOmitidas`) o
+  por ser encargos de Antigravity (`deAntigravityOmitidas`).
 - `supuestos[]` y `huella`.
 
 ## 7. Invariantes (verificadas con 400 casos aleatorios reproducibles)
@@ -236,7 +248,8 @@ Reglas comunes:
   - una tarea excluida, cerrada, bloqueada, sin estado o con ID duplicado;
   - una tarea con un prerrequisito activo no `COMPLETADO`;
   - una tarea antes de su `FECHA_PLAN`;
-  - una tarea sin estimación, salvo con supuesto de escenario.
+  - una tarea sin estimación, salvo con supuesto de escenario;
+  - un encargo de Antigravity (tampoco se lista).
 - **Propuesto por tarea:** ≤ su necesidad, igual a la suma de sus bloques y una sola entrada por tarea y día.
 - **Números válidos:** todos los números del resultado son finitos y ≥ 0.
 - **Determinismo:** el resultado es idéntico al repetir y al barajar las filas, y la entrada no se modifica.
@@ -254,7 +267,8 @@ Reglas comunes:
 
 ## 9. Limitaciones conocidas
 
-- **Una sola persona:** no se usa `RESPONSABLE` para repartir entre varias personas.
+- **Una sola persona:** no se usa `RESPONSABLE` para repartir entre varias personas. Solo deja fuera los encargos de
+  Antigravity (§4.2); las tareas con cualquier otro `RESPONSABLE`, también Claude o Codex, se planifican como antes.
 - **Sin redistribución:** el presupuesto de un proyecto que no se pudo colocar en días (`FECHA_PLAN` tardía) no se
   redistribuye a otros proyectos.
 - **Sin dependencias encadenadas:** el motor no planifica un prerrequisito y su dependiente en la misma semana. El

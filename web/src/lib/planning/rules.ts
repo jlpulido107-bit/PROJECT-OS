@@ -48,6 +48,15 @@ export const INACTIVE_DEPENDENCY_STATES = new Set(['RESUELTA', 'INACTIVA', 'CANC
 /** Estados de plan diario que se consideran ejecutados o descartados (no reservan capacidad futura). */
 export const PLAN_CANCELLED_STATES = new Set(['CANCELADO', 'DESCARTADO'])
 
+/**
+ * Encargo de Antigravity (ORD-POS-181; la convención es de ORD-POS-180): tarea de TAREAS cuyo RESPONSABLE nombra a
+ * Antigravity. La hace ese agente, no el propietario. Fuente única: la usan Inicio (`esDelPropietario`) y la entrada
+ * del motor (`planningInputFromDataset`), para que las dos vistas digan lo mismo.
+ */
+export function esDeAntigravity(responsable: string | null): boolean {
+  return /\bantigravity\b/i.test(responsable ?? '')
+}
+
 /** Mínimo de minutos por bloque diario: no se proponen fragmentos menores salvo que sea el resto de la tarea. */
 export const MIN_BLOCK_MIN = 30
 /** Máximo de minutos de una misma tarea por día (evita que una tarea acapare la jornada). */

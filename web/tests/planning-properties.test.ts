@@ -32,6 +32,8 @@ function randomCase(seed: number): { input: PlanningInput; scenario: Scenario; r
     fechaLimite: r.chance(0.4) ? day(-7, 20) : null,
     horasEstimadas: r.chance(0.15) ? null : r.pick([0, 0.25, 0.5, 1, 2, 3.5, 6, 12, 40]),
     bloqueo: r.chance(0.08) ? 'Bloqueo' : null,
+    // ORD-POS-181: una de cada siete es un encargo de Antigravity (por posición, sin gastar azar: el resto del caso no cambia).
+    ...(i % 7 === 6 ? { deAntigravity: true as const } : {}),
   }))
   const ids = tareas.map((t) => t.id)
   const dependencias = ids.length < 2 ? [] : Array.from({ length: r.int(0, 6) }, (_, i) => ({
@@ -135,6 +137,13 @@ function checkInvariants(result: PlanResult, input: PlanningInput, scenario: Sce
     if (t.categoria === 'excluida') expect(t.propuestoMin).toBe(0)
     expect(t.explicacion.length).toBeGreaterThan(0)
   }
+  // Encargos de Antigravity (ORD-POS-181): nunca se listan ni se proponen, y los abiertos se cuentan.
+  const encargos = input.tareas.filter((t) => t.deAntigravity)
+  for (const t of encargos) {
+    expect(result.tareas.some((p) => p.id === t.id), `${t.id} listado`).toBe(false)
+    expect(byTask.has(t.id), `${t.id} propuesto`).toBe(false)
+  }
+  expect(result.resumen.deAntigravityOmitidas).toBe(encargos.filter((t) => t.estado !== 'COMPLETADO' && t.estado !== 'CANCELADO').length)
   // Asignaciones: nada por encima de las horas objetivo del proyecto (menos lo ya usado).
   for (const p of result.proyectos) {
     if (p.asignadoMin !== null) expect(p.propuestoMin).toBeLessThanOrEqual(Math.max(0, p.asignadoMin - p.usadoMin))

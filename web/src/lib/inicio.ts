@@ -4,6 +4,7 @@ import { civilDateInZone, daysBetween } from './dates'
 import { urlGithub } from './estado'
 import type { FinanzasVista, Pendiente } from './finanzas/finanzas'
 import type { PrFusion } from './operations/github'
+import { esDeAntigravity } from './planning/rules'
 import { COMPLETED_STATE } from './schema'
 import type { Dataset, Decision, Orden, Tarea } from './types'
 
@@ -77,10 +78,11 @@ export function proyectosInicio(ds: Dataset, hoy: string, filtro: ProyectoAgente
 
 /**
  * atajo: la hoja no registra quién es el propietario (un solo usuario, docs/v1-5-planning-contract.md); se toman como
- * suyas las tareas cuyo RESPONSABLE no nombra a un agente (Claude o Codex). Mejorarlo si TAREAS distingue al propietario.
+ * suyas las tareas cuyo RESPONSABLE no nombra a un agente (Claude, Codex o Antigravity, cuyos encargos son tareas con
+ * ese RESPONSABLE: ORD-POS-181). Mejorarlo si TAREAS distingue al propietario.
  */
 export function esDelPropietario(t: Pick<Tarea, 'responsable'>): boolean {
-  return !/\b(claude|codex)\b/i.test(t.responsable ?? '')
+  return !/\b(claude|codex)\b/i.test(t.responsable ?? '') && !esDeAntigravity(t.responsable)
 }
 
 export interface TareaPendiente {
